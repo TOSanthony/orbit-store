@@ -56,3 +56,11 @@ Sécurité : sans connexion, seule une page de mot de passe vide s'affiche (aucu
 Derrière un reverse proxy, le blocage s'applique à l'adresse du proxy (donc à tout le monde) : c'est volontaire, mais à savoir.
 Le mot de passe protège cette page d'administration, pas l'accès d'Orbit à `index.json` et aux jeux, qui reste protégé par le chemin secret.
 En ligne de commande : `php make-nas-index.php refresh [--sha256] [--refresh-covers]` (utile pour une tâche planifiée Synology).
+
+## Informations des jeux : param.json et IA
+- **param.json (par défaut)** : pour un `.zip` contenant `sce_sys/param.json` (jeu PS5), le script lit le titre (`titleName`), l'identifiant (`titleId`) et la version (`contentVersion`). Un zip dont le nom ne contient pas l'identifiant est alors quand même listé. Si l'identifiant du `param.json` diffère de celui du chemin, le `param.json` est ignoré (avertissement dans le journal). `--no-param` désactive cette lecture ; la case « Lire le param.json » existe aussi dans l'interface.
+- **IA (Gemini, facultative)** : pour les jeux sans `param.json` (`.exfat`, `.ffpfsc`, autres zips), `--ai` demande à Gemini le nom officiel, une description en français et l'éditeur. L'IA n'invente pas : si le jeu n'est pas reconnu, rien n'est écrit (nouvel essai après 7 jours). Les réponses sont gardées dans `.ai-cache.json` (un jeu n'est demandé qu'une fois), `--ai-max` limite les requêtes par exécution (40 par défaut).
+- **Clés** : `GEMINI_API_KEYS` (séparées par des virgules) pour le script ; avec l'interface PHP, dans `nas-admin.config.php` :
+  `<?php return ['PASSWORD_HASH' => '...', 'GEMINI_KEYS' => ['clé1', 'clé2'], 'GEMINI_MODEL' => 'gemini-3.6-flash'];`
+  La case « Compléter avec l'IA » n'apparaît que si une clé est configurée. Les clés ne passent jamais par la ligne de commande ni par l'index, et `nas-admin.config.php` est bloqué par le `.htaccess`. Ne le publie pas sur GitHub.
+- **Vie privée** : le Title ID et le titre déduit du nom de fichier sont envoyés à Google. Les priorités sont : `titles.json` > `param.json` > IA > nom de fichier.

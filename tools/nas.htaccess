@@ -43,7 +43,7 @@ FileETag MTime Size
 
 # Fichiers qui ne doivent jamais sortir (réglages locaux, fichiers cachés, corbeille Synology,
 # script Python si tu l'as copié dans ce dossier). Le .php reste accessible : il exige son token.
-<FilesMatch "^(\.|titles\.json$)">
+<FilesMatch "^(\.|titles\.json$|nas-admin\.config\.php$)">
     Require all denied
 </FilesMatch>
 <FilesMatch "\.py$">

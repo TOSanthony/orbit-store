@@ -19,6 +19,12 @@ For a game in a .zip, icon0.png and pic1.png found inside the archive (normally 
 sce_sys/) are copied there automatically; use --no-extract to skip this and
 --refresh-covers to replace images extracted earlier. Images you placed yourself are kept.
 
+For a .zip holding a PS5 game, sce_sys/param.json gives the title, title ID and version
+(--no-param to skip). For games without it (.exfat, .ffpfsc, other zips), --ai asks Gemini for
+the name, a French description and the publisher; results are kept in .ai-cache.json and the key
+comes from the GEMINI_API_KEYS environment variable (comma separated). The title ID and the
+file-derived title are sent to Google. Never put keys in index.json or on the command line.
+
 Optional titles.json next to index.json (or --titles) adjusts rows, keyed by the file's
 path relative to the folder:
 
@@ -28,8 +34,12 @@ path relative to the folder:
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
+import time
+import urllib.error
+import urllib.request
 import zipfile
 from pathlib import Path
 from urllib.parse import quote
@@ -122,6 +132,105 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
+def clean_text(value, limit: int) -> str:
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", str(value or ""))
+    return re.sub(r"\s+", " ", text).strip()[:limit]
+
+
+def read_param(zip_path: Path):
+    """Title, title ID and version from sce_sys/param.json inside a PS5 .zip, or None."""
+    try:
+        with zipfile.ZipFile(zip_path) as archive:
+            found = [
+                i for i in archive.infolist()
+                if not i.is_dir() and i.filename.lower().rsplit("/", 1)[-1] == "param.json" and 0 < i.file_size <= 1 << 20
+            ]
+            if not found:
+                return None
+            found.sort(key=lambda i: ("sce_sys/" not in i.filename.lower(), i.filename.count("/")))
+            data = json.loads(archive.read(found[0]).decode("utf-8-sig"))
+    except (zipfile.BadZipFile, OSError, ValueError, RuntimeError, NotImplementedError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    local = data.get("localizedParameters")
+    local = local if isinstance(local, dict) else {}
+    names = []
+    for language in (local.get("defaultLanguage"), "en-US", "en-GB"):
+        entry = local.get(language) if isinstance(language, str) else None
+        if isinstance(entry, dict):
+            names.append(entry.get("titleName"))
+    names += [v.get("titleName") for v in local.values() if isinstance(v, dict)]
+    title = next((clean_text(n, 120) for n in names if isinstance(n, str) and n.strip()), "")
+    title_id = clean_text(data.get("titleId"), 9).upper()
+    if not re.fullmatch(r"(PPSA|CUSA)\d{5}", title_id):
+        title_id = ""
+    version = clean_text(data.get("contentVersion"), 24)
+    if not re.fullmatch(r"\d+(\.\d+){0,3}", version):
+        version = ""
+    if not (title or title_id or version):
+        return None
+    return {"title": title, "titleId": title_id, "version": version}
+
+
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
+
+
+def ai_prompt(title_id: str, hint: str) -> str:
+    return (
+        "Tu es un expert des jeux vidéo PlayStation (PS4 : CUSAxxxxx, PS5 : PPSAxxxxx).\n"
+        f'- Title ID exact : "{title_id}"\n'
+        f'- Titre brut ou nom de fichier : "{hint}"\n\n'
+        "Fais attention au Title ID pour identifier le vrai jeu. Si tu n'es pas certain de le connaître, "
+        "renvoie des chaînes vides plutôt que d'inventer.\n"
+        "Renvoie STRICTEMENT un objet JSON valide :\n"
+        '{"name": "Nom officiel propre du jeu (max 60 caractères)", '
+        '"description": "Résumé en français (max 180 caractères)", '
+        '"author": "Studio ou éditeur (max 60 caractères)"}'
+    )
+
+
+def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list):
+    """Ask Gemini for the game's name, description and publisher; None when it cannot say."""
+    base = os.environ.get("GEMINI_BASE", GEMINI_BASE).rstrip("/")
+    if not (base.startswith("https://") or base.startswith("http://127.0.0.1")):
+        errors.append("GEMINI_BASE must be https")
+        return None
+    url = f"{base}/models/{model}:generateContent"
+    body = json.dumps({
+        "contents": [{"parts": [{"text": ai_prompt(title_id, hint)}]}],
+        "generationConfig": {"responseMimeType": "application/json"},
+    }).encode("utf-8")
+    for key in keys:
+        request = urllib.request.Request(url, body, {"Content-Type": "application/json", "x-goog-api-key": key})
+        try:
+            with urllib.request.urlopen(request, timeout=25) as reply:
+                payload = json.loads(reply.read(1 << 20).decode("utf-8"))
+        except urllib.error.HTTPError as problem:
+            errors.append(f"HTTP {problem.code}")
+            continue
+        except (urllib.error.URLError, OSError, ValueError) as problem:
+            errors.append(type(problem).__name__)
+            continue
+        try:
+            text = payload["candidates"][0]["content"]["parts"][0]["text"]
+            data = json.loads(re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.IGNORECASE))
+        except (KeyError, IndexError, TypeError, ValueError):
+            errors.append("unreadable answer")
+            continue
+        if isinstance(data, dict):
+            result = {
+                "name": clean_text(data.get("name"), 60),
+                "description": clean_text(data.get("description"), 190),
+                "author": clean_text(data.get("author"), 60),
+            }
+            if result["description"] or result["author"]:
+                return result
+            errors.append("game not recognised")
+            return None
+    return None
+
+
 def inspect_zip(path: Path):
     """(format, extracted bytes) from the entries of a .zip, or None to leave it unverified."""
     try:
@@ -148,6 +257,10 @@ def main() -> int:
     parser.add_argument("--covers", default="covers", help="sub-folder with <TITLEID>_icon0.png (cover) and <TITLEID>_pic1.png (background); default: covers")
     parser.add_argument("--no-extract", action="store_true", help="do not take icon0.png / pic1.png out of .zip files")
     parser.add_argument("--refresh-covers", action="store_true", help="overwrite covers already extracted from a .zip")
+    parser.add_argument("--no-param", action="store_true", help="do not read sce_sys/param.json (title, title ID, version) from PS5 .zip files")
+    parser.add_argument("--ai", action="store_true", help="ask Gemini for name, description and publisher of games without param.json (needs GEMINI_API_KEYS)")
+    parser.add_argument("--ai-max", type=int, default=40, help="most Gemini requests per run (default 40)")
+    parser.add_argument("--ai-model", default=os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"))
     parser.add_argument("--sha256", action="store_true", help="also record each file's SHA-256 (slow on large files)")
     args = parser.parse_args()
 
@@ -160,7 +273,18 @@ def main() -> int:
     overrides = json.loads(titles_path.read_text("utf-8")) if titles_path.is_file() else {}
 
     images = find_artwork(root, args.covers)
-    rows, skipped, extracted = [], [], []
+    rows, skipped, extracted, notes = [], [], [], []
+    keys = [k.strip() for k in re.split(r"[,\s]+", os.environ.get("GEMINI_API_KEYS", "")) if k.strip()]
+    if args.ai and not keys:
+        notes.append("--ai: no key in GEMINI_API_KEYS, AI step skipped")
+    cache_path = root / ".ai-cache.json"
+    try:
+        cache = json.loads(cache_path.read_text("utf-8")) if cache_path.is_file() else {}
+    except (OSError, ValueError):
+        cache = {}
+    cache = cache if isinstance(cache, dict) else {}
+    cache_dirty, ai_calls, ai_done, ai_errors = False, 0, 0, []
+    from_param = 0
     for path in sorted(root.rglob("*")):
         relative = path.relative_to(root)
         if not path.is_file() or path == output or path == titles_path:
@@ -172,8 +296,13 @@ def main() -> int:
             continue
         key = relative.as_posix()
         extra = overrides.get(key, {})
+        param = read_param(path) if suffix == ".zip" and not args.no_param else None
         match = TITLE_ID.search(key)
-        title_id = (extra.get("titleId") or (match.group(1).upper() + match.group(2) if match else "")).upper()
+        path_id = (match.group(1).upper() + match.group(2)) if match else ""
+        title_id = (extra.get("titleId") or path_id or (param or {}).get("titleId") or "").upper()
+        if param and param["titleId"] and path_id and param["titleId"] != path_id and not extra.get("titleId"):
+            notes.append(f"{key}: param.json says {param['titleId']} but the path says {path_id}; param.json ignored")
+            param = None
         if not re.fullmatch(r"(PPSA|CUSA)\d{5}", title_id):
             skipped.append((key, "no title ID (PPSAxxxxx or CUSAxxxxx) in its path; add it in titles.json"))
             continue
@@ -183,7 +312,7 @@ def main() -> int:
             continue
         row = {
             "id": "nas-" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:12],
-            "title": extra.get("title") or title_from(path.name),
+            "title": extra.get("title") or (param or {}).get("title") or title_from(path.name),
             "titleId": title_id,
             "filename": path.name,
             "path": quote(key, safe="/"),
@@ -208,6 +337,10 @@ def main() -> int:
         found = VERSION.search(path.name)
         if found:
             row["version"] = found.group(1)
+        if param:
+            from_param += 1
+            if param["version"]:
+                row["version"] = param["version"]
         if suffix == ".zip" and not args.no_extract:
             for kind in extract_art(path, title_id, root, args.covers, images, args.refresh_covers):
                 extracted.append(f"{title_id}_{kind}.png")
@@ -215,6 +348,31 @@ def main() -> int:
             hit = artwork_for(images, title_id, kind)
             if hit:
                 row[field] = hit
+        if args.ai and keys and not param and not extra.get("description"):
+            info = cache.get(title_id) if isinstance(cache.get(title_id), dict) else None
+            if info and info.get("unknown"):
+                # Not recognised last time: ask again only after a week.
+                info = None if time.time() - float(info.get("at", 0)) > 7 * 86400 else {}
+            elif info is None and ai_calls < args.ai_max and len(ai_errors) < 3:
+                ai_calls += 1
+                before = len(ai_errors)
+                found_info = ai_lookup(title_id, title_from(path.name), keys, args.ai_model, ai_errors)
+                if found_info:
+                    ai_errors.clear()
+                    info = cache[title_id] = found_info
+                    cache_dirty = True
+                elif ai_errors[before:] == ["game not recognised"]:
+                    ai_errors.pop()
+                    cache[title_id] = {"unknown": True, "at": time.time()}
+                    cache_dirty = True
+            if info:
+                ai_done += 1
+                if info.get("description"):
+                    row["description"] = info["description"]
+                if info.get("author"):
+                    row["publisher"] = info["author"]
+                if info.get("name") and not extra.get("title"):
+                    row["title"] = info["name"]
         for field in ("version", "description", "publisher", "genre", "releaseDate", "cover", "hero", "gameId"):
             if extra.get(field):
                 row[field] = extra[field]
@@ -222,6 +380,19 @@ def main() -> int:
 
     output.write_text(json.dumps({"schemaVersion": 1, "releases": rows}, indent=2, ensure_ascii=False) + "\n", "utf-8")
     print(f"{len(rows)} file(s) listed in {output}")
+    if cache_dirty:
+        try:
+            temporary = cache_path.with_name(cache_path.name + ".part")
+            temporary.write_text(json.dumps(cache, ensure_ascii=False, indent=1), "utf-8")
+            temporary.replace(cache_path)
+        except OSError:
+            notes.append("could not save .ai-cache.json (folder not writable?)")
+    if from_param:
+        print(f"  {from_param} game(s) described by their param.json")
+    if args.ai and keys:
+        print(f"  AI: {ai_done} game(s) completed, {ai_calls} request(s) this run" + (f" (last problem: {ai_errors[-1]})" if ai_errors else ""))
+    for note in notes:
+        print(f"  note: {note}")
     if extracted:
         print(f"  {len(extracted)} image(s) extracted from .zip files into {args.covers}/")
     for key, reason in skipped:

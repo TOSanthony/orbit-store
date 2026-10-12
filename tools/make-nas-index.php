@@ -18,7 +18,7 @@
  *     <?php return ['PASSWORD_HASH' => '...', 'PYTHON' => '/usr/bin/python3'];
  * pour que la mise à jour de ce fichier ne les écrase pas.
  *
- * Ligne de commande : `php make-nas-index.php hash` | `php make-nas-index.php refresh`.
+ * Ligne de commande : `php make-nas-index.php hash` | `php make-nas-index.php refresh [--ai]`.
  */
 declare(strict_types=1);
 
@@ -32,6 +32,9 @@ $TIMEOUT       = 900;                                  // secondes max pour une 
 $SESSION_MIN   = 120;                                  // déconnexion après N minutes d'inactivité
 $MAX_FAILS     = 5;                                    // mots de passe faux avant blocage
 $LOCK_MIN      = 15;                                   // durée du blocage (minutes)
+$GEMINI_KEYS   = [];                                   // clés API Gemini (option « Compléter avec l'IA »)
+$GEMINI_MODEL  = 'gemini-3.6-flash';
+$AI_MAX        = 40;                                   // requêtes IA max par actualisation
 // ---------------------------------------------------------------------------
 
 $extra = __DIR__ . '/nas-admin.config.php';
@@ -39,7 +42,7 @@ if (is_file($extra)) {
     $cfg = require $extra;
     if (is_array($cfg)) {
         foreach ($cfg as $k => $v) {
-            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN'], true)) {
+            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_MAX'], true)) {
                 $$k = $v;
             }
         }
@@ -50,9 +53,9 @@ const IMAGE_TYPES = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'ima
 
 // ---- Actualisation (partagée par le web et la ligne de commande) ------------
 /** @return array{0:int,1:string} code de sortie et sortie texte */
-function run_refresh(bool $sha256, bool $refreshCovers): array
+function run_refresh(bool $sha256, bool $refreshCovers, bool $param = true, bool $ai = false): array
 {
-    global $GAMES_DIR, $SCRIPT, $PYTHON, $TIMEOUT;
+    global $GAMES_DIR, $SCRIPT, $PYTHON, $TIMEOUT, $GEMINI_KEYS, $GEMINI_MODEL, $AI_MAX;
     if (!is_file($SCRIPT)) return [1, "make-nas-index.py introuvable : $SCRIPT"];
     if (!is_file($PYTHON)) return [1, "Python 3 introuvable : $PYTHON (règle \$PYTHON)"];
     if (!is_dir($GAMES_DIR)) return [1, "Dossier des jeux introuvable : $GAMES_DIR"];
@@ -66,8 +69,20 @@ function run_refresh(bool $sha256, bool $refreshCovers): array
     $cmd = [$PYTHON, '-I', $SCRIPT, $GAMES_DIR];
     if ($sha256) $cmd[] = '--sha256';
     if ($refreshCovers) $cmd[] = '--refresh-covers';
-    $proc = proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null,
-        ['LANG' => 'C.UTF-8', 'PYTHONIOENCODING' => 'utf-8', 'PATH' => '/usr/local/bin:/usr/bin:/bin']);
+    if (!$param) $cmd[] = '--no-param';
+    $env = ['LANG' => 'C.UTF-8', 'PYTHONIOENCODING' => 'utf-8', 'PATH' => '/usr/local/bin:/usr/bin:/bin'];
+    $keys = array_values(array_filter(array_map('strval', (array)$GEMINI_KEYS), static fn($k) => trim($k) !== ''));
+    if ($ai && $keys) {
+        // Les clés passent par l'environnement, jamais par la ligne de commande.
+        $cmd[] = '--ai';
+        $cmd[] = '--ai-max';
+        $cmd[] = (string)max(1, (int)$AI_MAX);
+        $env['GEMINI_API_KEYS'] = implode(',', array_map('trim', $keys));
+        $env['GEMINI_MODEL'] = (string)$GEMINI_MODEL;
+        $cmd[] = '--ai-model';
+        $cmd[] = (string)$GEMINI_MODEL;
+    }
+    $proc = proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
     if (!is_resource($proc)) return [1, 'Impossible de lancer Python.'];
     stream_set_blocking($pipes[1], false);
     stream_set_blocking($pipes[2], false);
@@ -106,11 +121,11 @@ if (PHP_SAPI === 'cli') {
         exit(0);
     }
     if ($cmd === 'refresh') {
-        [$code, $text] = run_refresh(in_array('--sha256', $argv, true), in_array('--refresh-covers', $argv, true));
+        [$code, $text] = run_refresh(in_array('--sha256', $argv, true), in_array('--refresh-covers', $argv, true), !in_array('--no-param', $argv, true), in_array('--ai', $argv, true));
         echo ($code === 0 ? "OK\n" : "ERREUR ($code)\n") . $text . "\n";
         exit($code === 0 ? 0 : 1);
     }
-    fwrite(STDERR, "Usage : php make-nas-index.php hash [motdepasse] | refresh [--sha256] [--refresh-covers]\n");
+    fwrite(STDERR, "Usage : php make-nas-index.php hash [motdepasse] | refresh [--sha256] [--refresh-covers] [--no-param] [--ai]\n");
     exit(2);
 }
 
@@ -246,7 +261,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         exit;
     }
     if ($action === 'refresh') {
-        [$code, $text] = run_refresh(!empty($_POST['sha256']), !empty($_POST['refresh_covers']));
+        [$code, $text] = run_refresh(!empty($_POST['sha256']), !empty($_POST['refresh_covers']), !empty($_POST['param']), !empty($_POST['ai']));
         $_SESSION['flash'] = ['ok' => $code === 0, 'log' => $text, 'at' => time()];
         header('Location: ' . strtok((string)($_SERVER['REQUEST_URI'] ?? ''), '?'));
         exit;
@@ -285,6 +300,8 @@ if (is_file($indexFile)) {
                 'format' => $s('format') ?: '—',
                 'compression' => $s('compression'),
                 'version' => $s('version'),
+                'description' => $s('description'),
+                'publisher' => $s('publisher'),
                 'sha256' => $s('sha256'),
                 'cover' => art_url($s('cover')),
                 'hero' => art_url($s('hero')),
@@ -339,6 +356,7 @@ dialog::backdrop{background:#030814cc;backdrop-filter:blur(4px)}
 .det{display:flex;gap:1.1rem;padding:0 1.4rem 1.4rem;margin-top:-4rem;position:relative;z-index:1}
 .det .art{width:7.5rem;flex:none;box-shadow:0 8px 24px #0008;border:1px solid #ffffff22}
 .det h2{margin:.2rem 0 .1rem;font-size:1.35rem}
+.desc{margin:1rem 1.4rem 0;color:var(--dim);font-size:.92rem}.desc:empty{display:none}
 dl{display:grid;grid-template-columns:max-content 1fr;gap:.35rem 1rem;margin:1rem 1.4rem 0;font-size:.9rem}
 dt{color:var(--dim)}dd{margin:0;word-break:break-all}
 .close{position:absolute;top:.7rem;right:.7rem;z-index:2}
@@ -367,6 +385,10 @@ summary{cursor:pointer;font-weight:600}
     <summary class="btn primary" role="button"><span class="spin"></span><span id="refreshLabel">Actualiser</span></summary>
     <form class="menu" method="post" id="refreshForm">
       <input type="hidden" name="action" value="refresh"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+      <label><input type="checkbox" name="param" value="1" checked> Lire le param.json des .zip PS5 (titre, identifiant, version)</label>
+<?php if (!empty(array_filter((array)$GEMINI_KEYS))): ?>
+      <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (Gemini) les jeux sans param.json (nom, description, éditeur)</label>
+<?php endif; ?>
       <label><input type="checkbox" name="refresh_covers" value="1"> Remplacer les images déjà extraites des .zip</label>
       <label><input type="checkbox" name="sha256" value="1"> Calculer les SHA-256 (long sur de gros fichiers)</label>
       <button class="btn primary" id="refreshGo">Lancer l'actualisation</button>
@@ -387,6 +409,7 @@ summary{cursor:pointer;font-weight:600}
   <button class="btn close" id="dClose" aria-label="Fermer">✕</button>
   <div class="hero" id="dHero"></div>
   <div class="det"><div class="art" id="dArt"></div><div><h2 id="dTitle"></h2><div class="sub" id="dSub"></div></div></div>
+  <p class="desc" id="dDesc"></p>
   <dl id="dList"></dl>
   <div class="actions"><button class="btn" id="dOk">Fermer</button></div>
 </dialog>
@@ -454,7 +477,8 @@ summary{cursor:pointer;font-weight:600}
     hero.style.backgroundImage = g.hero ? 'url("' + g.hero.replace(/"/g, '%22') + '")' : '';
     $('dArt').replaceWith(Object.assign(picture(g, false), { id: 'dArt' }));
     $('dTitle').textContent = g.title;
-    $('dSub').textContent = [g.titleId, g.version && 'v' + g.version].filter(Boolean).join(' · ');
+    $('dSub').textContent = [g.titleId, g.publisher, g.version && 'v' + g.version].filter(Boolean).join(' · ');
+    $('dDesc').textContent = g.description || '';
     const rows = [['Fichier', g.filename], ['Chemin', g.path], ['Taille', bytes(g.size)], ['Format', g.format],
       g.compression && ['Archive', g.compression], g.sha256 && ['SHA-256', g.sha256],
       ['Icône', g.cover ? 'oui' : 'manquante'], ['Fond', g.hero ? 'oui' : 'manquant']].filter(Boolean);
