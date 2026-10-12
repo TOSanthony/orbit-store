@@ -55,6 +55,20 @@ ARCHIVES = {".zip": "zip", ".7z": "7z", ".rar": "rar"}
 SKIP_DIRS = {"@eaDir", "#recycle", "@Recycle", "@tmp"}
 
 
+PACK_FOLDERS = {"dlc": "DLC", "updates": "UPDATES", "update": "UPDATES", "mises a jour": "UPDATES"}
+
+
+def pack_kind(relative: Path) -> str:
+    """"DLC" or "UPDATES" when a folder of the path is called dlc / updates (any case), else "".
+
+    packages/ps5/dlc/PPSA01342/*.pkg  ->  DLC;  packages/ps5/updates/PPSA01342/*.pkg  ->  UPDATES."""
+    for part in relative.parts[:-1]:
+        kind = PACK_FOLDERS.get(part.strip().lower())
+        if kind:
+            return kind
+    return ""
+
+
 VERSION = re.compile(r"(?<![A-Za-z0-9])v(\d+(?:\.\d+)+)(?![A-Za-z0-9])", re.IGNORECASE)
 
 
@@ -410,6 +424,7 @@ def main() -> int:
     cache = cache if isinstance(cache, dict) else {}
     cache_dirty, ai_calls, ai_done, ai_errors = False, 0, 0, []
     from_param = 0
+    pack_rows = 0
     for path in sorted(root.rglob("*")):
         relative = path.relative_to(root)
         if not path.is_file() or path == output or path == titles_path:
@@ -439,13 +454,14 @@ def main() -> int:
         if size < 1:
             skipped.append((key, "empty file"))
             continue
+        pack = pack_kind(relative)
         row = {
             "id": f"{title_id.lower()}-nas",
-            "gameId": title_id,
+            "gameId": f"{title_id}-{pack}" if pack else title_id,
             "provider": "nas",
             "sourceId": "nas",
             "platform": platform,
-            "title": extra.get("title") or (param or {}).get("title") or title_from(path.name),
+            "title": extra.get("title") or (param or {}).get("title") or (title_id if pack else title_from(path.name)),
             "titleId": title_id,
             "filename": path.name,
             "path": quote(key, safe="/"),
@@ -485,7 +501,12 @@ def main() -> int:
                 row[field] = hit or fallback[field]
             if fallback.get(field):
                 row[field + "Fallback"] = fallback[field]
-        wanted = [f for f in AI_FIELDS if not extra.get(f)]
+        if pack:
+            # DLC / updates: one card per game in its own menu; the file name tells the packs apart.
+            row["id"] = f"{title_id.lower()}-{'dlc' if pack == 'DLC' else 'upd'}-{hashlib.sha1(key.encode('utf-8')).hexdigest()[:6]}"
+            row["tagline"] = pack
+            pack_rows += 1
+        wanted = [f for f in AI_FIELDS if not extra.get(f) and not (pack and f == "tagline")]
         if args.ai and keys and wanted:
             info = cache.get(title_id) if isinstance(cache.get(title_id), dict) else None
             if info and info.get("unknown"):
@@ -517,7 +538,7 @@ def main() -> int:
         row.setdefault("addedAt", datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).replace(microsecond=0).isoformat())
         for field in ("version", "description", "publisher", "genre", "tagline", "region", "releaseDate", "addedAt",
                       "cover", "hero", "coverFallback", "heroFallback", "gameId"):
-            if extra.get(field):
+            if extra.get(field) and not (pack and field == "tagline"):
                 row[field] = extra[field]
         row["artworkLayout"] = "wide"
         row["sourceCheckedAt"] = now_iso
@@ -525,6 +546,21 @@ def main() -> int:
         row["browserAvailable"] = False
         row["directAvailable"] = True
         rows.append(row)
+
+    # DLC / updates take the name (and missing details) of the game itself when it is in the same index,
+    # and every file of one pack shows the same title.
+    base = {r["titleId"]: r for r in rows if r.get("tagline") not in ("DLC", "UPDATES")}
+    first_title = {}
+    for row in rows:
+        if row.get("tagline") in ("DLC", "UPDATES"):
+            parent = base.get(row["titleId"])
+            if parent:
+                row["title"] = parent["title"]
+                for field in ("genre", "region", "publisher", "releaseDate", "description"):
+                    if parent.get(field) and not row.get(field):
+                        row[field] = parent[field]
+            first_title.setdefault(row["gameId"], row["title"])
+            row["title"] = first_title[row["gameId"]]
 
     # One id per file: "<titleid>-nas", and "-<format>" (then "-2"...) when a game has several files.
     used = set()
@@ -548,7 +584,7 @@ def main() -> int:
     partial = output.with_name(output.name + ".part")
     partial.write_text(json.dumps({"schemaVersion": 1, "releases": rows}, indent=2, ensure_ascii=False) + "\n", "utf-8")
     partial.replace(output)
-    print(f"{len(rows)} file(s) listed in {output}")
+    print(f"{len(rows)} file(s) listed in {output}" + (f" ({pack_rows} DLC / update file(s))" if pack_rows else ""))
     if cache_dirty:
         try:
             temporary = cache_path.with_name(cache_path.name + ".part")

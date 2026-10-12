@@ -6,6 +6,7 @@
 #include "orbit/i18n.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 
@@ -547,11 +548,24 @@ std::vector<Game> group_games(const std::vector<Release> &releases)
     return games;
 }
 
+Category game_category(const Game &game)
+{
+    std::string tag;
+    for (const char c : game.tagline)
+    {
+        if (c != ' ' && c != '\t')
+            tag.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+    }
+    return tag == "DLC" ? Category::dlc : tag == "UPDATES" ? Category::updates : Category::game;
+}
+
 std::vector<int> latest_games(const std::vector<Game> &games, std::string_view today)
 {
     std::vector<int> result;
     for (int i = 0; i < static_cast<int>(games.size()); ++i)
     {
+        if (game_category(games[static_cast<std::size_t>(i)]) != Category::game)
+            continue;
         const std::string &date = games[static_cast<std::size_t>(i)].release_date;
         if (!date.empty() && std::string_view(date) <= today)
             result.push_back(i);
@@ -577,6 +591,8 @@ std::vector<int> newly_added_games(const std::vector<Game> &games)
     for (int i = 0; i < static_cast<int>(games.size()); ++i)
     {
         const Game &game = games[static_cast<std::size_t>(i)];
+        if (game_category(game) != Category::game)
+            continue;
         const int rank = game.releases.empty() ? 0 : game.releases.front().new_on_orbit_rank;
         if (rank >= 1 && rank <= 100)
         {
@@ -686,6 +702,8 @@ std::vector<int> browse(const std::vector<Game> &games, const BrowseFilters &fil
     for (int i = 0; i < static_cast<int>(games.size()); ++i)
     {
         const Game &game = games[static_cast<std::size_t>(i)];
+        if (game_category(game) != filters.category)
+            continue;
         if (!matches_query(game, filters.query))
             continue;
         if (!filters.platform.empty() && game.platform != filters.platform)

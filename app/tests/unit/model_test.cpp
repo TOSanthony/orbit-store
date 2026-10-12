@@ -226,6 +226,31 @@ TEST(Model, RegionFiltersMatchTheSameOptionAndKeepUnknownExplicit)
     EXPECT_EQ(browse(games, BrowseFilters{}, {}).size(), 2u);
 }
 
+TEST(Model, DlcAndUpdatePacksHaveTheirOwnMenus)
+{
+    Release game = make_release("a-nas", "PPSA00001", "Cool Game", "2024-01-01", 10);
+    Release dlc1 = make_release("a-dlc-1", "PPSA00001-DLC", "Cool Game", "2024-01-01", 1);
+    Release dlc2 = make_release("a-dlc-2", "PPSA00001-DLC", "Cool Game", "2024-01-01", 1);
+    Release update = make_release("a-upd-1", "PPSA00001-UPDATES", "Cool Game", "2024-01-01", 2);
+    dlc1.tagline = dlc2.tagline = " dlc ";
+    update.tagline = "UPDATES";
+    const std::vector<Game> games = group_games({game, dlc1, dlc2, update});
+    ASSERT_EQ(games.size(), 3u);
+    EXPECT_EQ(game_category(games[0]), Category::game);
+    EXPECT_EQ(game_category(games[1]), Category::dlc);
+    EXPECT_EQ(games[1].releases.size(), 2u);
+    EXPECT_EQ(game_category(games[2]), Category::updates);
+
+    BrowseFilters filters;
+    EXPECT_EQ(browse(games, filters, {}), std::vector<int>({0}));
+    filters.category = Category::dlc;
+    EXPECT_EQ(browse(games, filters, {}), std::vector<int>({1}));
+    filters.category = Category::updates;
+    EXPECT_EQ(browse(games, filters, {}), std::vector<int>({2}));
+    // Discover's rows never show packs.
+    EXPECT_EQ(latest_games(games, "2026-01-01"), std::vector<int>({0}));
+}
+
 TEST(Model, SearchMatchesTitlesAndAnyOptionsTitleId)
 {
     const std::vector<Game> games =

@@ -88,3 +88,20 @@ Chaque jeu est généré comme une ligne du catalogue officiel :
 | `consoleVerified`, `browserAvailable`, `directAvailable` | `false`, `false`, `true` |
 
 La langue des descriptions est celle du catalogue officiel (anglais) ; pour le français, ajoute `'AI_LANG' => 'français'` à `nas-admin.config.php` (ou `--ai-lang`). La région est une estimation de l'IA : vérifie-la ou corrige-la dans `titles.json` (`"region": "EUR"`).
+
+## DLC et mises à jour
+
+Deux onglets, **DLC** et **Mises à jour**, apparaissent dans le menu du haut (à côté de Parcourir), dans l'interface web comme dans l'app plein écran.
+
+Rangement sur le NAS (le nom du dossier `dlc` ou `updates` peut être n'importe où dans le chemin) :
+
+```
+packages/ps5/dlc/PPSA01342/EP0000-PPSA01342_00-DLC1.pkg
+packages/ps5/dlc/PPSA01342/EP0000-PPSA01342_00-DLC2.pkg
+packages/ps5/updates/PPSA01342/Mon jeu PPSA01342 v1.05.pkg
+```
+
+- Chaque `.pkg` devient une fiche d'index avec `"tagline": "DLC"` (ou `"UPDATES"`), `gameId` `PPSA01342-DLC` (ou `-UPDATES`) et un `id` du type `ppsa01342-dlc-ab12cd` (ou `-upd-`). Le titre, le genre, l'éditeur… sont repris du jeu lui-même s'il est dans le même index ; l'icône et le fond sont ceux du jeu (`covers/PPSA01342_icon0…`).
+- Ces fiches n'apparaissent **pas** dans Découvrir ni Parcourir : seulement dans leur onglet, une carte par jeu.
+- Un clic sur la carte : si le jeu a plusieurs fichiers, le bouton principal devient **Choisir un DLC** (ou **Choisir une mise à jour**). La liste montre le nom de chaque fichier ; **Tout installer (N)** les ajoute tous à la file de téléchargements (ceux déjà en file sont ignorés).
+- Le nom de fichier d'un `.pkg` ne doit contenir aucun autre identifiant PPSA/CUSA que celui du dossier, et rester sous 160 caractères.

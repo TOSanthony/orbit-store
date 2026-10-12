@@ -356,6 +356,16 @@ TvAppStatus parse_tv_app(const json::Value &value);
 
 // ---- storefront rules ----
 
+// A game's tagline doubles as its menu: "DLC" and "UPDATES" packs (the NAS folders dlc/ and
+// updates/) have their own tabs and stay out of Discover and Browse (src/categories.ts).
+enum class Category : std::uint8_t
+{
+    game,
+    dlc,
+    updates,
+};
+Category game_category(const Game &game);
+
 // Groups options by gameId in catalogue order (src/catalog.ts).
 std::vector<Game> group_games(const std::vector<Release> &releases);
 
@@ -399,6 +409,7 @@ struct BrowseFilters
     SizeFilter size = SizeFilter::any;
     bool favourites = false;
     Sort sort = Sort::release;
+    Category category = Category::game; // which menu: games, DLC or updates
 
     // Source, format, region, size and sort are at their defaults (Reset filters).
     bool narrowed() const

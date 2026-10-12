@@ -15,6 +15,7 @@ import {
 } from "./types";
 import { downloadSpacePlan, releaseState } from "./collection";
 import { gamePlatform } from "./platform";
+import { gameCategory } from "./categories";
 import type { BrowserSelection } from "./browserHandoff";
 import { formatDate, genreName, placeName, t } from "./i18n";
 import { rich } from "./Rich";
@@ -126,6 +127,30 @@ export function Details({
     try {
       if (!drive) return;
       await download(release.id, drive.id, delivery);
+      openQueue();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPending(false);
+    }
+  }
+  // DLC and update packs: one card per game, one file per pack.
+  const kind = gameCategory(game);
+  const choosing = kind !== "game" && game.releases.length > 1 && !!system?.paired;
+  async function installAll() {
+    if (!drive) return;
+    setPending(true);
+    setError("");
+    try {
+      for (const option of game.releases) {
+        const taken = jobs.some(
+          (job) =>
+            job.releaseId === option.id &&
+            job.storageId === drive.id &&
+            !["error", "cancelled"].includes(job.status),
+        );
+        if (!taken) await download(option.id, drive.id, "direct");
+      }
       openQueue();
     } catch (e) {
       setError((e as Error).message);
@@ -402,13 +427,19 @@ export function Details({
               className="primary hub-primary"
               data-long-label={actionLabel.length > 34 || undefined}
               disabled={pending}
-              onClick={() => primaryAction(true)}
+              onClick={() => (choosing ? setSheet("source") : primaryAction(true))}
               aria-haspopup={
-                showDownload && system?.paired ? "dialog" : undefined
+                choosing || (showDownload && system?.paired) ? "dialog" : undefined
               }
             >
               <Icon name="download" />
-              <span>{actionLabel}</span>
+              <span>
+                {choosing
+                  ? kind === "dlc"
+                    ? t("Choose a DLC")
+                    : t("Choose an update")
+                  : actionLabel}
+              </span>
             </button>
             <button
               className="hub-round"
@@ -554,6 +585,30 @@ export function Details({
                     ? t("Choose a source and format for this game.")
                     : t("Available from your enabled sources.")}
                 </p>
+                {choosing && drive && (
+                  <button
+                    className="sheet-choice release-option install-all"
+                    data-initial-focus
+                    disabled={pending || browser?.active}
+                    onClick={() => void installAll()}
+                  >
+                    <span className="sheet-choice-check">
+                      <Icon name="download" />
+                    </span>
+                    <span>
+                      <strong>
+                        {t("Install all ({count})", {
+                          count: game.releases.length,
+                        })}
+                      </strong>
+                      <small>
+                        {bytes(
+                          game.releases.reduce((sum, r) => sum + r.sizeBytes, 0),
+                        )}
+                      </small>
+                    </span>
+                  </button>
+                )}
                 {game.releases.map((option) => {
                   const presence = releaseState(option, jobs, library);
                   return (
@@ -570,7 +625,9 @@ export function Details({
                       </span>
                       <span>
                         <strong>
-                          {option.provider} · {formatLabel(option)}
+                          {kind !== "game" && option.filename
+                            ? option.filename
+                            : `${option.provider} · ${formatLabel(option)}`}
                         </strong>
                         <small>
                           {option.titleId}

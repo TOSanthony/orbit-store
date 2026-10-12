@@ -79,9 +79,11 @@ namespace tab
 {
 constexpr int discover = 0;
 constexpr int browse = 1;
-constexpr int library = 2;
-constexpr int downloads = 3;
-constexpr int count = 4;
+constexpr int dlc = 2;     // DLC packs, one card per game
+constexpr int updates = 3; // update packs
+constexpr int library = 4;
+constexpr int downloads = 5;
+constexpr int count = 6;
 } // namespace tab
 
 struct Intent
@@ -230,7 +232,8 @@ class DiscoverScreen final : public Screen
 class BrowseScreen final : public Screen
 {
   public:
-    explicit BrowseScreen(Context &context);
+    // The same grid serves Browse (games), DLC and Updates (packs); see Category.
+    explicit BrowseScreen(Context &context, Category category = Category::game);
     void focus() override;
     Intent update(const InputFrame &input, float dt, Feedback &feedback, bool focused) override;
     void draw(Frame &frame, bool focused) const override;
@@ -268,6 +271,7 @@ class BrowseScreen final : public Screen
 
     Area area_ = Area::field;
     int column_ = 0; // within the collection chips or the filters row
+    Category category_ = Category::game;
     BrowseFilters filters_;
     std::vector<int> results_;
     std::uint64_t catalog_serial_ = ~0ull;
@@ -449,7 +453,7 @@ class GamePage final : public Screen
   private:
     enum class Sheet : std::uint8_t { none, downloads, source, delivery, storage, about };
     enum class Slot : std::uint8_t { primary, favourite, about, source, delivery, drive,
-                                     choice, again, related, reading, back, close };
+                                     choice, again, related, reading, back, close, install_all };
     struct Control
     {
         Slot slot;
@@ -474,7 +478,10 @@ class GamePage final : public Screen
     bool primary_enabled(const Release &release, const Offer &offer) const;
     Layout compose(hui::gfx::DrawList *list, Sheet sheet, bool focused) const;
     void show_sheet(Sheet sheet, Slot preferred = Slot::primary, int index = 0);
-    void back_sheet();
+    // chosen: a release was just picked in the list; Back from a pack's list returns to the page.
+    void back_sheet(bool chosen = false);
+    // DLC and update packs with several files: the main button opens their list.
+    bool choosing(const Game &game) const;
     Intent activate(const Control &control, const Game &game, const Release &release,
                     const Offer &offer, Feedback &feedback);
     const Drive *drive() const;
@@ -654,6 +661,8 @@ class App
     Context &ctx_;
     DiscoverScreen discover_;
     BrowseScreen browse_;
+    BrowseScreen dlc_;
+    BrowseScreen updates_;
     LibraryScreen library_;
     DownloadsScreen downloads_;
     GamePage game_;

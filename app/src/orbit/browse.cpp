@@ -58,8 +58,9 @@ float chip_width(const ui::Type &type, int chip)
 
 } // namespace
 
-BrowseScreen::BrowseScreen(Context &context) : Screen(context)
+BrowseScreen::BrowseScreen(Context &context, Category category) : Screen(context), category_(category)
 {
+    filters_.category = category;
     keyboard_.style.theme = keyboard_theme();
     keyboard_.style.bindings = hui::ui::KeyboardBindings::standard();
     keyboard_.style.max_length = 40;
@@ -361,6 +362,7 @@ Intent BrowseScreen::update(const InputFrame &input, float dt, Feedback &feedbac
                 else if (column_ >= kFilterControls - 1)
                 {
                     filters_ = BrowseFilters{};
+                    filters_.category = category_;
                     index_ = 0;
                     refilter();
                     feedback.play(hui::audio::Cue::toggle);
@@ -492,7 +494,11 @@ void BrowseScreen::draw(Frame &frame, bool focused) const
     list.push_transform(1.0f, 0.0f, 0.0f, 0.0f, -scroll);
 
     // .page-heading: the title and how many games match.
-    const float title = ui::text(list, type.semibold, tr("Browse"), ui::kGutter, kTitleBaseline, 60.0f,
+    const float title = ui::text(list, type.semibold,
+                                     category_ == Category::dlc       ? tr("DLC")
+                                     : category_ == Category::updates ? tr("Updates")
+                                                                      : tr("Browse"),
+                                     ui::kGutter, kTitleBaseline, 60.0f,
                                  ui::color::text);
     const std::string count =
         trn(static_cast<long>(results_.size()), "{count} game", "{count} games");

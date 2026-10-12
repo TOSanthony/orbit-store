@@ -1,5 +1,9 @@
 {
   "(version unknown)": "(version unknown)",
+  "Choose a DLC": "Choose a DLC",
+  "Choose an update": "Choose an update",
+  "DLC": "DLC",
+  "Install all ({count})": "Install all ({count})",
   "{count} active": {
     "one": "{count} active",
     "other": "{count} active"

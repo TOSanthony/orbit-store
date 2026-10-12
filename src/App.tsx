@@ -20,6 +20,7 @@ import { ArchiveSetting } from "./ArchiveSetting";
 import { Sources } from "./Sources";
 import { Pairing } from "./Pairing";
 import type { Game, LibraryTarget } from "./types";
+import { gameCategory } from "./categories";
 import { browseGames, newlyAddedGames, defaultFilters, CATALOG_PAGE_SIZE, type BrowseFilters } from "./browse";
 import {
   parseBrowserHandoff,
@@ -52,7 +53,7 @@ export default function App() {
     };
   }, [handoffHash, orbit.refresh]);
   const [tab, setTab] = useState<
-      "Discover" | "Browse" | "Library" | "Downloads"
+      "Discover" | "Browse" | "DLC" | "Updates" | "Library" | "Downloads"
     >("Discover"),
     [gameId, setGameId] = useState<string | null>(() =>
       new URLSearchParams(window.location.search).get("game"),
@@ -191,9 +192,23 @@ export default function App() {
   const consoleBrowser =
     orbit.system?.platform === "ps5" && !!orbit.system.localSessionAvailable;
   useController(back, consoleBrowser);
+  // DLC and update packs live in their own tabs, never among the games.
+  const storeGames = useMemo(
+    () => orbit.games.filter((g) => gameCategory(g) === "game"),
+    [orbit.games],
+  );
+  const listGames = useMemo(
+    () =>
+      tab === "DLC" || tab === "Updates"
+        ? orbit.games.filter(
+            (g) => gameCategory(g) === (tab === "DLC" ? "dlc" : "updates"),
+          )
+        : storeGames,
+    [orbit.games, storeGames, tab],
+  );
   const filtered = useMemo(
-    () => browseGames(orbit.games, filters, favorites),
-    [orbit.games, filters, favorites],
+    () => browseGames(listGames, filters, favorites),
+    [listGames, filters, favorites],
   );
   const pageCount = Math.max(1, Math.ceil(filtered.length / CATALOG_PAGE_SIZE));
   const currentPage = Math.min(pageIndex, pageCount - 1);
@@ -201,11 +216,11 @@ export default function App() {
   const discoverGames = useMemo(
     () =>
       browseGames(
-        orbit.games,
+        storeGames,
         { ...defaultFilters, sort: "size-desc" },
         new Set(),
       ),
-    [orbit.games],
+    [storeGames],
   );
   const discoverPageCount = Math.max(1, Math.ceil(discoverGames.length / CATALOG_PAGE_SIZE));
   const discoverPage = Math.min(discoverPageIndex, discoverPageCount - 1);
@@ -215,7 +230,7 @@ export default function App() {
   );
   const latestGames = useMemo(
     () =>
-      orbit.games
+      storeGames
         .filter(
           (g) =>
             g.releaseDate &&
@@ -227,18 +242,18 @@ export default function App() {
             a.title.localeCompare(b.title),
         )
         .slice(0, 20),
-    [orbit.games],
+    [storeGames],
   );
-  const newlyAdded = useMemo(() => newlyAddedGames(orbit.games), [orbit.games]);
+  const newlyAdded = useMemo(() => newlyAddedGames(storeGames), [storeGames]);
   const active = orbit.jobs.filter((j) =>
     ["queued", "downloading", "retrying", "verifying", "inspecting", "extracting"].includes(j.status),
   ).length;
   // Start with the first rail so the hero and highlighted tile agree.
   const focused =
-    orbit.games.find((g) => g.id === focusedId) ||
+    storeGames.find((g) => g.id === focusedId) ||
     newlyAdded[0] ||
     latestGames[0] ||
-    orbit.games[0];
+    storeGames[0];
   const firstCovers = window.innerWidth < 700 ? 3 : 6;
   const discover = tab === "Discover" && !game;
   useEffect(() => {
@@ -297,7 +312,7 @@ export default function App() {
     setTab(next);
     setDownloadTarget(null);
     setLibraryTarget(null);
-    if (next === "Browse")
+    if (next === "Browse" || next === "DLC" || next === "Updates")
       requestAnimationFrame(() => {
         const first = document.querySelector<HTMLElement>(
           ".browse-grid .game-tile",
@@ -323,7 +338,7 @@ export default function App() {
   }
   return (
     <div
-      className={`app screen-${game ? "details" : tab.toLowerCase()} ${discover ? "discover" : ""} ${consoleBrowser ? "console-browser" : ""}`}
+      className={`app screen-${game ? "details" : tab === "DLC" || tab === "Updates" ? "browse" : tab.toLowerCase()} ${discover ? "discover" : ""} ${consoleBrowser ? "console-browser" : ""}`}
       data-game={game?.id}
     >
       <Backdrop
@@ -357,7 +372,16 @@ export default function App() {
         {!game && (
           <>
             <nav className="main-nav" aria-label={t("Main navigation")}>
-              {(["Discover", "Browse", "Library", "Downloads"] as const).map(
+              {(
+                [
+                  "Discover",
+                  "Browse",
+                  "DLC",
+                  "Updates",
+                  "Library",
+                  "Downloads",
+                ] as const
+              ).map(
                 (name) => (
                   <button
                     key={name}
@@ -665,10 +689,10 @@ export default function App() {
               )}
             </div>
           )
-        ) : tab === "Browse" ? (
+        ) : tab === "Browse" || tab === "DLC" || tab === "Updates" ? (
           <section className="page browse">
             <div className="page-heading">
-              <h1>{t("Browse")}</h1>
+              <h1>{t(tab)}</h1>
               <span>
                 {tn(filtered.length, "{count} game", "{count} games")}
               </span>
@@ -749,7 +773,7 @@ export default function App() {
                     { value: "", label: t("All sources") },
                     ...Array.from(
                       new Map(
-                        orbit.games.flatMap((g) =>
+                        listGames.flatMap((g) =>
                           g.releases.map(
                             (r) => [r.sourceId, r.provider] as const,
                           ),
@@ -766,7 +790,7 @@ export default function App() {
                     { value: "", label: t("All formats") },
                     ...Array.from(
                       new Set(
-                        orbit.games.flatMap((g) =>
+                        listGames.flatMap((g) =>
                           g.releases.flatMap((r) => [r.format !== "Unknown" ? r.format : "", r.compression ? (r.compression === "7z" ? "7z" : r.compression.toUpperCase()) : ""].filter(Boolean)),
                         ),
                       ),
@@ -940,7 +964,7 @@ export default function App() {
             <b>×</b>
             {!game && tab !== "Downloads" ? t("Open game") : t("Select")}
           </span>
-          {!game && tab === "Browse" && (
+          {!game && (tab === "Browse" || tab === "DLC" || tab === "Updates") && (
             <button onClick={showSearch}>
               <b>△</b>
               {t("Search")}
