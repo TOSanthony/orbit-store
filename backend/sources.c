@@ -10,6 +10,7 @@ unsigned source_flag(const char *id) {
         return ORBIT_SOURCE_VIKINGFILE;
     if (!strcmp(id, "akirabox")) return ORBIT_SOURCE_AKIRABOX;
     if (!strcmp(id, "datanodes")) return ORBIT_SOURCE_DATANODES;
+    if (!strcmp(id, "nas")) return ORBIT_SOURCE_NAS;
     return 0;
 }
 
@@ -28,7 +29,8 @@ cJSON *sources_json_locked(void) {
         const char *id, *label;
         bool ready;
     } providers[] = {{"vikingfile", "Vikingfile", true}, {"archive", "Archive.org", true},
-                     {"akirabox", "AkiraBox", true}, {"datanodes", "DataNodes", true}};
+                     {"akirabox", "AkiraBox", true}, {"datanodes", "DataNodes", true},
+                  {"nas", "My NAS", true}};
     cJSON *o = cJSON_CreateObject(), *enabled = cJSON_AddArrayToObject(o, "enabled"),
           *options = cJSON_AddArrayToObject(o, "options");
     bool acknowledged = orbit.sources.notice_version == ORBIT_SOURCE_NOTICE_VERSION &&
@@ -42,6 +44,8 @@ cJSON *sources_json_locked(void) {
         for (size_t j = 0; j < orbit.release_count; j++)
             if (!strcmp(orbit.releases[j].source, providers[i].id))
                 count++;
+        if (!strcmp(providers[i].id, "nas"))
+            count = (unsigned)nas_count_locked();
         cJSON *p = cJSON_CreateObject();
         cJSON_AddStringToObject(p, "id", providers[i].id);
         cJSON_AddStringToObject(p, "label", providers[i].label);
@@ -49,12 +53,13 @@ cJSON *sources_json_locked(void) {
         cJSON_AddBoolToObject(p, "downloadReady", providers[i].ready);
         cJSON_AddItemToArray(options, p);
     }
+    nas_status_locked(o);
     return o;
 }
 
 int sources_set_locked(const cJSON *input, char *err, size_t cap) {
     const cJSON *enabled = cJSON_GetObjectItemCaseSensitive(input, "enabled"), *x;
-    if (!cJSON_IsArray(enabled) || cJSON_GetArraySize(enabled) > 4) {
+    if (!cJSON_IsArray(enabled) || cJSON_GetArraySize(enabled) > 5) {
         copy_text(err, cap, "Select the sources you want to enable.");
         return 400;
     }
@@ -74,6 +79,21 @@ int sources_set_locked(const cJSON *input, char *err, size_t cap) {
                   "Read and acknowledge the current download notice before saving sources.");
         return 400;
     }
+    /* An absent address keeps the saved one; an empty string clears it. */
+    char nas_url[ORBIT_NAS_URL_MAX];
+    copy_text(nas_url, sizeof nas_url, orbit.sources.nas_url);
+    const cJSON *address = cJSON_GetObjectItemCaseSensitive(input, "nasUrl");
+    if (address) {
+        if (!cJSON_IsString(address) || (*address->valuestring && !nas_url_valid(address->valuestring))) {
+            copy_text(err, cap, "Enter the full https address of your NAS index file.");
+            return 400;
+        }
+        copy_text(nas_url, sizeof nas_url, address->valuestring);
+    }
+    if ((flags & ORBIT_SOURCE_NAS) && !*nas_url) {
+        copy_text(err, cap, "Enter the address of your NAS index before enabling it.");
+        return 400;
+    }
     /* Settings and queued-job pauses are committed together. A failed write changes neither. */
     SourceSettings old = orbit.sources;
     Job *previous = orbit.job_count ? malloc(orbit.job_count * sizeof(Job)) : NULL;
@@ -84,6 +104,7 @@ int sources_set_locked(const cJSON *input, char *err, size_t cap) {
     if (previous)
         memcpy(previous, orbit.jobs, orbit.job_count * sizeof(Job));
     orbit.sources.enabled = flags;
+    copy_text(orbit.sources.nas_url, sizeof orbit.sources.nas_url, nas_url);
     orbit.sources.notice_version = ORBIT_SOURCE_NOTICE_VERSION;
     if (old.notice_version != ORBIT_SOURCE_NOTICE_VERSION || old.acknowledged_at <= 0)
         orbit.sources.acknowledged_at = time(NULL);
@@ -121,6 +142,8 @@ int sources_set_locked(const cJSON *input, char *err, size_t cap) {
         if (!source_enabled_locked(&j->release) && job_active(j)) j->pause = true;
     }
     free(previous);
+    nas_origin_set(orbit.sources.nas_url);
+    nas_changed_locked();
     browser_source_changed_locked();
     pthread_cond_signal(&orbit.changed);
     return 200;

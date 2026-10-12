@@ -7,7 +7,7 @@ bool provider_browser_source(const char *source) {
                       !strcmp(source, "datanodes"));
 }
 static bool browser_file(const Release *r) {
-    if (!provider_browser_source(r->source) || strlen(r->title_id) != 9 ||
+    if ((!provider_browser_source(r->source) && !provider_nas_source(r->source)) || strlen(r->title_id) != 9 ||
         (strncmp(r->title_id, "PPSA", 4) && strncmp(r->title_id, "CUSA", 4)) || !r->filename[0] ||
         strchr(r->filename, '/') || strchr(r->filename, '\\') || strstr(r->filename, ".."))
         return false;
@@ -149,6 +149,8 @@ bool provider_url_supported(const Release *release) {
     /* Only exact filename-bound direct routes may enter the download queue.
      * Landing pages are a separate browser capability, never a transfer URL. */
     if (!browser_file(release)) return false;
+    /* The person's own server: any file address on the one origin they saved. */
+    if (provider_nas_source(release->source)) return nas_url_allowed(release->url);
     if (strcmp(release->source, "vikingfile")) return generated_route(release, release->url);
     const char *prefix = "https://vikingfile.com/d/";
     if (strncmp(release->url, prefix, strlen(prefix)))

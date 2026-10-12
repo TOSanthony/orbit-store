@@ -307,7 +307,10 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
     if (get && !strcmp(url, "/api/v1/catalog")) {
         cJSON *a = cJSON_CreateArray(), *x;
         pthread_mutex_lock(&orbit.mutex);
-        cJSON_ArrayForEach(x, orbit.catalog) {
+        /* The signed catalogue first, then the person's own NAS files. */
+        const cJSON *lists[2] = {orbit.catalog, orbit.nas_catalog};
+        for (size_t list = 0; list < 2; list++)
+        cJSON_ArrayForEach(x, lists[list]) {
             if (!source_enabled_locked(release_find(json_text(x, "id"))))
                 continue;
             cJSON *entry = cJSON_Duplicate(x, true);

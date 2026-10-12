@@ -165,8 +165,17 @@ export function useOrbit() {
     await polling.current;
     await refresh();
   };
-  const saveSources = async (enabled: SourceId[], noticeVersion: number) => {
-    await api("/sources", { enabled, acknowledged: true, noticeVersion });
+  const saveSources = async (
+    enabled: SourceId[],
+    noticeVersion: number,
+    nasUrl?: string,
+  ) => {
+    await api("/sources", {
+      enabled,
+      acknowledged: true,
+      noticeVersion,
+      ...(nasUrl === undefined ? {} : { nasUrl }),
+    });
     await polling.current;
     catalogKey.current = "";
     await refresh();

@@ -13,11 +13,16 @@ export function Sources({
   settings: SourceSettings;
   paired: boolean;
   pair: () => void;
-  save: (enabled: SourceId[], noticeVersion: number) => Promise<void>;
+  save: (
+    enabled: SourceId[],
+    noticeVersion: number,
+    nasUrl?: string,
+  ) => Promise<void>;
   saved?: () => void;
 }) {
   const [selected, setSelected] = useState<SourceId[]>(settings.enabled),
     [acknowledged, setAcknowledged] = useState(settings.acknowledged),
+    [nasUrl, setNasUrl] = useState(""),
     [pending, setPending] = useState(false),
     [error, setError] = useState("");
   const form = useRef<HTMLFormElement>(null);
@@ -28,7 +33,7 @@ export function Sources({
     setPending(true);
     setError("");
     try {
-      await save(selected, settings.noticeVersion);
+      await save(selected, settings.noticeVersion, nasUrl.trim() || undefined);
       saved?.();
     } catch (e) {
       setError((e as Error).message);
@@ -88,6 +93,33 @@ export function Sources({
           );
         })}
       </div>
+      {selected.includes("nas") && (
+        <div className="nas-settings">
+          <label htmlFor="nas-url">{t("My NAS index address")}</label>
+          <input
+            id="nas-url"
+            type="url"
+            inputMode="url"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="https://nas.example.com/orbit-secret/index.json"
+            value={nasUrl}
+            disabled={pending}
+            onChange={(e) => setNasUrl(e.target.value)}
+          />
+          <p className="fine">
+            {settings.nasConfigured
+              ? settings.nasError
+                ? `${settings.nasHost}: ${settings.nasError}`
+                : t("{host}: {count} games found.")
+                    .replace("{host}", settings.nasHost ?? "")
+                    .replace("{count}", String(settings.nasCount ?? 0))
+              : t("Enter the https address of the index.json on your NAS.")}
+            {settings.nasConfigured &&
+              ` ${t("Leave the field empty to keep the saved address.")}`}
+          </p>
+        </div>
+      )}
       <div className="source-notice">
         <h2>{t("Before you download")}</h2>
         <p>

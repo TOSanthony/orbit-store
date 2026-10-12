@@ -52,11 +52,17 @@ export interface Game {
   newOnOrbitRank?: number | null;
   releases: Release[];
 }
-export type SourceId = "vikingfile" | "archive" | "akirabox" | "datanodes";
+export type SourceId = "vikingfile" | "archive" | "akirabox" | "datanodes" | "nas";
 export interface SourceSettings {
   enabled: SourceId[];
   acknowledged: boolean;
   noticeVersion: number;
+  nasConfigured?: boolean;
+  nasHost?: string;
+  nasCount?: number;
+  nasCheckedAt?: number;
+  nasBusy?: boolean;
+  nasError?: string;
   options: {
     id: SourceId;
     label: string;

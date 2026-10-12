@@ -307,6 +307,9 @@ int main(int argc, char **argv) {
     diagnostics_stage("catalogue", startup_result ? "error" : "ok", startup_result);
     if (startup_result)
         puts("Catalogue refresh could not start; the saved catalogue remains available.");
+    startup_result = nas_start();
+    if (startup_result)
+        puts("NAS source worker could not start; the other sources remain available.");
     diagnostics_stage("updates", "started", 0);
     startup_result = updates_start();
     diagnostics_stage("updates", startup_result ? "error" : "ok", startup_result);
@@ -364,11 +367,13 @@ int main(int argc, char **argv) {
     browser_stop();
     library_stop();
     updates_stop();
+    nas_stop();
     catalog_stop();
     for (unsigned i = 0; i < orbit.worker_count; i++) pthread_join(orbit.workers[i], NULL);
     api_stop();
     curl_global_cleanup();
     cJSON_Delete(orbit.catalog);
+    cJSON_Delete(orbit.nas_catalog);
     diagnostics_stage("shutdown", "ok", 0);
     close(lock);
     close(orbit.state_fd);

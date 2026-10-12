@@ -1116,6 +1116,24 @@ html.pointer .source-acknowledgement:hover {
   height: 1rem;
   stroke-width: 2.4;
 }
+.nas-settings {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 1.4rem;
+}
+.nas-settings label {
+  font-size: 0.9rem;
+  color: var(--text-2);
+}
+.nas-settings input {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
 .source-notice {
   margin: 1.8rem 0 1rem;
   padding-top: 1.4rem;

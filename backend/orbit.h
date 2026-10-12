@@ -27,10 +27,14 @@
 #define ORBIT_SOURCE_VIKINGFILE 2U
 #define ORBIT_SOURCE_AKIRABOX 4U
 #define ORBIT_SOURCE_DATANODES 8U
-#define ORBIT_SOURCE_ALL (ORBIT_SOURCE_ARCHIVE | ORBIT_SOURCE_VIKINGFILE | ORBIT_SOURCE_AKIRABOX | ORBIT_SOURCE_DATANODES)
+#define ORBIT_SOURCE_NAS 16U
+#define ORBIT_SOURCE_ALL (ORBIT_SOURCE_ARCHIVE | ORBIT_SOURCE_VIKINGFILE | ORBIT_SOURCE_AKIRABOX | ORBIT_SOURCE_DATANODES | ORBIT_SOURCE_NAS)
+#define ORBIT_NAS_MAX 512
+#define ORBIT_NAS_URL_MAX 1024
 typedef struct {
     unsigned enabled, notice_version;
     time_t acknowledged_at;
+    char nas_url[ORBIT_NAS_URL_MAX]; /* HTTPS address of the person's own game index; empty when unset. */
 } SourceSettings;
 typedef struct {
     char id[24], title[128], title_id[16], format[12], filename[160], url[2048], sha256[65];
@@ -88,6 +92,10 @@ typedef struct {
     Release releases[ORBIT_MAX_RELEASES + 1]; /* Includes the connection diagnostic. */
     size_t release_count;
     cJSON *catalog;
+    /* The person's own NAS files. Kept apart from the signed catalogue so its revision checks are untouched. */
+    Release nas_releases[ORBIT_NAS_MAX];
+    size_t nas_count;
+    cJSON *nas_catalog;
     unsigned catalog_revision;
     SourceSettings sources;
     Job jobs[ORBIT_MAX_JOBS];
@@ -143,6 +151,16 @@ bool provider_url_supported(const Release *release);
 bool provider_browser_supported(const Release *release);
 bool provider_capture_url(const Release *release, const char *candidate);
 bool provider_browser_source(const char *source);
+bool provider_nas_source(const char *source);
+/* NAS source (nas.c). nas_url_allowed accepts only the origin of the configured index. */
+bool nas_url_valid(const char *url);
+bool nas_url_allowed(const char *url);
+void nas_origin_set(const char *index_url);
+void nas_changed_locked(void);
+void nas_status_locked(cJSON *out);
+size_t nas_count_locked(void);
+int nas_start(void);
+void nas_stop(void);
 int browser_start(void);
 void browser_stop(void);
 void browser_source_changed_locked(void);

@@ -45,6 +45,9 @@ Release *release_find(const char *id) {
     for (size_t i = 0; i < orbit.release_count; i++)
         if (!strcmp(orbit.releases[i].id, id))
             return &orbit.releases[i];
+    for (size_t i = 0; i < orbit.nas_count; i++)
+        if (!strcmp(orbit.nas_releases[i].id, id))
+            return &orbit.nas_releases[i];
     return NULL;
 }
 Job *job_find(const char *id) {
@@ -166,6 +169,7 @@ int state_save_locked(void) {
     cJSON_AddNumberToObject(sources, "enabled", orbit.sources.enabled);
     cJSON_AddNumberToObject(sources, "noticeVersion", orbit.sources.notice_version);
     cJSON_AddNumberToObject(sources, "acknowledgedAt", (double)orbit.sources.acknowledged_at);
+    cJSON_AddStringToObject(sources, "nasUrl", orbit.sources.nas_url);
     for (size_t i = 0; i < orbit.job_count; i++)
         if (orbit.jobs[i].id[0])
             cJSON_AddItemToArray(a, job_json(&orbit.jobs[i], true));
@@ -281,6 +285,9 @@ int state_load(void) {
         orbit.sources.enabled = (unsigned)json_int(sources, "enabled");
         orbit.sources.notice_version = ORBIT_SOURCE_NOTICE_VERSION;
         orbit.sources.acknowledged_at = (time_t)json_int(sources, "acknowledgedAt");
+        if (nas_url_valid(json_text(sources, "nasUrl")))
+            copy_text(orbit.sources.nas_url, sizeof orbit.sources.nas_url, json_text(sources, "nasUrl"));
+        nas_origin_set(orbit.sources.nas_url);
     }
     cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(o, "tokens")) {
         if (cJSON_IsString(x) && strlen(x->valuestring) == 64 && orbit.token_count < 16)

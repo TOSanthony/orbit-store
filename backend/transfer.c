@@ -55,9 +55,14 @@ typedef struct Transfer {
 #endif
 } Transfer;
 static bool torbox(const Transfer *t) { return !strcmp(t->job->delivery, "torbox"); }
-static bool guarded(const Transfer *t) { return torbox(t) || provider_browser_source(t->release->source); }
+static bool guarded(const Transfer *t) {
+    return torbox(t) || provider_browser_source(t->release->source) || provider_nas_source(t->release->source);
+}
 static bool address_allowed(const Transfer *t, const char *url) {
-    return torbox(t) ? debrid_transfer_url_allowed(url) : provider_transfer_url_allowed(url);
+    if (torbox(t)) return debrid_transfer_url_allowed(url);
+    /* A NAS file never leaves the origin the person saved, redirects included. */
+    if (provider_nas_source(t->release->source)) return nas_url_allowed(url);
+    return provider_transfer_url_allowed(url);
 }
 static double seconds(void) {
     struct timespec t;
