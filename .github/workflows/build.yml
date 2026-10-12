@@ -1,14 +1,27 @@
 name: Build Orbit Store
 
+# Every push to nas-source (or a manual run) builds the payload and the TV app, numbers them
+# 1.2.<run> / 1.5.<run>, publishes a GitHub release v1.2.<run> with both files, and updates the
+# feeds (branch "updates") that the in-app "Update" buttons read. Settings -> update then offers it.
 on:
   workflow_dispatch:
     inputs:
-      build_tv_app:
-        description: "Build the native TV app (PPSA99177.ffpkg) as well"
+      publish:
+        description: "Publish a release and the update feeds"
         type: boolean
-        default: false
+        default: true
   push:
-    tags: ["v*"]
+    branches: [nas-source]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: orbit-build
+  cancel-in-progress: false
+
+env:
+  UPDATE_BRANCH: updates
 
 jobs:
   build:
@@ -16,6 +29,17 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
+
+      - name: Number this build
+        run: |
+          RUN=${{ github.run_number }}
+          if [ "$RUN" -gt 999 ]; then echo "run number $RUN is too large for the TV app version"; exit 1; fi
+          echo "ORBIT_V=1.2.$RUN" >> "$GITHUB_ENV"
+          echo "TV_V=1.5.$RUN" >> "$GITHUB_ENV"
+          sed -i "s/#define ORBIT_VERSION \".*\"/#define ORBIT_VERSION \"1.2.$RUN\"/" backend/orbit.h
+          sed -i "s/\"contentVersion\": \"[0-9.]*\"/\"contentVersion\": \"01.005.$(printf '%03d' "$RUN")\"/" app/sce_sys/param.json
+          grep -n "define ORBIT_VERSION" backend/orbit.h
+          grep -n contentVersion app/sce_sys/param.json
 
       - uses: actions/setup-node@v4
         with:
@@ -52,12 +76,13 @@ jobs:
 
       - name: Build payload
         run: |
-          docker run --rm --cpus 2 --memory 6g -v "$PWD:/work" orbit-build:0.1 payload
+          docker run --rm --cpus 2 --memory 6g -v "$PWD:/work" \
+            -e ORBIT_UPDATE_REPO=${{ github.repository }} -e ORBIT_UPDATE_BRANCH=${{ env.UPDATE_BRANCH }} \
+            orbit-build:0.1 payload
           sudo chown -R "$USER":"$USER" build .deps || true
           sha256sum build/orbit_store.elf | tee build/orbit_store.elf.sha256
 
       - name: Build TV app
-        if: ${{ inputs.build_tv_app }}
         run: |
           docker build -t orbit-app-build:0.1 app
           docker run --rm --cpus 2 --memory 6g -v "$PWD:/work" -w /work/app \
@@ -76,3 +101,31 @@ jobs:
             build/orbit_store.elf.sha256
             app/dist/PPSA99177.ffpkg
             app/dist/PPSA99177.ffpkg.sha256
+
+      - name: Publish release and update feeds
+        if: ${{ github.event_name == 'push' || inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp build/orbit_store.elf build/orbit_store.elf.sha256 app/dist/PPSA99177.ffpkg app/dist/PPSA99177.ffpkg.sha256 release/
+          # The assets first: the feeds must only point at files that are live.
+          gh release create "v$ORBIT_V" release/orbit_store.elf release/orbit_store.elf.sha256 \
+            release/PPSA99177.ffpkg release/PPSA99177.ffpkg.sha256 \
+            --target "$GITHUB_SHA" --title "Orbit $ORBIT_V" \
+            --notes "Orbit service $ORBIT_V and TV app $TV_V, built from commit $GITHUB_SHA. The source for these binaries is this tag's source archive (GPL-3.0-or-later)."
+          python3 tools/make-update-feeds.py --repo "$GITHUB_REPOSITORY" --version "$ORBIT_V" --tv-version "$TV_V" \
+            --elf release/orbit_store.elf --ffpkg release/PPSA99177.ffpkg --out feeds-out
+          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          rm -rf feeds && if git ls-remote --exit-code --heads "$url" "$UPDATE_BRANCH" >/dev/null 2>&1; then
+            git clone --quiet --depth 1 --branch "$UPDATE_BRANCH" "$url" feeds
+          else
+            git init --quiet -b "$UPDATE_BRANCH" feeds && git -C feeds remote add origin "$url"
+          fi
+          cp feeds-out/payloads.json feeds-out/tv-app.json feeds/
+          git -C feeds config user.name "github-actions[bot]"
+          git -C feeds config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C feeds add -A
+          git -C feeds commit --quiet -m "Orbit $ORBIT_V (TV app $TV_V)"
+          git -C feeds push --quiet origin "$UPDATE_BRANCH"

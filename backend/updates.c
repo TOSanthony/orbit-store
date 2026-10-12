@@ -9,8 +9,17 @@
 #include <strings.h>
 #include <time.h>
 
-#define FEED "https://raw.githubusercontent.com/saawant12/orbit-store-ps5/main/payloads.json"
-#define RELEASE_BASE "https://github.com/saawant12/orbit-store-ps5/releases/download/"
+/* Where updates come from: the project's own releases by default. A fork builds with
+ * -DORBIT_UPDATE_REPO='"owner/repo"' (and optionally -DORBIT_UPDATE_BRANCH='"branch"', the
+ * branch holding payloads.json) to update from its own GitHub releases instead. */
+#ifndef ORBIT_UPDATE_REPO
+#define ORBIT_UPDATE_REPO "saawant12/orbit-store-ps5"
+#endif
+#ifndef ORBIT_UPDATE_BRANCH
+#define ORBIT_UPDATE_BRANCH "main"
+#endif
+#define FEED "https://raw.githubusercontent.com/" ORBIT_UPDATE_REPO "/" ORBIT_UPDATE_BRANCH "/payloads.json"
+#define RELEASE_BASE "https://github.com/" ORBIT_UPDATE_REPO "/releases/download/"
 #define AUTO_CHECK_INTERVAL (6 * 60 * 60)
 #define MAX_ELF (64 * 1024 * 1024)
 static struct {

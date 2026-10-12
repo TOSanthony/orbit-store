@@ -18,8 +18,17 @@
 #include <time.h>
 #include <unistd.h>
 
-#define FEED "https://raw.githubusercontent.com/saawant12/orbit-store-ps5/main/tv-app.json"
-#define RELEASE_BASE "https://github.com/saawant12/orbit-store-ps5/releases/download/"
+/* Where updates come from: the project's own releases by default. A fork builds with
+ * -DORBIT_UPDATE_REPO='"owner/repo"' (and optionally -DORBIT_UPDATE_BRANCH='"branch"', the
+ * branch holding tv-app.json) to update from its own GitHub releases instead. */
+#ifndef ORBIT_UPDATE_REPO
+#define ORBIT_UPDATE_REPO "saawant12/orbit-store-ps5"
+#endif
+#ifndef ORBIT_UPDATE_BRANCH
+#define ORBIT_UPDATE_BRANCH "main"
+#endif
+#define FEED "https://raw.githubusercontent.com/" ORBIT_UPDATE_REPO "/" ORBIT_UPDATE_BRANCH "/tv-app.json"
+#define RELEASE_BASE "https://github.com/" ORBIT_UPDATE_REPO "/releases/download/"
 #define ASSET_HOST "https://release-assets.githubusercontent.com/"
 #define NAME "PPSA99177.ffpkg"
 #define HOMEBREW "/data/homebrew"

@@ -2,6 +2,13 @@
 SOURCES := $(wildcard backend/*.c) .deps/cjson/cJSON.c
 HEADERS := $(wildcard backend/*.h)
 CPPFLAGS := -D_FILE_OFFSET_BITS=64 -Ibackend -Ilauncher -I.deps/cjson -Ibuild/generated
+# A fork updates from its own releases: make ORBIT_UPDATE_REPO=owner/repo [ORBIT_UPDATE_BRANCH=updates]
+ifneq ($(ORBIT_UPDATE_REPO),)
+CPPFLAGS += -DORBIT_UPDATE_REPO='"$(ORBIT_UPDATE_REPO)"'
+endif
+ifneq ($(ORBIT_UPDATE_BRANCH),)
+CPPFLAGS += -DORBIT_UPDATE_BRANCH='"$(ORBIT_UPDATE_BRANCH)"'
+endif
 CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wno-misleading-indentation
 HOST_CC ?= clang-19
 PS5_PAYLOAD_SDK ?= /opt/ps5-payload-sdk
