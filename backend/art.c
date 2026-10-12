@@ -8,6 +8,7 @@
  * first request for an image answers 202; the app asks again shortly. */
 #include "ca.h"
 #include "orbit.h"
+#include "provider_network.h"
 #include <curl/curl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -76,7 +77,9 @@ static size_t urls_for(const char *game_id, bool hero, char out[2][2048]) {
     size_t count = 0;
     pthread_mutex_lock(&orbit.mutex);
     const cJSON *entry;
-    cJSON_ArrayForEach(entry, orbit.catalog) {
+    const cJSON *lists[2] = {orbit.catalog, orbit.nas_catalog};
+    for (size_t l = 0; l < 2 && !count; l++)
+    cJSON_ArrayForEach(entry, lists[l]) {
         if (strcmp(json_text(entry, "gameId"), game_id) ||
             !source_enabled_locked(release_find(json_text(entry, "id"))))
             continue;
@@ -90,7 +93,9 @@ static size_t urls_for(const char *game_id, bool hero, char out[2][2048]) {
         }
         for (size_t k = 0; k < 2; k++) {
             const char *url = keys[k] ? json_text(entry, keys[k]) : "";
-            if (!strncmp(url, "https://", 8) && strlen(url) < 2048)
+            /* My NAS artwork is only fetched from the NAS's own address. */
+            if (!strncmp(url, "https://", 8) && strlen(url) < 2048 &&
+                (l == 0 || nas_url_allowed(url)))
                 copy_text(out[count++], 2048, url);
         }
         break;
@@ -151,8 +156,15 @@ static bool fetch(const char *source, Buffer *buf, const char **mime) {
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, protocols);
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, protocols);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    /* Catalogue artwork may redirect; the user's NAS never does and never bypasses the
+     * private-address filter. */
+    bool nas = nas_url_allowed(source);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, nas ? 0L : 1L);
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 3L);
+    if (nas) {
+        curl_easy_setopt(curl, CURLOPT_PROXY, "");
+        curl_easy_setopt(curl, CURLOPT_OPENSOCKETFUNCTION, provider_open_socket);
+    }
     curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE, (curl_off_t)ART_MAX_BYTES);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 8L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 25L);
