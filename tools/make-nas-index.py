@@ -36,9 +36,12 @@ import argparse
 import hashlib
 import json
 import os
+import math
 import re
+import struct
 import sys
 import time
+import zlib
 import urllib.error
 import urllib.request
 import zipfile
@@ -134,6 +137,53 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
+def make_png(width: int, height: int, top, bottom) -> bytes:
+    """A dark gradient with Orbit's ring mark, as an RGB PNG (no imaging library needed)."""
+    radius = min(width, height) * 0.16
+    box = int(radius * 2.0)
+    cx, cy = width / 2, height / 2
+    stroke = max(2.0, radius * 0.11)
+    turn = math.radians(34)
+    cos_t, sin_t = math.cos(turn), math.sin(turn)
+    raw = bytearray()
+    for y in range(height):
+        t = y / max(1, height - 1)
+        base = [round(top[i] + (bottom[i] - top[i]) * t) for i in range(3)]
+        row = bytearray(base * width)
+        if abs(y - cy) <= box:
+            for x in range(max(0, int(cx - box)), min(width, int(cx + box))):
+                dx, dy = x - cx, y - cy
+                ring = abs(math.hypot(dx, dy) - radius) < stroke / 2
+                ex, ey = dx * cos_t - dy * sin_t, dx * sin_t + dy * cos_t       # ellipse turned by -34°
+                orbit = abs(math.sqrt((ex / (radius * 1.67)) ** 2 + (ey / (radius * 0.56)) ** 2) - 1) * radius * 0.56 < stroke / 2
+                if ring or orbit:
+                    i = x * 3
+                    for c in range(3):
+                        row[i + c] = round(row[i + c] * 0.62 + 255 * 0.38)
+        raw += b"\x00" + row
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(bytes(raw), 9)) + chunk(b"IEND", b""))
+
+
+def ensure_default_art(root: Path):
+    """Create assets/coverFallback.png and assets/heroFallback.png unless they already exist."""
+    made = []
+    for name, size in (("coverFallback.png", (512, 512)), ("heroFallback.png", (1920, 1080))):
+        target = root / "assets" / name
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            partial = target.with_name(target.name + ".part")
+            partial.write_bytes(make_png(size[0], size[1], (22, 52, 110), (8, 19, 41)))
+            partial.replace(target)
+            made.append(name)
+    return made
+
+
 def clean_text(value, limit: int) -> str:
     text = re.sub(r"[\x00-\x1f\x7f]+", " ", str(value or ""))
     return re.sub(r"\s+", " ", text).strip()[:limit]
@@ -178,27 +228,29 @@ def read_param(zip_path: Path):
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
 
-AI_FIELDS = ("description", "publisher", "genre", "tagline", "releaseDate")
+AI_FIELDS = ("region", "description", "publisher", "genre", "tagline", "releaseDate")
+REGIONS = ("USA", "EUR", "JPN", "ASIA")
+GENRES = "Action, Adventure, Role Playing Games, Horror, Driving/Racing, Shooter, Strategy, Fighting, Sport, Simulation, Puzzle, Platformer, Family, Music/Rhythm, Arcade, Casual, Unique"
 
 
-def ai_prompt(title_id: str, hint: str) -> str:
+def ai_prompt(title_id: str, hint: str, lang: str) -> str:
     return (
-        "Tu es un expert des jeux vidéo et applications PlayStation (PS4 : CUSAxxxxx, PS5 : PPSAxxxxx).\n"
-        f'- Title ID exact : "{title_id}"\n'
-        f'- Titre connu ou nom de fichier : "{hint}"\n\n'
-        "Fais attention au Title ID pour identifier le vrai jeu. Si tu n'es pas certain, "
-        "renvoie des chaînes vides plutôt que d'inventer.\n"
-        "Renvoie STRICTEMENT un objet JSON valide :\n"
-        '{"name": "Nom officiel propre (max 60 caractères)", '
-        '"description": "Résumé en français (max 180 caractères)", '
-        '"author": "Studio ou éditeur (max 60 caractères)", '
-        '"genre": "1 à 3 genres en anglais séparés par \\" / \\", par ex. Action / Adventure", '
-        '"tagline": "Accroche courte en français (max 60 caractères)", '
-        '"releaseDate": "Date de sortie initiale au format AAAA-MM-JJ, ou vide si inconnue"}'
+        "You are an expert on PlayStation games and apps (PS4: CUSAxxxxx, PS5: PPSAxxxxx).\n"
+        f'- Exact Title ID: "{title_id}"\n'
+        f'- Known title or file name: "{hint}"\n\n'
+        "Use the Title ID to identify the real game. If you are not sure, return empty strings instead of guessing.\n"
+        "Return STRICTLY one valid JSON object:\n"
+        '{"name": "Official clean title (max 60 characters)", '
+        f'"description": "Summary in {lang} (max 180 characters)", '
+        '"author": "Developer or publisher (max 60 characters)", '
+        f'"genre": "1 to 3 genres from: {GENRES}; separate with \\" / \\"", '
+        '"tagline": "Short English tagline of 2 to 4 words, like \\"Protect your brother.\\"", '
+        '"region": "Region of this Title ID: USA, EUR, JPN or ASIA", '
+        '"releaseDate": "Original release date YYYY-MM-DD, or empty if unknown"}'
     )
 
 
-def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list):
+def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list, lang: str = "English"):
     """Ask Gemini for the game's name, description and publisher; None when it cannot say."""
     base = os.environ.get("GEMINI_BASE", GEMINI_BASE).rstrip("/")
     if not (base.startswith("https://") or base.startswith("http://127.0.0.1")):
@@ -206,7 +258,7 @@ def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list):
         return None
     url = f"{base}/models/{model}:generateContent"
     body = json.dumps({
-        "contents": [{"parts": [{"text": ai_prompt(title_id, hint)}]}],
+        "contents": [{"parts": [{"text": ai_prompt(title_id, hint, lang)}]}],
         "generationConfig": {"responseMimeType": "application/json"},
     }).encode("utf-8")
     for key in keys:
@@ -229,12 +281,13 @@ def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list):
         if isinstance(data, dict):
             date = clean_text(data.get("releaseDate"), 10)
             result = {
-                "v": 2,
+                "v": 3,
                 "name": clean_text(data.get("name"), 60),
                 "description": clean_text(data.get("description"), 190),
                 "author": clean_text(data.get("author"), 60),
                 "genre": clean_text(data.get("genre"), 60),
                 "tagline": clean_text(data.get("tagline"), 60),
+                "region": clean_text(data.get("region"), 4).upper() if clean_text(data.get("region"), 4).upper() in REGIONS else "",
                 "releaseDate": date if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) else "",
             }
             if result["description"] or result["author"]:
@@ -273,6 +326,8 @@ def main() -> int:
     parser.add_argument("--no-param", action="store_true", help="do not read sce_sys/param.json (title, title ID, version) from PS5 .zip files")
     parser.add_argument("--ai", action="store_true", help="ask Gemini to fill missing description, publisher, genre, tagline and release date (needs GEMINI_API_KEYS)")
     parser.add_argument("--ai-max", type=int, default=40, help="most Gemini requests per run (default 40)")
+    parser.add_argument("--ai-lang", default=os.environ.get("GEMINI_LANG", "English"), help="language of the generated description (default English, like the signed catalogue)")
+    parser.add_argument("--no-assets", action="store_true", help="do not create assets/coverFallback.png and assets/heroFallback.png")
     parser.add_argument("--ai-model", default=os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"))
     parser.add_argument("--sha256", action="store_true", help="also record each file's SHA-256 (slow on large files)")
     args = parser.parse_args()
@@ -286,6 +341,15 @@ def main() -> int:
     overrides = json.loads(titles_path.read_text("utf-8")) if titles_path.is_file() else {}
 
     images = find_artwork(root, args.covers)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    made_assets = []
+    if not args.no_assets:
+        try:
+            made_assets = ensure_default_art(root)
+        except OSError as problem:
+            print(f"  note: cannot create assets/ ({problem})", file=sys.stderr)
+    fallback = {kind: f"assets/{kind}Fallback.png" for kind in ("cover", "hero")
+                if (root / "assets" / f"{kind}Fallback.png").is_file()}
     rows, skipped, extracted, notes = [], [], [], []
     keys = [k.strip() for k in re.split(r"[,\s]+", os.environ.get("GEMINI_API_KEYS", "")) if k.strip()]
     if args.ai and not keys:
@@ -319,12 +383,20 @@ def main() -> int:
         if not re.fullmatch(r"(PPSA|CUSA)\d{5}", title_id):
             skipped.append((key, "no title ID (PPSAxxxxx or CUSAxxxxx) in its path; add it in titles.json"))
             continue
+        platform = "ps4" if title_id.startswith("CUSA") else "ps5"
+        folder_hint = next((part.lower() for part in relative.parts[:-1] if part.lower() in ("ps4", "ps5")), "")
+        if folder_hint and folder_hint != platform:
+            notes.append(f"{key}: in a {folder_hint.upper()} folder but {title_id} is a {platform.upper()} title; {platform.upper()} used")
         size = path.stat().st_size
         if size < 1:
             skipped.append((key, "empty file"))
             continue
         row = {
-            "id": "nas-" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:12],
+            "id": f"{title_id.lower()}-nas",
+            "gameId": title_id,
+            "provider": "nas",
+            "sourceId": "nas",
+            "platform": platform,
             "title": extra.get("title") or (param or {}).get("title") or title_from(path.name),
             "titleId": title_id,
             "filename": path.name,
@@ -345,8 +417,7 @@ def main() -> int:
                 row["format"], row["archiveContents"] = "Unknown", "unverified"
         else:
             row["format"] = extra.get("format") or IMAGE_FORMATS[suffix]
-        if args.sha256:
-            row["sha256"] = sha256_of(path)
+        row["sha256"] = sha256_of(path) if args.sha256 else ""
         found = VERSION.search(path.name)
         if found:
             row["version"] = found.group(1)
@@ -359,20 +430,23 @@ def main() -> int:
                 extracted.append(f"{title_id}_{kind}.png")
         for field, kind in (("cover", "icon0"), ("hero", "pic1")):
             hit = artwork_for(images, title_id, kind)
-            if hit:
-                row[field] = hit
+            # The game's own image, else the default one from assets/.
+            if hit or fallback.get(field):
+                row[field] = hit or fallback[field]
+            if fallback.get(field):
+                row[field + "Fallback"] = fallback[field]
         wanted = [f for f in AI_FIELDS if not extra.get(f)]
         if args.ai and keys and wanted:
             info = cache.get(title_id) if isinstance(cache.get(title_id), dict) else None
             if info and info.get("unknown"):
                 # Not recognised last time: ask again only after a week.
                 info = None if time.time() - float(info.get("at", 0)) > 7 * 86400 else {}
-            elif info is not None and info.get("v") != 2:
+            elif info is not None and info.get("v") != 3:
                 info = None                       # saved by an older version, fewer fields
             if info is None and ai_calls < args.ai_max and len(ai_errors) < 3:
                 ai_calls += 1
                 before = len(ai_errors)
-                found_info = ai_lookup(title_id, row["title"], keys, args.ai_model, ai_errors)
+                found_info = ai_lookup(title_id, row["title"], keys, args.ai_model, ai_errors, args.ai_lang)
                 if found_info:
                     ai_errors.clear()
                     info = cache[title_id] = found_info
@@ -383,18 +457,42 @@ def main() -> int:
                     cache_dirty = True
             if info:
                 ai_done += 1
-                for field, source in (("description", "description"), ("publisher", "author"), ("genre", "genre"),
-                                      ("tagline", "tagline"), ("releaseDate", "releaseDate")):
+                for field, source in (("region", "region"), ("description", "description"), ("publisher", "author"),
+                                      ("genre", "genre"), ("tagline", "tagline"), ("releaseDate", "releaseDate")):
                     if field in wanted and info.get(source):
                         row[field] = info[source]
                 # The AI only renames games whose title came from the file name.
                 if info.get("name") and not extra.get("title") and not (param or {}).get("title"):
                     row["title"] = info["name"]
         row.setdefault("addedAt", datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).replace(microsecond=0).isoformat())
-        for field in ("version", "description", "publisher", "genre", "tagline", "releaseDate", "addedAt", "cover", "hero", "gameId"):
+        for field in ("version", "description", "publisher", "genre", "tagline", "region", "releaseDate", "addedAt",
+                      "cover", "hero", "coverFallback", "heroFallback", "gameId"):
             if extra.get(field):
                 row[field] = extra[field]
+        row["artworkLayout"] = "wide"
+        row["sourceCheckedAt"] = now_iso
+        row["consoleVerified"] = False
+        row["browserAvailable"] = False
+        row["directAvailable"] = True
         rows.append(row)
+
+    # One id per file: "<titleid>-nas", and "-<format>" (then "-2"...) when a game has several files.
+    used = set()
+    for row in rows:
+        candidate = row["id"]
+        if candidate in used:
+            candidate = f"{row['id']}-{re.sub('[^a-z0-9]', '', row['format'].lower())}"
+            n = 2
+            while candidate in used:
+                candidate, n = f"{row['id']}-{re.sub('[^a-z0-9]', '', row['format'].lower())}-{n}", n + 1
+        row["id"] = candidate
+        used.add(candidate)
+
+    ORDER = ("id", "gameId", "titleId", "sizeBytes", "provider", "sourceId", "format", "version", "filename", "sha256",
+             "region", "title", "genre", "tagline", "description", "cover", "hero", "coverFallback", "heroFallback",
+             "publisher", "releaseDate", "artworkLayout", "addedAt", "platform", "sourceCheckedAt",
+             "consoleVerified", "browserAvailable", "directAvailable")
+    rows = [{**{k: row[k] for k in ORDER if k in row}, **{k: v for k, v in row.items() if k not in ORDER}} for row in rows]
 
     # Written aside and renamed, so Orbit never reads a half-written index.
     partial = output.with_name(output.name + ".part")
@@ -408,6 +506,8 @@ def main() -> int:
             temporary.replace(cache_path)
         except OSError:
             notes.append("could not save .ai-cache.json (folder not writable?)")
+    if made_assets:
+        print(f"  default images created in assets/: {', '.join(made_assets)}")
     if from_param:
         print(f"  {from_param} game(s) described by their param.json")
     if args.ai and keys:

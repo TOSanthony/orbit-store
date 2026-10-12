@@ -35,6 +35,7 @@ $LOCK_MIN      = 15;                                   // durée du blocage (min
 $GEMINI_KEYS   = [];                                   // clés API Gemini (option « Compléter avec l'IA »)
 $GEMINI_MODEL  = 'gemini-3.6-flash';
 $AI_MAX        = 40;                                   // requêtes IA max par actualisation
+$AI_LANG       = 'English';                            // langue des descriptions ('français', 'English'...)
 // ---------------------------------------------------------------------------
 
 $extra = __DIR__ . '/nas-admin.config.php';
@@ -42,7 +43,7 @@ if (is_file($extra)) {
     $cfg = require $extra;
     if (is_array($cfg)) {
         foreach ($cfg as $k => $v) {
-            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_MAX'], true)) {
+            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_MAX','AI_LANG'], true)) {
                 $$k = $v;
             }
         }
@@ -58,7 +59,7 @@ const IMAGE_TYPES = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'ima
  */
 function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $ai): array
 {
-    global $GAMES_DIR, $SCRIPT, $PYTHON, $GEMINI_KEYS, $GEMINI_MODEL, $AI_MAX;
+    global $GAMES_DIR, $SCRIPT, $PYTHON, $GEMINI_KEYS, $GEMINI_MODEL, $AI_MAX, $AI_LANG;
     if (!is_file($SCRIPT)) return [null, [], "make-nas-index.py introuvable : $SCRIPT"];
     if (!is_file($PYTHON)) return [null, [], "Python 3 introuvable : $PYTHON (règle \$PYTHON)"];
     if (!is_dir($GAMES_DIR)) return [null, [], "Dossier des jeux introuvable : $GAMES_DIR"];
@@ -76,6 +77,7 @@ function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $a
         array_push($cmd, '--ai', '--ai-max', (string)max(1, (int)$AI_MAX), '--ai-model', (string)$GEMINI_MODEL);
         $env['GEMINI_API_KEYS'] = implode(',', array_map('trim', $keys));
         $env['GEMINI_MODEL'] = (string)$GEMINI_MODEL;
+        $env['GEMINI_LANG'] = (string)$AI_LANG;
     }
     return [$cmd, $env, ''];
 }
@@ -370,6 +372,8 @@ if (is_file($indexFile)) {
                 'description' => $s('description'),
                 'publisher' => $s('publisher'),
                 'genre' => $s('genre'),
+                'region' => $s('region'),
+                'platform' => $s('platform'),
                 'tagline' => $s('tagline'),
                 'releaseDate' => $s('releaseDate'),
                 'sha256' => $s('sha256'),
@@ -556,7 +560,7 @@ summary{cursor:pointer;font-weight:600}
     $('dSub').textContent = [g.titleId, g.publisher, g.version && 'v' + g.version].filter(Boolean).join(' · ');
     $('dDesc').textContent = [g.tagline, g.description].filter(Boolean).join(' — ');
     const rows = [['Fichier', g.filename], ['Chemin', g.path], ['Taille', bytes(g.size)], ['Format', g.format],
-      g.genre && ['Genre', g.genre], g.releaseDate && ['Sortie', g.releaseDate], g.compression && ['Archive', g.compression], g.sha256 && ['SHA-256', g.sha256],
+      g.platform && ['Plateforme', g.platform.toUpperCase()], g.region && ['Région', g.region], g.genre && ['Genre', g.genre], g.releaseDate && ['Sortie', g.releaseDate], g.compression && ['Archive', g.compression], g.sha256 && ['SHA-256', g.sha256],
       ['Icône', g.cover ? 'oui' : 'manquante'], ['Fond', g.hero ? 'oui' : 'manquant']].filter(Boolean);
     $('dList').replaceChildren(...rows.flatMap(([k, v]) => [el('dt', null, k), el('dd', null, v)]));
     dlg.showModal();

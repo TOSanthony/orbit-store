@@ -67,3 +67,22 @@ En ligne de commande : `php make-nas-index.php refresh [--sha256] [--refresh-cov
 
 ### Actualisation longue (« Gateway Timeout »)
 Sur l'interface web, « Actualiser » lance Python **en arrière-plan** et la page affiche l'avancement (rafraîchi toutes les 2,5 s), puis le journal à la fin : un reverse proxy qui coupe les pages au bout de 60 s ne pose donc plus de problème, et tu peux fermer l'onglet. Une seule actualisation à la fois ; délai maximal `$TIMEOUT` (3600 s par défaut). Prérequis : `proc_open` autorisé et, pour le délai, la commande `timeout` (présente sur DSM). L'index est écrit dans un fichier temporaire puis renommé, donc Orbit ne lit jamais un index à moitié écrit.
+
+## Fiche d'un jeu (format de l'index)
+Chaque jeu est généré comme une ligne du catalogue officiel :
+| Champ | Valeur |
+|---|---|
+| `id` | `ppsa05366-nas` (`-<format>` si un même jeu a plusieurs fichiers) |
+| `gameId`, `titleId` | l'identifiant du jeu, ex. `PPSA05366` |
+| `sizeBytes`, `format`, `filename`, `version`, `sha256` | taille, format, nom du fichier, version (param.json ou nom de fichier), empreinte (`""` sans `--sha256`) |
+| `provider`, `sourceId` | `nas` |
+| `title`, `genre`, `tagline`, `description`, `publisher`, `releaseDate`, `region` | titre (param.json), puis IA : genre (noms du PlayStation Store, séparés par « / »), accroche de 2 à 4 mots, description, éditeur, date de sortie `AAAA-MM-JJ`, région `USA`/`EUR`/`JPN`/`ASIA` |
+| `cover`, `hero` | `covers/<ID>_icon0.png` et `_pic1.png` (ou extraits du zip) ; à défaut les images par défaut |
+| `coverFallback`, `heroFallback` | `assets/coverFallback.png` et `assets/heroFallback.png` (créés automatiquement à côté de `index.json` s'ils n'existent pas ; remplace-les par les tiens, ils ne sont jamais écrasés) |
+| `artworkLayout` | `wide` |
+| `addedAt` | date de modification du fichier du jeu |
+| `platform` | `ps5` (PPSA) ou `ps4` (CUSA) ; un jeu rangé dans le mauvais dossier PS4/PS5 est signalé, car Orbit déduit la plateforme de l'identifiant |
+| `sourceCheckedAt` | date de génération de l'index |
+| `consoleVerified`, `browserAvailable`, `directAvailable` | `false`, `false`, `true` |
+
+La langue des descriptions est celle du catalogue officiel (anglais) ; pour le français, ajoute `'AI_LANG' => 'français'` à `nas-admin.config.php` (ou `--ai-lang`). La région est une estimation de l'IA : vérifie-la ou corrige-la dans `titles.json` (`"region": "EUR"`).

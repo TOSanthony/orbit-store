@@ -186,9 +186,9 @@ static bool entry(const char *index_url, const cJSON *x, Release *r, cJSON **vie
         }
         const char *title_id = json_text(e, "titleId");
         if (!*json_text(e, "gameId") && strlen(title_id) == 9) {
-            char game[16] = "nas-";
-            for (size_t i = 0; i < 9; i++) game[4 + i] = (char)tolower((unsigned char)title_id[i]);
-            game[13] = 0;
+            char game[16];
+            for (size_t i = 0; i < 9; i++) game[i] = (char)toupper((unsigned char)title_id[i]);
+            game[9] = 0;
             cJSON_AddStringToObject(e, "gameId", game);
         }
         ok = !release_parse(e, r, false);
@@ -197,9 +197,9 @@ static bool entry(const char *index_url, const cJSON *x, Release *r, cJSON **vie
         cJSON *v = release_json(r);
         ok = v != NULL;
         if (ok) {
-            cJSON_AddStringToObject(v, "provider", "NAS");
+            cJSON_AddStringToObject(v, "provider", "nas");
             static const char *const optional[] = {"genre", "tagline", "description", "publisher",
-                                                   "releaseDate", "version", "addedAt"};
+                                                   "releaseDate", "version", "addedAt", "region"};
             for (size_t k = 0; k < sizeof optional / sizeof optional[0]; k++) {
                 const char *s = json_text(e, optional[k]);
                 if (clean(s, 4096)) cJSON_AddStringToObject(v, optional[k], s);
@@ -209,28 +209,33 @@ static bool entry(const char *index_url, const cJSON *x, Release *r, cJSON **vie
             if (clean(notes, 4096)) cJSON_AddStringToObject(v, "notes", notes);
             /* Artwork may live on the NAS too; anything else falls back to Orbit's own mark. */
             static const char *const keys[] = {"cover", "hero"};
+            static const char *const spares[] = {"coverFallback", "heroFallback"};
             bool has_hero = false;
             for (size_t k = 0; k < 2; k++) {
                 const char *ref = json_text(e, keys[k]);
                 bool usable = *ref && resolve(index_url, ref, artwork, sizeof artwork) &&
                               nas_url_allowed(artwork);
                 cJSON_AddStringToObject(v, keys[k], usable ? artwork : "/orbit.svg");
-                if (k == 1 && usable) {
-                    has_hero = true;
-                    /* The TV app asks for heroFallback on "ambient" layouts. */
-                    cJSON_AddStringToObject(v, "heroFallback", artwork);
-                }
+                if (k == 1) has_hero = usable;
+                /* The default image (assets/ next to the index), tried when the first one fails. */
+                ref = json_text(e, spares[k]);
+                if (*ref && resolve(index_url, ref, artwork, sizeof artwork) && nas_url_allowed(artwork))
+                    cJSON_AddStringToObject(v, spares[k], artwork);
+                else
+                    cJSON_AddNullToObject(v, spares[k]);
             }
-            if (!has_hero) cJSON_AddNullToObject(v, "heroFallback");
-            cJSON_AddNullToObject(v, "coverFallback");
             /* "wide" makes Orbit use the hero as the page background. */
             cJSON_AddStringToObject(v, "artworkLayout", has_hero ? "wide" : "ambient");
-            /* Same fields as the signed catalogue's rows. */
+            /* Date the row was put in the index (the generator's), else now. */
+            const char *checked = json_text(e, "sourceCheckedAt");
             char stamp[40];
-            time_t now = time(NULL);
-            struct tm utc;
-            if (gmtime_r(&now, &utc) && strftime(stamp, sizeof stamp, "%Y-%m-%dT%H:%M:%S+00:00", &utc))
-                cJSON_AddStringToObject(v, "sourceCheckedAt", stamp);
+            if (!clean(checked, 40)) {
+                time_t now = time(NULL);
+                struct tm utc;
+                checked = gmtime_r(&now, &utc) &&
+                          strftime(stamp, sizeof stamp, "%Y-%m-%dT%H:%M:%S+00:00", &utc) ? stamp : "";
+            }
+            if (*checked) cJSON_AddStringToObject(v, "sourceCheckedAt", checked);
             cJSON_AddBoolToObject(v, "consoleVerified", false);
             *view = v;
         }
