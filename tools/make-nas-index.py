@@ -11,6 +11,11 @@ Put the folder under your web server (Synology Web Station) so that
 https://your.domain/orbit-3f9a7c1e/index.json works, then enter that address in
 Orbit's Sources screen. Entries use paths relative to index.json, so the folder can move.
 
+Artwork is picked up by name from the "covers" sub-folder (see --covers):
+    covers/PPSA01234_icon0.png   the game's icon (cover)
+    covers/PPSA01234_pic1.png    the game's background (hero)
+(.png, .jpg, .jpeg and .webp; the title ID is matched without regard to case).
+
 Optional titles.json next to index.json (or --titles) adjusts rows, keyed by the file's
 path relative to the folder:
 
@@ -44,6 +49,28 @@ def title_from(name: str) -> str:
     return re.sub(r"\s+", " ", stem).strip(" -.") or Path(name).stem
 
 
+IMAGE_TYPES = (".png", ".jpg", ".jpeg", ".webp")
+
+
+def find_artwork(root: Path, folder: str):
+    """{lowercase file name: relative path} for the images under <root>/<folder>."""
+    found = {}
+    base = root / folder
+    if base.is_dir():
+        for item in base.iterdir():
+            if item.is_file() and item.suffix.lower() in IMAGE_TYPES:
+                found[item.name.lower()] = f"{folder}/{item.name}"
+    return found
+
+
+def artwork_for(images: dict, title_id: str, kind: str):
+    for suffix in IMAGE_TYPES:
+        hit = images.get(f"{title_id}_{kind}{suffix}".lower())
+        if hit:
+            return quote(hit, safe="/")
+    return None
+
+
 def sha256_of(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -75,6 +102,7 @@ def main() -> int:
     parser.add_argument("folder", type=Path, help="folder served by your web server")
     parser.add_argument("--output", type=Path, help="default: <folder>/index.json")
     parser.add_argument("--titles", type=Path, help="default: <folder>/titles.json if present")
+    parser.add_argument("--covers", default="covers", help="sub-folder with <TITLEID>_icon0.png (cover) and <TITLEID>_pic1.png (background); default: covers")
     parser.add_argument("--sha256", action="store_true", help="also record each file's SHA-256 (slow on large files)")
     args = parser.parse_args()
 
@@ -86,6 +114,7 @@ def main() -> int:
     titles_path = args.titles or root / "titles.json"
     overrides = json.loads(titles_path.read_text("utf-8")) if titles_path.is_file() else {}
 
+    images = find_artwork(root, args.covers)
     rows, skipped = [], []
     for path in sorted(root.rglob("*")):
         relative = path.relative_to(root)
@@ -134,6 +163,10 @@ def main() -> int:
         found = VERSION.search(path.name)
         if found:
             row["version"] = found.group(1)
+        for field, kind in (("cover", "icon0"), ("hero", "pic1")):
+            hit = artwork_for(images, title_id, kind)
+            if hit:
+                row[field] = hit
         for field in ("version", "description", "publisher", "genre", "releaseDate", "cover", "hero", "gameId"):
             if extra.get(field):
                 row[field] = extra[field]

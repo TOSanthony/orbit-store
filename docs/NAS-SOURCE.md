@@ -28,7 +28,9 @@ Les liens de l'index doivent être sur le même domaine/port que l'adresse saisi
 - Orbit ne dévoile jamais le chemin enregistré dans l'interface (seul le nom d'hôte est affiché).
 
 ## Images
-Dans `titles.json` (clé = chemin du fichier de jeu), pour chaque jeu :
-- `cover` : l'icône / jaquette (carrée).
-- `hero` : le fond / bannière large. Sans `hero`, Orbit affiche un fond généré.
-Les chemins sont relatifs à `index.json` et doivent être sur le même domaine (JPEG, PNG ou WebP).
+Mets les images dans un sous-dossier `covers/` à côté d'`index.json`, nommées d'après l'identifiant du jeu :
+- `covers/PPSA01234_icon0.png` : l'icône (cover) ;
+- `covers/PPSA01234_pic1.png` : le fond (hero). Sans fond, Orbit affiche un fond généré.
+(.png, .jpg, .jpeg ou .webp ; majuscules/minuscules indifférentes.) Le script les détecte tout seul à chaque génération ;
+`--covers autre-dossier` change le dossier. Un `cover`/`hero` écrit dans `titles.json` reste prioritaire.
+Les images doivent être sur le même domaine que l'index.
