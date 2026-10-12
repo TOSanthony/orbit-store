@@ -312,7 +312,7 @@ def ai_prompt(title_id: str, hint: str, lang: str) -> str:
     )
 
 
-def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list, lang: str = "English"):
+def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list, lang: str = "English", dead=None):
     """Ask Gemini for the game's name, description and publisher; None when it cannot say."""
     base = os.environ.get("GEMINI_BASE", GEMINI_BASE).rstrip("/")
     if not (base.startswith("https://") or base.startswith("http://127.0.0.1")):
@@ -323,13 +323,18 @@ def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list, lang: st
         "contents": [{"parts": [{"text": ai_prompt(title_id, hint, lang)}]}],
         "generationConfig": {"responseMimeType": "application/json"},
     }).encode("utf-8")
+    dead = dead if dead is not None else set()
     for key in keys:
+        if key in dead:
+            continue                              # quota used up or refused earlier in this run
         request = urllib.request.Request(url, body, {"Content-Type": "application/json", "x-goog-api-key": key})
         try:
             with urllib.request.urlopen(request, timeout=25) as reply:
                 payload = json.loads(reply.read(1 << 20).decode("utf-8"))
         except urllib.error.HTTPError as problem:
             errors.append(f"HTTP {problem.code}")
+            if problem.code in (400, 401, 403, 429):
+                dead.add(key)                     # try the next key, and do not ask this one again
             continue
         except (urllib.error.URLError, OSError, ValueError) as problem:
             errors.append(type(problem).__name__)
@@ -425,6 +430,7 @@ def main() -> int:
         cache = {}
     cache = cache if isinstance(cache, dict) else {}
     cache_dirty, ai_calls, ai_done, ai_errors = False, 0, 0, []
+    dead_keys = set()
     from_param = 0
     pack_rows = 0
     for path in sorted(root.rglob("*")):
@@ -516,10 +522,10 @@ def main() -> int:
                 info = None if time.time() - float(info.get("at", 0)) > 7 * 86400 else {}
             elif info is not None and info.get("v") != 3:
                 info = None                       # saved by an older version, fewer fields
-            if info is None and ai_calls < args.ai_max and len(ai_errors) < 3:
+            if info is None and ai_calls < args.ai_max and len(dead_keys) < len(keys) and len(ai_errors) < 3 * len(keys):
                 ai_calls += 1
                 before = len(ai_errors)
-                found_info = ai_lookup(title_id, row["title"], keys, args.ai_model, ai_errors, args.ai_lang)
+                found_info = ai_lookup(title_id, row["title"], keys, args.ai_model, ai_errors, args.ai_lang, dead_keys)
                 if found_info:
                     ai_errors.clear()
                     info = cache[title_id] = found_info
@@ -599,7 +605,8 @@ def main() -> int:
     if from_param:
         print(f"  {from_param} game(s) described by their param.json")
     if args.ai and keys:
-        print(f"  AI: {ai_done} game(s) completed, {ai_calls} request(s) this run" + (f" (last problem: {ai_errors[-1]})" if ai_errors else ""))
+        print(f"  AI: {ai_done} game(s) completed, {ai_calls} request(s) this run" + (f" (last problem: {ai_errors[-1]})" if ai_errors else "")
+              + (f"; {len(dead_keys)}/{len(keys)} key(s) refused or out of quota" if dead_keys else ""))
     for note in notes:
         print(f"  note: {note}")
     if optimized:
