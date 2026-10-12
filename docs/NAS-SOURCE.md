@@ -34,3 +34,10 @@ Mets les images dans un sous-dossier `covers/` à côté d'`index.json`, nommée
 (.png, .jpg, .jpeg ou .webp ; majuscules/minuscules indifférentes.) Le script les détecte tout seul à chaque génération ;
 `--covers autre-dossier` change le dossier. Un `cover`/`hero` écrit dans `titles.json` reste prioritaire.
 Les images doivent être sur le même domaine que l'index.
+
+### Extraction depuis les .zip
+Pour un jeu en `.zip`, le script cherche `icon0.png` (icône) et `pic1.png` (fond) dans l'archive, de préférence sous `sce_sys/`, et les copie dans `covers/<TITLEID>_icon0.png` et `covers/<TITLEID>_pic1.png`.
+- Seuls les vrais PNG de 20 Mo maximum sont retenus ; une image déjà présente dans `covers/` n'est jamais écrasée (option `--refresh-covers` pour la remplacer).
+- `--no-extract` désactive cette étape.
+- L'utilisateur PHP (`http`) doit pouvoir écrire dans `covers/` (ou dans le dossier racine pour le créer).
+- Cela ne fonctionne que si le zip contient réellement ces fichiers (zip d'un dossier de jeu) ; un zip contenant seulement un `.exfat` ou `.ffpfsc` n'en a pas, ce contenu n'étant pas lu.

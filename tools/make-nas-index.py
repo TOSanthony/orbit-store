@@ -15,6 +15,9 @@ Artwork is picked up by name from the "covers" sub-folder (see --covers):
     covers/PPSA01234_icon0.png   the game's icon (cover)
     covers/PPSA01234_pic1.png    the game's background (hero)
 (.png, .jpg, .jpeg and .webp; the title ID is matched without regard to case).
+For a game in a .zip, icon0.png and pic1.png found inside the archive (normally under
+sce_sys/) are copied there automatically; use --no-extract to skip this and
+--refresh-covers to replace images extracted earlier. Images you placed yourself are kept.
 
 Optional titles.json next to index.json (or --titles) adjusts rows, keyed by the file's
 path relative to the folder:
@@ -63,6 +66,46 @@ def find_artwork(root: Path, folder: str):
     return found
 
 
+MAX_ART_BYTES = 20 * 1024 * 1024
+ART_NAMES = {"icon0": "icon0.png", "pic1": "pic1.png"}
+
+
+def extract_art(zip_path: Path, title_id: str, root: Path, folder: str, images: dict, refresh: bool):
+    """Copy icon0.png / pic1.png out of a game .zip into <root>/<folder>/<TITLEID>_<kind>.png.
+
+    Looks for sce_sys/icon0.png (or the shallowest icon0.png) inside the archive. Existing
+    files are kept unless --refresh-covers is given. Returns the kinds that were written."""
+    written = []
+    try:
+        with zipfile.ZipFile(zip_path) as archive:
+            for kind, wanted in ART_NAMES.items():
+                target_name = f"{title_id}_{kind}.png"
+                if not refresh and target_name.lower() in images:
+                    continue
+                candidates = [
+                    i for i in archive.infolist()
+                    if not i.is_dir() and i.filename.lower().rsplit("/", 1)[-1] == wanted
+                    and 0 < i.file_size <= MAX_ART_BYTES
+                ]
+                if not candidates:
+                    continue
+                candidates.sort(key=lambda i: ("sce_sys/" not in i.filename.lower(), i.filename.count("/")))
+                with archive.open(candidates[0]) as source:
+                    data = source.read(MAX_ART_BYTES + 1)
+                if len(data) > MAX_ART_BYTES or not data.startswith(b"\x89PNG\r\n\x1a\n"):
+                    continue
+                target = root / folder / target_name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                temporary = target.with_name(target.name + ".part")
+                temporary.write_bytes(data)
+                temporary.replace(target)
+                images[target_name.lower()] = f"{folder}/{target_name}"
+                written.append(kind)
+    except (zipfile.BadZipFile, OSError, RuntimeError, NotImplementedError):
+        pass
+    return written
+
+
 def artwork_for(images: dict, title_id: str, kind: str):
     for suffix in IMAGE_TYPES:
         hit = images.get(f"{title_id}_{kind}{suffix}".lower())
@@ -103,6 +146,8 @@ def main() -> int:
     parser.add_argument("--output", type=Path, help="default: <folder>/index.json")
     parser.add_argument("--titles", type=Path, help="default: <folder>/titles.json if present")
     parser.add_argument("--covers", default="covers", help="sub-folder with <TITLEID>_icon0.png (cover) and <TITLEID>_pic1.png (background); default: covers")
+    parser.add_argument("--no-extract", action="store_true", help="do not take icon0.png / pic1.png out of .zip files")
+    parser.add_argument("--refresh-covers", action="store_true", help="overwrite covers already extracted from a .zip")
     parser.add_argument("--sha256", action="store_true", help="also record each file's SHA-256 (slow on large files)")
     args = parser.parse_args()
 
@@ -115,7 +160,7 @@ def main() -> int:
     overrides = json.loads(titles_path.read_text("utf-8")) if titles_path.is_file() else {}
 
     images = find_artwork(root, args.covers)
-    rows, skipped = [], []
+    rows, skipped, extracted = [], [], []
     for path in sorted(root.rglob("*")):
         relative = path.relative_to(root)
         if not path.is_file() or path == output or path == titles_path:
@@ -163,6 +208,9 @@ def main() -> int:
         found = VERSION.search(path.name)
         if found:
             row["version"] = found.group(1)
+        if suffix == ".zip" and not args.no_extract:
+            for kind in extract_art(path, title_id, root, args.covers, images, args.refresh_covers):
+                extracted.append(f"{title_id}_{kind}.png")
         for field, kind in (("cover", "icon0"), ("hero", "pic1")):
             hit = artwork_for(images, title_id, kind)
             if hit:
@@ -174,6 +222,8 @@ def main() -> int:
 
     output.write_text(json.dumps({"schemaVersion": 1, "releases": rows}, indent=2, ensure_ascii=False) + "\n", "utf-8")
     print(f"{len(rows)} file(s) listed in {output}")
+    if extracted:
+        print(f"  {len(extracted)} image(s) extracted from .zip files into {args.covers}/")
     for key, reason in skipped:
         print(f"  skipped {key}: {reason}")
     if len(rows) > 512:
