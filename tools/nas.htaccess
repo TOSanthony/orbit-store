@@ -41,8 +41,12 @@ FileETag MTime Size
     Header always set X-Robots-Tag "noindex, nofollow"
 </IfModule>
 
-# Fichiers qui ne doivent jamais sortir (réglages locaux, fichiers cachés, corbeille Synology).
+# Fichiers qui ne doivent jamais sortir (réglages locaux, fichiers cachés, corbeille Synology,
+# script Python si tu l'as copié dans ce dossier). Le .php reste accessible : il exige son token.
 <FilesMatch "^(\.|titles\.json$)">
+    Require all denied
+</FilesMatch>
+<FilesMatch "\.py$">
     Require all denied
 </FilesMatch>
 # (DirectoryMatch est interdit dans un .htaccess : on répond 403, sans redirection.)
