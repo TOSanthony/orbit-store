@@ -234,7 +234,7 @@ int tvapp_action(const cJSON *input, char *error, size_t cap);
 int art_start(void);
 void art_stop(void);
 int art_get(const char *game_id, const char *kind, unsigned char **data, size_t *size, char *mime,
-            size_t mime_cap);
+            size_t mime_cap, char *why, size_t why_cap);
 /* Bounded, session-only diagnostics. Call event while holding orbit.mutex. */
 void diagnostics_event_locked(const char *phase, const Job *job, long http_status, int curl_code);
 void diagnostics_begin(void);

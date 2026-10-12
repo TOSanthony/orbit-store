@@ -30,6 +30,7 @@ typedef struct {
     unsigned char *data;
     size_t size;
     char mime[16];
+    char why[96]; /* Why the last fetch failed, shown in the 502 answer. */
     time_t used, failed_at;
 } ArtEntry;
 static struct {
@@ -134,7 +135,7 @@ static int stopping(void *ctx, curl_off_t a, curl_off_t b, curl_off_t c, curl_of
 
 /* Fetches one URL. In test builds ORBIT_TEST_ART_ORIGIN replaces the scheme
  * and host with a loopback fixture, keeping the path. */
-static bool fetch(const char *source, Buffer *buf, const char **mime) {
+static bool fetch(const char *source, Buffer *buf, const char **mime, char *why, size_t why_cap) {
     char url[2300];
     const char *protocols = "https";
     copy_text(url, sizeof url, source);
@@ -179,6 +180,18 @@ static bool fetch(const char *source, Buffer *buf, const char **mime) {
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
     curl_easy_cleanup(curl);
     *mime = code == CURLE_OK && status == 200 ? sniff(buf->data, buf->size) : NULL;
+    if (!*mime && why_cap) {
+        /* Host only, never the secret folder of a NAS address. */
+        const char *host = source + 8;
+        size_t hl = strcspn(host, "/");
+        if (code != CURLE_OK)
+            snprintf(why, why_cap, "%.*s: %s", (int)(hl > 40 ? 40 : hl), host, curl_easy_strerror(code));
+        else if (status != 200)
+            snprintf(why, why_cap, "%.*s: HTTP %ld", (int)(hl > 40 ? 40 : hl), host, status);
+        else
+            snprintf(why, why_cap, "%.*s: not a PNG, JPEG or WebP image (%zu bytes)",
+                     (int)(hl > 40 ? 40 : hl), host, buf->size);
+    }
     return *mime != NULL;
 }
 
@@ -229,11 +242,14 @@ static void *worker(void *unused) {
         size_t count = urls_for(game, hero, urls);
         Buffer buf = {0};
         const char *mime = NULL;
+        char why[96] = {0};
         for (size_t i = 0; i < count && !mime; i++) {
             free(buf.data);
             buf = (Buffer){0};
-            fetch(urls[i], &buf, &mime);
+            fetch(urls[i], &buf, &mime, why, sizeof why);
         }
+        if (!count)
+            copy_text(why, sizeof why, "no usable image address in the catalogue row");
 
         pthread_mutex_lock(&art.mutex);
         ArtEntry *e = find(key);
@@ -253,6 +269,7 @@ static void *worker(void *unused) {
             free(buf.data);
             e->state = ART_FAILED;
             e->failed_at = time(NULL);
+            copy_text(e->why, sizeof e->why, why);
         }
     }
     pthread_mutex_unlock(&art.mutex);
@@ -260,15 +277,20 @@ static void *worker(void *unused) {
 }
 
 int art_get(const char *game_id, const char *kind, unsigned char **data, size_t *size, char *mime,
-            size_t mime_cap) {
+            size_t mime_cap, char *why, size_t why_cap) {
     *data = NULL;
+    if (why_cap)
+        why[0] = 0;
     *size = 0;
     bool hero = !strcmp(kind, "hero");
     if (!art_identifier(game_id) || (!hero && strcmp(kind, "cover")))
         return 404;
     char urls[2][2048];
-    if (!urls_for(game_id, hero, urls))
+    if (!urls_for(game_id, hero, urls)) {
+        if (why_cap)
+            copy_text(why, why_cap, "no such game, source off, or no image address for it");
         return 404;
+    }
     char key[ART_KEY];
     snprintf(key, sizeof key, "%s#%s", game_id, kind);
     time_t now = time(NULL);
@@ -290,6 +312,8 @@ int art_get(const char *game_id, const char *kind, unsigned char **data, size_t 
         code = 202;
     } else if (e && e->state == ART_FAILED && now - e->failed_at < ART_RETRY_FAILED) {
         code = 502;
+        if (why_cap)
+            copy_text(why, why_cap, e->why);
     } else if (!art.started || art.queued == ART_QUEUE) {
         code = 503;
     } else {

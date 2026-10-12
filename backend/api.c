@@ -497,8 +497,8 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
                 return error(c, 404, "Unknown artwork.");
             unsigned char *data = NULL;
             size_t size = 0;
-            char mime[16] = {0};
-            int code = art_get(game, kind, &data, &size, mime, sizeof mime);
+            char mime[16] = {0}, why[96] = {0};
+            int code = art_get(game, kind, &data, &size, mime, sizeof mime, why, sizeof why);
             if (code == 200) {
                 enum MHD_Result rc = respond(c, 200, (const char *)data, size, mime);
                 free(data);
@@ -509,10 +509,13 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
                 cJSON_AddBoolToObject(o, "pending", true);
                 return json_response(c, 202, o);
             }
-            return error(c, (unsigned)code,
-                         code == 404   ? "Unknown artwork."
-                         : code == 503 ? "Artwork is busy. Try again shortly."
-                                       : "This artwork could not be loaded.");
+            char message[160];
+            snprintf(message, sizeof message, "%s%s%s%s",
+                     code == 404   ? "Unknown artwork."
+                     : code == 503 ? "Artwork is busy. Try again shortly."
+                                   : "This artwork could not be loaded.",
+                     *why ? " (" : "", why, *why ? ")" : "");
+            return error(c, (unsigned)code, message);
         }
         if (get && !strcmp(url, "/api/v1/debrid"))
             return json_response(c, 200, debrid_status());
