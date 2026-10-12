@@ -15,7 +15,7 @@ Artwork is picked up by name from the "covers" sub-folder (see --covers):
     covers/PPSA01234_icon0.png   the game's icon (cover)
     covers/PPSA01234_pic1.png    the game's background (hero)
 (.png, .jpg, .jpeg and .webp; the title ID is matched without regard to case).
-For a game in a .zip, icon0.png and pic1.png found inside the archive (normally under
+For a game in a .zip, icon0.png and the background (pic0.png if present, else pic1.png) found inside the archive (normally under
 sce_sys/) are copied there automatically; use --no-extract to skip this and
 --refresh-covers to replace images extracted earlier. Images you placed yourself are kept.
 
@@ -82,7 +82,7 @@ def find_artwork(root: Path, folder: str):
 
 
 MAX_ART_BYTES = 20 * 1024 * 1024
-ART_NAMES = {"icon0": "icon0.png", "pic1": "pic1.png"}
+ART_NAMES = {"icon0": ("icon0.png",), "pic1": ("pic0.png", "pic1.png")}   # background: pic0 first, else pic1
 
 
 def extract_art(zip_path: Path, title_id: str, root: Path, folder: str, images: dict, refresh: bool):
@@ -97,11 +97,15 @@ def extract_art(zip_path: Path, title_id: str, root: Path, folder: str, images: 
                 target_name = f"{title_id}_{kind}.png"
                 if not refresh and target_name.lower() in images:
                     continue
-                candidates = [
-                    i for i in archive.infolist()
-                    if not i.is_dir() and i.filename.lower().rsplit("/", 1)[-1] == wanted
-                    and 0 < i.file_size <= MAX_ART_BYTES
-                ]
+                candidates = []
+                for name in wanted:                      # first name that exists in the archive wins
+                    candidates = [
+                        i for i in archive.infolist()
+                        if not i.is_dir() and i.filename.lower().rsplit("/", 1)[-1] == name
+                        and 0 < i.file_size <= MAX_ART_BYTES
+                    ]
+                    if candidates:
+                        break
                 if not candidates:
                     continue
                 candidates.sort(key=lambda i: ("sce_sys/" not in i.filename.lower(), i.filename.count("/")))

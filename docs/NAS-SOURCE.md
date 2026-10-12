@@ -36,7 +36,7 @@ Mets les images dans un sous-dossier `covers/` à côté d'`index.json`, nommée
 Les images doivent être sur le même domaine que l'index.
 
 ### Extraction depuis les .zip
-Pour un jeu en `.zip`, le script cherche `icon0.png` (icône) et `pic1.png` (fond) dans l'archive, de préférence sous `sce_sys/`, et les copie dans `covers/<TITLEID>_icon0.png` et `covers/<TITLEID>_pic1.png`.
+Pour un jeu en `.zip`, le script cherche `icon0.png` (icône) et le fond dans l'archive (`pic0.png` s'il existe, sinon `pic1.png` ; il est enregistré sous `_pic1.png`), de préférence sous `sce_sys/`, et les copie dans `covers/<TITLEID>_icon0.png` et `covers/<TITLEID>_pic1.png`.
 
 **Chargement rapide.** Les PNG extraits pèsent plusieurs Mo (le fond 1920×1080 surtout). Si Python dispose de Pillow (`pip install pillow`), le script écrit à côté une copie `.jpg` allégée (icône 512 px, fond 1920×1080, environ 10× plus légère) et l'index pointe dessus ; les PNG restent. Sans Pillow, tout fonctionne mais les images sont lentes à arriver sur la console. `--no-optimize` désactive la copie.
 - Seuls les vrais PNG de 20 Mo maximum sont retenus ; une image déjà présente dans `covers/` n'est jamais écrasée (option `--refresh-covers` pour la remplacer).
