@@ -41,19 +41,16 @@ FileETag MTime Size
     Header always set X-Robots-Tag "noindex, nofollow"
 </IfModule>
 
-# Pas de mise en mémoire tampon par sendfile/mmap sur les montages réseau lents.
-<IfModule core.c>
-    EnableSendfile On
-</IfModule>
-
 # Fichiers qui ne doivent jamais sortir (réglages locaux, fichiers cachés, corbeille Synology).
 <FilesMatch "^(\.|titles\.json$)">
     Require all denied
 </FilesMatch>
-<DirectoryMatch "/(@eaDir|#recycle|@Recycle|@tmp)(/|$)">
-    Require all denied
-</DirectoryMatch>
+# (DirectoryMatch est interdit dans un .htaccess : on répond 403, sans redirection.)
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule (^|/)(@eaDir|\#recycle|@Recycle|@tmp)(/|$) - [F]
+</IfModule>
 
-# IMPORTANT : ne mets ici AUCUNE règle RewriteRule/Redirect (HTTP → HTTPS, www, etc.) :
+# IMPORTANT : n'ajoute AUCUNE redirection (HTTP → HTTPS, www, etc.) :
 # Orbit refuse de suivre les redirections. Force le HTTPS dans le portail Web Station
 # ou le reverse proxy, jamais pour ce dossier.
