@@ -1,0 +1,59 @@
+# .htaccess pour le dossier des jeux Orbit (Synology Web Station, serveur Apache 2.4).
+# Copie ce fichier sous le nom ".htaccess" À LA RACINE du dossier servi à Orbit
+# (celui qui contient index.json, par ex. /volume1/web/orbit-3f9a7c1e/).
+#
+# Nécessite AllowOverride All (ou au minimum Options, FileInfo, AuthConfig, Indexes)
+# pour ce dossier. Sans cela Apache répond 500 : dans ce cas, mets les mêmes
+# réglages dans le profil de ton portail Web Station.
+# Si Web Station utilise Nginx comme serveur HTTP, ce fichier est ignoré.
+
+# Pas de liste de dossier : l'accès repose sur le chemin secret.
+Options -Indexes -MultiViews
+
+# Aucun mot de passe : Orbit ne sait pas s'authentifier.
+Require all granted
+
+# ETag fort stable (date + taille, sans numéro d'inode) et Last-Modified : exigés par Orbit.
+FileETag MTime Size
+
+# Types : binaire pour les images de jeux, JSON pour l'index (Orbit refuse text/*).
+<IfModule mod_mime.c>
+    AddType application/octet-stream .exfat .ffpfsc .pkg .zip .7z .rar
+    AddType application/json .json
+    # Aucun encodage (gzip, br) déclaré à partir de l'extension.
+    RemoveEncoding .gz .z .br
+</IfModule>
+
+# Pas de compression : elle supprime Content-Length et rend l'ETag faible.
+<IfModule mod_deflate.c>
+    SetEnv no-gzip 1
+    SetEnvIfNoCase Request_URI \.(exfat|ffpfsc|pkg|zip|7z|rar|json)$ no-gzip dont-vary
+    RemoveOutputFilter DEFLATE
+</IfModule>
+<IfModule mod_brotli.c>
+    SetEnv no-brotli 1
+</IfModule>
+
+<IfModule mod_headers.c>
+    # Requêtes Range (206) annoncées, contenu non transformé par un intermédiaire.
+    Header always set Accept-Ranges bytes
+    Header always set Cache-Control "private, no-transform, max-age=0, must-revalidate"
+    Header always set X-Robots-Tag "noindex, nofollow"
+</IfModule>
+
+# Pas de mise en mémoire tampon par sendfile/mmap sur les montages réseau lents.
+<IfModule core.c>
+    EnableSendfile On
+</IfModule>
+
+# Fichiers qui ne doivent jamais sortir (réglages locaux, fichiers cachés, corbeille Synology).
+<FilesMatch "^(\.|titles\.json$)">
+    Require all denied
+</FilesMatch>
+<DirectoryMatch "/(@eaDir|#recycle|@Recycle|@tmp)(/|$)">
+    Require all denied
+</DirectoryMatch>
+
+# IMPORTANT : ne mets ici AUCUNE règle RewriteRule/Redirect (HTTP → HTTPS, www, etc.) :
+# Orbit refuse de suivre les redirections. Force le HTTPS dans le portail Web Station
+# ou le reverse proxy, jamais pour ce dossier.
