@@ -221,8 +221,16 @@ static bool entry(const char *index_url, const cJSON *x, Release *r, cJSON **vie
                     cJSON_AddStringToObject(v, "heroFallback", artwork);
                 }
             }
+            if (!has_hero) cJSON_AddNullToObject(v, "heroFallback");
+            cJSON_AddNullToObject(v, "coverFallback");
             /* "wide" makes Orbit use the hero as the page background. */
             cJSON_AddStringToObject(v, "artworkLayout", has_hero ? "wide" : "ambient");
+            /* Same fields as the signed catalogue's rows. */
+            char stamp[40];
+            time_t now = time(NULL);
+            struct tm utc;
+            if (gmtime_r(&now, &utc) && strftime(stamp, sizeof stamp, "%Y-%m-%dT%H:%M:%S+00:00", &utc))
+                cJSON_AddStringToObject(v, "sourceCheckedAt", stamp);
             cJSON_AddBoolToObject(v, "consoleVerified", false);
             *view = v;
         }
