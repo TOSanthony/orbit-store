@@ -369,6 +369,9 @@ if (is_file($indexFile)) {
                 'version' => $s('version'),
                 'description' => $s('description'),
                 'publisher' => $s('publisher'),
+                'genre' => $s('genre'),
+                'tagline' => $s('tagline'),
+                'releaseDate' => $s('releaseDate'),
                 'sha256' => $s('sha256'),
                 'cover' => art_url($s('cover')),
                 'hero' => art_url($s('hero')),
@@ -457,7 +460,7 @@ summary{cursor:pointer;font-weight:600}
       <input type="hidden" name="action" value="refresh"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
       <label><input type="checkbox" name="param" value="1" checked> Lire le param.json des .zip PS5 (titre, identifiant, version)</label>
 <?php if (!empty(array_filter((array)$GEMINI_KEYS))): ?>
-      <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (Gemini) les jeux sans param.json (nom, description, éditeur)</label>
+      <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (Gemini) les infos manquantes (description, éditeur, genre, accroche, date de sortie)</label>
 <?php endif; ?>
       <label><input type="checkbox" name="refresh_covers" value="1"> Remplacer les images déjà extraites des .zip</label>
       <label><input type="checkbox" name="sha256" value="1"> Calculer les SHA-256 (long sur de gros fichiers)</label>
@@ -551,9 +554,9 @@ summary{cursor:pointer;font-weight:600}
     $('dArt').replaceWith(Object.assign(picture(g, false), { id: 'dArt' }));
     $('dTitle').textContent = g.title;
     $('dSub').textContent = [g.titleId, g.publisher, g.version && 'v' + g.version].filter(Boolean).join(' · ');
-    $('dDesc').textContent = g.description || '';
+    $('dDesc').textContent = [g.tagline, g.description].filter(Boolean).join(' — ');
     const rows = [['Fichier', g.filename], ['Chemin', g.path], ['Taille', bytes(g.size)], ['Format', g.format],
-      g.compression && ['Archive', g.compression], g.sha256 && ['SHA-256', g.sha256],
+      g.genre && ['Genre', g.genre], g.releaseDate && ['Sortie', g.releaseDate], g.compression && ['Archive', g.compression], g.sha256 && ['SHA-256', g.sha256],
       ['Icône', g.cover ? 'oui' : 'manquante'], ['Fond', g.hero ? 'oui' : 'manquant']].filter(Boolean);
     $('dList').replaceChildren(...rows.flatMap(([k, v]) => [el('dt', null, k), el('dd', null, v)]));
     dlg.showModal();

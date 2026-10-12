@@ -20,10 +20,11 @@ sce_sys/) are copied there automatically; use --no-extract to skip this and
 --refresh-covers to replace images extracted earlier. Images you placed yourself are kept.
 
 For a .zip holding a PS5 game, sce_sys/param.json gives the title, title ID and version
-(--no-param to skip). For games without it (.exfat, .ffpfsc, other zips), --ai asks Gemini for
-the name, a French description and the publisher; results are kept in .ai-cache.json and the key
-comes from the GEMINI_API_KEYS environment variable (comma separated). The title ID and the
-file-derived title are sent to Google. Never put keys in index.json or on the command line.
+(--no-param to skip). With --ai, Gemini fills what is still missing for every game: description
+(French), publisher, genre, tagline and release date; it only renames games whose title came from
+the file name. Results are kept in .ai-cache.json and the key comes from the GEMINI_API_KEYS
+environment variable (comma separated). The title ID and the title are sent to Google. Never put
+keys in index.json or on the command line. addedAt is the file's modification date.
 
 Optional titles.json next to index.json (or --titles) adjusts rows, keyed by the file's
 path relative to the folder:
@@ -41,6 +42,7 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
@@ -176,17 +178,23 @@ def read_param(zip_path: Path):
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
 
+AI_FIELDS = ("description", "publisher", "genre", "tagline", "releaseDate")
+
+
 def ai_prompt(title_id: str, hint: str) -> str:
     return (
-        "Tu es un expert des jeux vidéo PlayStation (PS4 : CUSAxxxxx, PS5 : PPSAxxxxx).\n"
+        "Tu es un expert des jeux vidéo et applications PlayStation (PS4 : CUSAxxxxx, PS5 : PPSAxxxxx).\n"
         f'- Title ID exact : "{title_id}"\n'
-        f'- Titre brut ou nom de fichier : "{hint}"\n\n'
-        "Fais attention au Title ID pour identifier le vrai jeu. Si tu n'es pas certain de le connaître, "
+        f'- Titre connu ou nom de fichier : "{hint}"\n\n'
+        "Fais attention au Title ID pour identifier le vrai jeu. Si tu n'es pas certain, "
         "renvoie des chaînes vides plutôt que d'inventer.\n"
         "Renvoie STRICTEMENT un objet JSON valide :\n"
-        '{"name": "Nom officiel propre du jeu (max 60 caractères)", '
+        '{"name": "Nom officiel propre (max 60 caractères)", '
         '"description": "Résumé en français (max 180 caractères)", '
-        '"author": "Studio ou éditeur (max 60 caractères)"}'
+        '"author": "Studio ou éditeur (max 60 caractères)", '
+        '"genre": "1 à 3 genres en anglais séparés par \\" / \\", par ex. Action / Adventure", '
+        '"tagline": "Accroche courte en français (max 60 caractères)", '
+        '"releaseDate": "Date de sortie initiale au format AAAA-MM-JJ, ou vide si inconnue"}'
     )
 
 
@@ -219,10 +227,15 @@ def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list):
             errors.append("unreadable answer")
             continue
         if isinstance(data, dict):
+            date = clean_text(data.get("releaseDate"), 10)
             result = {
+                "v": 2,
                 "name": clean_text(data.get("name"), 60),
                 "description": clean_text(data.get("description"), 190),
                 "author": clean_text(data.get("author"), 60),
+                "genre": clean_text(data.get("genre"), 60),
+                "tagline": clean_text(data.get("tagline"), 60),
+                "releaseDate": date if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) else "",
             }
             if result["description"] or result["author"]:
                 return result
@@ -258,7 +271,7 @@ def main() -> int:
     parser.add_argument("--no-extract", action="store_true", help="do not take icon0.png / pic1.png out of .zip files")
     parser.add_argument("--refresh-covers", action="store_true", help="overwrite covers already extracted from a .zip")
     parser.add_argument("--no-param", action="store_true", help="do not read sce_sys/param.json (title, title ID, version) from PS5 .zip files")
-    parser.add_argument("--ai", action="store_true", help="ask Gemini for name, description and publisher of games without param.json (needs GEMINI_API_KEYS)")
+    parser.add_argument("--ai", action="store_true", help="ask Gemini to fill missing description, publisher, genre, tagline and release date (needs GEMINI_API_KEYS)")
     parser.add_argument("--ai-max", type=int, default=40, help="most Gemini requests per run (default 40)")
     parser.add_argument("--ai-model", default=os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"))
     parser.add_argument("--sha256", action="store_true", help="also record each file's SHA-256 (slow on large files)")
@@ -348,15 +361,18 @@ def main() -> int:
             hit = artwork_for(images, title_id, kind)
             if hit:
                 row[field] = hit
-        if args.ai and keys and not param and not extra.get("description"):
+        wanted = [f for f in AI_FIELDS if not extra.get(f)]
+        if args.ai and keys and wanted:
             info = cache.get(title_id) if isinstance(cache.get(title_id), dict) else None
             if info and info.get("unknown"):
                 # Not recognised last time: ask again only after a week.
                 info = None if time.time() - float(info.get("at", 0)) > 7 * 86400 else {}
-            elif info is None and ai_calls < args.ai_max and len(ai_errors) < 3:
+            elif info is not None and info.get("v") != 2:
+                info = None                       # saved by an older version, fewer fields
+            if info is None and ai_calls < args.ai_max and len(ai_errors) < 3:
                 ai_calls += 1
                 before = len(ai_errors)
-                found_info = ai_lookup(title_id, title_from(path.name), keys, args.ai_model, ai_errors)
+                found_info = ai_lookup(title_id, row["title"], keys, args.ai_model, ai_errors)
                 if found_info:
                     ai_errors.clear()
                     info = cache[title_id] = found_info
@@ -367,13 +383,15 @@ def main() -> int:
                     cache_dirty = True
             if info:
                 ai_done += 1
-                if info.get("description"):
-                    row["description"] = info["description"]
-                if info.get("author"):
-                    row["publisher"] = info["author"]
-                if info.get("name") and not extra.get("title"):
+                for field, source in (("description", "description"), ("publisher", "author"), ("genre", "genre"),
+                                      ("tagline", "tagline"), ("releaseDate", "releaseDate")):
+                    if field in wanted and info.get(source):
+                        row[field] = info[source]
+                # The AI only renames games whose title came from the file name.
+                if info.get("name") and not extra.get("title") and not (param or {}).get("title"):
                     row["title"] = info["name"]
-        for field in ("version", "description", "publisher", "genre", "releaseDate", "cover", "hero", "gameId"):
+        row.setdefault("addedAt", datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).replace(microsecond=0).isoformat())
+        for field in ("version", "description", "publisher", "genre", "tagline", "releaseDate", "addedAt", "cover", "hero", "gameId"):
             if extra.get(field):
                 row[field] = extra[field]
         rows.append(row)
