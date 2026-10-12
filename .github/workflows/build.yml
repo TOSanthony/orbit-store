@@ -1,0 +1,78 @@
+name: Build Orbit Store
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_tv_app:
+        description: "Build the native TV app (PPSA99177.ffpkg) as well"
+        type: boolean
+        default: false
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Optional: reuse the exact inputs shipped in the source bundle
+      # (put build-inputs/ at the repo root to enable this step).
+      - name: Seed pinned bootstrap inputs
+        run: |
+          if [ -d build-inputs ]; then
+            mkdir -p .deps
+            cp -r build-inputs/cjson .deps/cjson
+            cp build-inputs/cacert.pem .deps/cacert.pem
+          fi
+
+      - name: Bootstrap
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python tools/bootstrap.py
+          npm ci
+
+      - name: Build browser interface
+        run: npm run build
+
+      - name: Build SDK and build images
+        run: |
+          docker build -f tools/Dockerfile.sdk -t orbit-sdk:0.43 .
+          docker build -t orbit-build:0.1 .
+
+      - name: Build payload
+        run: |
+          docker run --rm --cpus 2 --memory 6g -v "$PWD:/work" orbit-build:0.1 payload
+          sudo chown -R "$USER":"$USER" build .deps || true
+          sha256sum build/orbit_store.elf | tee build/orbit_store.elf.sha256
+
+      - name: Build TV app
+        if: ${{ inputs.build_tv_app }}
+        run: |
+          docker build -t orbit-app-build:0.1 app
+          docker run --rm --cpus 2 --memory 6g -v "$PWD:/work" -w /work/app \
+            -e BUILD_JOBS=2 orbit-app-build:0.1 make ffpkg
+          docker run --rm --cpus 2 --memory 6g -v "$PWD:/work" -w /work/app \
+            orbit-app-build:0.1 bash tools/verify-package.sh
+          sudo chown -R "$USER":"$USER" app || true
+          sha256sum app/dist/PPSA99177.ffpkg | tee app/dist/PPSA99177.ffpkg.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbit-store
+          if-no-files-found: error
+          path: |
+            build/orbit_store.elf
+            build/orbit_store.elf.sha256
+            app/dist/PPSA99177.ffpkg
+            app/dist/PPSA99177.ffpkg.sha256
