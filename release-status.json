@@ -1,0 +1,31 @@
+{
+  "version": "1.2.0",
+  "channel": "beta",
+  "licenseCleared": false,
+  "localRegressionPassed": true,
+  "catalogLinksVerified": true,
+  "betaConsoleSmokePassed": true,
+  "betaLimitationsDocumented": true,
+  "consoleTestPassed": false,
+  "homeScreenLifecycleVerified": false,
+  "reason": "1.2.0: local regression suites passed; archive-enabled ELF and native FFPKG rebuilt and byte-verified. Physical PS5 extraction and AkiraBox capture passed on the preceding build; final changes are provider help text only. All desktop architecture builds are prepared locally. RAR decoder distribution licence compatibility remains unresolved; no public release has been staged or published.",
+  "catalogSourcesVerifiedOnConsole": false,
+  "tvAppVersion": "1.5.0",
+  "archivePasswordBuild": {
+    "state": "local-testing",
+    "distributionBlocked": "7-Zip RAR decoder adds the unRAR restriction; resolve compatibility with linked GPL components before publishing.",
+    "consoleExtractionVerified": true,
+    "consoleEvidence": ".state/console-tests/archive-results.json",
+    "consoleScope": "Nine local-network queue/extraction cases on physical PS5 internal storage: three original game archives plus encrypted ZIP, 7z, RAR4 and RAR5; incorrect/custom-password retries. Native UI was unit-tested and packaged, not physically installed in this run."
+  },
+  "archiveInspectionConsoleTest": {
+    "passed": true,
+    "cases": 10,
+    "evidence": ".state/console-tests/inspection-results.json",
+    "scope": "Current production extraction implementation, pinned local-network fixtures on physical PS5 internal storage. ZIP, 7z, RAR4/RAR5, password retries, measured inspection and unsupported layout rejection. Test outputs removed; 13 prior jobs preserved. Regular 1.2.0 build restored.",
+    "regularPayloadSha256": "1624b0c3b0990845f67dd46ea5b17c95f0bca40f198ab6570467111ed14e8836",
+    "productionSourceCheck": ".state/console-tests/production-extract-results.json",
+    "productionSourceCheckPassed": false,
+    "productionSourceBlocker": "PS5 could not resolve Archive.org before receiving data."
+  }
+}
