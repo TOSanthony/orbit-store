@@ -16,7 +16,7 @@
 #include <time.h>
 
 #define ART_ENTRIES 256
-#define ART_WORKERS 2
+#define ART_WORKERS 4
 #define ART_QUEUE 64
 #define ART_MAX_BYTES (12 * 1024 * 1024)
 #define ART_BUDGET (32 * 1024 * 1024)

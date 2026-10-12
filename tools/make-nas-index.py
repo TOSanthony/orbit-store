@@ -67,7 +67,7 @@ def title_from(name: str) -> str:
     return re.sub(r"\s+", " ", stem).strip(" -.") or Path(name).stem
 
 
-IMAGE_TYPES = (".png", ".jpg", ".jpeg", ".webp")
+IMAGE_TYPES = (".jpg", ".png", ".jpeg", ".webp")   # the small optimised copy wins over the PNG
 
 
 def find_artwork(root: Path, folder: str):
@@ -119,6 +119,48 @@ def extract_art(zip_path: Path, title_id: str, root: Path, folder: str, images: 
     except (zipfile.BadZipFile, OSError, RuntimeError, NotImplementedError):
         pass
     return written
+
+
+try:
+    from PIL import Image          # optional: only used to shrink the extracted pictures
+except ImportError:                # pragma: no cover
+    Image = None
+SIZE_LIMITS = {"icon0": (512, 512), "pic1": (1920, 1080)}
+
+
+def optimize_art(root: Path, images: dict, title_id: str, kind: str, refresh: bool):
+    """Write <TITLEID>_<kind>.jpg, a small copy of the extracted PNG (about 10x lighter), so the
+    console downloads 300 KB instead of several MB. The PNG stays; returns True when written."""
+    if Image is None:
+        return False
+    source_rel = images.get(f"{title_id}_{kind}.png".lower())
+    if not source_rel:
+        return False
+    source = root / source_rel
+    target = source.with_suffix(".jpg")
+    try:
+        if not refresh and target.exists() and target.stat().st_mtime >= source.stat().st_mtime:
+            images[target.name.lower()] = f"{source_rel.rsplit('/', 1)[0]}/{target.name}" if "/" in source_rel else target.name
+            return False
+        with Image.open(source) as picture:
+            picture.load()
+            if picture.width * picture.height > 64_000_000:
+                return False
+            if picture.mode in ("RGBA", "LA", "P"):
+                picture = picture.convert("RGBA")
+                flat = Image.new("RGB", picture.size, (20, 22, 30))
+                flat.paste(picture, mask=picture.getchannel("A"))
+                picture = flat
+            else:
+                picture = picture.convert("RGB")
+            picture.thumbnail(SIZE_LIMITS[kind], Image.LANCZOS)
+            temporary = target.with_name(target.name + ".part")
+            picture.save(temporary, format="JPEG", quality=86, optimize=True)
+            temporary.replace(target)
+        images[target.name.lower()] = f"{source_rel.rsplit('/', 1)[0]}/{target.name}" if "/" in source_rel else target.name
+        return True
+    except (OSError, ValueError, Image.DecompressionBombError):
+        return False
 
 
 def artwork_for(images: dict, title_id: str, kind: str):
@@ -321,6 +363,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, help="default: <folder>/index.json")
     parser.add_argument("--titles", type=Path, help="default: <folder>/titles.json if present")
     parser.add_argument("--covers", default="covers", help="sub-folder with <TITLEID>_icon0.png (cover) and <TITLEID>_pic1.png (background); default: covers")
+    parser.add_argument("--no-optimize", action="store_true", help="do not write small .jpg copies of the covers (needs Pillow)")
     parser.add_argument("--no-extract", action="store_true", help="do not take icon0.png / pic1.png out of .zip files")
     parser.add_argument("--refresh-covers", action="store_true", help="overwrite covers already extracted from a .zip")
     parser.add_argument("--no-param", action="store_true", help="do not read sce_sys/param.json (title, title ID, version) from PS5 .zip files")
@@ -351,6 +394,7 @@ def main() -> int:
     fallback = {kind: f"assets/{kind}Fallback.png" for kind in ("cover", "hero")
                 if (root / "assets" / f"{kind}Fallback.png").is_file()}
     rows, skipped, extracted, notes = [], [], [], []
+    optimized = 0
     keys = [k.strip() for k in re.split(r"[,\s]+", os.environ.get("GEMINI_API_KEYS", "")) if k.strip()]
     if args.ai and not keys:
         notes.append("--ai: no key in GEMINI_API_KEYS, AI step skipped")
@@ -429,6 +473,8 @@ def main() -> int:
             for kind in extract_art(path, title_id, root, args.covers, images, args.refresh_covers):
                 extracted.append(f"{title_id}_{kind}.png")
         for field, kind in (("cover", "icon0"), ("hero", "pic1")):
+            if not args.no_optimize and optimize_art(root, images, title_id, kind, args.refresh_covers):
+                optimized += 1
             hit = artwork_for(images, title_id, kind)
             # The game's own image, else the default one from assets/.
             if hit or fallback.get(field):
@@ -514,6 +560,10 @@ def main() -> int:
         print(f"  AI: {ai_done} game(s) completed, {ai_calls} request(s) this run" + (f" (last problem: {ai_errors[-1]})" if ai_errors else ""))
     for note in notes:
         print(f"  note: {note}")
+    if optimized:
+        print(f"  {optimized} small .jpg copy(ies) of the covers written (faster on the console)")
+    elif Image is None and not args.no_optimize and extracted:
+        print("  note: install Pillow (pip install pillow) to shrink covers: the console loads them ~10x faster")
     if extracted:
         print(f"  {len(extracted)} image(s) extracted from .zip files into {args.covers}/")
     for key, reason in skipped:
