@@ -28,7 +28,7 @@ $PASSWORD_HASH = '';                                   // voir « php make-nas-i
 $GAMES_DIR     = __DIR__;                              // dossier d'index.json, de covers/ et des jeux
 $SCRIPT        = __DIR__ . '/make-nas-index.py';
 $PYTHON        = '/usr/local/bin/python3';
-$TIMEOUT       = 900;                                  // secondes max pour une actualisation
+$TIMEOUT       = 3600;                                 // secondes max pour une actualisation
 $SESSION_MIN   = 120;                                  // déconnexion après N minutes d'inactivité
 $MAX_FAILS     = 5;                                    // mots de passe faux avant blocage
 $LOCK_MIN      = 15;                                   // durée du blocage (minutes)
@@ -52,20 +52,19 @@ if (is_file($extra)) {
 const IMAGE_TYPES = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'webp' => 'image/webp'];
 
 // ---- Actualisation (partagée par le web et la ligne de commande) ------------
-/** @return array{0:int,1:string} code de sortie et sortie texte */
-function run_refresh(bool $sha256, bool $refreshCovers, bool $param = true, bool $ai = false): array
+/**
+ * Prépare la commande Python.
+ * @return array{0:?array,1:array,2:string} [commande, environnement, erreur]
+ */
+function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $ai): array
 {
-    global $GAMES_DIR, $SCRIPT, $PYTHON, $TIMEOUT, $GEMINI_KEYS, $GEMINI_MODEL, $AI_MAX;
-    if (!is_file($SCRIPT)) return [1, "make-nas-index.py introuvable : $SCRIPT"];
-    if (!is_file($PYTHON)) return [1, "Python 3 introuvable : $PYTHON (règle \$PYTHON)"];
-    if (!is_dir($GAMES_DIR)) return [1, "Dossier des jeux introuvable : $GAMES_DIR"];
-    if (!is_writable($GAMES_DIR)) return [1, "Le dossier $GAMES_DIR n'est pas inscriptible par l'utilisateur PHP (« http »). Donne-lui les droits d'écriture."];
-    if (!function_exists('proc_open')) return [1, "proc_open est désactivé dans le profil PHP de Web Station."];
+    global $GAMES_DIR, $SCRIPT, $PYTHON, $GEMINI_KEYS, $GEMINI_MODEL, $AI_MAX;
+    if (!is_file($SCRIPT)) return [null, [], "make-nas-index.py introuvable : $SCRIPT"];
+    if (!is_file($PYTHON)) return [null, [], "Python 3 introuvable : $PYTHON (règle \$PYTHON)"];
+    if (!is_dir($GAMES_DIR)) return [null, [], "Dossier des jeux introuvable : $GAMES_DIR"];
+    if (!is_writable($GAMES_DIR)) return [null, [], "Le dossier $GAMES_DIR n'est pas inscriptible par l'utilisateur PHP (« http »). Donne-lui les droits d'écriture."];
+    if (!function_exists('proc_open')) return [null, [], 'proc_open est désactivé dans le profil PHP de Web Station.'];
 
-    $lock = fopen(sys_get_temp_dir() . '/orbit-make-index.lock', 'c');
-    if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) return [1, 'Une actualisation est déjà en cours.'];
-
-    @set_time_limit($TIMEOUT + 30);
     $cmd = [$PYTHON, '-I', $SCRIPT, $GAMES_DIR];
     if ($sha256) $cmd[] = '--sha256';
     if ($refreshCovers) $cmd[] = '--refresh-covers';
@@ -74,19 +73,24 @@ function run_refresh(bool $sha256, bool $refreshCovers, bool $param = true, bool
     $keys = array_values(array_filter(array_map('strval', (array)$GEMINI_KEYS), static fn($k) => trim($k) !== ''));
     if ($ai && $keys) {
         // Les clés passent par l'environnement, jamais par la ligne de commande.
-        $cmd[] = '--ai';
-        $cmd[] = '--ai-max';
-        $cmd[] = (string)max(1, (int)$AI_MAX);
+        array_push($cmd, '--ai', '--ai-max', (string)max(1, (int)$AI_MAX), '--ai-model', (string)$GEMINI_MODEL);
         $env['GEMINI_API_KEYS'] = implode(',', array_map('trim', $keys));
         $env['GEMINI_MODEL'] = (string)$GEMINI_MODEL;
-        $cmd[] = '--ai-model';
-        $cmd[] = (string)$GEMINI_MODEL;
     }
+    return [$cmd, $env, ''];
+}
+
+/** @return array{0:int,1:string} code de sortie et sortie texte (ligne de commande : on attend la fin) */
+function run_refresh(bool $sha256, bool $refreshCovers, bool $param = true, bool $ai = false): array
+{
+    global $TIMEOUT;
+    [$cmd, $env, $err] = refresh_command($sha256, $refreshCovers, $param, $ai);
+    if ($cmd === null) return [1, $err];
+    @set_time_limit(0);
     $proc = proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
     if (!is_resource($proc)) return [1, 'Impossible de lancer Python.'];
     stream_set_blocking($pipes[1], false);
     stream_set_blocking($pipes[2], false);
-
     $out = '';
     $start = time();
     $exit = -1;
@@ -94,12 +98,7 @@ function run_refresh(bool $sha256, bool $refreshCovers, bool $param = true, bool
         $out .= (string)stream_get_contents($pipes[1]) . (string)stream_get_contents($pipes[2]);
         $st = proc_get_status($proc);
         if (!$st['running']) { $exit = (int)$st['exitcode']; break; }
-        if (time() - $start > $TIMEOUT) {
-            proc_terminate($proc, 9);
-            $out .= "\nDélai dépassé ($TIMEOUT s).";
-            $exit = 124;
-            break;
-        }
+        if (time() - $start > $TIMEOUT) { proc_terminate($proc, 9); $out .= "\nDélai dépassé ($TIMEOUT s)."; $exit = 124; break; }
         usleep(200000);
     }
     $out .= (string)stream_get_contents($pipes[1]) . (string)stream_get_contents($pipes[2]);
@@ -108,6 +107,65 @@ function run_refresh(bool $sha256, bool $refreshCovers, bool $param = true, bool
     proc_close($proc);
     if (strlen($out) > 20000) $out = substr($out, 0, 20000) . "\n…";
     return [$exit, trim($out)];
+}
+
+// ---- Actualisation en arrière-plan (web) --------------------------------------
+// La page répond tout de suite ; Python tourne détaché et la page suit son avancement.
+// Cela évite le « Gateway Timeout » du reverse proxy sur les longues actualisations.
+function job_base(): string
+{
+    global $GAMES_DIR;
+    return sys_get_temp_dir() . '/orbit-nas-job-' . sha1((string)$GAMES_DIR);
+}
+
+/** @return array{state:string,elapsed:int,ok:bool,log:string,at:int} idle | running | done */
+function job_state(bool $consume = false): array
+{
+    global $TIMEOUT;
+    $b = job_base();
+    $out = ['state' => 'idle', 'elapsed' => 0, 'ok' => false, 'log' => '', 'at' => 0];
+    if (!is_file("$b.start")) return $out;
+    $started = (int)@filemtime("$b.start");
+    $out['elapsed'] = max(0, time() - $started);
+    $out['at'] = $started;
+    if (is_file("$b.code")) {
+        $out['state'] = 'done';
+        $out['ok'] = trim((string)@file_get_contents("$b.code")) === '0';
+    } elseif ($out['elapsed'] > $TIMEOUT + 120) {
+        $out['state'] = 'done';
+        $out['log'] = "L'actualisation a été interrompue (délai dépassé).\n";
+    } else {
+        $out['state'] = 'running';
+    }
+    $log = is_file("$b.log") ? (string)@file_get_contents("$b.log", false, null, 0, 20000) : '';
+    $out['log'] .= trim($log);
+    if ($out['state'] === 'done' && $consume) {
+        foreach (['start', 'code', 'log'] as $ext) @unlink("$b.$ext");
+    }
+    return $out;
+}
+
+/** @return string message d'erreur, vide si lancé */
+function start_background_refresh(bool $sha256, bool $refreshCovers, bool $param, bool $ai): string
+{
+    global $TIMEOUT;
+    if (job_state()['state'] === 'running') return 'Une actualisation est déjà en cours.';
+    [$cmd, $env, $err] = refresh_command($sha256, $refreshCovers, $param, $ai);
+    if ($cmd === null) return $err;
+    $b = job_base();
+    foreach (['code', 'log'] as $ext) @unlink("$b.$ext");
+    @unlink("$b.start");
+    $mark = @fopen("$b.start", 'x');                       // création atomique : un seul lancement
+    if (!$mark) return 'Une actualisation est déjà en cours.';
+    fclose($mark);
+    $line = implode(' ', array_map('escapeshellarg', $cmd));
+    $inner = 'T=""; command -v timeout >/dev/null 2>&1 && T="timeout -k 10 ' . (int)$TIMEOUT . '"; '
+        . '$T ' . $line . ' > ' . escapeshellarg("$b.log") . ' 2>&1; echo $? > ' . escapeshellarg("$b.code");
+    $launch = 'nohup sh -c ' . escapeshellarg($inner) . ' >/dev/null 2>&1 &';
+    $proc = proc_open($launch, [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes, null, $env);
+    if (!is_resource($proc)) { @unlink("$b.start"); return 'Impossible de lancer Python.'; }
+    proc_close($proc);
+    return '';
 }
 
 // ---- Ligne de commande -------------------------------------------------------
@@ -136,7 +194,7 @@ header('X-Robots-Tag: noindex, nofollow, noarchive');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('Referrer-Policy: no-referrer');
-header("Content-Security-Policy: default-src 'none'; img-src 'self' https: data:; style-src 'nonce-$nonce'; script-src 'nonce-$nonce'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+header("Content-Security-Policy: default-src 'none'; img-src 'self' https: data:; connect-src 'self'; style-src 'nonce-$nonce'; script-src 'nonce-$nonce'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
 
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 function is_https(): bool
@@ -250,6 +308,15 @@ if (isset($_GET['img'])) {
     exit;
 }
 
+// ---- Avancement de l'actualisation (JSON, réservé aux connectés) ---------------
+if (isset($_GET['job'])) {
+    session_write_close();
+    $j = job_state();
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['state' => $j['state'], 'elapsed' => $j['elapsed']]);
+    exit;
+}
+
 // ---- Actions (POST) ------------------------------------------------------------
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if (!csrf_ok($csrf)) plain(403, 'Session expirée. Recharge la page.');
@@ -261,8 +328,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         exit;
     }
     if ($action === 'refresh') {
-        [$code, $text] = run_refresh(!empty($_POST['sha256']), !empty($_POST['refresh_covers']), !empty($_POST['param']), !empty($_POST['ai']));
-        $_SESSION['flash'] = ['ok' => $code === 0, 'log' => $text, 'at' => time()];
+        $err = start_background_refresh(!empty($_POST['sha256']), !empty($_POST['refresh_covers']), !empty($_POST['param']), !empty($_POST['ai']));
+        if ($err !== '') $_SESSION['flash'] = ['ok' => false, 'log' => $err, 'at' => time()];
         header('Location: ' . strtok((string)($_SERVER['REQUEST_URI'] ?? ''), '?'));
         exit;
     }
@@ -314,6 +381,9 @@ if (is_file($indexFile)) {
 }
 $flash = $_SESSION['flash'] ?? null;
 unset($_SESSION['flash']);
+$job = job_state(true);                          // une actualisation terminée est affichée une seule fois
+if ($job['state'] === 'done') $flash = ['ok' => $job['ok'], 'log' => $job['log'] !== '' ? $job['log'] : '(aucune sortie)', 'at' => $job['at']];
+$running = $job['state'] === 'running';
 $data = json_encode(['games' => $games, 'indexTime' => $indexTime], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 
 header('Content-Type: text/html; charset=utf-8');
@@ -371,7 +441,7 @@ summary{cursor:pointer;font-weight:600}
 .menu label{display:flex;gap:.55rem;align-items:flex-start;font-size:.88rem;color:var(--dim)}
 .menu input{margin-top:.2rem;accent-color:var(--accent)}
 .spin{display:none;width:1rem;height:1rem;border:2px solid #04101f55;border-top-color:#04101f;border-radius:50%;animation:s 1s linear infinite;vertical-align:-.2rem;margin-right:.4rem}
-.busy .spin{display:inline-block}@keyframes s{to{transform:rotate(360deg)}}
+.busy .spin,.spin.on{display:inline-block}.panel .spin{border-color:#9db0d855;border-top-color:var(--accent);vertical-align:-.15rem}@keyframes s{to{transform:rotate(360deg)}}
 @media (max-width:30rem){.det{flex-direction:column;margin-top:-3rem}.grid{grid-template-columns:repeat(2,1fr)}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation-duration:2s!important}}
 </style></head><body>
@@ -397,6 +467,9 @@ summary{cursor:pointer;font-weight:600}
   <form method="post"><input type="hidden" name="action" value="logout"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><button class="btn">Déconnexion</button></form>
 </header>
 <main>
+<?php if ($running): ?>
+  <div class="panel" id="running" role="status"><span class="spin on"></span> Actualisation en cours… <span id="elapsed"><?= (int)$job['elapsed'] ?></span> s — tu peux fermer cette page, elle continue en arrière-plan.</div>
+<?php endif; ?>
 <?php if ($flash): ?>
   <details class="panel <?= $flash['ok'] ? 'ok' : 'bad' ?>" open><summary><?= $flash['ok'] ? 'Index actualisé' : "Échec de l'actualisation" ?> — <?= h(date('d/m/Y H:i:s', (int)$flash['at'])) ?></summary><pre><?= h((string)$flash['log']) ?></pre></details>
 <?php endif; ?>
@@ -512,6 +585,18 @@ summary{cursor:pointer;font-weight:600}
   });
   document.addEventListener('click', (e) => { const b = $('refreshBox'); if (b.open && !b.contains(e.target)) b.removeAttribute('open'); });
   render();
+  if ($('running')) {
+    const tick = async () => {
+      try {
+        const r = await fetch('?job=1', { cache: 'no-store', credentials: 'same-origin' });
+        const j = await r.json();
+        $('elapsed').textContent = j.elapsed;
+        if (j.state !== 'running') { location.reload(); return; }
+      } catch (e) { /* réseau ou proxy occupé : on réessaie */ }
+      setTimeout(tick, 2500);
+    };
+    setTimeout(tick, 2500);
+  }
 })();
 </script>
 </body></html>

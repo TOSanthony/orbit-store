@@ -378,7 +378,10 @@ def main() -> int:
                 row[field] = extra[field]
         rows.append(row)
 
-    output.write_text(json.dumps({"schemaVersion": 1, "releases": rows}, indent=2, ensure_ascii=False) + "\n", "utf-8")
+    # Written aside and renamed, so Orbit never reads a half-written index.
+    partial = output.with_name(output.name + ".part")
+    partial.write_text(json.dumps({"schemaVersion": 1, "releases": rows}, indent=2, ensure_ascii=False) + "\n", "utf-8")
+    partial.replace(output)
     print(f"{len(rows)} file(s) listed in {output}")
     if cache_dirty:
         try:
