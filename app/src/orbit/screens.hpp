@@ -79,11 +79,12 @@ namespace tab
 {
 constexpr int discover = 0;
 constexpr int browse = 1;
-constexpr int dlc = 2;     // DLC packs, one card per game
-constexpr int updates = 3; // update packs
-constexpr int library = 4;
-constexpr int downloads = 5;
-constexpr int count = 6;
+constexpr int apps = 2;    // apps (the NAS folder apps/)
+constexpr int dlc = 3;     // DLC packs, one card per game
+constexpr int updates = 4; // update packs
+constexpr int library = 5;
+constexpr int downloads = 6;
+constexpr int count = 7;
 } // namespace tab
 
 struct Intent
@@ -661,6 +662,7 @@ class App
     Context &ctx_;
     DiscoverScreen discover_;
     BrowseScreen browse_;
+    BrowseScreen apps_;
     BrowseScreen dlc_;
     BrowseScreen updates_;
     LibraryScreen library_;

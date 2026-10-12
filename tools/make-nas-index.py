@@ -55,13 +55,15 @@ ARCHIVES = {".zip": "zip", ".7z": "7z", ".rar": "rar"}
 SKIP_DIRS = {"@eaDir", "#recycle", "@Recycle", "@tmp"}
 
 
-PACK_FOLDERS = {"dlc": "DLC", "updates": "UPDATES", "update": "UPDATES", "mises a jour": "UPDATES"}
+PACK_FOLDERS = {"dlc": "DLC", "updates": "UPDATES", "update": "UPDATES", "mises a jour": "UPDATES",
+                "apps": "APPS", "applications": "APPS"}
 
 
 def pack_kind(relative: Path) -> str:
-    """"DLC" or "UPDATES" when a folder of the path is called dlc / updates (any case), else "".
+    """"DLC", "UPDATES" or "APPS" when a folder of the path is called dlc / updates / apps (any case), else "".
 
-    packages/ps5/dlc/PPSA01342/*.pkg  ->  DLC;  packages/ps5/updates/PPSA01342/*.pkg  ->  UPDATES."""
+    packages/ps5/dlc/PPSA01342/*.pkg  ->  DLC;  packages/ps5/updates/PPSA01342/*.pkg  ->  UPDATES;
+    packages/ps5/apps/zip/MyApp.zip  ->  APPS."""
     for part in relative.parts[:-1]:
         kind = PACK_FOLDERS.get(part.strip().lower())
         if kind:
@@ -461,7 +463,7 @@ def main() -> int:
             "provider": "nas",
             "sourceId": "nas",
             "platform": platform,
-            "title": extra.get("title") or (param or {}).get("title") or (title_id if pack else title_from(path.name)),
+            "title": extra.get("title") or (param or {}).get("title") or (title_id if pack in ("DLC", "UPDATES") else title_from(path.name)),
             "titleId": title_id,
             "filename": path.name,
             "path": quote(key, safe="/"),
@@ -502,8 +504,8 @@ def main() -> int:
             if fallback.get(field):
                 row[field + "Fallback"] = fallback[field]
         if pack:
-            # DLC / updates: one card per game in its own menu; the file name tells the packs apart.
-            row["id"] = f"{title_id.lower()}-{'dlc' if pack == 'DLC' else 'upd'}-{hashlib.sha1(key.encode('utf-8')).hexdigest()[:6]}"
+            # DLC / updates / apps: their own menu (apps also show in Discover); the file name tells packs apart.
+            row["id"] = f"{title_id.lower()}-{ {'DLC': 'dlc', 'UPDATES': 'upd', 'APPS': 'app'}[pack] }-{hashlib.sha1(key.encode('utf-8')).hexdigest()[:6]}"
             row["tagline"] = pack
             pack_rows += 1
         wanted = [f for f in AI_FIELDS if not extra.get(f) and not (pack and f == "tagline")]
@@ -584,7 +586,7 @@ def main() -> int:
     partial = output.with_name(output.name + ".part")
     partial.write_text(json.dumps({"schemaVersion": 1, "releases": rows}, indent=2, ensure_ascii=False) + "\n", "utf-8")
     partial.replace(output)
-    print(f"{len(rows)} file(s) listed in {output}" + (f" ({pack_rows} DLC / update file(s))" if pack_rows else ""))
+    print(f"{len(rows)} file(s) listed in {output}" + (f" ({pack_rows} DLC / update / app file(s))" if pack_rows else ""))
     if cache_dirty:
         try:
             temporary = cache_path.with_name(cache_path.name + ".part")

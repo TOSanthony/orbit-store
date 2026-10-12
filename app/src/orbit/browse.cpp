@@ -495,9 +495,10 @@ void BrowseScreen::draw(Frame &frame, bool focused) const
 
     // .page-heading: the title and how many games match.
     const float title = ui::text(list, type.semibold,
-                                     category_ == Category::dlc       ? tr("DLC")
+                                     category_ == Category::apps      ? tr("Apps")
+                                     : category_ == Category::dlc     ? tr("DLC")
                                      : category_ == Category::updates ? tr("Updates")
-                                                                      : tr("Browse"),
+                                                                      : tr("Games"),
                                      ui::kGutter, kTitleBaseline, 60.0f,
                                  ui::color::text);
     const std::string count =

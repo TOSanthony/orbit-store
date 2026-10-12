@@ -356,15 +356,21 @@ TvAppStatus parse_tv_app(const json::Value &value);
 
 // ---- storefront rules ----
 
-// A game's tagline doubles as its menu: "DLC" and "UPDATES" packs (the NAS folders dlc/ and
-// updates/) have their own tabs and stay out of Discover and Browse (src/categories.ts).
+// A game's tagline doubles as its menu: "APPS", "DLC" and "UPDATES" rows (the NAS folders apps/,
+// dlc/ and updates/) have their own tabs and stay out of the Games tab (src/categories.ts).
+// Discover shows games and apps; DLC and updates only appear in their own tab.
 enum class Category : std::uint8_t
 {
     game,
+    apps,
     dlc,
     updates,
 };
 Category game_category(const Game &game);
+// DLC and update packs: one card per game, one file per pack (a list to choose from).
+bool is_pack(const Game &game);
+// Games and apps: what Discover shows.
+bool in_discover(const Game &game);
 
 // Groups options by gameId in catalogue order (src/catalog.ts).
 std::vector<Game> group_games(const std::vector<Release> &releases);
@@ -409,7 +415,8 @@ struct BrowseFilters
     SizeFilter size = SizeFilter::any;
     bool favourites = false;
     Sort sort = Sort::release;
-    Category category = Category::game; // which menu: games, DLC or updates
+    Category category = Category::game; // which menu: games, apps, DLC or updates
+    bool with_apps = false;             // Discover: games and apps together
 
     // Source, format, region, size and sort are at their defaults (Reset filters).
     bool narrowed() const

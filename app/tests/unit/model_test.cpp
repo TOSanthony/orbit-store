@@ -232,10 +232,14 @@ TEST(Model, DlcAndUpdatePacksHaveTheirOwnMenus)
     Release dlc1 = make_release("a-dlc-1", "PPSA00001-DLC", "Cool Game", "2024-01-01", 1);
     Release dlc2 = make_release("a-dlc-2", "PPSA00001-DLC", "Cool Game", "2024-01-01", 1);
     Release update = make_release("a-upd-1", "PPSA00001-UPDATES", "Cool Game", "2024-01-01", 2);
+    Release app = make_release("a-app-1", "PPSA00001-APPS", "Cool App", "2024-02-01", 1);
     dlc1.tagline = dlc2.tagline = " dlc ";
     update.tagline = "UPDATES";
-    const std::vector<Game> games = group_games({game, dlc1, dlc2, update});
-    ASSERT_EQ(games.size(), 3u);
+    app.tagline = "APPS";
+    const std::vector<Game> games = group_games({game, dlc1, dlc2, update, app});
+    ASSERT_EQ(games.size(), 4u);
+    EXPECT_EQ(game_category(games[3]), Category::apps);
+    EXPECT_FALSE(is_pack(games[3]));
     EXPECT_EQ(game_category(games[0]), Category::game);
     EXPECT_EQ(game_category(games[1]), Category::dlc);
     EXPECT_EQ(games[1].releases.size(), 2u);
@@ -247,8 +251,13 @@ TEST(Model, DlcAndUpdatePacksHaveTheirOwnMenus)
     EXPECT_EQ(browse(games, filters, {}), std::vector<int>({1}));
     filters.category = Category::updates;
     EXPECT_EQ(browse(games, filters, {}), std::vector<int>({2}));
-    // Discover's rows never show packs.
-    EXPECT_EQ(latest_games(games, "2026-01-01"), std::vector<int>({0}));
+    filters.category = Category::apps;
+    EXPECT_EQ(browse(games, filters, {}), std::vector<int>({3}));
+    // Discover shows games and apps, never DLC or updates.
+    filters.category = Category::game;
+    filters.with_apps = true;
+    EXPECT_EQ(browse(games, filters, {}).size(), 2u);
+    EXPECT_EQ(latest_games(games, "2026-01-01").size(), 2u);
 }
 
 TEST(Model, SearchMatchesTitlesAndAnyOptionsTitleId)

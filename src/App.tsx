@@ -20,7 +20,7 @@ import { ArchiveSetting } from "./ArchiveSetting";
 import { Sources } from "./Sources";
 import { Pairing } from "./Pairing";
 import type { Game, LibraryTarget } from "./types";
-import { gameCategory } from "./categories";
+import { gameCategory, inDiscover } from "./categories";
 import { browseGames, newlyAddedGames, defaultFilters, CATALOG_PAGE_SIZE, type BrowseFilters } from "./browse";
 import {
   parseBrowserHandoff,
@@ -53,7 +53,7 @@ export default function App() {
     };
   }, [handoffHash, orbit.refresh]);
   const [tab, setTab] = useState<
-      "Discover" | "Browse" | "DLC" | "Updates" | "Library" | "Downloads"
+      "Discover" | "Browse" | "Apps" | "DLC" | "Updates" | "Library" | "Downloads"
     >("Discover"),
     [gameId, setGameId] = useState<string | null>(() =>
       new URLSearchParams(window.location.search).get("game"),
@@ -192,19 +192,26 @@ export default function App() {
   const consoleBrowser =
     orbit.system?.platform === "ps5" && !!orbit.system.localSessionAvailable;
   useController(back, consoleBrowser);
-  // DLC and update packs live in their own tabs, never among the games.
+  // Apps, DLC and update packs live in their own tabs, never among the games. Discover shows
+  // games and apps; DLC and updates only appear in their own tab.
   const storeGames = useMemo(
-    () => orbit.games.filter((g) => gameCategory(g) === "game"),
+    () => orbit.games.filter((g) => inDiscover(g)),
     [orbit.games],
   );
   const listGames = useMemo(
     () =>
-      tab === "DLC" || tab === "Updates"
-        ? orbit.games.filter(
-            (g) => gameCategory(g) === (tab === "DLC" ? "dlc" : "updates"),
-          )
-        : storeGames,
-    [orbit.games, storeGames, tab],
+      orbit.games.filter(
+        (g) =>
+          gameCategory(g) ===
+          (tab === "Apps"
+            ? "apps"
+            : tab === "DLC"
+              ? "dlc"
+              : tab === "Updates"
+                ? "updates"
+                : "game"),
+      ),
+    [orbit.games, tab],
   );
   const filtered = useMemo(
     () => browseGames(listGames, filters, favorites),
@@ -312,7 +319,7 @@ export default function App() {
     setTab(next);
     setDownloadTarget(null);
     setLibraryTarget(null);
-    if (next === "Browse" || next === "DLC" || next === "Updates")
+    if (next === "Browse" || next === "Apps" || next === "DLC" || next === "Updates")
       requestAnimationFrame(() => {
         const first = document.querySelector<HTMLElement>(
           ".browse-grid .game-tile",
@@ -336,9 +343,18 @@ export default function App() {
   function paired(action: () => void) {
     return () => (orbit.system?.paired ? action() : setPairOpen(true));
   }
+  const tabLabels: Record<typeof tab, string> = {
+    Discover: t("Discover"),
+    Browse: t("Games"),
+    Apps: t("Apps"),
+    DLC: t("DLC"),
+    Updates: t("Updates"),
+    Library: t("Library"),
+    Downloads: t("Downloads"),
+  };
   return (
     <div
-      className={`app screen-${game ? "details" : tab === "DLC" || tab === "Updates" ? "browse" : tab.toLowerCase()} ${discover ? "discover" : ""} ${consoleBrowser ? "console-browser" : ""}`}
+      className={`app screen-${game ? "details" : tab === "Apps" || tab === "DLC" || tab === "Updates" ? "browse" : tab.toLowerCase()} ${discover ? "discover" : ""} ${consoleBrowser ? "console-browser" : ""}`}
       data-game={game?.id}
     >
       <Backdrop
@@ -376,6 +392,7 @@ export default function App() {
                 [
                   "Discover",
                   "Browse",
+                  "Apps",
                   "DLC",
                   "Updates",
                   "Library",
@@ -389,7 +406,7 @@ export default function App() {
                     aria-current={tab === name ? "page" : undefined}
                     onClick={() => go(name)}
                   >
-                    {t(name)}
+                    {tabLabels[name]}
                     {name === "Downloads" && active > 0 && (
                       <span className="queue-count">{active}</span>
                     )}
@@ -689,10 +706,10 @@ export default function App() {
               )}
             </div>
           )
-        ) : tab === "Browse" || tab === "DLC" || tab === "Updates" ? (
+        ) : tab === "Browse" || tab === "Apps" || tab === "DLC" || tab === "Updates" ? (
           <section className="page browse">
             <div className="page-heading">
-              <h1>{t(tab)}</h1>
+              <h1>{tabLabels[tab]}</h1>
               <span>
                 {tn(filtered.length, "{count} game", "{count} games")}
               </span>
@@ -964,7 +981,7 @@ export default function App() {
             <b>×</b>
             {!game && tab !== "Downloads" ? t("Open game") : t("Select")}
           </span>
-          {!game && (tab === "Browse" || tab === "DLC" || tab === "Updates") && (
+          {!game && (tab === "Browse" || tab === "Apps" || tab === "DLC" || tab === "Updates") && (
             <button onClick={showSearch}>
               <b>△</b>
               {t("Search")}

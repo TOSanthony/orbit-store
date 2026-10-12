@@ -15,8 +15,9 @@ namespace orbit
 namespace
 {
 
-constexpr const char *kTabs[] = {/* i18n */ "Discover", /* i18n */ "Browse",    /* i18n */ "DLC",
-                                 /* i18n */ "Updates",  /* i18n */ "Library", /* i18n */ "Downloads"}; // by tab::
+constexpr const char *kTabs[] = {/* i18n */ "Discover", /* i18n */ "Games",   /* i18n */ "Apps",
+                                 /* i18n */ "DLC",      /* i18n */ "Updates", /* i18n */ "Library",
+                                 /* i18n */ "Downloads"}; // by tab::
 constexpr int kTabCount = tab::count;
 constexpr int kSearchItem = kTabCount;
 constexpr int kSettingsItem = kTabCount + 1;
@@ -74,7 +75,7 @@ int active_jobs(const Snapshot &state)
 } // namespace
 
 App::App(Context &context)
-    : ctx_(context), discover_(context), browse_(context), dlc_(context, Category::dlc),
+    : ctx_(context), discover_(context), browse_(context), apps_(context, Category::apps), dlc_(context, Category::dlc),
       updates_(context, Category::updates), library_(context), downloads_(context),
       game_(context), settings_(context)
 {
@@ -92,6 +93,8 @@ Screen &App::screen()
         return library_;
     case tab::downloads:
         return downloads_;
+    case tab::apps:
+        return apps_;
     case tab::dlc:
         return dlc_;
     case tab::updates:
@@ -189,6 +192,8 @@ void App::handle_intent(const Intent &intent, Feedback &feedback)
             discover_.return_to(game_.game_id());
         else if (tab_ == tab::browse)
             browse_.return_to(game_.game_id());
+        else if (tab_ == tab::apps)
+            apps_.return_to(game_.game_id());
         else if (tab_ == tab::dlc)
             dlc_.return_to(game_.game_id());
         else if (tab_ == tab::updates)

@@ -15,7 +15,7 @@ import {
 } from "./types";
 import { downloadSpacePlan, releaseState } from "./collection";
 import { gamePlatform } from "./platform";
-import { gameCategory } from "./categories";
+import { gameCategory, isPack } from "./categories";
 import type { BrowserSelection } from "./browserHandoff";
 import { formatDate, genreName, placeName, t } from "./i18n";
 import { rich } from "./Rich";
@@ -136,7 +136,7 @@ export function Details({
   }
   // DLC and update packs: one card per game, one file per pack.
   const kind = gameCategory(game);
-  const choosing = kind !== "game" && game.releases.length > 1 && !!system?.paired;
+  const choosing = isPack(game) && game.releases.length > 1 && !!system?.paired;
   async function installAll() {
     if (!drive) return;
     setPending(true);
@@ -625,7 +625,7 @@ export function Details({
                       </span>
                       <span>
                         <strong>
-                          {kind !== "game" && option.filename
+                          {isPack(game) && option.filename
                             ? option.filename
                             : `${option.provider} · ${formatLabel(option)}`}
                         </strong>

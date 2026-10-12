@@ -367,9 +367,11 @@ TEST(App, CircleLeavesTheGamePageAndTabsSwitchWithL1R1)
     h.settle();
     h.press(Action::back);
     h.settle();
-    // From Discover, Browse comes next, then DLC, Updates, Library and Downloads.
+    // From Discover: Games, Apps, DLC, Updates, Library, then Downloads.
     h.press(Action::page_next);
     EXPECT_EQ(h.app.current_tab(), orbit::tab::browse);
+    h.press(Action::page_next);
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::apps);
     h.press(Action::page_next);
     EXPECT_EQ(h.app.current_tab(), orbit::tab::dlc);
     h.press(Action::page_next);

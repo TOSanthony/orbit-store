@@ -317,7 +317,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
     else if (sheet == Sheet::source)
     {
         paragraph(game->releases.size()>1 ? tr("Choose a source and format for this game.") : tr("Available from your enabled sources."),116,y,1650);y+=22;
-        const bool pack=game_category(*game)!=Category::game;
+        const bool pack=is_pack(*game);
         if (choosing(*game) && now.drive)
         {
             double total=0;
@@ -406,7 +406,7 @@ void GamePage::show_sheet(Sheet sheet, Slot preferred, int index)
 }
 bool GamePage::choosing(const Game &game) const
 {
-    return game_category(game)!=Category::game && game.releases.size()>1 && ctx_.store.state().paired;
+    return is_pack(game) && game.releases.size()>1 && ctx_.store.state().paired;
 }
 void GamePage::back_sheet(bool chosen)
 {

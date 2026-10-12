@@ -556,7 +556,22 @@ Category game_category(const Game &game)
         if (c != ' ' && c != '\t')
             tag.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
     }
-    return tag == "DLC" ? Category::dlc : tag == "UPDATES" ? Category::updates : Category::game;
+    return tag == "DLC"       ? Category::dlc
+           : tag == "UPDATES" ? Category::updates
+           : tag == "APPS"    ? Category::apps
+                              : Category::game;
+}
+
+bool is_pack(const Game &game)
+{
+    const Category category = game_category(game);
+    return category == Category::dlc || category == Category::updates;
+}
+
+bool in_discover(const Game &game)
+{
+    const Category category = game_category(game);
+    return category == Category::game || category == Category::apps;
 }
 
 std::vector<int> latest_games(const std::vector<Game> &games, std::string_view today)
@@ -564,7 +579,7 @@ std::vector<int> latest_games(const std::vector<Game> &games, std::string_view t
     std::vector<int> result;
     for (int i = 0; i < static_cast<int>(games.size()); ++i)
     {
-        if (game_category(games[static_cast<std::size_t>(i)]) != Category::game)
+        if (!in_discover(games[static_cast<std::size_t>(i)]))
             continue;
         const std::string &date = games[static_cast<std::size_t>(i)].release_date;
         if (!date.empty() && std::string_view(date) <= today)
@@ -591,7 +606,7 @@ std::vector<int> newly_added_games(const std::vector<Game> &games)
     for (int i = 0; i < static_cast<int>(games.size()); ++i)
     {
         const Game &game = games[static_cast<std::size_t>(i)];
-        if (game_category(game) != Category::game)
+        if (!in_discover(game))
             continue;
         const int rank = game.releases.empty() ? 0 : game.releases.front().new_on_orbit_rank;
         if (rank >= 1 && rank <= 100)
@@ -702,7 +717,9 @@ std::vector<int> browse(const std::vector<Game> &games, const BrowseFilters &fil
     for (int i = 0; i < static_cast<int>(games.size()); ++i)
     {
         const Game &game = games[static_cast<std::size_t>(i)];
-        if (game_category(game) != filters.category)
+        const Category category = game_category(game);
+        if (category != filters.category &&
+            !(filters.with_apps && filters.category == Category::game && category == Category::apps))
             continue;
         if (!matches_query(game, filters.query))
             continue;

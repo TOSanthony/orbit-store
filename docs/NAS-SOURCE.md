@@ -89,9 +89,12 @@ Chaque jeu est généré comme une ligne du catalogue officiel :
 
 La langue des descriptions est celle du catalogue officiel (anglais) ; pour le français, ajoute `'AI_LANG' => 'français'` à `nas-admin.config.php` (ou `--ai-lang`). La région est une estimation de l'IA : vérifie-la ou corrige-la dans `titles.json` (`"region": "EUR"`).
 
-## DLC et mises à jour
+## Applications, DLC et mises à jour
 
-Deux onglets, **DLC** et **Mises à jour**, apparaissent dans le menu du haut (à côté de Parcourir), dans l'interface web comme dans l'app plein écran.
+Le menu du haut est : Découvrir, **Jeux** (l'ancien « Parcourir », uniquement les jeux), **Applications**, **DLC**, **Mises à jour**, Bibliothèque, Téléchargements. Ça vaut pour l'interface web comme pour l'app plein écran.
+
+- **Applications :** tout fichier dont le chemin contient un dossier `apps` (ex. `packages/ps5/apps/zip/MonApp PPSA01650.zip`, `packages/ps5/apps/pkg/…`) reçoit `"tagline": "APPS"` ; il apparaît dans **Applications** *et* dans **Découvrir**, mais pas dans Jeux. Comme pour un jeu, l'identifiant PPSA/CUSA doit figurer dans le chemin ou dans le `param.json` du zip.
+- **DLC et mises à jour :** uniquement dans leur propre onglet, jamais dans Découvrir ni dans Jeux.
 
 Rangement sur le NAS (le nom du dossier `dlc` ou `updates` peut être n'importe où dans le chemin) :
 

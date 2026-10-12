@@ -83,10 +83,11 @@ void DiscoverScreen::rebuild()
     Rail all;
     all.title = tr("All games");
     all.grid = true;
-    all.note = trn(static_cast<long>(state.games.size()), "{count} game", "{count} games");
     BrowseFilters all_filters;
     all_filters.sort = Sort::size_desc;
+    all_filters.with_apps = true; // Discover: games and apps; never DLC or updates
     all_games_ = browse(state.games, all_filters, {});
+    all.note = trn(static_cast<long>(all_games_.size()), "{count} game", "{count} games");
     if (!all_games_.empty())
         rails_.push_back(std::move(all));
 
