@@ -209,13 +209,20 @@ static bool entry(const char *index_url, const cJSON *x, Release *r, cJSON **vie
             if (clean(notes, 4096)) cJSON_AddStringToObject(v, "notes", notes);
             /* Artwork may live on the NAS too; anything else falls back to Orbit's own mark. */
             static const char *const keys[] = {"cover", "hero"};
+            bool has_hero = false;
             for (size_t k = 0; k < 2; k++) {
                 const char *ref = json_text(e, keys[k]);
                 bool usable = *ref && resolve(index_url, ref, artwork, sizeof artwork) &&
                               nas_url_allowed(artwork);
                 cJSON_AddStringToObject(v, keys[k], usable ? artwork : "/orbit.svg");
+                if (k == 1 && usable) {
+                    has_hero = true;
+                    /* The TV app asks for heroFallback on "ambient" layouts. */
+                    cJSON_AddStringToObject(v, "heroFallback", artwork);
+                }
             }
-            cJSON_AddStringToObject(v, "artworkLayout", "ambient");
+            /* "wide" makes Orbit use the hero as the page background. */
+            cJSON_AddStringToObject(v, "artworkLayout", has_hero ? "wide" : "ambient");
             cJSON_AddBoolToObject(v, "consoleVerified", false);
             *view = v;
         }

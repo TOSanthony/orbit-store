@@ -26,3 +26,9 @@ Les liens de l'index doivent être sur le même domaine/port que l'adresse saisi
 - 512 jeux max par index, index de 4 Mio max.
 - `.7z`/`.rar` : contenu non vérifié (format « Unknown »).
 - Orbit ne dévoile jamais le chemin enregistré dans l'interface (seul le nom d'hôte est affiché).
+
+## Images
+Dans `titles.json` (clé = chemin du fichier de jeu), pour chaque jeu :
+- `cover` : l'icône / jaquette (carrée).
+- `hero` : le fond / bannière large. Sans `hero`, Orbit affiche un fond généré.
+Les chemins sont relatifs à `index.json` et doivent être sur le même domaine (JPEG, PNG ou WebP).
