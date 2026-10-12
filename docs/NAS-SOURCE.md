@@ -41,3 +41,18 @@ Pour un jeu en `.zip`, le script cherche `icon0.png` (icône) et `pic1.png` (fon
 - `--no-extract` désactive cette étape.
 - L'utilisateur PHP (`http`) doit pouvoir écrire dans `covers/` (ou dans le dossier racine pour le créer).
 - Cela ne fonctionne que si le zip contient réellement ces fichiers (zip d'un dossier de jeu) ; un zip contenant seulement un `.exfat` ou `.ffpfsc` n'en a pas, ce contenu n'étant pas lu.
+
+## Interface web d'administration (`tools/make-nas-index.php`)
+Page protégée par mot de passe : bibliothèque façon console (icônes, fonds, fiche détaillée, recherche, filtres) et bouton « Actualiser » qui relance `make-nas-index.py` et recrée `index.json`.
+
+1. Copie `make-nas-index.php` et `make-nas-index.py` dans le dossier d'`index.json` (ou règle `$GAMES_DIR`).
+2. Génère l'empreinte du mot de passe (10 caractères minimum), en SSH sur le Synology :
+   `php make-nas-index.php hash`
+   puis colle-la dans `$PASSWORD_HASH` (ou dans un fichier `nas-admin.config.php` à côté, qui survit aux mises à jour :
+   `<?php return ['PASSWORD_HASH' => '$2y$...', 'PYTHON' => '/usr/bin/python3'];`).
+3. Règle `$PYTHON`, puis ouvre l'adresse de `make-nas-index.php` dans ton navigateur.
+
+Sécurité : sans connexion, seule une page de mot de passe vide s'affiche (aucune information sur les jeux, images comprises) ; sans empreinte configurée, la page répond « Non configuré » ; 5 mots de passe faux bloquent l'adresse 15 min ; session de 2 h d'inactivité, cookies HttpOnly/SameSite, jeton CSRF sur chaque action, images servies uniquement depuis le dossier des jeux.
+Derrière un reverse proxy, le blocage s'applique à l'adresse du proxy (donc à tout le monde) : c'est volontaire, mais à savoir.
+Le mot de passe protège cette page d'administration, pas l'accès d'Orbit à `index.json` et aux jeux, qui reste protégé par le chemin secret.
+En ligne de commande : `php make-nas-index.php refresh [--sha256] [--refresh-covers]` (utile pour une tâche planifiée Synology).
