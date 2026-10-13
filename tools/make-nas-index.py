@@ -97,6 +97,21 @@ def find_artwork(root: Path, folder: str):
     return found
 
 
+def walk_files(root: Path):
+    """Every file under root, following symbolic links to folders (so games kept on another
+    volume can be linked into the web folder). A folder is visited once, which stops loops."""
+    seen = set()
+    for folder, subfolders, names in os.walk(root, followlinks=True):
+        real = os.path.realpath(folder)
+        if real in seen:
+            subfolders[:] = []
+            continue
+        seen.add(real)
+        subfolders[:] = sorted(d for d in subfolders if d not in SKIP_DIRS and not d.startswith("."))
+        for name in sorted(names):
+            yield Path(folder) / name
+
+
 MAX_ART_BYTES = 20 * 1024 * 1024
 MADE_MARK = b"orbit-store:optimized"   # written into the JPEGs this script makes, to tell them from yours
 
@@ -468,7 +483,7 @@ def main() -> int:
     dead_keys = set()
     from_param = 0
     pack_rows = 0
-    for path in sorted(root.rglob("*")):
+    for path in sorted(walk_files(root)):
         relative = path.relative_to(root)
         if not path.is_file() or path == output or path == titles_path:
             continue

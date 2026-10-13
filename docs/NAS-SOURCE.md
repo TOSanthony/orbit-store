@@ -114,3 +114,17 @@ packages/ps5/updates/PPSA01342/Mon jeu PPSA01342 v1.05.pkg
 - Ces fiches n'apparaissent **pas** dans Découvrir ni Parcourir : seulement dans leur onglet, une carte par jeu.
 - Un clic sur la carte : si le jeu a plusieurs fichiers, le bouton principal devient **Choisir un DLC** (ou **Choisir une mise à jour**). La liste montre le nom de chaque fichier ; **Tout installer (N)** les ajoute tous à la file de téléchargements (ceux déjà en file sont ignorés).
 - Le nom de fichier d'un `.pkg` ne doit contenir aucun autre identifiant PPSA/CUSA que celui du dossier, et rester sous 160 caractères.
+
+## Jeux sur un autre volume (dossier web sur le volume2, jeux sur le volume3)
+
+Le dossier web et les jeux n'ont pas besoin d'être sur le même volume : il suffit que les jeux soient **accessibles depuis le dossier web** grâce à un lien symbolique. Le script suit les liens vers des dossiers (sans boucler).
+
+1. Crée le lien (SSH, ou Planificateur de tâches > Créer > Script défini par l'utilisateur, exécuté en `root`, puis « Exécuter ») :
+   ```
+   ln -s /volume3/Jeux/packages /volume2/web/orbit-3f9a7c1e/packages
+   ```
+   Le lien porte le nom du dossier que tu veux voir dans l'URL (`packages` ici) et pointe vers le vrai dossier du volume3. Tu peux aussi lier un seul sous-dossier (`.../packages/ps5`).
+2. Donne la lecture à l'utilisateur `http` sur le dossier partagé du volume3 (Panneau de configuration > Dossier partagé > Modifier > Permissions > utilisateurs/groupes système : `http` en lecture seule).
+3. Clique sur « Actualiser » : l'index contient `packages/ps5/…` et le serveur web suit le lien pour envoyer les fichiers.
+
+Notes : un lien ne se crée pas depuis File Station ; `index.json`, `covers/` et les scripts restent dans le dossier web (volume2). Si Web Station refuse de suivre le lien, vérifie que le profil PHP/le serveur autorise les liens symboliques et, pour PHP, ajoute `/volume3/Jeux` à `open_basedir` (Web Station > Paramètres du langage de script).
