@@ -537,6 +537,7 @@ def main() -> int:
     parser.add_argument("--ai-max", type=int, default=40, help="most Gemini requests per run (default 40)")
     parser.add_argument("--prospero", action="store_true", help="fetch title, publisher, region and artwork from prosperopatches.com (PS5) and orbispatches.com (PS4) (cached in .prospero-cache.json)")
     parser.add_argument("--prospero-max", type=int, default=400, help="most pages fetched from prosperopatches.com / orbispatches.com per run (default 400)")
+    parser.add_argument("--db", type=Path, help="game database (games-db.json, see make-game-db.py): fills genre, tagline, description, release date and region by title ID; default: <folder>/games-db.json if present")
     parser.add_argument("--ai-lang", default=os.environ.get("GEMINI_LANG", "English"), help="language of the generated description (default English, like the signed catalogue)")
     parser.add_argument("--no-assets", action="store_true", help="do not create assets/coverFallback.png and assets/heroFallback.png")
     parser.add_argument("--ai-model", default=os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"))
@@ -550,6 +551,18 @@ def main() -> int:
     output = args.output or root / "index.json"
     titles_path = args.titles or root / "titles.json"
     overrides = json.loads(titles_path.read_text("utf-8")) if titles_path.is_file() else {}
+
+    db_path = args.db or (root / "games-db.json")
+    game_db, db_hits = {}, 0
+    if db_path.is_file():
+        try:
+            raw = json.loads(db_path.read_text("utf-8"))
+            raw = raw.get("releases", []) if isinstance(raw, dict) else raw
+            game_db = {str(e.get("titleId", "")).upper(): e for e in raw if isinstance(e, dict) and e.get("titleId")}
+        except (OSError, ValueError) as problem:
+            print(f"  note: cannot read {db_path} ({problem}), game database ignored", file=sys.stderr)
+    elif args.db:
+        print(f"  note: {db_path} not found, game database ignored", file=sys.stderr)
 
     images = find_artwork(root, args.covers)
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -753,6 +766,17 @@ def main() -> int:
                     row["title"], pr_title = got["name"], True
                 for kind, source in (("icon0", "icon"), ("pic1", "hero")):
                     pr_images += prospero_art(title_id, kind, got.get(source, ""), got.get("heroAlt", "") if kind == "pic1" else "")
+        db_fields = set()
+        entry = game_db.get(title_id)
+        if entry:
+            # Game database: after titles.json / param.json / the site, before the AI. Remote cover/hero URLs are not used.
+            for field in ("genre", "tagline", "description", "releaseDate", "region"):
+                if entry.get(field) and not extra.get(field) and field not in pr_fields and not (pack and field == "tagline"):
+                    row[field] = entry[field]
+                    db_fields.add(field)
+            if entry.get("title") and not pack and not extra.get("title") and not (param or {}).get("title") and not pr_title:
+                row["title"], pr_title = entry["title"], True
+            db_hits += 1
         if suffix == ".zip" and not args.no_extract:
             for kind in extract_art(path, title_id, root, args.covers, images, args.refresh_covers):
                 extracted.append(f"{title_id}_{kind}.png")
@@ -770,7 +794,7 @@ def main() -> int:
             row["id"] = f"{title_id.lower()}-{ {'DLC': 'dlc', 'UPDATES': 'upd', 'APPS': 'app'}[pack] }-{hashlib.sha1(key.encode('utf-8')).hexdigest()[:6]}"
             row["tagline"] = pack
             pack_rows += 1
-        wanted = [f for f in AI_FIELDS if not extra.get(f) and f not in pr_fields and not (pack and f == "tagline")]
+        wanted = [f for f in AI_FIELDS if not extra.get(f) and f not in pr_fields and f not in db_fields and not (pack and f == "tagline")]
         if args.ai and keys and wanted:
             info = cache.get(title_id) if isinstance(cache.get(title_id), dict) else None
             if info and info.get("unknown"):
@@ -867,6 +891,8 @@ def main() -> int:
         print(f"  default images created in assets/: {', '.join(made_assets)}")
     if from_param:
         print(f"  {from_param} game(s) described by their param.json")
+    if game_db:
+        print(f"  game database: {db_hits} game(s) found among {len(game_db)} entries")
     if args.prospero:
         print(f"  prosperopatches.com / orbispatches.com: {pr_done} game(s) completed, {pr_images} image(s) downloaded, {pr_calls} page(s) fetched this run"
               + (f" (last problem: {pr_errors[-1]})" if pr_errors else ""))

@@ -134,6 +134,14 @@ Notes : un lien ne se crée pas depuis File Station ; `index.json`, `covers/` et
 - L'utilisateur `http` doit pouvoir lire le dossier à parcourir et écrire dans le dossier web. Si `symlink()` est refusé, le message affiche la commande `ln -s` à lancer en SSH.
 - `$ALLOW_LINKS = false` (ou dans `nas-admin.config.php`) retire cette fonction.
 
+## Base de jeux (`games-db.json`)
+
+Option `--db games-db.json` (par défaut, `<dossier>/games-db.json` s'il existe). Cette base, produite par `tools/make-game-db.py`, contient une entrée par identifiant (`titleId`, `region`, `title`, `genre`, `tagline`, `description`, `cover`, `hero`, `releaseDate`), sans aucun lien de téléchargement. La version fournie a l'accroche et la description **en français**.
+
+- Le script complète **genre, accroche, description, date de sortie et région** à partir de l'identifiant, avant l'étape IA (l'IA ne demande donc plus que ce qui manque).
+- Ordre de priorité : `titles.json` > `param.json` du zip > prosperopatches.com / orbispatches.com > base de jeux > IA. Le titre de la base ne remplace que celui tiré du nom de fichier.
+- Les URL `cover` / `hero` de la base (images distantes) ne sont pas utilisées : les images viennent de `covers/`.
+
 ## Infos et images depuis prosperopatches.com et orbispatches.com
 
 Option `--prospero` (case cochée par défaut dans Réglages > Index des jeux) : pour chaque identifiant, le script lit la page `https://prosperopatches.com/<ID>` (jeux PS5, `PPSA…`) ou `https://orbispatches.com/<ID>` (jeux PS4, `CUSA…`) et récupère le **titre** (pour un jeu dont le titre est un logo, le texte alternatif du logo), l'**éditeur**, la **région** (EU → EUR, US → USA, JP → JPN…), l'**icône** (`icon0.webp`) et le **fond** (`pic0.webp`), enregistrés dans `covers/<ID>_icon0.webp` et `covers/<ID>_pic1.webp`.
