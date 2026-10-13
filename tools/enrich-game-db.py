@@ -78,16 +78,35 @@ def ask(batch, keys, dead, model, genres, lang, errors):
             continue
         request = urllib.request.Request(f"{base}/models/{model}:generateContent", body,
                                          {"Content-Type": "application/json", "x-goog-api-key": key})
-        try:
-            with urllib.request.urlopen(request, timeout=90) as reply:
-                payload = json.loads(reply.read(4 << 20).decode("utf-8"))
-        except urllib.error.HTTPError as problem:
-            errors.append(f"HTTP {problem.code}")
-            if problem.code in (400, 401, 403, 429):
-                dead.add(key)
-            continue
-        except (urllib.error.URLError, OSError, ValueError) as problem:
-            errors.append(type(problem).__name__)
+        payload = None
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(request, timeout=90) as reply:
+                    payload = json.loads(reply.read(4 << 20).decode("utf-8"))
+                break
+            except urllib.error.HTTPError as problem:
+                try:
+                    detail = problem.read(20000).decode("utf-8", "replace")
+                except OSError:
+                    detail = ""
+                try:
+                    message = json.loads(detail)["error"]["message"]
+                except (ValueError, KeyError, TypeError):
+                    message = detail
+                message = re.sub(r"\s+", " ", message)[:200]
+                errors.append(f"HTTP {problem.code}: {message}" if message else f"HTTP {problem.code}")
+                wait = re.search(r"retry(?:Delay)?\D{0,20}?([\d.]+)\s*s", detail, re.I)
+                per_day = re.search(r"per ?day|daily", detail, re.I)
+                if problem.code == 429 and not per_day and attempt < 2 and (not wait or float(wait.group(1)) <= 90):
+                    time.sleep(min(90.0, float(wait.group(1)) + 1 if wait else 30.0))    # per-minute limit: wait, same key
+                    continue
+                if problem.code in (400, 401, 403, 429):
+                    dead.add(key)
+                break
+            except (urllib.error.URLError, OSError, ValueError) as problem:
+                errors.append(type(problem).__name__)
+                break
+        if payload is None:
             continue
         try:
             text = payload["candidates"][0]["content"]["parts"][0]["text"]
@@ -113,6 +132,7 @@ def main() -> int:
     parser.add_argument("--lang", default="French")
     parser.add_argument("--batch", type=int, default=15, help="games per Gemini request (default 15)")
     parser.add_argument("--max-requests", type=int, default=100, help="most Gemini requests per run (default 100)")
+    parser.add_argument("--delay", type=float, default=4.0, help="seconds between two requests (default 4, free keys allow about 10 a minute)")
     parser.add_argument("--model", default=os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"))
     parser.add_argument("--platform", choices=("ps4", "ps5"), help="only CUSA or only PPSA titles")
     parser.add_argument("--extras", action="store_true", help="also do demos, avatars, themes, soundtracks...")
@@ -208,6 +228,8 @@ def main() -> int:
     dead, errors, requests, filled = set(), [], 0, 0
     while todo and requests < args.max_requests and len(dead) < len(keys) and len(errors) < 3 * len(keys):
         batch, todo = todo[:args.batch], todo[args.batch:]
+        if requests:
+            time.sleep(args.delay)
         requests += 1
         answers = ask(batch, keys, dead, args.model, genres, args.lang, errors)
         if answers is None:
