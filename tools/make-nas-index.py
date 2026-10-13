@@ -314,6 +314,13 @@ def prospero_parse(page: str, title_id: str, cdn: str):
     for found in re.finditer(re.escape(cdn) + r"/titles/[A-Za-z0-9_]+/(icon0|pic0|pic1)\.(?:webp|png|jpe?g)", page):
         art.setdefault(found.group(1), found.group(0))
     region = PROSPERO_REGIONS.get(fields.get("region", "").upper(), "")
+    icon = art.get("icon0", "")
+    hero, hero_alt = art.get("pic0") or art.get("pic1", ""), ""
+    if not hero and icon:
+        # The background is often added by the page's script, so it is not in the HTML we receive.
+        # It sits next to the icon, in the same folder: try it (a 404 just means there is none).
+        folder = icon.rsplit("/", 1)[0]
+        hero, hero_alt = folder + "/pic0.webp", folder + "/pic1.webp"
     if not (head and _text(head.group(1))) and not logo_title(raw, title_id):
         # No text title and no logo text: the page's <title> reads "CUSA12345: Game name | ORBISPatches.com".
         tag = re.search(r"<title[^>]*>(.*?)</title>", page, re.S | re.I)
@@ -325,8 +332,9 @@ def prospero_parse(page: str, title_id: str, cdn: str):
         "name": clean_text(_text(head.group(1)).replace("\u2122", "").replace("\u00ae", "").strip() if head else "", 60) or clean_text(logo_title(raw, title_id), 60) or clean_text(page_title.replace("\u2122", "").replace("\u00ae", ""), 60),
         "publisher": clean_text(fields.get("publisher", ""), 60),
         "region": region,
-        "icon": art.get("icon0", ""),
-        "hero": art.get("pic0") or art.get("pic1", ""),
+        "icon": icon,
+        "hero": hero,
+        "heroAlt": hero_alt,
     }
 
 
@@ -606,7 +614,7 @@ def main() -> int:
             if entry.get("unknown"):
                 if time.time() - float(entry.get("at", 0)) <= 7 * 86400:
                     return None
-            elif entry.get("v") == 3:       # older entries missed or misread titles shown as a logo
+            elif entry.get("v") == 4:       # older entries missed titles shown as a logo, or backgrounds added by script
                 return entry
         if pr_calls >= args.prospero_max or pr_fail >= 3 or not re.fullmatch(r"(?:PPSA|CUSA)\d{5}", title_id):
             return None
@@ -629,12 +637,12 @@ def main() -> int:
             pr_cache[title_id] = {"unknown": True, "at": time.time()}
             pr_dirty = True
             return None
-        parsed.update({"v": 3, "at": time.time(), "files": []})
+        parsed.update({"v": 4, "at": time.time(), "files": []})
         pr_cache[title_id] = parsed
         pr_dirty = True
         return parsed
 
-    def prospero_art(title_id: str, kind: str, url: str) -> int:
+    def prospero_art(title_id: str, kind: str, url: str, alt: str = "") -> int:
         """Download <TITLEID>_<kind> from the site unless you already have your own file; returns 1 when written."""
         nonlocal pr_dirty, pr_fail
         entry = pr_cache.get(title_id, {})
@@ -642,9 +650,16 @@ def main() -> int:
             return 0
         if custom_art(root, images, title_id, kind) and not (args.refresh_covers and kind in entry.get("files", [])):
             return 0                                   # your own jpg / webp wins, and is never overwritten
-        data, why = http_get(url, 12 << 20, "image/*")
+        data, why = None, "HTTP 404"
+        for candidate in (url, alt):
+            if not candidate or not candidate.startswith(pr_hosts(title_id)[1] + "/"):
+                continue
+            data, why = http_get(candidate, 12 << 20, "image/*")
+            if data is not None or why != "HTTP 404":
+                break                                  # got it, or a real problem: stop here
         if data is None:
-            pr_errors.append("image " + why)
+            if why != "HTTP 404":                      # a missing background is normal, not an error
+                pr_errors.append("image " + why)
             return 0
         ext = image_ext(data)
         if ext is None:
@@ -742,7 +757,7 @@ def main() -> int:
                 if got.get("name") and not extra.get("title") and not (param or {}).get("title") and not pack:
                     row["title"], pr_title = got["name"], True
                 for kind, source in (("icon0", "icon"), ("pic1", "hero")):
-                    pr_images += prospero_art(title_id, kind, got.get(source, ""))
+                    pr_images += prospero_art(title_id, kind, got.get(source, ""), got.get("heroAlt", "") if kind == "pic1" else "")
         if suffix == ".zip" and not args.no_extract:
             for kind in extract_art(path, title_id, root, args.covers, images, args.refresh_covers):
                 extracted.append(f"{title_id}_{kind}.png")
