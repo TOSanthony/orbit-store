@@ -84,6 +84,25 @@ def title_from(name: str) -> str:
     return re.sub(r"\s+", " ", stem).strip(" -.") or Path(name).stem
 
 
+GENERIC_FOLDERS = {"pkg", "zip", "exfat", "games", "game", "ps4", "ps5", "packages", "apps", "dlc", "updates", "update", "ffpkg", "fpkg"}
+
+
+def file_title(path: Path, title_id: str) -> str:
+    """Title from the file name; when the name is only the title ID (CUSA12345.pkg), from the folder
+    around it (e.g. "CUSA12345 - God of War")."""
+    own = title_from(path.name)
+    if TITLE_ID.sub("", path.stem).strip(" -._") or own.upper() != title_id.upper():
+        return own
+    for folder in list(path.parents)[:3]:
+        if folder.name.lower() in GENERIC_FOLDERS:
+            continue
+        guess = title_from(folder.name)
+        if guess and guess.upper() != title_id.upper() and len(guess) > 1:
+            return guess
+        break
+    return own
+
+
 IMAGE_TYPES = (".jpg", ".png", ".jpeg", ".webp")   # the small optimised copy wins over the PNG
 
 
@@ -295,8 +314,15 @@ def prospero_parse(page: str, title_id: str, cdn: str):
     for found in re.finditer(re.escape(cdn) + r"/titles/[A-Za-z0-9_]+/(icon0|pic0|pic1)\.(?:webp|png|jpe?g)", page):
         art.setdefault(found.group(1), found.group(0))
     region = PROSPERO_REGIONS.get(fields.get("region", "").upper(), "")
+    if not (head and _text(head.group(1))) and not logo_title(raw, title_id):
+        # No text title and no logo text: the page's <title> reads "CUSA12345: Game name | ORBISPatches.com".
+        tag = re.search(r"<title[^>]*>(.*?)</title>", page, re.S | re.I)
+        named = re.match(r"\s*" + re.escape(title_id) + r"\s*[:\-\u2013]\s*(.+?)\s*\|", _text(tag.group(1)) + " |") if tag else None
+        page_title = named.group(1) if named else ""
+    else:
+        page_title = ""
     return {
-        "name": clean_text(_text(head.group(1)).replace("\u2122", "").replace("\u00ae", "").strip() if head else "", 60) or clean_text(logo_title(raw, title_id), 60),
+        "name": clean_text(_text(head.group(1)).replace("\u2122", "").replace("\u00ae", "").strip() if head else "", 60) or clean_text(logo_title(raw, title_id), 60) or clean_text(page_title.replace("\u2122", "").replace("\u00ae", ""), 60),
         "publisher": clean_text(fields.get("publisher", ""), 60),
         "region": region,
         "icon": art.get("icon0", ""),
@@ -677,7 +703,7 @@ def main() -> int:
             "provider": "nas",
             "sourceId": "nas",
             "platform": platform,
-            "title": extra.get("title") or (param or {}).get("title") or (title_id if pack in ("DLC", "UPDATES") else title_from(path.name)),
+            "title": extra.get("title") or (param or {}).get("title") or (title_id if pack in ("DLC", "UPDATES") else file_title(path, title_id)),
             "titleId": title_id,
             "filename": path.name,
             "path": quote(key, safe="/"),
