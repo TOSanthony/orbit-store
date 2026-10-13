@@ -267,8 +267,19 @@ def _text(fragment: str) -> str:
     return " ".join(htmllib.unescape(re.sub(r"<[^>]+>", " ", fragment)).split())
 
 
+def logo_title(raw: str) -> str:
+    """Some pages show the game's logo instead of a text title: its name is the image's alt text."""
+    for tag in re.finditer(r"<img\b[^>]*>", raw, re.I):
+        text = tag.group(0)
+        source, alt = re.search(r'src="([^"]*)"', text), re.search(r'alt="([^"]*)"', text)
+        if source and alt and re.search(r"/logo\.\w+", source.group(1)) and alt.group(1).strip():
+            return " ".join(htmllib.unescape(alt.group(1)).replace("\u2122", "").replace("\u00ae", "").replace("\u00a9", "").split())
+    return ""
+
+
 def prospero_parse(page: str, title_id: str, cdn: str):
     """Read a title page. Returns {name, publisher, region, icon, hero} or None when the page is not this title."""
+    raw = page
     page = htmllib.unescape(page)
     fields = {}
     for chunk in re.split(r"bd-links-group", page)[1:]:
@@ -284,7 +295,7 @@ def prospero_parse(page: str, title_id: str, cdn: str):
         art.setdefault(found.group(1), found.group(0))
     region = PROSPERO_REGIONS.get(fields.get("region", "").upper(), "")
     return {
-        "name": clean_text(_text(head.group(1)), 60) if head else "",
+        "name": clean_text(_text(head.group(1)).replace("\u2122", "").replace("\u00ae", "").strip() if head else "", 60) or clean_text(logo_title(raw), 60),
         "publisher": clean_text(fields.get("publisher", ""), 60),
         "region": region,
         "icon": art.get("icon0", ""),
@@ -568,7 +579,7 @@ def main() -> int:
             if entry.get("unknown"):
                 if time.time() - float(entry.get("at", 0)) <= 7 * 86400:
                     return None
-            elif entry.get("v") == 1:
+            elif entry.get("v") == 2:       # v1 entries missed titles shown as a logo
                 return entry
         if pr_calls >= args.prospero_max or pr_fail >= 3 or not re.fullmatch(r"(?:PPSA|CUSA)\d{5}", title_id):
             return None
@@ -591,7 +602,7 @@ def main() -> int:
             pr_cache[title_id] = {"unknown": True, "at": time.time()}
             pr_dirty = True
             return None
-        parsed.update({"v": 1, "at": time.time(), "files": []})
+        parsed.update({"v": 2, "at": time.time(), "files": []})
         pr_cache[title_id] = parsed
         pr_dirty = True
         return parsed

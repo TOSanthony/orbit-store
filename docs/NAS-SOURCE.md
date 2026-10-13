@@ -136,7 +136,7 @@ Notes : un lien ne se crée pas depuis File Station ; `index.json`, `covers/` et
 
 ## Infos et images depuis prosperopatches.com et orbispatches.com
 
-Option `--prospero` (case cochée par défaut dans Réglages > Index des jeux) : pour chaque identifiant, le script lit la page `https://prosperopatches.com/<ID>` (jeux PS5, `PPSA…`) ou `https://orbispatches.com/<ID>` (jeux PS4, `CUSA…`) et récupère le **titre**, l'**éditeur**, la **région** (EU → EUR, US → USA, JP → JPN…), l'**icône** (`icon0.webp`) et le **fond** (`pic0.webp`), enregistrés dans `covers/<ID>_icon0.webp` et `covers/<ID>_pic1.webp`.
+Option `--prospero` (case cochée par défaut dans Réglages > Index des jeux) : pour chaque identifiant, le script lit la page `https://prosperopatches.com/<ID>` (jeux PS5, `PPSA…`) ou `https://orbispatches.com/<ID>` (jeux PS4, `CUSA…`) et récupère le **titre** (pour un jeu dont le titre est un logo, le texte alternatif du logo), l'**éditeur**, la **région** (EU → EUR, US → USA, JP → JPN…), l'**icône** (`icon0.webp`) et le **fond** (`pic0.webp`), enregistrés dans `covers/<ID>_icon0.webp` et `covers/<ID>_pic1.webp`.
 
 - Ordre de priorité : `titles.json` > `param.json` du zip > prosperopatches.com > IA (Gemini, qui ne complète plus que description, genre, accroche, date de sortie). Les DLC et mises à jour gardent le titre du jeu de base.
 - **Tes images passent d'abord** : si `covers/` contient déjà `<ID>_icon0` ou `<ID>_pic1` en `.jpg`/`.webp` de ta main, rien n'est téléchargé ni extrait du zip ; sinon les images du site sont préférées à l'extraction du zip (qui reste le recours si le site n'a pas le jeu).
