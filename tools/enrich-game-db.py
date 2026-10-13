@@ -137,6 +137,7 @@ def main() -> int:
     parser.add_argument("--platform", choices=("ps4", "ps5"), help="only CUSA or only PPSA titles")
     parser.add_argument("--extras", action="store_true", help="also do demos, avatars, themes, soundtracks...")
     parser.add_argument("--prospero", action="store_true", help="fill empty cover / hero from prosperopatches.com / orbispatches.com instead of asking Gemini")
+    parser.add_argument("--overwrite", action="store_true", help="with --prospero: the site's title, cover and hero replace the ones already in the database")
     parser.add_argument("--prospero-max", type=int, default=400, help="most pages per run (default 400)")
     args = parser.parse_args()
 
@@ -167,7 +168,9 @@ def main() -> int:
         if index is None:
             print("--prospero needs make-nas-index.py next to this script", file=sys.stderr)
             return 2
-        todo = [e for e in db if wanted(e) and (not e.get("hero") or not e.get("cover")) and not recently_tried("art", e["titleId"])]
+        def needs_site(e):
+            return wanted(e) and (args.overwrite or not e.get("hero") or not e.get("cover") or not e.get("title")) and not recently_tried("art", e["titleId"])
+        todo = [e for e in db if needs_site(e)]
         todo.sort(key=lambda e: (bool(e.get("hero")), e["titleId"]))
         done = calls = failures = 0
         for e in todo:
@@ -201,9 +204,9 @@ def main() -> int:
             cache["art"][title_id] = time.time()
             if got:
                 for field, source in (("cover", "icon"), ("hero", "hero")):
-                    if not e.get(field) and got.get(source):
+                    if got.get(source) and (args.overwrite or not e.get(field)):
                         e[field], changed = got[source], True
-                if not e.get("title") and got.get("name"):
+                if got.get("name") and (args.overwrite or not e.get("title")):
                     e["title"], changed = got["name"], True
                 if not e.get("region") and got.get("region"):
                     e["region"], changed = got["region"], True
@@ -213,7 +216,7 @@ def main() -> int:
                 cache_path.write_text(json.dumps(cache), "utf-8")
         save(out, db)
         cache_path.write_text(json.dumps(cache), "utf-8")
-        left = sum(1 for e in db if wanted(e) and (not e.get("hero") or not e.get("cover")) and not recently_tried("art", e["titleId"]))
+        left = sum(1 for e in db if needs_site(e))
         print(f"{done} game(s) completed from the site, {calls} page(s) fetched this run, about {left} still to do")
         return 0
 
