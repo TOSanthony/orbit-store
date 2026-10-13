@@ -140,6 +140,7 @@ Option `--db games-db.json` (par défaut, `<dossier>/games-db.json` s'il existe)
 
 - Le script complète **genre, accroche, description, date de sortie et région** à partir de l'identifiant, avant l'étape IA (l'IA ne demande donc plus que ce qui manque).
 - Ordre de priorité : `titles.json` > `param.json` du zip > prosperopatches.com / orbispatches.com > base de jeux > IA. Le titre de la base ne remplace que celui tiré du nom de fichier.
+- `tools/add-missing-games.py games-db.json` complète la base avec les jeux PS4/PS5 manquants (identifiant, région, titre, jaquette du Store) depuis deux listes publiques sur GitHub ; les entrées existantes ne sont jamais écrasées. Les nouvelles n'ont ni description ni genre (l'étape `--ai` s'en charge).
 - Les URL `cover` / `hero` de la base (images distantes) ne sont pas utilisées : les images viennent de `covers/`.
 
 ## Infos et images depuis prosperopatches.com et orbispatches.com
