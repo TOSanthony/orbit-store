@@ -474,9 +474,9 @@ nav.tabs::-webkit-scrollbar{display:none}
 .tab:hover{color:var(--text);background:#ffffff10}
 .tab[aria-current=page]{color:#04101f;background:var(--text);font-weight:600}
 .tab:focus-visible{outline:3px solid #fff;outline-offset:2px}
-.gear{width:2.5rem;height:2.5rem;padding:0;display:grid;place-items:center;border-radius:50%;flex:none;position:relative}
-.gear svg{width:1.3rem;height:1.3rem}
-.gear .spin{position:absolute;right:-.15rem;top:-.15rem;margin:0;width:.8rem;height:.8rem;border-color:#9db0d855;border-top-color:var(--accent)}
+.btn.gear{width:2.5rem;height:2.5rem;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;flex:none;position:relative}
+.gear svg{display:block;flex:none}
+.gear.busy::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid #4fb3ff33;border-top-color:var(--accent);animation:s 1s linear infinite;pointer-events:none}
 .stitle{margin:0;padding:1.3rem 3.5rem .2rem 1.4rem;font-size:1.3rem}
 .srow{display:flex;gap:.5rem;flex-wrap:wrap;margin:.8rem 1.4rem 0}
 .srow a.btn{text-decoration:none;color:inherit}
@@ -562,14 +562,14 @@ dt{color:var(--dim)}dd{margin:0;word-break:break-all}
 summary{cursor:pointer;font-weight:600}
 .spin{display:none;width:1rem;height:1rem;border:2px solid #04101f55;border-top-color:#04101f;border-radius:50%;animation:s 1s linear infinite;vertical-align:-.2rem;margin-right:.4rem}
 .busy .spin,.spin.on{display:inline-block}.panel .spin{border-color:#9db0d855;border-top-color:var(--accent);vertical-align:-.15rem}@keyframes s{to{transform:rotate(360deg)}}
-@media (max-width:40rem){.brand span{display:none}#q{width:6.5rem}.det{flex-direction:column;margin-top:-3rem}.grid{grid-template-columns:repeat(2,1fr)}.rail-row .tile{width:8.8rem}.hero{padding-top:2rem}.page-head{padding-top:1.5rem}.hero,.page-head{margin-top:0}header.bar{position:relative}.panel.first{margin-top:1rem}.filters{margin-left:0}}
+@media (max-width:40rem){.brand span{display:none}#q{width:8rem}.det{flex-direction:column;margin-top:-3rem}.grid{grid-template-columns:repeat(2,1fr)}.rail-row .tile{width:8.8rem}.hero{padding-top:2rem}.page-head{padding-top:1.5rem}.hero,.page-head{margin-top:0}header.bar{position:relative}.panel.first{margin-top:1rem}.filters{margin-left:0}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation-duration:2s!important}}
 </style></head><body>
 <header class="bar">
   <div class="brand"><svg viewBox="0 0 64 64" aria-hidden="true"><g fill="none" stroke="#eaf0ff" stroke-width="4"><circle cx="32" cy="32" r="18"/><ellipse cx="32" cy="32" rx="30" ry="10" transform="rotate(-34 32 32)"/></g></svg><span><?= h($SITE_NAME) ?></span></div>
   <nav class="tabs" id="tabs" aria-label="Catégories"></nav>
-  <input id="q" class="field" type="search" placeholder="Rechercher un jeu…" aria-label="Rechercher">
-  <button class="btn gear" id="gear" type="button" aria-label="Réglages" title="Réglages"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Zm7.4-2.4a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V19a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H5a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h.1a1.6 1.6 0 0 0 1-1.5V5a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/></svg><span class="spin" id="gearSpin"></span></button>
+  <input id="q" class="field" type="search" placeholder="Rechercher…" aria-label="Rechercher">
+  <button class="btn gear" id="gear" type="button" aria-label="Réglages" title="Réglages"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M9.78 4.73 L10.40 1.93 L13.60 1.93 L14.22 4.73 L15.57 5.29 L18.00 3.75 L20.25 6.00 L18.71 8.43 L19.27 9.78 L22.07 10.40 L22.07 13.60 L19.27 14.22 L18.71 15.57 L20.25 18.00 L18.00 20.25 L15.57 18.71 L14.22 19.27 L13.60 22.07 L10.40 22.07 L9.78 19.27 L8.43 18.71 L6.00 20.25 L3.75 18.00 L5.29 15.57 L4.73 14.22 L1.93 13.60 L1.93 10.40 L4.73 9.78 L5.29 8.43 L3.75 6.00 L6.00 3.75 L8.43 5.29Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
 </header>
 <?php if ($running): ?>
   <div class="panel first" id="running" role="status"><span class="spin on"></span> Actualisation en cours… <span id="elapsed"><?= (int)$job['elapsed'] ?></span> s — tu peux fermer cette page, elle continue en arrière-plan.</div>
@@ -897,9 +897,9 @@ summary{cursor:pointer;font-weight:600}
   $('sClose').onclick = () => settings.close();
   settings.addEventListener('click', (e) => { if (e.target === settings) settings.close(); });
   $('refreshForm').addEventListener('submit', () => {
-    $('refreshLabel').textContent = 'Actualisation…'; $('refreshGo').classList.add('busy'); $('refreshGo').disabled = true;
+    $('refreshLabel').textContent = 'Actualisation…'; $('refreshGo').classList.add('busy'); $('refreshGo').disabled = true; $('gear').classList.add('busy');
   });
-  if ($('running')) $('gearSpin').classList.add('on');
+  if ($('running')) $('gear').classList.add('busy');
   tab = fromHash();
   render();
   if ($('running')) {
