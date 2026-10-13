@@ -72,6 +72,8 @@ En ligne de commande : `php make-nas-index.php refresh [--sha256] [--refresh-cov
 ### Actualisation longue (« Gateway Timeout »)
 L'interface PHP reprend celle de l'app TV : menu du haut (Découvrir, Jeux, Applications, DLC, Mises à jour), Découvrir avec bannière, rangées « Nouveautés » et « Dernières sorties » puis tous les éléments, fiche avec la liste des fichiers, recherche sur tous les types. Pas de Bibliothèque ni de Téléchargements : elle sert à administrer l'index, pas à télécharger.
 
+En haut à droite, la roue dentée ouvre les **Réglages** : dernières versions de l'app TV et de l'ELF publiées sur ton GitHub (lues dans les flux `payloads.json` et `tv-app.json` de la branche `updates`, mises en cache 10 min, bouton « Vérifier maintenant »), options et bouton « Actualiser » de l'index, et Déconnexion. Le dépôt se règle avec `UPDATE_REPO` (et `UPDATE_BRANCH`) dans `nas-admin.config.php` ; par défaut `TOSanthony/orbit-store`, branche `updates`. Le Synology doit pouvoir joindre `raw.githubusercontent.com`.
+
 Sur l'interface web, « Actualiser » lance Python **en arrière-plan** et la page affiche l'avancement (rafraîchi toutes les 2,5 s), puis le journal à la fin : un reverse proxy qui coupe les pages au bout de 60 s ne pose donc plus de problème, et tu peux fermer l'onglet. Une seule actualisation à la fois ; délai maximal `$TIMEOUT` (3600 s par défaut). Prérequis : `proc_open` autorisé et, pour le délai, la commande `timeout` (présente sur DSM). L'index est écrit dans un fichier temporaire puis renommé, donc Orbit ne lit jamais un index à moitié écrit.
 
 ## Fiche d'un jeu (format de l'index)

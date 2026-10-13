@@ -36,6 +36,8 @@ $GEMINI_KEYS   = [];                                   // clés API Gemini (opti
 $GEMINI_MODEL  = 'gemini-3.6-flash';
 $AI_MAX        = 40;                                   // requêtes IA max par actualisation
 $AI_LANG       = 'English';                            // langue des descriptions ('français', 'English'...)
+$UPDATE_REPO   = 'TOSanthony/orbit-store';              // dépôt GitHub dont on affiche les versions (Réglages)
+$UPDATE_BRANCH = 'updates';                             // branche qui porte payloads.json et tv-app.json
 // ---------------------------------------------------------------------------
 
 $extra = __DIR__ . '/nas-admin.config.php';
@@ -43,7 +45,7 @@ if (is_file($extra)) {
     $cfg = require $extra;
     if (is_array($cfg)) {
         foreach ($cfg as $k => $v) {
-            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_MAX','AI_LANG'], true)) {
+            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_MAX','AI_LANG','UPDATE_REPO','UPDATE_BRANCH'], true)) {
                 $$k = $v;
             }
         }
@@ -319,6 +321,62 @@ if (isset($_GET['job'])) {
     exit;
 }
 
+// ---- Versions publiées sur GitHub (flux lus par l'app : payloads.json et tv-app.json) ----
+function fetch_text(string $url): ?string
+{
+    if (function_exists('curl_init')) {
+        $c = curl_init($url);
+        curl_setopt_array($c, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8, CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_FOLLOWLOCATION => false, CURLOPT_PROTOCOLS => CURLPROTO_HTTPS, CURLOPT_MAXFILESIZE => 1 << 20,
+            CURLOPT_USERAGENT => 'orbit-nas-admin']);
+        $body = curl_exec($c);
+        $code = (int)curl_getinfo($c, CURLINFO_RESPONSE_CODE);
+        curl_close($c);
+        return is_string($body) && $code === 200 ? $body : null;
+    }
+    $ctx = stream_context_create(['http' => ['timeout' => 8, 'follow_location' => 0, 'header' => "User-Agent: orbit-nas-admin\r\n"]]);
+    $body = @file_get_contents($url, false, $ctx, 0, 1 << 20);
+    return is_string($body) ? $body : null;
+}
+/** @return array{repo:string,elf:string,tv:string,tvSize:int,checked:int,error:string} */
+function github_versions(string $repo, string $branch, bool $force): array
+{
+    $out = ['repo' => $repo, 'elf' => '', 'tv' => '', 'tvSize' => 0, 'checked' => time(), 'error' => ''];
+    if (!preg_match('#^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$#', $repo) || !preg_match('#^[A-Za-z0-9_./-]+$#', $branch) || strpos($branch, '..') !== false) {
+        $out['error'] = 'Dépôt ou branche invalide (UPDATE_REPO / UPDATE_BRANCH).';
+        return $out;
+    }
+    $cache = sys_get_temp_dir() . '/orbit-nas-versions-' . md5($repo . '|' . $branch) . '.json';
+    if (!$force && is_file($cache) && time() - (int)filemtime($cache) < 600) {
+        $saved = json_decode((string)@file_get_contents($cache), true);
+        if (is_array($saved) && ($saved['repo'] ?? '') === $repo) return $saved + $out;
+    }
+    $base = "https://raw.githubusercontent.com/$repo/$branch/";
+    $version = static fn($v): string => is_string($v) && preg_match('/^v?\d{1,4}\.\d{1,5}\.\d{1,6}$/', $v) ? $v : '';
+    $elf = fetch_text($base . 'payloads.json');
+    $tv = fetch_text($base . 'tv-app.json');
+    $a = $elf === null ? null : json_decode($elf, true);
+    $b = $tv === null ? null : json_decode($tv, true);
+    $out['elf'] = is_array($a) ? $version($a['payloads'][0]['version'] ?? '') : '';
+    $out['tv'] = is_array($b) ? $version($b['version'] ?? '') : '';
+    $out['tvSize'] = is_array($b) && isset($b['size']) && is_int($b['size']) && $b['size'] > 0 ? $b['size'] : 0;
+    if ($out['elf'] === '' && $out['tv'] === '') {
+        $out['error'] = "Impossible de lire les versions sur GitHub (dépôt privé, branche absente, ou le Synology n'a pas accès à Internet).";
+        return $out;                                  // pas de mise en cache d'un échec
+    }
+    @file_put_contents($cache, json_encode($out), LOCK_EX);
+    return $out;
+}
+
+// ---- Versions (JSON, réservé aux connectés) ---------------------------------------
+if (isset($_GET['versions'])) {
+    session_write_close();
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo json_encode(github_versions((string)$UPDATE_REPO, (string)$UPDATE_BRANCH, isset($_GET['force'])), JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 // ---- Actions (POST) ------------------------------------------------------------
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if (!csrf_ok($csrf)) plain(403, 'Session expirée. Recharge la page.');
@@ -407,19 +465,29 @@ body{background:radial-gradient(80rem 40rem at 85% -10%,#14306b44,transparent),v
 :root{--pad:clamp(1rem,3.2vw,3rem)}
 
 /* Barre du haut : logo, onglets, recherche, actions */
-header.bar{position:sticky;top:0;z-index:10;display:flex;flex-wrap:wrap;gap:.6rem 1.4rem;align-items:center;padding:.7rem var(--pad);background:linear-gradient(180deg,#081329f2,#081329b0);backdrop-filter:blur(12px)}
+header.bar{position:sticky;top:0;z-index:10;display:flex;flex-wrap:nowrap;gap:.6rem 1.2rem;align-items:center;padding:.7rem var(--pad);background:linear-gradient(180deg,#081329f2,#081329b0);backdrop-filter:blur(12px)}
 .brand{display:flex;align-items:center;gap:.6rem;font-weight:600;font-size:1.05rem}
 .brand svg{width:1.7rem;height:1.7rem;flex:none}
-nav.tabs{display:flex;gap:.2rem;overflow-x:auto;scrollbar-width:none;margin-right:auto;max-width:100%}
+nav.tabs{display:flex;gap:.2rem;overflow-x:auto;scrollbar-width:none;flex:1 1 0;min-width:0}
 nav.tabs::-webkit-scrollbar{display:none}
 .tab{all:unset;box-sizing:border-box;cursor:pointer;white-space:nowrap;padding:.5rem .95rem;border-radius:999px;color:var(--dim);font-weight:500;border:1px solid transparent;transition:background .15s,color .15s}
 .tab:hover{color:var(--text);background:#ffffff10}
 .tab[aria-current=page]{color:#04101f;background:var(--text);font-weight:600}
 .tab:focus-visible{outline:3px solid #fff;outline-offset:2px}
-.tools{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+.gear{width:2.5rem;height:2.5rem;padding:0;display:grid;place-items:center;border-radius:50%;flex:none;position:relative}
+.gear svg{width:1.3rem;height:1.3rem}
+.gear .spin{position:absolute;right:-.15rem;top:-.15rem;margin:0;width:.8rem;height:.8rem;border-color:#9db0d855;border-top-color:var(--accent)}
+.stitle{margin:0;padding:1.3rem 3.5rem .2rem 1.4rem;font-size:1.3rem}
+.srow{display:flex;gap:.5rem;flex-wrap:wrap;margin:.8rem 1.4rem 0}
+.srow a.btn{text-decoration:none;color:inherit}
+.sform{display:grid;gap:.6rem;margin:0 1.4rem}
+.sform label{display:flex;gap:.55rem;align-items:flex-start;font-size:.9rem;color:var(--dim)}
+.sform input{margin-top:.2rem;accent-color:var(--accent)}
+.sform .btn{justify-self:start;margin-top:.3rem}
+#vers dd{font-weight:600}
 .field{padding:.55rem .9rem;border-radius:.7rem;border:1px solid var(--line);background:var(--panel);outline:none;min-width:0}
 .field:focus{border-color:var(--accent);box-shadow:0 0 0 3px #4fb3ff33}
-#q{width:min(15rem,100%)}
+#q{width:min(15rem,30vw);flex:none}
 .btn{padding:.55rem 1rem;border-radius:.7rem;border:1px solid var(--line);background:var(--panel2);cursor:pointer;white-space:nowrap}
 .btn:hover{border-color:var(--accent)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#04101f;font-weight:600}
@@ -492,36 +560,16 @@ dt{color:var(--dim)}dd{margin:0;word-break:break-all}
 .panel.ok summary{color:var(--ok)}.panel.bad summary{color:var(--bad)}
 .panel.first{margin-top:5.5rem}
 summary{cursor:pointer;font-weight:600}
-.refresh{position:relative}
-.refresh>summary{list-style:none}.refresh>summary::-webkit-details-marker{display:none}
-.menu{position:absolute;right:0;top:calc(100% + .4rem);z-index:12;background:var(--panel);border:1px solid var(--line);border-radius:.9rem;padding:.9rem;width:17rem;display:grid;gap:.6rem;box-shadow:0 12px 32px #000a}
-.menu label{display:flex;gap:.55rem;align-items:flex-start;font-size:.88rem;color:var(--dim)}
-.menu input{margin-top:.2rem;accent-color:var(--accent)}
 .spin{display:none;width:1rem;height:1rem;border:2px solid #04101f55;border-top-color:#04101f;border-radius:50%;animation:s 1s linear infinite;vertical-align:-.2rem;margin-right:.4rem}
 .busy .spin,.spin.on{display:inline-block}.panel .spin{border-color:#9db0d855;border-top-color:var(--accent);vertical-align:-.15rem}@keyframes s{to{transform:rotate(360deg)}}
-@media (max-width:40rem){.det{flex-direction:column;margin-top:-3rem}.grid{grid-template-columns:repeat(2,1fr)}.rail-row .tile{width:8.8rem}.hero{padding-top:2rem}.page-head{padding-top:1.5rem}.hero,.page-head{margin-top:0}header.bar{position:relative}.panel.first{margin-top:1rem}.filters{margin-left:0}}
+@media (max-width:40rem){.brand span{display:none}#q{width:6.5rem}.det{flex-direction:column;margin-top:-3rem}.grid{grid-template-columns:repeat(2,1fr)}.rail-row .tile{width:8.8rem}.hero{padding-top:2rem}.page-head{padding-top:1.5rem}.hero,.page-head{margin-top:0}header.bar{position:relative}.panel.first{margin-top:1rem}.filters{margin-left:0}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation-duration:2s!important}}
 </style></head><body>
 <header class="bar">
   <div class="brand"><svg viewBox="0 0 64 64" aria-hidden="true"><g fill="none" stroke="#eaf0ff" stroke-width="4"><circle cx="32" cy="32" r="18"/><ellipse cx="32" cy="32" rx="30" ry="10" transform="rotate(-34 32 32)"/></g></svg><span><?= h($SITE_NAME) ?></span></div>
   <nav class="tabs" id="tabs" aria-label="Catégories"></nav>
-  <div class="tools">
-    <input id="q" class="field" type="search" placeholder="Rechercher un jeu…" aria-label="Rechercher">
-    <details class="refresh" id="refreshBox">
-      <summary class="btn primary" role="button"><span class="spin"></span><span id="refreshLabel">Actualiser</span></summary>
-      <form class="menu" method="post" id="refreshForm">
-        <input type="hidden" name="action" value="refresh"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-        <label><input type="checkbox" name="param" value="1" checked> Lire le param.json des .zip PS5 (titre, identifiant, version)</label>
-<?php if (!empty(array_filter((array)$GEMINI_KEYS))): ?>
-        <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (Gemini) les infos manquantes (description, éditeur, genre, accroche, date de sortie)</label>
-<?php endif; ?>
-        <label><input type="checkbox" name="refresh_covers" value="1"> Remplacer les images déjà extraites des .zip</label>
-        <label><input type="checkbox" name="sha256" value="1"> Calculer les SHA-256 (long sur de gros fichiers)</label>
-        <button class="btn primary" id="refreshGo">Lancer l'actualisation</button>
-      </form>
-    </details>
-    <form method="post"><input type="hidden" name="action" value="logout"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><button class="btn">Déconnexion</button></form>
-  </div>
+  <input id="q" class="field" type="search" placeholder="Rechercher un jeu…" aria-label="Rechercher">
+  <button class="btn gear" id="gear" type="button" aria-label="Réglages" title="Réglages"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Zm7.4-2.4a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V19a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H5a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h.1a1.6 1.6 0 0 0 1-1.5V5a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/></svg><span class="spin" id="gearSpin"></span></button>
 </header>
 <?php if ($running): ?>
   <div class="panel first" id="running" role="status"><span class="spin on"></span> Actualisation en cours… <span id="elapsed"><?= (int)$job['elapsed'] ?></span> s — tu peux fermer cette page, elle continue en arrière-plan.</div>
@@ -531,6 +579,26 @@ summary{cursor:pointer;font-weight:600}
 <?php endif; ?>
 <?php if ($indexError): ?><div class="panel bad first"><?= h($indexError) ?></div><?php endif; ?>
 <main id="main"></main>
+<dialog id="settings" aria-labelledby="sTitle">
+  <button class="btn close" id="sClose" aria-label="Fermer">✕</button>
+  <h2 id="sTitle" class="stitle">Réglages</h2>
+  <h3>Dernières versions sur GitHub</h3>
+  <dl id="vers"><dt>App TV</dt><dd id="vTv">…</dd><dt>ELF (Orbit Store)</dt><dd id="vElf">…</dd></dl>
+  <p class="desc" id="vNote"></p>
+  <div class="srow"><button class="btn" id="vCheck" type="button">Vérifier maintenant</button><a class="btn" id="vLink" target="_blank" rel="noopener noreferrer">Voir les releases</a></div>
+  <h3>Index des jeux</h3>
+  <form class="sform" method="post" id="refreshForm">
+    <input type="hidden" name="action" value="refresh"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+    <label><input type="checkbox" name="param" value="1" checked> Lire le param.json des .zip PS5 (titre, identifiant, version)</label>
+<?php if (!empty(array_filter((array)$GEMINI_KEYS))): ?>
+    <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (Gemini) les infos manquantes (description, éditeur, genre, accroche, date de sortie)</label>
+<?php endif; ?>
+    <label><input type="checkbox" name="refresh_covers" value="1"> Remplacer les images déjà extraites des .zip</label>
+    <label><input type="checkbox" name="sha256" value="1"> Calculer les SHA-256 (long sur de gros fichiers)</label>
+    <button class="btn primary" id="refreshGo"<?= $running ? ' disabled' : '' ?>><span class="spin"></span><span id="refreshLabel">Actualiser</span></button>
+  </form>
+  <div class="actions"><form method="post"><input type="hidden" name="action" value="logout"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><button class="btn">Déconnexion</button></form></div>
+</dialog>
 <dialog id="dlg" aria-labelledby="dTitle">
   <button class="btn close" id="dClose" aria-label="Fermer">✕</button>
   <div class="dhero" id="dHero"></div>
@@ -810,11 +878,28 @@ summary{cursor:pointer;font-weight:600}
 
   q.addEventListener('input', () => { page = 0; render(); });
   window.addEventListener('hashchange', () => { if (fromHash() !== tab) { q.value = ''; go(fromHash()); } });
+  // ---- Réglages : versions GitHub + actualisation de l'index ----
+  const settings = $('settings');
+  const when = (t) => new Date(t * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  async function loadVersions(force) {
+    $('vTv').textContent = $('vElf').textContent = '…'; $('vNote').textContent = '';
+    try {
+      const r = await fetch('?versions=1' + (force ? '&force=1' : ''), { cache: 'no-store', credentials: 'same-origin' });
+      const v = await r.json();
+      $('vLink').href = 'https://github.com/' + v.repo + '/releases';
+      $('vTv').textContent = v.tv ? v.tv + (v.tvSize ? ' · ' + bytes(v.tvSize) : '') : '—';
+      $('vElf').textContent = v.elf || '—';
+      $('vNote').textContent = v.error || 'Vérifié à ' + when(v.checked) + '. Compare avec « Mises à jour » dans les paramètres de l\'app sur la console.';
+    } catch (e) { $('vTv').textContent = $('vElf').textContent = '—'; $('vNote').textContent = 'Impossible de contacter le serveur.'; }
+  }
+  $('gear').addEventListener('click', () => { settings.showModal(); loadVersions(false); });
+  $('vCheck').addEventListener('click', () => loadVersions(true));
+  $('sClose').onclick = () => settings.close();
+  settings.addEventListener('click', (e) => { if (e.target === settings) settings.close(); });
   $('refreshForm').addEventListener('submit', () => {
-    $('refreshBox').classList.add('busy'); $('refreshLabel').textContent = 'Actualisation…';
-    $('refreshGo').disabled = true; $('refreshBox').removeAttribute('open');
+    $('refreshLabel').textContent = 'Actualisation…'; $('refreshGo').classList.add('busy'); $('refreshGo').disabled = true;
   });
-  document.addEventListener('click', (e) => { const b = $('refreshBox'); if (b.open && !b.contains(e.target)) b.removeAttribute('open'); });
+  if ($('running')) $('gearSpin').classList.add('on');
   tab = fromHash();
   render();
   if ($('running')) {
