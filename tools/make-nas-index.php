@@ -61,7 +61,7 @@ const IMAGE_TYPES = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'ima
  * Prépare la commande Python.
  * @return array{0:?array,1:array,2:string} [commande, environnement, erreur]
  */
-function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $ai): array
+function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $ai, bool $prospero = false): array
 {
     global $GAMES_DIR, $SCRIPT, $PYTHON, $GEMINI_KEYS, $GEMINI_MODEL, $AI_MAX, $AI_LANG;
     if (!is_file($SCRIPT)) return [null, [], "make-nas-index.py introuvable : $SCRIPT"];
@@ -74,6 +74,7 @@ function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $a
     if ($sha256) $cmd[] = '--sha256';
     if ($refreshCovers) $cmd[] = '--refresh-covers';
     if (!$param) $cmd[] = '--no-param';
+    if ($prospero) $cmd[] = '--prospero';
     $env = ['LANG' => 'C.UTF-8', 'PYTHONIOENCODING' => 'utf-8', 'PATH' => '/usr/local/bin:/usr/bin:/bin'];
     $keys = array_values(array_filter(array_map('strval', (array)$GEMINI_KEYS), static fn($k) => trim($k) !== ''));
     if ($ai && $keys) {
@@ -87,10 +88,10 @@ function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $a
 }
 
 /** @return array{0:int,1:string} code de sortie et sortie texte (ligne de commande : on attend la fin) */
-function run_refresh(bool $sha256, bool $refreshCovers, bool $param = true, bool $ai = false): array
+function run_refresh(bool $sha256, bool $refreshCovers, bool $param = true, bool $ai = false, bool $prospero = false): array
 {
     global $TIMEOUT;
-    [$cmd, $env, $err] = refresh_command($sha256, $refreshCovers, $param, $ai);
+    [$cmd, $env, $err] = refresh_command($sha256, $refreshCovers, $param, $ai, $prospero);
     if ($cmd === null) return [1, $err];
     @set_time_limit(0);
     $proc = proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env);
@@ -152,11 +153,11 @@ function job_state(bool $consume = false): array
 }
 
 /** @return string message d'erreur, vide si lancé */
-function start_background_refresh(bool $sha256, bool $refreshCovers, bool $param, bool $ai): string
+function start_background_refresh(bool $sha256, bool $refreshCovers, bool $param, bool $ai, bool $prospero = false): string
 {
     global $TIMEOUT;
     if (job_state()['state'] === 'running') return 'Une actualisation est déjà en cours.';
-    [$cmd, $env, $err] = refresh_command($sha256, $refreshCovers, $param, $ai);
+    [$cmd, $env, $err] = refresh_command($sha256, $refreshCovers, $param, $ai, $prospero);
     if ($cmd === null) return $err;
     $b = job_base();
     foreach (['code', 'log'] as $ext) @unlink("$b.$ext");
@@ -185,7 +186,7 @@ if (PHP_SAPI === 'cli') {
         exit(0);
     }
     if ($cmd === 'refresh') {
-        [$code, $text] = run_refresh(in_array('--sha256', $argv, true), in_array('--refresh-covers', $argv, true), !in_array('--no-param', $argv, true), in_array('--ai', $argv, true));
+        [$code, $text] = run_refresh(in_array('--sha256', $argv, true), in_array('--refresh-covers', $argv, true), !in_array('--no-param', $argv, true), in_array('--ai', $argv, true), in_array('--prospero', $argv, true));
         echo ($code === 0 ? "OK\n" : "ERREUR ($code)\n") . $text . "\n";
         exit($code === 0 ? 0 : 1);
     }
@@ -495,7 +496,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         exit;
     }
     if ($action === 'refresh') {
-        $err = start_background_refresh(!empty($_POST['sha256']), !empty($_POST['refresh_covers']), !empty($_POST['param']), !empty($_POST['ai']));
+        $err = start_background_refresh(!empty($_POST['sha256']), !empty($_POST['refresh_covers']), !empty($_POST['param']), !empty($_POST['ai']), !empty($_POST['prospero']));
         if ($err !== '') $_SESSION['flash'] = ['ok' => false, 'log' => $err, 'at' => time()];
         header('Location: ' . strtok((string)($_SERVER['REQUEST_URI'] ?? ''), '?'));
         exit;
@@ -748,6 +749,7 @@ summary{cursor:pointer;font-weight:600}
   <form class="sform" method="post" id="refreshForm">
     <input type="hidden" name="action" value="refresh"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
     <label><input type="checkbox" name="param" value="1" checked> Lire le param.json des .zip PS5 (titre, identifiant, version)</label>
+    <label><input type="checkbox" name="prospero" value="1" checked> Récupérer titre, éditeur, région, icône et fond sur prosperopatches.com (tes propres images de covers/ restent prioritaires)</label>
 <?php if (!empty(array_filter((array)$GEMINI_KEYS))): ?>
     <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (Gemini) les infos manquantes (description, éditeur, genre, accroche, date de sortie)</label>
 <?php endif; ?>

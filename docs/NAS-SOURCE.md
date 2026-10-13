@@ -133,3 +133,12 @@ Notes : un lien ne se crée pas depuis File Station ; `index.json`, `covers/` et
 - Le sélecteur ne navigue que dans les volumes (`LINK_ROOTS`, par défaut `/volume*`) et masque les dossiers système (`@eaDir`, `#recycle`…). Il refuse un volume entier, un dossier qui contient le dossier web, et les noms réservés (`covers`, `index.json`…).
 - L'utilisateur `http` doit pouvoir lire le dossier à parcourir et écrire dans le dossier web. Si `symlink()` est refusé, le message affiche la commande `ln -s` à lancer en SSH.
 - `$ALLOW_LINKS = false` (ou dans `nas-admin.config.php`) retire cette fonction.
+
+## Infos et images depuis prosperopatches.com
+
+Option `--prospero` (case cochée par défaut dans Réglages > Index des jeux) : pour chaque identifiant `PPSA…`/`CUSA…`, le script lit la page `https://prosperopatches.com/<ID>` et récupère le **titre**, l'**éditeur**, la **région** (EU → EUR, US → USA, JP → JPN…), l'**icône** (`icon0.webp`) et le **fond** (`pic0.webp`), enregistrés dans `covers/<ID>_icon0.webp` et `covers/<ID>_pic1.webp`.
+
+- Ordre de priorité : `titles.json` > `param.json` du zip > prosperopatches.com > IA (Gemini, qui ne complète plus que description, genre, accroche, date de sortie). Les DLC et mises à jour gardent le titre du jeu de base.
+- **Tes images passent d'abord** : si `covers/` contient déjà `<ID>_icon0` ou `<ID>_pic1` en `.jpg`/`.webp` de ta main, rien n'est téléchargé ni extrait du zip ; sinon les images du site sont préférées à l'extraction du zip (qui reste le recours si le site n'a pas le jeu).
+- Réponses gardées dans `.prospero-cache.json` : une page par jeu, une seule fois (un jeu inconnu du site est redemandé après 7 jours). Une page par seconde, 80 pages par lancement au plus (`--prospero-max`). Après 3 échecs d'affilée (site injoignable ou protection anti-robot de Cloudflare), le script s'arrête pour ce lancement et le dit dans le journal.
+- Le site est tiers et non officiel : le script lit ses pages comme un navigateur le ferait (son `robots.txt` l'autorise) ; s'il change sa mise en page, l'option cesse simplement de trouver des infos, sans rien casser. `--refresh-covers` retélécharge les images venant du site.

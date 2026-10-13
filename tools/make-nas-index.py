@@ -34,6 +34,7 @@ path relative to the folder:
 """
 import argparse
 import hashlib
+import html as htmllib
 import json
 import os
 import math
@@ -234,10 +235,70 @@ def optimize_art(root: Path, images: dict, title_id: str, kind: str, refresh: bo
 
 
 def artwork_for(images: dict, title_id: str, kind: str):
-    for suffix in IMAGE_TYPES:
+    for suffix in (".jpg", ".jpeg", ".webp", ".png"):          # small copies and your own files before the big PNG
         hit = images.get(f"{title_id}_{kind}{suffix}".lower())
         if hit:
             return quote(hit, safe="/")
+    return None
+
+
+# ---- prosperopatches.com: title, publisher, region and artwork for a title ID -------------------
+PROSPERO_REGIONS = {"EU": "EUR", "EUR": "EUR", "UK": "EUR", "US": "USA", "USA": "USA", "JP": "JPN", "JPN": "JPN",
+                    "ASIA": "ASIA", "HK": "ASIA", "KR": "ASIA", "TW": "ASIA", "CN": "ASIA"}
+PROSPERO_AGENT = "Mozilla/5.0 (compatible; orbit-nas-index/1.0)"
+
+
+def http_get(url: str, limit: int, accept: str = "*/*"):
+    """(bytes, '') or (None, reason). Only https (or a local test server), size-limited."""
+    if not (url.startswith("https://") or url.startswith("http://127.0.0.1")):
+        return None, "not https"
+    request = urllib.request.Request(url, headers={"User-Agent": PROSPERO_AGENT, "Accept": accept})
+    try:
+        with urllib.request.urlopen(request, timeout=25) as reply:
+            data = reply.read(limit + 1)
+    except urllib.error.HTTPError as problem:
+        return None, f"HTTP {problem.code}"
+    except (urllib.error.URLError, OSError, ValueError) as problem:
+        return None, type(problem).__name__
+    return (data, "") if len(data) <= limit else (None, "too large")
+
+
+def _text(fragment: str) -> str:
+    return " ".join(htmllib.unescape(re.sub(r"<[^>]+>", " ", fragment)).split())
+
+
+def prospero_parse(page: str, title_id: str, cdn: str):
+    """Read a title page. Returns {name, publisher, region, icon, hero} or None when the page is not this title."""
+    page = htmllib.unescape(page)
+    fields = {}
+    for chunk in re.split(r"bd-links-group", page)[1:]:
+        found = re.search(r"<strong[^>]*>(.*?)</strong>(.*?)(?:</li>|$)", chunk, re.S)
+        if found:
+            heading = _text(found.group(1)).lower()
+            fields.setdefault("publisherid" if heading.startswith("publisher id") else heading.split(" ")[0], _text(found.group(2)))
+    if fields.get("title", "").upper() != title_id.upper():
+        return None
+    head = re.search(r"<h1[^>]*bd-title[^>]*>(.*?)</h1>", page, re.S)
+    art = {}
+    for found in re.finditer(re.escape(cdn) + r"/titles/[A-Za-z0-9_]+/(icon0|pic0|pic1)\.(?:webp|png|jpe?g)", page):
+        art.setdefault(found.group(1), found.group(0))
+    region = PROSPERO_REGIONS.get(fields.get("region", "").upper(), "")
+    return {
+        "name": clean_text(_text(head.group(1)), 60) if head else "",
+        "publisher": clean_text(fields.get("publisher", ""), 60),
+        "region": region,
+        "icon": art.get("icon0", ""),
+        "hero": art.get("pic0") or art.get("pic1", ""),
+    }
+
+
+def image_ext(data: bytes):
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
     return None
 
 
@@ -444,6 +505,8 @@ def main() -> int:
     parser.add_argument("--no-param", action="store_true", help="do not read sce_sys/param.json (title, title ID, version) from PS5 .zip files")
     parser.add_argument("--ai", action="store_true", help="ask Gemini to fill missing description, publisher, genre, tagline and release date (needs GEMINI_API_KEYS)")
     parser.add_argument("--ai-max", type=int, default=40, help="most Gemini requests per run (default 40)")
+    parser.add_argument("--prospero", action="store_true", help="fetch title, publisher, region and artwork from prosperopatches.com (cached in .prospero-cache.json)")
+    parser.add_argument("--prospero-max", type=int, default=80, help="most pages fetched from prosperopatches.com per run (default 80)")
     parser.add_argument("--ai-lang", default=os.environ.get("GEMINI_LANG", "English"), help="language of the generated description (default English, like the signed catalogue)")
     parser.add_argument("--no-assets", action="store_true", help="do not create assets/coverFallback.png and assets/heroFallback.png")
     parser.add_argument("--ai-model", default=os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"))
@@ -481,6 +544,82 @@ def main() -> int:
     cache = cache if isinstance(cache, dict) else {}
     cache_dirty, ai_calls, ai_done, ai_errors = False, 0, 0, []
     dead_keys = set()
+    pr_base = os.environ.get("PROSPERO_BASE", "https://prosperopatches.com").rstrip("/")
+    pr_cdn = os.environ.get("PROSPERO_CDN", "https://cdn.prosperopatches.com").rstrip("/")
+    pr_path = root / ".prospero-cache.json"
+    try:
+        pr_cache = json.loads(pr_path.read_text("utf-8")) if pr_path.is_file() else {}
+    except (OSError, ValueError):
+        pr_cache = {}
+    pr_cache = pr_cache if isinstance(pr_cache, dict) else {}
+    pr_dirty, pr_calls, pr_done, pr_images, pr_errors, pr_fail = False, 0, 0, 0, [], 0
+
+    def prospero_lookup(title_id: str):
+        """Cached page data for a title, fetching it (politely) when needed."""
+        nonlocal pr_dirty, pr_calls, pr_fail
+        entry = pr_cache.get(title_id) if isinstance(pr_cache.get(title_id), dict) else None
+        if entry is not None:
+            if entry.get("unknown"):
+                if time.time() - float(entry.get("at", 0)) <= 7 * 86400:
+                    return None
+            elif entry.get("v") == 1:
+                return entry
+        if pr_calls >= args.prospero_max or pr_fail >= 3 or not re.fullmatch(r"(?:PPSA|CUSA)\d{5}", title_id):
+            return None
+        if pr_calls:
+            time.sleep(1.0)                            # one page per second: be kind to the site
+        pr_calls += 1
+        data, why = http_get(f"{pr_base}/{title_id}", 2 << 20, "text/html")
+        if data is None:
+            if why == "HTTP 404":
+                pr_cache[title_id] = {"unknown": True, "at": time.time()}
+                pr_dirty = True
+            else:
+                pr_errors.append(why)
+                pr_fail += 1
+            return None
+        pr_fail = 0
+        parsed = prospero_parse(data.decode("utf-8", "replace"), title_id, pr_cdn)
+        if not parsed or not (parsed["name"] or parsed["publisher"] or parsed["icon"]):
+            pr_cache[title_id] = {"unknown": True, "at": time.time()}
+            pr_dirty = True
+            return None
+        parsed.update({"v": 1, "at": time.time(), "files": []})
+        pr_cache[title_id] = parsed
+        pr_dirty = True
+        return parsed
+
+    def prospero_art(title_id: str, kind: str, url: str) -> int:
+        """Download <TITLEID>_<kind> from the site unless you already have your own file; returns 1 when written."""
+        nonlocal pr_dirty, pr_fail
+        entry = pr_cache.get(title_id, {})
+        if not url or not url.startswith(pr_cdn + "/"):
+            return 0
+        if custom_art(root, images, title_id, kind) and not (args.refresh_covers and kind in entry.get("files", [])):
+            return 0                                   # your own jpg / webp wins, and is never overwritten
+        data, why = http_get(url, 12 << 20, "image/*")
+        if data is None:
+            pr_errors.append("image " + why)
+            return 0
+        ext = image_ext(data)
+        if ext is None:
+            pr_errors.append("image not recognised")
+            return 0
+        target = root / args.covers / f"{title_id}_{kind}{ext}"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(target.name + ".part")
+        try:
+            temporary.write_bytes(data)
+            temporary.replace(target)
+        except OSError as problem:
+            pr_errors.append(type(problem).__name__)
+            return 0
+        images[target.name.lower()] = f"{args.covers}/{target.name}"
+        if kind not in entry.setdefault("files", []):
+            entry["files"].append(kind)
+            pr_dirty = True
+        time.sleep(0.3)
+        return 1
     from_param = 0
     pack_rows = 0
     for path in sorted(walk_files(root)):
@@ -525,6 +664,7 @@ def main() -> int:
             "path": quote(key, safe="/"),
             "sizeBytes": size,
         }
+        pr_fields, pr_title = set(), False
         if suffix in ARCHIVES:
             row["compression"] = ARCHIVES[suffix]
             inner = inspect_zip(path) if suffix == ".zip" else None
@@ -547,6 +687,17 @@ def main() -> int:
             from_param += 1
             if param["version"]:
                 row["version"] = param["version"]
+        if args.prospero:
+            got = prospero_lookup(title_id)
+            if got:
+                pr_done += 1
+                pr_fields = {f for f in ("publisher", "region") if got.get(f) and not extra.get(f)}
+                for f in pr_fields:
+                    row[f] = got[f]
+                if got.get("name") and not extra.get("title") and not (param or {}).get("title") and not pack:
+                    row["title"], pr_title = got["name"], True
+                for kind, source in (("icon0", "icon"), ("pic1", "hero")):
+                    pr_images += prospero_art(title_id, kind, got.get(source, ""))
         if suffix == ".zip" and not args.no_extract:
             for kind in extract_art(path, title_id, root, args.covers, images, args.refresh_covers):
                 extracted.append(f"{title_id}_{kind}.png")
@@ -564,7 +715,7 @@ def main() -> int:
             row["id"] = f"{title_id.lower()}-{ {'DLC': 'dlc', 'UPDATES': 'upd', 'APPS': 'app'}[pack] }-{hashlib.sha1(key.encode('utf-8')).hexdigest()[:6]}"
             row["tagline"] = pack
             pack_rows += 1
-        wanted = [f for f in AI_FIELDS if not extra.get(f) and not (pack and f == "tagline")]
+        wanted = [f for f in AI_FIELDS if not extra.get(f) and f not in pr_fields and not (pack and f == "tagline")]
         if args.ai and keys and wanted:
             info = cache.get(title_id) if isinstance(cache.get(title_id), dict) else None
             if info and info.get("unknown"):
@@ -591,7 +742,7 @@ def main() -> int:
                     if field in wanted and info.get(source):
                         row[field] = info[source]
                 # The AI only renames games whose title came from the file name.
-                if info.get("name") and not extra.get("title") and not (param or {}).get("title"):
+                if info.get("name") and not extra.get("title") and not (param or {}).get("title") and not pr_title:
                     row["title"] = info["name"]
         row.setdefault("addedAt", datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).replace(microsecond=0).isoformat())
         for field in ("version", "description", "publisher", "genre", "tagline", "region", "releaseDate", "addedAt",
@@ -650,10 +801,22 @@ def main() -> int:
             temporary.replace(cache_path)
         except OSError:
             notes.append("could not save .ai-cache.json (folder not writable?)")
+    if pr_dirty:
+        try:
+            temporary = pr_path.with_name(pr_path.name + ".part")
+            temporary.write_text(json.dumps(pr_cache, ensure_ascii=False, indent=1), "utf-8")
+            temporary.replace(pr_path)
+        except OSError:
+            notes.append("could not save .prospero-cache.json (folder not writable?)")
     if made_assets:
         print(f"  default images created in assets/: {', '.join(made_assets)}")
     if from_param:
         print(f"  {from_param} game(s) described by their param.json")
+    if args.prospero:
+        print(f"  prosperopatches.com: {pr_done} game(s) completed, {pr_images} image(s) downloaded, {pr_calls} page(s) fetched this run"
+              + (f" (last problem: {pr_errors[-1]})" if pr_errors else ""))
+        if pr_fail >= 3:
+            notes.append("prosperopatches.com refused 3 requests in a row; stopped for this run (blocked by the site's protection? try again later)")
     if args.ai and keys:
         print(f"  AI: {ai_done} game(s) completed, {ai_calls} request(s) this run" + (f" (last problem: {ai_errors[-1]})" if ai_errors else "")
               + (f"; {len(dead_keys)}/{len(keys)} key(s) refused or out of quota" if dead_keys else ""))
