@@ -360,7 +360,9 @@ if (is_file($indexFile)) {
         foreach ($json['releases'] as $r) {
             if (!is_array($r)) continue;
             $s = static fn(string $k): string => isset($r[$k]) && is_scalar($r[$k]) ? (string)$r[$k] : '';
+            $fallback = static fn(string $ref): bool => (bool)preg_match('#fallback\.(png|jpe?g|webp)$#i', $ref);
             $games[] = [
+                'gameId' => $s('gameId') ?: $s('titleId'),
                 'title' => $s('title') ?: $s('filename'),
                 'titleId' => $s('titleId'),
                 'filename' => $s('filename'),
@@ -376,12 +378,14 @@ if (is_file($indexFile)) {
                 'platform' => $s('platform'),
                 'tagline' => $s('tagline'),
                 'releaseDate' => $s('releaseDate'),
+                'addedAt' => $s('addedAt'),
                 'sha256' => $s('sha256'),
                 'cover' => art_url($s('cover')),
                 'hero' => art_url($s('hero')),
+                'coverReal' => $s('cover') !== '' && !$fallback($s('cover')),
+                'heroReal' => $s('hero') !== '' && !$fallback($s('hero')),
             ];
         }
-        usort($games, static fn($a, $b) => strcasecmp($a['title'], $b['title']));
     }
 } else {
     $indexError = "Pas encore d'index : clique sur « Actualiser ».";
@@ -391,7 +395,7 @@ unset($_SESSION['flash']);
 $job = job_state(true);                          // une actualisation terminée est affichée une seule fois
 if ($job['state'] === 'done') $flash = ['ok' => $job['ok'], 'log' => $job['log'] !== '' ? $job['log'] : '(aucune sortie)', 'at' => $job['at']];
 $running = $job['state'] === 'running';
-$data = json_encode(['games' => $games, 'indexTime' => $indexTime], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+$data = json_encode(['games' => $games, 'indexTime' => $indexTime, 'today' => date('Y-m-d')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 
 header('Content-Type: text/html; charset=utf-8');
 ?><!doctype html>
@@ -399,107 +403,199 @@ header('Content-Type: text/html; charset=utf-8');
 <meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#081329">
 <title><?= h($SITE_NAME) ?></title>
 <style nonce="<?= h($nonce) ?>"><?= $baseCss ?>
-#backdrop{position:fixed;inset:0;z-index:-1;background:var(--bg) center/cover no-repeat;transition:opacity .4s;opacity:.0}
-#backdrop.on{opacity:.55;filter:blur(18px) saturate(1.2);transform:scale(1.06)}
-#shade{position:fixed;inset:0;z-index:-1;background:linear-gradient(180deg,#081329cc,#081329f2 55%,var(--bg))}
-header.bar{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:.7rem;align-items:center;padding:.8rem clamp(1rem,3vw,2.2rem);background:#081329d9;backdrop-filter:blur(10px);border-bottom:1px solid #ffffff12}
-.brand{display:flex;align-items:center;gap:.6rem;font-weight:600;font-size:1.1rem;margin-right:auto}
-.brand svg{width:1.7rem;height:1.7rem}
-.brand small{color:var(--dim);font-weight:400;margin-left:.3rem}
-.field{padding:.6rem .9rem;border-radius:.7rem;border:1px solid var(--line);background:var(--panel);outline:none;min-width:0}
+body{background:radial-gradient(80rem 40rem at 85% -10%,#14306b44,transparent),var(--bg);background-attachment:fixed}
+:root{--pad:clamp(1rem,3.2vw,3rem)}
+
+/* Barre du haut : logo, onglets, recherche, actions */
+header.bar{position:sticky;top:0;z-index:10;display:flex;flex-wrap:wrap;gap:.6rem 1.4rem;align-items:center;padding:.7rem var(--pad);background:linear-gradient(180deg,#081329f2,#081329b0);backdrop-filter:blur(12px)}
+.brand{display:flex;align-items:center;gap:.6rem;font-weight:600;font-size:1.05rem}
+.brand svg{width:1.7rem;height:1.7rem;flex:none}
+nav.tabs{display:flex;gap:.2rem;overflow-x:auto;scrollbar-width:none;margin-right:auto;max-width:100%}
+nav.tabs::-webkit-scrollbar{display:none}
+.tab{all:unset;box-sizing:border-box;cursor:pointer;white-space:nowrap;padding:.5rem .95rem;border-radius:999px;color:var(--dim);font-weight:500;border:1px solid transparent;transition:background .15s,color .15s}
+.tab:hover{color:var(--text);background:#ffffff10}
+.tab[aria-current=page]{color:#04101f;background:var(--text);font-weight:600}
+.tab:focus-visible{outline:3px solid #fff;outline-offset:2px}
+.tools{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+.field{padding:.55rem .9rem;border-radius:.7rem;border:1px solid var(--line);background:var(--panel);outline:none;min-width:0}
 .field:focus{border-color:var(--accent);box-shadow:0 0 0 3px #4fb3ff33}
-#q{width:min(18rem,100%)}
-.btn{padding:.6rem 1.05rem;border-radius:.7rem;border:1px solid var(--line);background:var(--panel2);cursor:pointer;white-space:nowrap}
+#q{width:min(15rem,100%)}
+.btn{padding:.55rem 1rem;border-radius:.7rem;border:1px solid var(--line);background:var(--panel2);cursor:pointer;white-space:nowrap}
 .btn:hover{border-color:var(--accent)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#04101f;font-weight:600}
 .btn:focus-visible,.tile:focus-visible{outline:3px solid #fff;outline-offset:3px}
 .btn[disabled]{opacity:.6;cursor:progress}
-main{padding:1.2rem clamp(1rem,3vw,2.2rem) 3rem}
-.stats{color:var(--dim);font-size:.9rem;margin:0 0 1rem}
+
+/* Découvrir : bannière */
+.hero{position:relative;min-height:min(31rem,64vh);margin-top:-3.6rem;padding:7rem var(--pad) 2.5rem;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden}
+.hero-bg{position:absolute;inset:0;background:center 20%/cover no-repeat;opacity:0;transition:opacity .5s}
+.hero-bg.on{opacity:1}
+.hero:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,var(--bg) 0,#081329e6 28%,#08132955 70%,transparent),linear-gradient(0deg,var(--bg) 0,transparent 55%)}
+.hero>*:not(.hero-bg){position:relative;z-index:1;max-width:38rem}
+.eyebrow{margin:0 0 .5rem;color:var(--accent);font-weight:600;letter-spacing:.12em;text-transform:uppercase;font-size:.8rem}
+.hero h1{margin:0;font-size:clamp(2rem,5vw,3.9rem);line-height:1.08;font-weight:650;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.hero p.tag{margin:.8rem 0 0;color:#cfdaf5;font-size:1.05rem;min-height:1.5em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.hero .btn{margin-top:1.3rem;align-self:flex-start;padding:.75rem 1.5rem;font-size:1rem}
+
+/* Rangées et grilles */
+main{padding:0 0 3rem}
+.wrap{padding:0 var(--pad)}
+.rail{margin-top:1.6rem}
+.rail-head{display:flex;align-items:baseline;gap:.8rem;padding:0 var(--pad);margin-bottom:.4rem}
+.rail-head h2,.page-head h1{margin:0;font-size:1.25rem}
+.note{color:var(--dim);font-size:.88rem}
+.rail-head .nudge{margin-left:auto;display:flex;gap:.3rem}
+.nudge button{all:unset;cursor:pointer;width:2rem;height:2rem;border-radius:50%;display:grid;place-items:center;background:#ffffff12}
+.nudge button:hover{background:#ffffff22}.nudge button:focus-visible{outline:3px solid #fff}
+.rail-row{display:flex;gap:1rem;overflow-x:auto;padding:.7rem var(--pad) 1rem;scrollbar-width:none;scroll-padding:0 var(--pad)}
+.rail-row::-webkit-scrollbar{display:none}
+.rail-row .tile{flex:none;width:10.5rem}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(10.5rem,1fr));gap:1.1rem}
+.page-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.6rem 1rem;padding:6rem var(--pad) 1rem;margin-top:-3.6rem}
+.page-head h1{font-size:2rem}
+.filters{display:flex;gap:.5rem;flex-wrap:wrap;margin-left:auto}
+.pager{display:flex;gap:.8rem;align-items:center;justify-content:center;margin-top:1.6rem;color:var(--dim)}
 .tile{all:unset;box-sizing:border-box;display:block;cursor:pointer;border-radius:1rem;padding:.55rem;background:#ffffff08;border:1px solid transparent;transition:transform .15s,background .15s}
-.tile:hover,.tile:focus-visible{transform:translateY(-3px) scale(1.02);background:#ffffff14;border-color:#ffffff2a}
+.tile:hover,.tile:focus-visible{transform:translateY(-3px) scale(1.02);background:#ffffff16;border-color:#ffffff2a}
 .art{aspect-ratio:1;border-radius:.75rem;overflow:hidden;background:linear-gradient(135deg,var(--panel2),var(--panel));display:grid;place-items:center;position:relative}
 .art img{width:100%;height:100%;object-fit:cover;display:block}
 .art svg{width:38%;opacity:.35}
 .badge{position:absolute;left:.4rem;bottom:.4rem;font-size:.7rem;padding:.12rem .45rem;border-radius:999px;background:#000a;color:#fff;letter-spacing:.02em}
 .name{margin-top:.55rem;font-weight:600;font-size:.95rem;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-.sub{color:var(--dim);font-size:.8rem}
-.empty{padding:3rem 1rem;text-align:center;color:var(--dim)}
+.sub{color:var(--dim);font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.empty{padding:3rem 1rem;text-align:center;color:var(--dim);max-width:34rem;margin:0 auto}
+.stats{color:var(--dim);font-size:.85rem;margin:2rem var(--pad) 0}
+
+/* Fiche d'un jeu */
 dialog{border:1px solid var(--line);border-radius:1.2rem;background:var(--panel);color:var(--text);padding:0;width:min(42rem,calc(100% - 2rem));max-height:calc(100% - 2rem);overflow:auto}
 dialog::backdrop{background:#030814cc;backdrop-filter:blur(4px)}
-.hero{height:11rem;background:linear-gradient(135deg,#1b3a7a,var(--panel2)) center/cover;position:relative}
-.hero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 40%,var(--panel))}
+.dhero{height:11rem;background:linear-gradient(135deg,#1b3a7a,var(--panel2)) center/cover;position:relative}
+.dhero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 40%,var(--panel))}
 .det{display:flex;gap:1.1rem;padding:0 1.4rem 1.4rem;margin-top:-4rem;position:relative;z-index:1}
 .det .art{width:7.5rem;flex:none;box-shadow:0 8px 24px #0008;border:1px solid #ffffff22}
 .det h2{margin:.2rem 0 .1rem;font-size:1.35rem}
-.desc{margin:1rem 1.4rem 0;color:var(--dim);font-size:.92rem}.desc:empty{display:none}
-dl{display:grid;grid-template-columns:max-content 1fr;gap:.35rem 1rem;margin:1rem 1.4rem 0;font-size:.9rem}
+.desc{margin:0 1.4rem;color:var(--dim);font-size:.92rem}.desc:empty{display:none}
+h3{margin:1.2rem 1.4rem .5rem;font-size:.85rem;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+ul.files{list-style:none;margin:0 1.4rem;padding:0;display:grid;gap:.4rem}
+ul.files li{display:grid;grid-template-columns:auto 1fr auto;gap:.2rem .8rem;align-items:baseline;padding:.55rem .8rem;border-radius:.7rem;background:#ffffff0a;font-size:.88rem}
+ul.files .fmt{font-weight:600;color:var(--accent);white-space:nowrap}
+ul.files .fn{word-break:break-all}
+ul.files .sz{color:var(--dim);white-space:nowrap}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:.35rem 1rem;margin:0 1.4rem;font-size:.9rem}
 dt{color:var(--dim)}dd{margin:0;word-break:break-all}
 .close{position:absolute;top:.7rem;right:.7rem;z-index:2}
-.actions{padding:1rem 1.4rem 1.4rem;display:flex;justify-content:flex-end}
-.panel{margin:0 0 1.2rem;border:1px solid var(--line);border-radius:.9rem;background:var(--panel);padding:.8rem 1rem}
+.actions{padding:1.2rem 1.4rem 1.4rem;display:flex;justify-content:flex-end}
+
+/* Actualisation */
+.panel{margin:1rem var(--pad) 0;border:1px solid var(--line);border-radius:.9rem;background:var(--panel);padding:.8rem 1rem}
 .panel pre{margin:.6rem 0 0;white-space:pre-wrap;font:.82rem/1.5 ui-monospace,Menlo,Consolas,monospace;color:var(--dim);max-height:16rem;overflow:auto}
 .panel.ok summary{color:var(--ok)}.panel.bad summary{color:var(--bad)}
+.panel.first{margin-top:5.5rem}
 summary{cursor:pointer;font-weight:600}
 .refresh{position:relative}
 .refresh>summary{list-style:none}.refresh>summary::-webkit-details-marker{display:none}
-.menu{position:absolute;right:0;top:calc(100% + .4rem);z-index:6;background:var(--panel);border:1px solid var(--line);border-radius:.9rem;padding:.9rem;width:17rem;display:grid;gap:.6rem;box-shadow:0 12px 32px #000a}
+.menu{position:absolute;right:0;top:calc(100% + .4rem);z-index:12;background:var(--panel);border:1px solid var(--line);border-radius:.9rem;padding:.9rem;width:17rem;display:grid;gap:.6rem;box-shadow:0 12px 32px #000a}
 .menu label{display:flex;gap:.55rem;align-items:flex-start;font-size:.88rem;color:var(--dim)}
 .menu input{margin-top:.2rem;accent-color:var(--accent)}
 .spin{display:none;width:1rem;height:1rem;border:2px solid #04101f55;border-top-color:#04101f;border-radius:50%;animation:s 1s linear infinite;vertical-align:-.2rem;margin-right:.4rem}
 .busy .spin,.spin.on{display:inline-block}.panel .spin{border-color:#9db0d855;border-top-color:var(--accent);vertical-align:-.15rem}@keyframes s{to{transform:rotate(360deg)}}
-@media (max-width:30rem){.det{flex-direction:column;margin-top:-3rem}.grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:40rem){.det{flex-direction:column;margin-top:-3rem}.grid{grid-template-columns:repeat(2,1fr)}.rail-row .tile{width:8.8rem}.hero{padding-top:2rem}.page-head{padding-top:1.5rem}.hero,.page-head{margin-top:0}header.bar{position:relative}.panel.first{margin-top:1rem}.filters{margin-left:0}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation-duration:2s!important}}
 </style></head><body>
-<div id="backdrop"></div><div id="shade"></div>
 <header class="bar">
-  <div class="brand"><svg viewBox="0 0 64 64" aria-hidden="true"><g fill="none" stroke="#eaf0ff" stroke-width="4"><circle cx="32" cy="32" r="18"/><ellipse cx="32" cy="32" rx="30" ry="10" transform="rotate(-34 32 32)"/></g></svg><span><?= h($SITE_NAME) ?><small id="count"></small></span></div>
-  <input id="q" class="field" type="search" placeholder="Rechercher un jeu…" aria-label="Rechercher">
-  <select id="fmt" class="field" aria-label="Format"><option value="">Tous les formats</option></select>
-  <select id="art" class="field" aria-label="Images"><option value="">Toutes les images</option><option value="nocover">Sans icône</option><option value="nohero">Sans fond</option></select>
-  <details class="refresh" id="refreshBox">
-    <summary class="btn primary" role="button"><span class="spin"></span><span id="refreshLabel">Actualiser</span></summary>
-    <form class="menu" method="post" id="refreshForm">
-      <input type="hidden" name="action" value="refresh"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-      <label><input type="checkbox" name="param" value="1" checked> Lire le param.json des .zip PS5 (titre, identifiant, version)</label>
+  <div class="brand"><svg viewBox="0 0 64 64" aria-hidden="true"><g fill="none" stroke="#eaf0ff" stroke-width="4"><circle cx="32" cy="32" r="18"/><ellipse cx="32" cy="32" rx="30" ry="10" transform="rotate(-34 32 32)"/></g></svg><span><?= h($SITE_NAME) ?></span></div>
+  <nav class="tabs" id="tabs" aria-label="Catégories"></nav>
+  <div class="tools">
+    <input id="q" class="field" type="search" placeholder="Rechercher un jeu…" aria-label="Rechercher">
+    <details class="refresh" id="refreshBox">
+      <summary class="btn primary" role="button"><span class="spin"></span><span id="refreshLabel">Actualiser</span></summary>
+      <form class="menu" method="post" id="refreshForm">
+        <input type="hidden" name="action" value="refresh"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+        <label><input type="checkbox" name="param" value="1" checked> Lire le param.json des .zip PS5 (titre, identifiant, version)</label>
 <?php if (!empty(array_filter((array)$GEMINI_KEYS))): ?>
-      <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (Gemini) les infos manquantes (description, éditeur, genre, accroche, date de sortie)</label>
+        <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (Gemini) les infos manquantes (description, éditeur, genre, accroche, date de sortie)</label>
 <?php endif; ?>
-      <label><input type="checkbox" name="refresh_covers" value="1"> Remplacer les images déjà extraites des .zip</label>
-      <label><input type="checkbox" name="sha256" value="1"> Calculer les SHA-256 (long sur de gros fichiers)</label>
-      <button class="btn primary" id="refreshGo">Lancer l'actualisation</button>
-    </form>
-  </details>
-  <form method="post"><input type="hidden" name="action" value="logout"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><button class="btn">Déconnexion</button></form>
+        <label><input type="checkbox" name="refresh_covers" value="1"> Remplacer les images déjà extraites des .zip</label>
+        <label><input type="checkbox" name="sha256" value="1"> Calculer les SHA-256 (long sur de gros fichiers)</label>
+        <button class="btn primary" id="refreshGo">Lancer l'actualisation</button>
+      </form>
+    </details>
+    <form method="post"><input type="hidden" name="action" value="logout"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><button class="btn">Déconnexion</button></form>
+  </div>
 </header>
-<main>
 <?php if ($running): ?>
-  <div class="panel" id="running" role="status"><span class="spin on"></span> Actualisation en cours… <span id="elapsed"><?= (int)$job['elapsed'] ?></span> s — tu peux fermer cette page, elle continue en arrière-plan.</div>
+  <div class="panel first" id="running" role="status"><span class="spin on"></span> Actualisation en cours… <span id="elapsed"><?= (int)$job['elapsed'] ?></span> s — tu peux fermer cette page, elle continue en arrière-plan.</div>
 <?php endif; ?>
 <?php if ($flash): ?>
-  <details class="panel <?= $flash['ok'] ? 'ok' : 'bad' ?>" open><summary><?= $flash['ok'] ? 'Index actualisé' : "Échec de l'actualisation" ?> — <?= h(date('d/m/Y H:i:s', (int)$flash['at'])) ?></summary><pre><?= h((string)$flash['log']) ?></pre></details>
+  <details class="panel first <?= $flash['ok'] ? 'ok' : 'bad' ?>" open><summary><?= $flash['ok'] ? 'Index actualisé' : "Échec de l'actualisation" ?> — <?= h(date('d/m/Y H:i:s', (int)$flash['at'])) ?></summary><pre><?= h((string)$flash['log']) ?></pre></details>
 <?php endif; ?>
-<?php if ($indexError): ?><div class="panel bad"><?= h($indexError) ?></div><?php endif; ?>
-<p class="stats" id="stats"></p>
-<div class="grid" id="grid" role="list"></div>
-<div class="empty" id="empty" hidden>Aucun jeu ne correspond.</div>
-</main>
+<?php if ($indexError): ?><div class="panel bad first"><?= h($indexError) ?></div><?php endif; ?>
+<main id="main"></main>
 <dialog id="dlg" aria-labelledby="dTitle">
   <button class="btn close" id="dClose" aria-label="Fermer">✕</button>
-  <div class="hero" id="dHero"></div>
+  <div class="dhero" id="dHero"></div>
   <div class="det"><div class="art" id="dArt"></div><div><h2 id="dTitle"></h2><div class="sub" id="dSub"></div></div></div>
   <p class="desc" id="dDesc"></p>
+  <h3 id="dFilesTitle">Fichiers</h3>
+  <ul class="files" id="dFiles"></ul>
+  <h3>Informations</h3>
   <dl id="dList"></dl>
   <div class="actions"><button class="btn" id="dOk">Fermer</button></div>
 </dialog>
 <script type="application/json" id="data"><?= $data ?></script>
 <script nonce="<?= h($nonce) ?>">
 (() => {
-  const { games, indexTime } = JSON.parse(document.getElementById('data').textContent);
+  const { games: releases, indexTime, today } = JSON.parse(document.getElementById('data').textContent);
   const $ = (id) => document.getElementById(id);
-  const grid = $('grid'), q = $('q'), fmt = $('fmt'), art = $('art'), backdrop = $('backdrop');
+  const main = $('main'), tabsEl = $('tabs'), q = $('q');
   const SVG = 'http://www.w3.org/2000/svg';
+  const PAGE = 96;
+
+  // ---- Catégories : la « tagline » de l'index sert de marqueur (DLC, UPDATES, APPS) ----
+  const TABS = [
+    ['discover', 'Découvrir'], ['games', 'Jeux'], ['apps', 'Applications'], ['dlc', 'DLC'], ['updates', 'Mises à jour'],
+  ];
+  const LABEL = { game: 'Jeu', apps: 'Application', dlc: 'DLC', updates: 'Mise à jour' };
+  const EMPTY = {
+    games: 'Aucun jeu pour l\'instant. Place tes jeux dans packages/ps5/games/… puis clique sur « Actualiser ».',
+    apps: 'Aucune application. Place-les dans packages/ps5/apps/<extension>/<application> puis clique sur « Actualiser ».',
+    dlc: 'Aucun DLC. Place les .pkg dans packages/ps5/dlc/<ID du jeu>/ puis clique sur « Actualiser ».',
+    updates: 'Aucune mise à jour. Place les .pkg dans packages/ps5/updates/<ID du jeu>/ puis clique sur « Actualiser ».',
+  };
+  const catOf = (tagline) => {
+    const t = (tagline || '').trim().toUpperCase();
+    return t === 'DLC' ? 'dlc' : t === 'UPDATES' ? 'updates' : t === 'APPS' ? 'apps' : 'game';
+  };
+
+  // ---- Un jeu = tous ses fichiers (formats, DLC, mises à jour) regroupés par gameId ----
+  const byKey = new Map();
+  for (const r of releases) {
+    const key = r.gameId || r.titleId || r.filename;
+    let g = byKey.get(key);
+    if (!g) {
+      g = { key, cat: catOf(r.tagline), title: r.title, titleId: r.titleId, tagline: '', description: '', publisher: '', genre: '',
+        region: '', releaseDate: '', platform: r.platform, cover: '', hero: '', coverReal: false, heroReal: false, added: 0, files: [] };
+      byKey.set(key, g);
+    }
+    g.files.push(r);
+    if (g.cat === 'game' && !g.tagline) g.tagline = r.tagline;
+    for (const k of ['description', 'publisher', 'genre', 'region', 'releaseDate', 'platform']) if (!g[k] && r[k]) g[k] = r[k];
+    if (r.cover && (!g.cover || (r.coverReal && !g.coverReal))) { g.cover = r.cover; g.coverReal = r.coverReal; }
+    if (r.hero && (!g.hero || (r.heroReal && !g.heroReal))) { g.hero = r.hero; g.heroReal = r.heroReal; }
+    g.added = Math.max(g.added, Date.parse(r.addedAt) || 0);
+  }
+  const all = [...byKey.values()];
+  all.forEach((g) => {
+    g.size = g.files.reduce((a, f) => a + f.size, 0);
+    g.formats = [...new Set(g.files.map((f) => f.format))];
+    g.search = (g.title + ' ' + g.titleId + ' ' + g.files.map((f) => f.filename).join(' ')).toLowerCase();
+  });
+  const sortTitle = (a, b) => a.title.localeCompare(b.title, 'fr', { sensitivity: 'base' });
+  const pool = (tab) => tab === 'discover' ? all.filter((g) => g.cat === 'game' || g.cat === 'apps')
+    : all.filter((g) => g.cat === ({ games: 'game', apps: 'apps', dlc: 'dlc', updates: 'updates' })[tab]);
+
+  // ---- Petits utilitaires ----
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const mark = () => {
     const s = document.createElementNS(SVG, 'svg'); s.setAttribute('viewBox', '0 0 64 64');
     s.innerHTML = '<g fill="none" stroke="#eaf0ff" stroke-width="4"><circle cx="32" cy="32" r="18"/><ellipse cx="32" cy="32" rx="30" ry="10" transform="rotate(-34 32 32)"/></g>';
@@ -511,86 +607,215 @@ summary{cursor:pointer;font-weight:600}
     while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
     return n.toFixed(i > 2 ? 2 : i ? 1 : 0).replace('.', ',') + ' ' + u[i];
   };
-  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const plural = (n, one, many) => n + ' ' + (n > 1 ? many : one);
+  const cssUrl = (u) => 'url("' + u.replace(/"/g, '%22') + '")';
   const picture = (g, badge) => {
     const box = el('div', 'art');
     if (g.cover) { const i = new Image(); i.alt = ''; i.loading = 'lazy'; i.decoding = 'async'; i.src = g.cover; i.onerror = () => { i.remove(); box.prepend(mark()); }; box.append(i); }
     else box.append(mark());
-    if (badge) box.append(el('span', 'badge', g.format + (g.compression ? ' · ' + g.compression : '')));
+    if (badge) box.append(el('span', 'badge', g.files.length > 1 ? plural(g.files.length, 'fichier', 'fichiers') : g.formats.join(' · ')));
     return box;
   };
+  const firstGenre = (g) => (g.genre || '').split('/')[0].trim();
 
-  [...new Set(games.map((g) => g.format))].sort().forEach((f) => fmt.append(new Option(f, f)));
-  const total = games.reduce((a, g) => a + g.size, 0);
-  const when = indexTime ? new Date(indexTime * 1000).toLocaleString('fr-FR') : null;
-  let shown = [];
+  // ---- Navigation par onglets (#discover, #games, #apps, #dlc, #updates) ----
+  let tab = 'discover', page = 0, focused = null;
+  const filters = { fmt: '', genre: '', sort: 'title', art: '' };
+  const fromHash = () => { const h = location.hash.slice(1); return TABS.some(([id]) => id === h) ? h : 'discover'; };
 
-  const setBackdrop = (g) => {
-    const url = g && (g.hero || g.cover);
-    if (url) { backdrop.style.backgroundImage = 'url("' + url.replace(/"/g, '%22') + '")'; backdrop.classList.add('on'); }
-    else backdrop.classList.remove('on');
-  };
-
-  function render() {
-    const term = q.value.trim().toLowerCase(), f = fmt.value, a = art.value;
-    shown = games.filter((g) =>
-      (!term || (g.title + ' ' + g.titleId + ' ' + g.filename).toLowerCase().includes(term)) &&
-      (!f || g.format === f) && (a !== 'nocover' || !g.cover) && (a !== 'nohero' || !g.hero));
-    grid.replaceChildren(...shown.map((g) => {
-      const b = el('button', 'tile'); b.type = 'button'; b.setAttribute('role', 'listitem');
-      b.append(picture(g, true), el('div', 'name', g.title), el('div', 'sub', [g.titleId, g.version && 'v' + g.version, bytes(g.size)].filter(Boolean).join(' · ')));
-      b.addEventListener('mouseenter', () => setBackdrop(g));
-      b.addEventListener('focus', () => setBackdrop(g));
-      b.addEventListener('click', () => open(g));
+  function drawTabs() {
+    tabsEl.replaceChildren(...TABS.map(([id, label]) => {
+      const b = el('button', 'tab', label); b.type = 'button';
+      if (id === tab && !q.value.trim()) b.setAttribute('aria-current', 'page');
+      b.addEventListener('click', () => { q.value = ''; go(id); });
       return b;
     }));
-    $('empty').hidden = shown.length > 0;
-    $('count').textContent = games.length ? ' · ' + games.length : '';
-    $('stats').textContent = games.length
-      ? shown.length + ' sur ' + games.length + ' jeux · ' + bytes(total) + (when ? ' · index du ' + when : '')
-      : '';
+  }
+  function go(id) {
+    if (location.hash.slice(1) !== id) { history.replaceState(null, '', '#' + id); }
+    tab = id; page = 0; filters.fmt = filters.genre = filters.art = ''; filters.sort = 'title';
+    render(); window.scrollTo(0, 0);
   }
 
+  // ---- Tuile, rangée, grille ----
+  function tile(g, onFocus, withCategory) {
+    const b = el('button', 'tile'); b.type = 'button'; b.setAttribute('role', 'listitem');
+    const sub = [withCategory && LABEL[g.cat], firstGenre(g), g.titleId].filter(Boolean).join(' · ');
+    b.append(picture(g, true), el('div', 'name', g.title), el('div', 'sub', sub || '—'));
+    if (onFocus) { b.addEventListener('mouseenter', () => onFocus(g)); b.addEventListener('focus', () => onFocus(g)); }
+    b.addEventListener('click', () => openGame(g));
+    return b;
+  }
+  function rail(title, note, games, onFocus) {
+    const sec = el('section', 'rail');
+    const head = el('div', 'rail-head'); head.append(el('h2', null, title), el('span', 'note', note));
+    const row = el('div', 'rail-row'); row.setAttribute('role', 'list');
+    row.append(...games.map((g) => tile(g, onFocus)));
+    const nudge = el('div', 'nudge');
+    [['‹', -1, 'Précédent'], ['›', 1, 'Suivant']].forEach(([glyph, dir, label]) => {
+      const b = el('button', null, glyph); b.type = 'button'; b.setAttribute('aria-label', label); b.tabIndex = -1;
+      b.addEventListener('click', () => row.scrollBy({ left: dir * row.clientWidth * 0.8, behavior: 'smooth' }));
+      nudge.append(b);
+    });
+    head.append(nudge);
+    sec.append(head, row);
+    return sec;
+  }
+  function pagedGrid(games, withCategory, onFocus) {
+    const pages = Math.max(1, Math.ceil(games.length / PAGE));
+    page = Math.min(page, pages - 1);
+    const box = el('div', 'wrap');
+    const grid = el('div', 'grid'); grid.setAttribute('role', 'list');
+    grid.append(...games.slice(page * PAGE, (page + 1) * PAGE).map((g) => tile(g, onFocus, withCategory)));
+    box.append(grid);
+    if (pages > 1) {
+      const pager = el('div', 'pager');
+      const prev = el('button', 'btn', '‹ Précédent'), next = el('button', 'btn', 'Suivant ›');
+      prev.type = next.type = 'button'; prev.disabled = page === 0; next.disabled = page >= pages - 1;
+      prev.onclick = () => { page--; render(); window.scrollTo(0, 0); };
+      next.onclick = () => { page++; render(); window.scrollTo(0, 0); };
+      pager.append(prev, el('span', null, 'Page ' + (page + 1) + ' sur ' + pages), next);
+      box.append(pager);
+    }
+    return box;
+  }
+
+  // ---- Découvrir : bannière + rangées + tous les jeux ----
+  function discover() {
+    const games = pool('discover');
+    if (!games.length) return [empty('games')];
+    const recent = [...games].filter((g) => g.added).sort((a, b) => b.added - a.added || sortTitle(a, b)).slice(0, 20);
+    const latest = games.filter((g) => g.releaseDate && g.releaseDate <= today)
+      .sort((a, b) => b.releaseDate.localeCompare(a.releaseDate) || sortTitle(a, b)).slice(0, 20);
+    if (!focused || !games.includes(focused)) focused = recent[0] || latest[0] || games[0];
+
+    const hero = el('section', 'hero'); hero.setAttribute('aria-live', 'polite');
+    const bgs = [el('div', 'hero-bg'), el('div', 'hero-bg')]; let bgIndex = 0;
+    const eyebrow = el('p', 'eyebrow', 'Découvrir'), title = el('h1'), tag = el('p', 'tag');
+    const see = el('button', 'btn primary'); see.type = 'button';
+    see.addEventListener('click', () => openGame(focused));
+    hero.append(...bgs, eyebrow, title, tag, see);
+    const show = (g) => {
+      focused = g;
+      title.textContent = g.title;
+      tag.textContent = (g.cat === 'game' ? g.tagline : '') || g.description || [firstGenre(g), g.publisher].filter(Boolean).join(' · ');
+      see.textContent = g.cat === 'apps' ? "Voir l'application" : 'Voir le jeu';
+      const url = g.heroReal ? g.hero : g.coverReal ? g.cover : '';
+      bgIndex ^= 1; const on = bgs[bgIndex], off = bgs[bgIndex ^ 1];
+      if (url) { on.style.backgroundImage = cssUrl(url); on.classList.add('on'); } else on.classList.remove('on');
+      off.classList.remove('on');
+    };
+    show(focused);
+
+    const parts = [hero];
+    if (recent.length) parts.push(rail('Nouveautés', 'Ajoutés en dernier', recent, show));
+    if (latest.length) parts.push(rail('Dernières sorties', 'Plus récentes d\'abord', latest, show));
+    const sorted = [...games].sort((a, b) => (b.size - a.size) || sortTitle(a, b));
+    const head = el('div', 'rail-head'); head.style.marginTop = '1.8rem';
+    head.append(el('h2', null, 'Tous les jeux'), el('span', 'note', plural(games.length, 'élément', 'éléments')));
+    const grid = pagedGrid(sorted, true, show);
+    parts.push(head, grid);
+    parts.push(el('p', 'stats', plural(games.length, 'élément', 'éléments') + ' · ' + bytes(games.reduce((a, g) => a + g.size, 0)) + (indexTime ? ' · index du ' + new Date(indexTime * 1000).toLocaleString('fr-FR') : '')));
+    return parts;
+  }
+
+  function empty(kind) { const e = el('div', 'empty', EMPTY[kind]); e.style.paddingTop = '8rem'; return e; }
+
+  // ---- Jeux / Applications / DLC / Mises à jour : grille filtrable ----
+  const select = (label, value, options, set) => {
+    const s = el('select', 'field'); s.setAttribute('aria-label', label);
+    options.forEach(([v, t]) => s.append(new Option(t, v)));
+    s.value = value; s.addEventListener('input', () => { set(s.value); page = 0; render(); });
+    return s;
+  };
+  function browse(kind) {
+    const items = pool(kind);
+    const head = el('div', 'page-head');
+    head.append(el('h1', null, TABS.find(([id]) => id === kind)[1]), el('span', 'note', plural(items.length, 'élément', 'éléments')));
+    if (!items.length) return [head, empty(kind)];
+    const formats = [...new Set(items.flatMap((g) => g.formats))].sort();
+    const genres = [...new Set(items.map(firstGenre).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr'));
+    const bar = el('div', 'filters');
+    if (formats.length > 1) bar.append(select('Format', filters.fmt, [['', 'Tous les formats'], ...formats.map((f) => [f, f])], (v) => (filters.fmt = v)));
+    if (genres.length > 1) bar.append(select('Genre', filters.genre, [['', 'Tous les genres'], ...genres.map((x) => [x, x])], (v) => (filters.genre = v)));
+    bar.append(select('Trier par', filters.sort, [['title', 'Titre A → Z'], ['added', 'Ajoutés récemment'], ['release', 'Date de sortie'], ['size', 'Taille décroissante']], (v) => (filters.sort = v)));
+    bar.append(select('Images', filters.art, [['', 'Toutes les images'], ['nocover', 'Sans icône'], ['nohero', 'Sans fond']], (v) => (filters.art = v)));
+    head.append(bar);
+    const shown = items.filter((g) => (!filters.fmt || g.formats.includes(filters.fmt)) && (!filters.genre || firstGenre(g) === filters.genre)
+      && (filters.art !== 'nocover' || !g.coverReal) && (filters.art !== 'nohero' || !g.heroReal));
+    const order = { title: sortTitle, added: (a, b) => b.added - a.added || sortTitle(a, b), release: (a, b) => (b.releaseDate || '').localeCompare(a.releaseDate || '') || sortTitle(a, b), size: (a, b) => b.size - a.size || sortTitle(a, b) };
+    shown.sort(order[filters.sort]);
+    return [head, shown.length ? pagedGrid(shown, false) : el('div', 'empty', 'Aucun résultat avec ces filtres.')];
+  }
+
+  // ---- Recherche : tous les types à la fois ----
+  function results(term) {
+    const found = all.filter((g) => g.search.includes(term)).sort(sortTitle);
+    const head = el('div', 'page-head');
+    head.append(el('h1', null, 'Résultats'), el('span', 'note', plural(found.length, 'élément', 'éléments') + ' pour « ' + q.value.trim() + ' »'));
+    return [head, found.length ? pagedGrid(found, true) : el('div', 'empty', 'Aucun résultat.')];
+  }
+
+  function render() {
+    const term = q.value.trim().toLowerCase();
+    drawTabs();
+    const content = term ? results(term) : tab === 'discover' ? discover() : browse(tab);
+    main.replaceChildren(...content);
+  }
+
+  // ---- Fiche ----
   const dlg = $('dlg');
-  function open(g) {
-    const hero = $('dHero');
-    hero.style.backgroundImage = g.hero ? 'url("' + g.hero.replace(/"/g, '%22') + '")' : '';
+  function openGame(g) {
+    $('dHero').style.backgroundImage = g.heroReal ? cssUrl(g.hero) : g.hero ? cssUrl(g.hero) : '';
     $('dArt').replaceWith(Object.assign(picture(g, false), { id: 'dArt' }));
     $('dTitle').textContent = g.title;
-    $('dSub').textContent = [g.titleId, g.publisher, g.version && 'v' + g.version].filter(Boolean).join(' · ');
-    $('dDesc').textContent = [g.tagline, g.description].filter(Boolean).join(' — ');
-    const rows = [['Fichier', g.filename], ['Chemin', g.path], ['Taille', bytes(g.size)], ['Format', g.format],
-      g.platform && ['Plateforme', g.platform.toUpperCase()], g.region && ['Région', g.region], g.genre && ['Genre', g.genre], g.releaseDate && ['Sortie', g.releaseDate], g.compression && ['Archive', g.compression], g.sha256 && ['SHA-256', g.sha256],
-      ['Icône', g.cover ? 'oui' : 'manquante'], ['Fond', g.hero ? 'oui' : 'manquant']].filter(Boolean);
+    $('dSub').textContent = [LABEL[g.cat], g.titleId, g.publisher].filter(Boolean).join(' · ');
+    $('dDesc').textContent = [g.cat === 'game' && g.tagline, g.description].filter(Boolean).join(' — ');
+    const files = [...g.files].sort((a, b) => a.filename.localeCompare(b.filename, 'fr', { numeric: true }));
+    $('dFilesTitle').textContent = files.length > 1 ? 'Fichiers (' + files.length + ')' : 'Fichier';
+    $('dFiles').replaceChildren(...files.map((f) => {
+      const li = el('li'); li.title = f.path;
+      li.append(el('span', 'fmt', f.format + (f.compression ? ' · ' + f.compression : '')), el('span', 'fn', f.filename),
+        el('span', 'sz', [f.version && 'v' + f.version, bytes(f.size)].filter(Boolean).join(' · ')));
+      return li;
+    }));
+    const rows = [files.length > 1 ? ['Taille totale', bytes(g.size)] : ['Chemin', files[0].path], g.platform && ['Plateforme', g.platform.toUpperCase()], g.region && ['Région', g.region],
+      g.genre && ['Genre', g.genre], g.releaseDate && ['Sortie', g.releaseDate], files.length === 1 && files[0].sha256 && ['SHA-256', files[0].sha256],
+      ['Icône', g.coverReal ? 'oui' : 'manquante'], ['Fond', g.heroReal ? 'oui' : 'manquant']].filter(Boolean);
     $('dList').replaceChildren(...rows.flatMap(([k, v]) => [el('dt', null, k), el('dd', null, v)]));
     dlg.showModal();
   }
   $('dClose').onclick = $('dOk').onclick = () => dlg.close();
   dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
 
-  // Navigation aux flèches, comme à la manette.
-  grid.addEventListener('keydown', (e) => {
-    const tiles = [...grid.children], i = tiles.indexOf(document.activeElement);
-    if (i < 0 || !e.key.startsWith('Arrow')) return;
-    let n = i;
-    if (e.key === 'ArrowRight') n = i + 1; else if (e.key === 'ArrowLeft') n = i - 1;
-    else {
-      const t = tiles[i].getBoundingClientRect(), dir = e.key === 'ArrowDown' ? 1 : -1;
-      const c = tiles.filter((x) => { const r = x.getBoundingClientRect(); return dir > 0 ? r.top > t.top + 8 : r.bottom < t.bottom - 8; });
-      const pool = dir > 0 ? c : c.reverse();
-      const row = pool.length && pool[0].getBoundingClientRect().top;
-      const same = pool.filter((x) => Math.abs(x.getBoundingClientRect().top - row) < 8);
-      n = same.length ? tiles.indexOf(same.reduce((p, x) => Math.abs(x.getBoundingClientRect().left - t.left) < Math.abs(p.getBoundingClientRect().left - t.left) ? x : p)) : i;
+  // ---- Flèches du clavier, comme à la manette ----
+  main.addEventListener('keydown', (e) => {
+    const cur = document.activeElement;
+    if (!cur || !cur.classList.contains('tile') || !e.key.startsWith('Arrow')) return;
+    const tiles = [...main.querySelectorAll('.tile')];
+    let next = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      const sib = e.key === 'ArrowRight' ? cur.nextElementSibling : cur.previousElementSibling;
+      next = sib && sib.classList.contains('tile') ? sib : null;
+    } else {
+      const t = cur.getBoundingClientRect(), dir = e.key === 'ArrowDown' ? 1 : -1;
+      const rows = tiles.filter((x) => { const r = x.getBoundingClientRect(); return dir > 0 ? r.top > t.top + 8 : r.bottom < t.bottom - 8; });
+      const pool2 = dir > 0 ? rows : rows.reverse();
+      const top = pool2.length && pool2[0].getBoundingClientRect().top;
+      const same = pool2.filter((x) => Math.abs(x.getBoundingClientRect().top - top) < 8);
+      if (same.length) next = same.reduce((p, x) => Math.abs(x.getBoundingClientRect().left - t.left) < Math.abs(p.getBoundingClientRect().left - t.left) ? x : p);
     }
-    if (tiles[n]) { e.preventDefault(); tiles[n].focus(); tiles[n].scrollIntoView({ block: 'nearest' }); }
+    if (next) { e.preventDefault(); next.focus(); next.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
   });
 
-  [q, fmt, art].forEach((x) => x.addEventListener('input', render));
+  q.addEventListener('input', () => { page = 0; render(); });
+  window.addEventListener('hashchange', () => { if (fromHash() !== tab) { q.value = ''; go(fromHash()); } });
   $('refreshForm').addEventListener('submit', () => {
     $('refreshBox').classList.add('busy'); $('refreshLabel').textContent = 'Actualisation…';
     $('refreshGo').disabled = true; $('refreshBox').removeAttribute('open');
   });
   document.addEventListener('click', (e) => { const b = $('refreshBox'); if (b.open && !b.contains(e.target)) b.removeAttribute('open'); });
+  tab = fromHash();
   render();
   if ($('running')) {
     const tick = async () => {
