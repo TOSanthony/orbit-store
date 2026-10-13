@@ -186,7 +186,7 @@ def main() -> int:
             else:
                 base, cdn = (os.environ.get("PROSPERO_BASE", "https://prosperopatches.com").rstrip("/"),
                              os.environ.get("PROSPERO_CDN", "https://cdn.prosperopatches.com").rstrip("/"))
-            data, why = index.http_get(f"{base}/{title_id}", 2 << 20, "text/html")
+            data, why = index.http_get_page(f"{base}/{title_id}")
             if data is None:
                 if why == "HTTP 404":
                     cache["art"][title_id] = time.time()

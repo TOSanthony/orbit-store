@@ -39,7 +39,9 @@ import json
 import os
 import math
 import re
+import shutil
 import struct
+import subprocess
 import sys
 import time
 import zlib
@@ -248,8 +250,31 @@ PROSPERO_REGIONS = {"EU": "EUR", "EUR": "EUR", "UK": "EUR", "US": "USA", "USA": 
 PROSPERO_AGENT = "Mozilla/5.0 (compatible; orbit-nas-index/1.0)"
 
 
+def curl_get(url: str, limit: int, accept: str = "*/*"):
+    """Same as http_get but through the system's curl: sites that turn Python's requests away often let curl through."""
+    exe = shutil.which("curl")
+    if not exe:
+        return None, "no curl"
+    local = url.startswith("http://127.0.0.1")
+    if not (url.startswith("https://") or local):
+        return None, "not https"
+    command = [exe, "-sS", "-L", "--max-redirs", "3", "--max-time", "30", "--max-filesize", str(limit),
+               "-H", f"Accept: {accept}", "-w", "\n%{http_code}"] + ([] if local else ["--proto", "=https", "--proto-redir", "=https"]) + [url]
+    try:
+        done = subprocess.run(command, capture_output=True, timeout=45)
+    except (OSError, subprocess.SubprocessError):
+        return None, "curl failed"
+    cut = done.stdout.rfind(b"\n")
+    code = done.stdout[cut + 1:].strip()
+    if done.returncode != 0 or cut < 0:
+        return None, "curl failed"
+    if code != b"200":
+        return None, "HTTP " + code.decode("ascii", "replace")
+    return done.stdout[:cut], ""
+
+
 def http_get(url: str, limit: int, accept: str = "*/*"):
-    """(bytes, '') or (None, reason). Only https (or a local test server), size-limited."""
+    """(bytes, '') or (None, reason). Only https (or a local test server), size-limited; curl is the second chance."""
     if not (url.startswith("https://") or url.startswith("http://127.0.0.1")):
         return None, "not https"
     request = urllib.request.Request(url, headers={"User-Agent": PROSPERO_AGENT, "Accept": accept})
@@ -257,10 +282,25 @@ def http_get(url: str, limit: int, accept: str = "*/*"):
         with urllib.request.urlopen(request, timeout=25) as reply:
             data = reply.read(limit + 1)
     except urllib.error.HTTPError as problem:
-        return None, f"HTTP {problem.code}"
+        reason = f"HTTP {problem.code}"
+        if problem.code in (403, 429, 503):
+            data, why = curl_get(url, limit, accept)
+            if data is not None:
+                return data, ""
+        return None, reason
     except (urllib.error.URLError, OSError, ValueError) as problem:
         return None, type(problem).__name__
     return (data, "") if len(data) <= limit else (None, "too large")
+
+
+def http_get_page(url: str):
+    """A title page; when Python gets a page without the data (anti-robot screen), try curl."""
+    data, why = http_get(url, 2 << 20, "text/html")
+    if data is not None and b"bd-links-group" not in data:
+        other, _ = curl_get(url, 2 << 20, "text/html")
+        if other is not None and b"bd-links-group" in other:
+            return other, ""
+    return data, why
 
 
 def _text(fragment: str) -> str:
@@ -625,7 +665,7 @@ def main() -> int:
             time.sleep(1.0)                            # one page per second: be kind to the site
         pr_calls += 1
         base, cdn = pr_hosts(title_id)
-        data, why = http_get(f"{base}/{title_id}", 2 << 20, "text/html")
+        data, why = http_get_page(f"{base}/{title_id}")
         if data is None:
             if why == "HTTP 404":
                 pr_cache[title_id] = {"unknown": True, "at": time.time()}
