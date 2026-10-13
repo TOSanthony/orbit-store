@@ -505,7 +505,7 @@ def main() -> int:
     parser.add_argument("--no-param", action="store_true", help="do not read sce_sys/param.json (title, title ID, version) from PS5 .zip files")
     parser.add_argument("--ai", action="store_true", help="ask Gemini to fill missing description, publisher, genre, tagline and release date (needs GEMINI_API_KEYS)")
     parser.add_argument("--ai-max", type=int, default=40, help="most Gemini requests per run (default 40)")
-    parser.add_argument("--prospero", action="store_true", help="fetch title, publisher, region and artwork from prosperopatches.com (cached in .prospero-cache.json)")
+    parser.add_argument("--prospero", action="store_true", help="fetch title, publisher, region and artwork from prosperopatches.com (PS5) and orbispatches.com (PS4) (cached in .prospero-cache.json)")
     parser.add_argument("--prospero-max", type=int, default=80, help="most pages fetched from prosperopatches.com per run (default 80)")
     parser.add_argument("--ai-lang", default=os.environ.get("GEMINI_LANG", "English"), help="language of the generated description (default English, like the signed catalogue)")
     parser.add_argument("--no-assets", action="store_true", help="do not create assets/coverFallback.png and assets/heroFallback.png")
@@ -544,8 +544,14 @@ def main() -> int:
     cache = cache if isinstance(cache, dict) else {}
     cache_dirty, ai_calls, ai_done, ai_errors = False, 0, 0, []
     dead_keys = set()
-    pr_base = os.environ.get("PROSPERO_BASE", "https://prosperopatches.com").rstrip("/")
-    pr_cdn = os.environ.get("PROSPERO_CDN", "https://cdn.prosperopatches.com").rstrip("/")
+    def pr_hosts(title_id: str):
+        """(page base, image host): PS5 titles (PPSA) live on prosperopatches.com, PS4 titles (CUSA) on orbispatches.com."""
+        if title_id.startswith("CUSA"):
+            return (os.environ.get("ORBIS_BASE", "https://orbispatches.com").rstrip("/"),
+                    os.environ.get("ORBIS_CDN", "https://cdn.orbispatches.com").rstrip("/"))
+        return (os.environ.get("PROSPERO_BASE", "https://prosperopatches.com").rstrip("/"),
+                os.environ.get("PROSPERO_CDN", "https://cdn.prosperopatches.com").rstrip("/"))
+
     pr_path = root / ".prospero-cache.json"
     try:
         pr_cache = json.loads(pr_path.read_text("utf-8")) if pr_path.is_file() else {}
@@ -569,7 +575,8 @@ def main() -> int:
         if pr_calls:
             time.sleep(1.0)                            # one page per second: be kind to the site
         pr_calls += 1
-        data, why = http_get(f"{pr_base}/{title_id}", 2 << 20, "text/html")
+        base, cdn = pr_hosts(title_id)
+        data, why = http_get(f"{base}/{title_id}", 2 << 20, "text/html")
         if data is None:
             if why == "HTTP 404":
                 pr_cache[title_id] = {"unknown": True, "at": time.time()}
@@ -579,7 +586,7 @@ def main() -> int:
                 pr_fail += 1
             return None
         pr_fail = 0
-        parsed = prospero_parse(data.decode("utf-8", "replace"), title_id, pr_cdn)
+        parsed = prospero_parse(data.decode("utf-8", "replace"), title_id, cdn)
         if not parsed or not (parsed["name"] or parsed["publisher"] or parsed["icon"]):
             pr_cache[title_id] = {"unknown": True, "at": time.time()}
             pr_dirty = True
@@ -593,7 +600,7 @@ def main() -> int:
         """Download <TITLEID>_<kind> from the site unless you already have your own file; returns 1 when written."""
         nonlocal pr_dirty, pr_fail
         entry = pr_cache.get(title_id, {})
-        if not url or not url.startswith(pr_cdn + "/"):
+        if not url or not url.startswith(pr_hosts(title_id)[1] + "/"):
             return 0
         if custom_art(root, images, title_id, kind) and not (args.refresh_covers and kind in entry.get("files", [])):
             return 0                                   # your own jpg / webp wins, and is never overwritten
@@ -813,10 +820,10 @@ def main() -> int:
     if from_param:
         print(f"  {from_param} game(s) described by their param.json")
     if args.prospero:
-        print(f"  prosperopatches.com: {pr_done} game(s) completed, {pr_images} image(s) downloaded, {pr_calls} page(s) fetched this run"
+        print(f"  prosperopatches.com / orbispatches.com: {pr_done} game(s) completed, {pr_images} image(s) downloaded, {pr_calls} page(s) fetched this run"
               + (f" (last problem: {pr_errors[-1]})" if pr_errors else ""))
         if pr_fail >= 3:
-            notes.append("prosperopatches.com refused 3 requests in a row; stopped for this run (blocked by the site's protection? try again later)")
+            notes.append("prosperopatches.com / orbispatches.com refused 3 requests in a row; stopped for this run (blocked by the site's protection? try again later)")
     if args.ai and keys:
         print(f"  AI: {ai_done} game(s) completed, {ai_calls} request(s) this run" + (f" (last problem: {ai_errors[-1]})" if ai_errors else "")
               + (f"; {len(dead_keys)}/{len(keys)} key(s) refused or out of quota" if dead_keys else ""))
