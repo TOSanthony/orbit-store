@@ -128,3 +128,8 @@ Le dossier web et les jeux n'ont pas besoin d'être sur le même volume : il suf
 3. Clique sur « Actualiser » : l'index contient `packages/ps5/…` et le serveur web suit le lien pour envoyer les fichiers.
 
 Notes : un lien ne se crée pas depuis File Station ; `index.json`, `covers/` et les scripts restent dans le dossier web (volume2). Si Web Station refuse de suivre le lien, vérifie que le profil PHP/le serveur autorise les liens symboliques et, pour PHP, ajoute `/volume3/Jeux` à `open_basedir` (Web Station > Paramètres du langage de script).
+
+**Sans ligne de commande** : dans l'interface PHP, roue dentée > Réglages > « Dossiers de jeux sur un autre volume » > « Parcourir les volumes… ». Choisis le dossier du volume3, donne un nom au lien (par exemple `packages`) et clique sur « Créer le lien », puis sur « Actualiser ». Les liens existants sont listés avec un bouton « Retirer » (seul le lien est supprimé, jamais les fichiers).
+- Le sélecteur ne navigue que dans les volumes (`LINK_ROOTS`, par défaut `/volume*`) et masque les dossiers système (`@eaDir`, `#recycle`…). Il refuse un volume entier, un dossier qui contient le dossier web, et les noms réservés (`covers`, `index.json`…).
+- L'utilisateur `http` doit pouvoir lire le dossier à parcourir et écrire dans le dossier web. Si `symlink()` est refusé, le message affiche la commande `ln -s` à lancer en SSH.
+- `$ALLOW_LINKS = false` (ou dans `nas-admin.config.php`) retire cette fonction.

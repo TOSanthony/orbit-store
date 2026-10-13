@@ -38,6 +38,8 @@ $AI_MAX        = 40;                                   // requêtes IA max par a
 $AI_LANG       = 'English';                            // langue des descriptions ('français', 'English'...)
 $UPDATE_REPO   = 'TOSanthony/orbit-store';              // dépôt GitHub dont on affiche les versions (Réglages)
 $UPDATE_BRANCH = 'updates';                             // branche qui porte payloads.json et tv-app.json
+$ALLOW_LINKS   = true;                                  // Réglages : choisir un dossier et créer un lien symbolique vers lui
+$LINK_ROOTS    = ['/volume*'];                          // où le sélecteur de dossier a le droit de naviguer (volumes du Synology)
 // ---------------------------------------------------------------------------
 
 $extra = __DIR__ . '/nas-admin.config.php';
@@ -45,7 +47,7 @@ if (is_file($extra)) {
     $cfg = require $extra;
     if (is_array($cfg)) {
         foreach ($cfg as $k => $v) {
-            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_MAX','AI_LANG','UPDATE_REPO','UPDATE_BRANCH'], true)) {
+            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_MAX','AI_LANG','UPDATE_REPO','UPDATE_BRANCH','ALLOW_LINKS','LINK_ROOTS'], true)) {
                 $$k = $v;
             }
         }
@@ -377,6 +379,111 @@ if (isset($_GET['versions'])) {
     exit;
 }
 
+// ---- Dossiers de jeux : navigation et liens symboliques ----------------------------------
+const LINK_RESERVED = ['index.json', 'covers', 'assets', 'make-nas-index.php', 'make-nas-index.py', 'nas-admin.config.php', 'titles.json'];
+/** @return string[] racines réelles (ex. /volume2, /volume3) où la navigation est permise */
+function link_roots(): array
+{
+    global $LINK_ROOTS;
+    $out = [];
+    foreach ((array)$LINK_ROOTS as $pattern) {
+        foreach ((array)(glob((string)$pattern, GLOB_ONLYDIR) ?: []) as $d) {
+            $r = realpath($d);
+            if ($r !== false) $out[] = rtrim($r, '/');
+        }
+    }
+    sort($out);
+    return array_values(array_unique($out));
+}
+/** Le dossier est une racine ou dedans ; renvoie son chemin réel, ou null. */
+function link_resolve(string $path, bool $allowRoot): ?string
+{
+    if ($path === '' || strpos($path, "\0") !== false || $path[0] !== '/') return null;
+    $real = realpath($path);
+    if ($real === false || !is_dir($real)) return null;
+    $real = rtrim($real, '/');
+    foreach (link_roots() as $root) {
+        if ($real === $root) return $allowRoot ? $real : null;
+        if (strncmp($real, $root . '/', strlen($root) + 1) === 0) {
+            foreach (explode('/', substr($real, strlen($root) + 1)) as $part) {
+                if ($part === '' || $part[0] === '@' || $part[0] === '#' || $part[0] === '.') return null;   // dossiers système de DSM
+            }
+            return $real;
+        }
+    }
+    return null;
+}
+/** @return array{path:string,parent:?string,dirs:array,pick:bool,error:string} */
+function link_browse(string $path): array
+{
+    $out = ['path' => '', 'parent' => null, 'dirs' => [], 'pick' => false, 'error' => ''];
+    if ($path === '') {
+        foreach (link_roots() as $r) $out['dirs'][] = ['name' => basename($r), 'path' => $r];
+        if (!$out['dirs']) $out['error'] = "Aucun volume trouvé (réglage LINK_ROOTS) ou accès refusé par open_basedir.";
+        return $out;
+    }
+    $real = link_resolve($path, true);
+    if ($real === null) { $out['error'] = 'Dossier inaccessible ou non autorisé.'; return $out; }
+    $out['path'] = $real;
+    $isRoot = in_array($real, link_roots(), true);
+    $out['pick'] = !$isRoot;
+    $out['parent'] = $isRoot ? '' : dirname($real);
+    $names = @scandir($real);
+    if ($names === false) { $out['error'] = "Lecture impossible (droits de l'utilisateur « http » sur ce dossier ?)."; return $out; }
+    natcasesort($names);
+    foreach ($names as $n) {
+        if ($n === '.' || $n === '..' || $n[0] === '.' || $n[0] === '@' || $n[0] === '#' || $n[0] === '$') continue;
+        if (is_dir($real . '/' . $n)) $out['dirs'][] = ['name' => $n, 'path' => $real . '/' . $n];
+        if (count($out['dirs']) >= 400) break;
+    }
+    return $out;
+}
+/** @return array<int,array{name:string,target:string,ok:bool}> les liens symboliques du dossier web */
+function link_list(string $dir): array
+{
+    $out = [];
+    foreach ((array)(@scandir($dir) ?: []) as $n) {
+        if ($n === '.' || $n === '..' || !is_link($dir . '/' . $n)) continue;
+        $t = (string)@readlink($dir . '/' . $n);
+        $out[] = ['name' => $n, 'target' => $t, 'ok' => is_dir($dir . '/' . $n)];
+    }
+    return $out;
+}
+/** @return string message d'erreur, ou '' si le lien est créé */
+function link_create(string $webDir, string $target, string $name, bool $replace): string
+{
+    $real = link_resolve($target, false);
+    if ($real === null) return "Dossier refusé : choisis un dossier à l'intérieur d'un volume (pas le volume lui-même, pas de dossier système).";
+    if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$/', $name) || in_array(strtolower($name), LINK_RESERVED, true)) {
+        return "Nom de lien invalide ou réservé (lettres, chiffres, espace, point, tiret ; 64 caractères max).";
+    }
+    $web = realpath($webDir);
+    if ($web === false) return 'Dossier web introuvable.';
+    if ($real === $web || strncmp($web, $real . '/', strlen($real) + 1) === 0) return "Ce dossier contient le dossier web : tout son contenu, dont le mot de passe, serait exposé.";
+    if (strncmp($real, $web . '/', strlen($web) + 1) === 0) return 'Ce dossier est déjà dans le dossier web, pas besoin de lien.';
+    if (!is_writable($web)) return "Le dossier web n'est pas modifiable par l'utilisateur « http ».";
+    $link = $web . '/' . $name;
+    if (is_link($link)) {
+        if (!$replace) return "Un lien « $name » existe déjà (coche « Remplacer »).";
+        if (!@unlink($link)) return "Impossible de remplacer l'ancien lien « $name ».";
+    } elseif (file_exists($link)) {
+        return "« $name » existe déjà dans le dossier web et n'est pas un lien : choisis un autre nom.";
+    }
+    if (!function_exists('symlink') || !@symlink($real, $link)) {
+        return "Création impossible (symlink() désactivé ou refusé). Commande à lancer en SSH : sudo ln -s " . escapeshellarg($real) . ' ' . escapeshellarg($link);
+    }
+    return '';
+}
+
+// ---- Navigation dans les dossiers (JSON, réservé aux connectés) --------------------------
+if (isset($_GET['browse'])) {
+    session_write_close();
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo json_encode($ALLOW_LINKS ? link_browse((string)($_GET['path'] ?? '')) : ['path' => '', 'parent' => null, 'dirs' => [], 'pick' => false, 'error' => 'Désactivé (ALLOW_LINKS).'], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    exit;
+}
+
 // ---- Actions (POST) ------------------------------------------------------------
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if (!csrf_ok($csrf)) plain(403, 'Session expirée. Recharge la page.');
@@ -390,6 +497,21 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if ($action === 'refresh') {
         $err = start_background_refresh(!empty($_POST['sha256']), !empty($_POST['refresh_covers']), !empty($_POST['param']), !empty($_POST['ai']));
         if ($err !== '') $_SESSION['flash'] = ['ok' => false, 'log' => $err, 'at' => time()];
+        header('Location: ' . strtok((string)($_SERVER['REQUEST_URI'] ?? ''), '?'));
+        exit;
+    }
+    if ($action === 'link_create' || $action === 'link_delete') {
+        $name = (string)($_POST['name'] ?? '');
+        if (!$ALLOW_LINKS) {
+            $msg = 'Désactivé (ALLOW_LINKS).';
+        } elseif ($action === 'link_create') {
+            $msg = link_create((string)$GAMES_DIR, (string)($_POST['path'] ?? ''), $name, !empty($_POST['replace']));
+        } else {
+            $full = rtrim((string)$GAMES_DIR, '/') . '/' . $name;
+            $msg = preg_match('/^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$/', $name) && is_link($full) ? (@unlink($full) ? '' : 'Suppression impossible.') : 'Ce n\'est pas un lien.';
+        }
+        $made = $action === 'link_create' ? 'Lien « ' . $name . ' » créé. Clique sur « Actualiser » pour indexer les jeux.' : 'Lien « ' . $name . ' » retiré (les fichiers du volume ne sont pas touchés).';
+        $_SESSION['flash'] = ['ok' => $msg === '', 'log' => $msg === '' ? $made : $msg, 'at' => time(), 'title' => $msg === '' ? 'Dossier des jeux' : 'Dossier des jeux : échec'];
         header('Location: ' . strtok((string)($_SERVER['REQUEST_URI'] ?? ''), '?'));
         exit;
     }
@@ -453,6 +575,7 @@ unset($_SESSION['flash']);
 $job = job_state(true);                          // une actualisation terminée est affichée une seule fois
 if ($job['state'] === 'done') $flash = ['ok' => $job['ok'], 'log' => $job['log'] !== '' ? $job['log'] : '(aucune sortie)', 'at' => $job['at']];
 $running = $job['state'] === 'running';
+$links = $ALLOW_LINKS ? link_list((string)$GAMES_DIR) : [];
 $data = json_encode(['games' => $games, 'indexTime' => $indexTime, 'today' => date('Y-m-d')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 
 header('Content-Type: text/html; charset=utf-8');
@@ -479,12 +602,23 @@ nav.tabs::-webkit-scrollbar{display:none}
 .gear.busy::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid #4fb3ff33;border-top-color:var(--accent);animation:s 1s linear infinite;pointer-events:none}
 .stitle{margin:0;padding:1.3rem 3.5rem .2rem 1.4rem;font-size:1.3rem}
 .srow{display:flex;gap:.5rem;flex-wrap:wrap;margin:.8rem 1.4rem 0}
+.sform .srow{margin:0}
 .srow a.btn{text-decoration:none;color:inherit}
 .sform{display:grid;gap:.6rem;margin:0 1.4rem}
 .sform label{display:flex;gap:.55rem;align-items:flex-start;font-size:.9rem;color:var(--dim)}
 .sform input{margin-top:.2rem;accent-color:var(--accent)}
 .sform .btn{justify-self:start;margin-top:.3rem}
 #vers dd{font-weight:600}
+.btn.small{padding:.3rem .7rem;font-size:.85rem}
+form.inl{margin:0}
+ul.files li:has(form.inl){grid-template-columns:auto 1fr auto}
+.fb{border:1px solid var(--line);border-radius:.8rem;background:#ffffff08;overflow:hidden}
+.fb-path{padding:.5rem .8rem;font:.82rem ui-monospace,Menlo,Consolas,monospace;color:var(--dim);border-bottom:1px solid var(--line);word-break:break-all}
+.fb-list{max-height:11rem;overflow:auto;display:grid}
+.fb-item{all:unset;box-sizing:border-box;cursor:pointer;padding:.5rem .8rem;font-size:.9rem;border-bottom:1px solid #ffffff0d}
+.fb-item:hover,.fb-item:focus-visible{background:#ffffff14}
+.fb-foot{display:flex;gap:.6rem;align-items:center;justify-content:space-between;padding:.5rem .8rem;border-top:1px solid var(--line)}
+.fb-foot .note{min-width:0}
 .field{padding:.55rem .9rem;border-radius:.7rem;border:1px solid var(--line);background:var(--panel);outline:none;min-width:0}
 .field:focus{border-color:var(--accent);box-shadow:0 0 0 3px #4fb3ff33}
 #q{width:min(15rem,30vw);flex:none}
@@ -575,7 +709,7 @@ summary{cursor:pointer;font-weight:600}
   <div class="panel first" id="running" role="status"><span class="spin on"></span> Actualisation en cours… <span id="elapsed"><?= (int)$job['elapsed'] ?></span> s — tu peux fermer cette page, elle continue en arrière-plan.</div>
 <?php endif; ?>
 <?php if ($flash): ?>
-  <details class="panel first <?= $flash['ok'] ? 'ok' : 'bad' ?>" open><summary><?= $flash['ok'] ? 'Index actualisé' : "Échec de l'actualisation" ?> — <?= h(date('d/m/Y H:i:s', (int)$flash['at'])) ?></summary><pre><?= h((string)$flash['log']) ?></pre></details>
+  <details class="panel first <?= $flash['ok'] ? 'ok' : 'bad' ?>" open><summary><?= h((string)($flash['title'] ?? ($flash['ok'] ? 'Index actualisé' : "Échec de l'actualisation"))) ?> — <?= h(date('d/m/Y H:i:s', (int)$flash['at'])) ?></summary><pre><?= h((string)$flash['log']) ?></pre></details>
 <?php endif; ?>
 <?php if ($indexError): ?><div class="panel bad first"><?= h($indexError) ?></div><?php endif; ?>
 <main id="main"></main>
@@ -586,6 +720,30 @@ summary{cursor:pointer;font-weight:600}
   <dl id="vers"><dt>App TV</dt><dd id="vTv">…</dd><dt>ELF (Orbit Store)</dt><dd id="vElf">…</dd></dl>
   <p class="desc" id="vNote"></p>
   <div class="srow"><button class="btn" id="vCheck" type="button">Vérifier maintenant</button><a class="btn" id="vLink" target="_blank" rel="noopener noreferrer">Voir les releases</a></div>
+  <?php if ($ALLOW_LINKS): ?>
+  <h3>Dossiers de jeux sur un autre volume</h3>
+  <p class="desc">Choisis le dossier qui contient tes jeux (par exemple sur le volume3) : un lien est créé dans le dossier web pour que le serveur le serve. Son contenu devient accessible à quiconque connaît l'adresse secrète.</p>
+<?php if ($links): ?>
+  <ul class="files" id="linkList">
+<?php foreach ($links as $l): ?>
+    <li><span class="fmt"><?= h($l['name']) ?></span><span class="fn">→ <?= h($l['target']) ?><?= $l['ok'] ? '' : ' (introuvable)' ?></span>
+      <form method="post" class="inl"><input type="hidden" name="action" value="link_delete"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="name" value="<?= h($l['name']) ?>"><button class="btn small">Retirer</button></form></li>
+<?php endforeach; ?>
+  </ul>
+<?php endif; ?>
+  <form class="sform" method="post" id="linkForm">
+    <input type="hidden" name="action" value="link_create"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+    <div class="fb" id="fb" hidden>
+      <div class="fb-path" id="fbPath"></div>
+      <div class="fb-list" id="fbList"></div>
+      <div class="fb-foot"><span class="note" id="fbMsg"></span><button class="btn small" type="button" id="fbPick">Choisir ce dossier</button></div>
+    </div>
+    <input class="field" id="lnkPath" name="path" placeholder="Dossier choisi (ex. /volume3/Jeux)" readonly required>
+    <input class="field" id="lnkName" name="name" placeholder="Nom du lien (ex. packages)" maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9 _.\-]{0,63}" required>
+    <label><input type="checkbox" name="replace" value="1"> Remplacer un lien du même nom</label>
+    <div class="srow"><button class="btn" type="button" id="fbOpen">Parcourir les volumes…</button><button class="btn primary">Créer le lien</button></div>
+  </form>
+  <?php endif; ?>
   <h3>Index des jeux</h3>
   <form class="sform" method="post" id="refreshForm">
     <input type="hidden" name="action" value="refresh"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
@@ -878,6 +1036,37 @@ summary{cursor:pointer;font-weight:600}
 
   q.addEventListener('input', () => { page = 0; render(); });
   window.addEventListener('hashchange', () => { if (fromHash() !== tab) { q.value = ''; go(fromHash()); } });
+  // ---- Réglages : choisir un dossier et créer un lien ----
+  if ($('fb')) {
+    const fb = $('fb');
+    let current = { path: '', pick: false };
+    async function browse(path) {
+      $('fbMsg').textContent = '';
+      try {
+        const r = await fetch('?browse=1&path=' + encodeURIComponent(path), { cache: 'no-store', credentials: 'same-origin' });
+        const j = await r.json();
+        current = j;
+        $('fbPath').textContent = j.path || 'Volumes';
+        const items = [];
+        if (j.parent !== null && j.parent !== undefined) { const up = el('button', 'fb-item', '↑ Dossier parent'); up.type = 'button'; up.onclick = () => browse(j.parent); items.push(up); }
+        for (const d of j.dirs) { const b = el('button', 'fb-item', '📁 ' + d.name); b.type = 'button'; b.onclick = () => browse(d.path); items.push(b); }
+        if (!j.dirs.length && !j.error) items.push(el('div', 'fb-item', 'Aucun sous-dossier.'));
+        $('fbList').replaceChildren(...items);
+        $('fbMsg').textContent = j.error || '';
+        $('fbPick').disabled = !j.pick;
+      } catch (e) { $('fbMsg').textContent = 'Impossible de contacter le serveur.'; }
+    }
+    $('fbOpen').addEventListener('click', () => { fb.hidden = false; browse($('lnkPath').value ? $('lnkPath').value.replace(/\/[^/]*$/, '') : ''); });
+    $('fbPick').addEventListener('click', () => {
+      if (!current.pick) return;
+      $('lnkPath').value = current.path;
+      if (!$('lnkName').value) $('lnkName').value = current.path.split('/').pop().replace(/[^A-Za-z0-9 _.-]/g, '').replace(/^[^A-Za-z0-9]+/, '');
+      fb.hidden = true;
+    });
+    $('linkForm').addEventListener('submit', (e) => {
+      if (!confirm('Créer le lien « ' + $('lnkName').value + ' » vers ' + $('lnkPath').value + ' ?\nTout le contenu de ce dossier sera accessible depuis Internet à quiconque connaît l\'adresse secrète.')) e.preventDefault();
+    });
+  }
   // ---- Réglages : versions GitHub + actualisation de l'index ----
   const settings = $('settings');
   const when = (t) => new Date(t * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
