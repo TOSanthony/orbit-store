@@ -84,25 +84,6 @@ def title_from(name: str) -> str:
     return re.sub(r"\s+", " ", stem).strip(" -.") or Path(name).stem
 
 
-GENERIC_FOLDERS = {"pkg", "zip", "exfat", "games", "game", "ps4", "ps5", "packages", "apps", "dlc", "updates", "update", "ffpkg", "fpkg"}
-
-
-def file_title(path: Path, title_id: str) -> str:
-    """Title from the file name; when the name is only the title ID (CUSA12345.pkg), from the folder
-    around it (e.g. "CUSA12345 - God of War")."""
-    own = title_from(path.name)
-    if TITLE_ID.sub("", path.stem).strip(" -._") or own.upper() != title_id.upper():
-        return own
-    for folder in list(path.parents)[:3]:
-        if folder.name.lower() in GENERIC_FOLDERS:
-            continue
-        guess = title_from(folder.name)
-        if guess and guess.upper() != title_id.upper() and len(guess) > 1:
-            return guess
-        break
-    return own
-
-
 IMAGE_TYPES = (".jpg", ".png", ".jpeg", ".webp")   # the small optimised copy wins over the PNG
 
 
@@ -718,7 +699,7 @@ def main() -> int:
             "provider": "nas",
             "sourceId": "nas",
             "platform": platform,
-            "title": extra.get("title") or (param or {}).get("title") or (title_id if pack in ("DLC", "UPDATES") else file_title(path, title_id)),
+            "title": extra.get("title") or (param or {}).get("title") or (title_id if pack in ("DLC", "UPDATES") else title_from(path.name)),
             "titleId": title_id,
             "filename": path.name,
             "path": quote(key, safe="/"),
