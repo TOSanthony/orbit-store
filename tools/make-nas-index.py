@@ -288,13 +288,16 @@ def prospero_parse(page: str, title_id: str, cdn: str):
         if found:
             heading = _text(found.group(1)).lower()
             fields.setdefault("publisherid" if heading.startswith("publisher id") else heading.split(" ")[0], _text(found.group(2)))
-    if fields.get("title", "").upper() != title_id.upper():
+    tag_text = _text((re.search(r"<title[^>]*>(.*?)</title>", page, re.S | re.I) or [None, ""])[1])
+    if title_id.upper() not in fields.get("title", "").upper().split() and not tag_text.upper().startswith(title_id.upper()):
         return None
     head = re.search(r"<h1[^>]*bd-title[^>]*>(.*?)</h1>", page, re.S)
     art = {}
     for found in re.finditer(re.escape(cdn) + r"/titles/[A-Za-z0-9_]+/(icon0|pic0|pic1)\.(?:webp|png|jpe?g)", page):
         art.setdefault(found.group(1), found.group(0))
-    region = PROSPERO_REGIONS.get(fields.get("region", "").upper(), "")
+    # Values can carry the text of a link beside them ("Switch US", "Sony ... [View]"): keep the real word.
+    region = next((PROSPERO_REGIONS[w] for w in re.findall(r"[A-Za-z]+", fields.get("region", "").upper()) if w in PROSPERO_REGIONS), "")
+    publisher = re.sub(r"\s*\[?\s*(view|switch)\s*\]?\s*$", "", fields.get("publisher", ""), flags=re.I).strip()
     icon = art.get("icon0", "")
     hero, hero_alt = art.get("pic0") or art.get("pic1", ""), ""
     if not hero and icon:
@@ -311,7 +314,7 @@ def prospero_parse(page: str, title_id: str, cdn: str):
         page_title = ""
     return {
         "name": clean_text(_text(head.group(1)).replace("\u2122", "").replace("\u00ae", "").strip() if head else "", 60) or clean_text(logo_title(raw, title_id), 60) or clean_text(page_title.replace("\u2122", "").replace("\u00ae", ""), 60),
-        "publisher": clean_text(fields.get("publisher", ""), 60),
+        "publisher": clean_text(publisher, 60),
         "region": region,
         "icon": icon,
         "hero": hero,
@@ -595,7 +598,7 @@ def main() -> int:
             if entry.get("unknown"):
                 if time.time() - float(entry.get("at", 0)) <= 7 * 86400:
                     return None
-            elif entry.get("v") == 4:       # older entries missed titles shown as a logo, or backgrounds added by script
+            elif entry.get("v") == 5:       # older entries missed titles shown as a logo, or backgrounds added by script
                 return entry
         if pr_calls >= args.prospero_max or pr_fail >= 3 or not re.fullmatch(r"(?:PPSA|CUSA)\d{5}", title_id):
             return None
@@ -618,7 +621,7 @@ def main() -> int:
             pr_cache[title_id] = {"unknown": True, "at": time.time()}
             pr_dirty = True
             return None
-        parsed.update({"v": 4, "at": time.time(), "files": []})
+        parsed.update({"v": 5, "at": time.time(), "files": []})
         pr_cache[title_id] = parsed
         pr_dirty = True
         return parsed
