@@ -40,6 +40,7 @@ Pour un jeu en `.zip`, le script cherche `icon0.png` (icône) et le fond dans l'
 
 **Chargement rapide.** Les PNG extraits pèsent plusieurs Mo (le fond 1920×1080 surtout). Si Python dispose de Pillow (`pip install pillow`), le script écrit à côté une copie `.jpg` allégée (icône 512 px, fond 1920×1080, environ 10× plus légère) et l'index pointe dessus ; les PNG restent. Sans Pillow, tout fonctionne mais les images sont lentes à arriver sur la console. `--no-optimize` désactive la copie.
 - Seuls les vrais PNG de 20 Mo maximum sont retenus ; une image déjà présente dans `covers/` n'est jamais écrasée (option `--refresh-covers` pour la remplacer).
+- **Tes propres images d'abord** : si `covers/` contient déjà `<ID>_icon0.jpg`, `.jpeg` ou `.webp` (et `<ID>_pic1.…` pour le fond) que tu as mises toi-même, le script les utilise telles quelles : il n'extrait rien du zip pour ce jeu et ne les réécrit jamais, même avec `--refresh-covers`. Les `.jpg` allégés qu'il crée lui-même portent une marque interne, ce qui permet de les distinguer des tiens.
 - `--no-extract` désactive cette étape.
 - L'utilisateur PHP (`http`) doit pouvoir écrire dans `covers/` (ou dans le dossier racine pour le créer).
 - Cela ne fonctionne que si le zip contient réellement ces fichiers (zip d'un dossier de jeu) ; un zip contenant seulement un `.exfat` ou `.ffpfsc` n'en a pas, ce contenu n'étant pas lu.

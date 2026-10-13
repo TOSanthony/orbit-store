@@ -98,6 +98,37 @@ def find_artwork(root: Path, folder: str):
 
 
 MAX_ART_BYTES = 20 * 1024 * 1024
+MADE_MARK = b"orbit-store:optimized"   # written into the JPEGs this script makes, to tell them from yours
+
+
+def custom_art(root: Path, images: dict, title_id: str, kind: str) -> bool:
+    """True when covers/ holds your own <TITLEID>_<kind>.jpg / .jpeg / .webp (not one made by this
+    script): it is then used as it is, and never extracted over or rewritten."""
+    for suffix in (".jpg", ".jpeg", ".webp"):
+        name = f"{title_id}_{kind}{suffix}".lower()
+        rel = images.get(name)
+        if not rel:
+            continue
+        if suffix == ".webp":
+            return True
+        try:
+            with (root / rel).open("rb") as handle:
+                if MADE_MARK not in handle.read(4096):
+                    return True
+        except OSError:
+            continue
+    return False
+
+
+def mark_jpeg(data: bytes) -> bytes:
+    """Insert a JPEG comment saying this script made the file (after the JFIF header when present)."""
+    if data[:2] != b"\xff\xd8":
+        return data
+    at = 2
+    if data[2:4] == b"\xff\xe0":
+        at = 4 + int.from_bytes(data[4:6], "big")
+    comment = b"\xff\xfe" + (len(MADE_MARK) + 2).to_bytes(2, "big") + MADE_MARK
+    return data[:at] + comment + data[at:]
 ART_NAMES = {"icon0": ("icon0.png",), "pic1": ("pic0.png", "pic1.png")}   # background: pic0 first, else pic1
 
 
@@ -105,12 +136,15 @@ def extract_art(zip_path: Path, title_id: str, root: Path, folder: str, images: 
     """Copy icon0.png / pic1.png out of a game .zip into <root>/<folder>/<TITLEID>_<kind>.png.
 
     Looks for sce_sys/icon0.png (or the shallowest icon0.png) inside the archive. Existing
-    files are kept unless --refresh-covers is given. Returns the kinds that were written."""
+    files are kept unless --refresh-covers is given, and an image of yours (.jpg / .webp in
+    covers/) is never replaced. Returns the kinds that were written."""
     written = []
     try:
         with zipfile.ZipFile(zip_path) as archive:
             for kind, wanted in ART_NAMES.items():
                 target_name = f"{title_id}_{kind}.png"
+                if custom_art(root, images, title_id, kind):
+                    continue                             # your own jpg / webp: nothing to extract
                 if not refresh and target_name.lower() in images:
                     continue
                 candidates = []
@@ -151,7 +185,7 @@ SIZE_LIMITS = {"icon0": (512, 512), "pic1": (1920, 1080)}
 def optimize_art(root: Path, images: dict, title_id: str, kind: str, refresh: bool):
     """Write <TITLEID>_<kind>.jpg, a small copy of the extracted PNG (about 10x lighter), so the
     console downloads 300 KB instead of several MB. The PNG stays; returns True when written."""
-    if Image is None:
+    if Image is None or custom_art(root, images, title_id, kind):
         return False
     source_rel = images.get(f"{title_id}_{kind}.png".lower())
     if not source_rel:
@@ -176,6 +210,7 @@ def optimize_art(root: Path, images: dict, title_id: str, kind: str, refresh: bo
             picture.thumbnail(SIZE_LIMITS[kind], Image.LANCZOS)
             temporary = target.with_name(target.name + ".part")
             picture.save(temporary, format="JPEG", quality=86, optimize=True)
+            temporary.write_bytes(mark_jpeg(temporary.read_bytes()))
             temporary.replace(target)
         images[target.name.lower()] = f"{source_rel.rsplit('/', 1)[0]}/{target.name}" if "/" in source_rel else target.name
         return True
