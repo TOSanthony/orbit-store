@@ -29,11 +29,19 @@ EXTRAS = re.compile(r"\b(demo|beta|avatar|theme|soundtrack|ost|season pass|dlc|a
 RETRY_AFTER = 30 * 86400
 
 
+GENRES = "Action, Adventure, Role Playing Games, Horror, Driving/Racing, Shooter, Strategy, Fighting, Sport, Simulation, Puzzle, Platformer, Family, Music/Rhythm, Arcade, Casual, Unique"
+
+
 def load_index_module():
-    spec = importlib.util.spec_from_file_location("make_nas_index", HERE / "make-nas-index.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    """make-nas-index.py (page reader for --prospero), looked for beside this script, one folder up, or here."""
+    for folder in (HERE, HERE.parent, HERE / "tools", Path.cwd()):
+        path = folder / "make-nas-index.py"
+        if path.is_file():
+            spec = importlib.util.spec_from_file_location("make_nas_index", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+    return None
 
 
 def save(path: Path, db: list):
@@ -136,6 +144,9 @@ def main() -> int:
 
     if args.prospero:
         index = load_index_module()
+        if index is None:
+            print("--prospero needs make-nas-index.py next to this script", file=sys.stderr)
+            return 2
         todo = [e for e in db if wanted(e) and (not e.get("hero") or not e.get("cover")) and not recently_tried("art", e["titleId"])]
         todo.sort(key=lambda e: (bool(e.get("hero")), e["titleId"]))
         done = calls = failures = 0
@@ -190,7 +201,7 @@ def main() -> int:
     if not keys:
         print("no key in GEMINI_API_KEYS", file=sys.stderr)
         return 2
-    genres = load_index_module().GENRES
+    genres = getattr(load_index_module(), "GENRES", GENRES)
     todo = [e for e in db if wanted(e) and not e.get("description") and not recently_tried("text", e["titleId"])]
     todo.sort(key=lambda e: (not e.get("cover"), e["titleId"]))
     total = len(todo)
