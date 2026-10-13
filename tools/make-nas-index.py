@@ -536,7 +536,7 @@ def main() -> int:
     parser.add_argument("--ai", action="store_true", help="ask Gemini to fill missing description, publisher, genre, tagline and release date (needs GEMINI_API_KEYS)")
     parser.add_argument("--ai-max", type=int, default=40, help="most Gemini requests per run (default 40)")
     parser.add_argument("--prospero", action="store_true", help="fetch title, publisher, region and artwork from prosperopatches.com (PS5) and orbispatches.com (PS4) (cached in .prospero-cache.json)")
-    parser.add_argument("--prospero-max", type=int, default=80, help="most pages fetched from prosperopatches.com per run (default 80)")
+    parser.add_argument("--prospero-max", type=int, default=400, help="most pages fetched from prosperopatches.com / orbispatches.com per run (default 400)")
     parser.add_argument("--ai-lang", default=os.environ.get("GEMINI_LANG", "English"), help="language of the generated description (default English, like the signed catalogue)")
     parser.add_argument("--no-assets", action="store_true", help="do not create assets/coverFallback.png and assets/heroFallback.png")
     parser.add_argument("--ai-model", default=os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"))
@@ -589,6 +589,7 @@ def main() -> int:
         pr_cache = {}
     pr_cache = pr_cache if isinstance(pr_cache, dict) else {}
     pr_dirty, pr_calls, pr_done, pr_images, pr_errors, pr_fail = False, 0, 0, 0, [], 0
+    pr_left = set()
 
     def prospero_lookup(title_id: str):
         """Cached page data for a title, fetching it (politely) when needed."""
@@ -596,11 +597,16 @@ def main() -> int:
         entry = pr_cache.get(title_id) if isinstance(pr_cache.get(title_id), dict) else None
         if entry is not None:
             if entry.get("unknown"):
-                if time.time() - float(entry.get("at", 0)) <= 7 * 86400:
+                if time.time() - float(entry.get("at", 0)) <= (86400 if entry.get("soft") else 7 * 86400):
                     return None
             elif entry.get("v") == 5:       # older entries missed titles shown as a logo, or backgrounds added by script
                 return entry
-        if pr_calls >= args.prospero_max or pr_fail >= 3 or not re.fullmatch(r"(?:PPSA|CUSA)\d{5}", title_id):
+        if not re.fullmatch(r"(?:PPSA|CUSA)\d{5}", title_id):
+            return None
+        if pr_calls >= args.prospero_max:
+            pr_left.add(title_id)
+            return None
+        if pr_fail >= 3:
             return None
         if pr_calls:
             time.sleep(1.0)                            # one page per second: be kind to the site
@@ -616,10 +622,15 @@ def main() -> int:
                 pr_fail += 1
             return None
         pr_fail = 0
-        parsed = prospero_parse(data.decode("utf-8", "replace"), title_id, cdn)
+        text = data.decode("utf-8", "replace")
+        parsed = prospero_parse(text, title_id, cdn)
         if not parsed or not (parsed["name"] or parsed["publisher"] or parsed["icon"]):
-            pr_cache[title_id] = {"unknown": True, "at": time.time()}
-            pr_dirty = True
+            if "bd-links-group" not in text:
+                pr_errors.append("page not readable (blocked by the site?)")   # not cached: retried next run
+                pr_fail += 1
+            else:
+                pr_cache[title_id] = {"unknown": True, "soft": True, "at": time.time()}
+                pr_dirty = True
             return None
         parsed.update({"v": 5, "at": time.time(), "files": []})
         pr_cache[title_id] = parsed
@@ -738,7 +749,7 @@ def main() -> int:
                 pr_fields = {f for f in ("publisher", "region") if got.get(f) and not extra.get(f)}
                 for f in pr_fields:
                     row[f] = got[f]
-                if got.get("name") and not extra.get("title") and not (param or {}).get("title") and not pack:
+                if got.get("name") and not extra.get("title") and not pack:
                     row["title"], pr_title = got["name"], True
                 for kind, source in (("icon0", "icon"), ("pic1", "hero")):
                     pr_images += prospero_art(title_id, kind, got.get(source, ""), got.get("heroAlt", "") if kind == "pic1" else "")
@@ -859,6 +870,8 @@ def main() -> int:
     if args.prospero:
         print(f"  prosperopatches.com / orbispatches.com: {pr_done} game(s) completed, {pr_images} image(s) downloaded, {pr_calls} page(s) fetched this run"
               + (f" (last problem: {pr_errors[-1]})" if pr_errors else ""))
+        if pr_left:
+            notes.append(f"{len(pr_left)} game(s) not looked up yet (limit of {args.prospero_max} pages per run); run the refresh again to continue")
         if pr_fail >= 3:
             notes.append("prosperopatches.com / orbispatches.com refused 3 requests in a row; stopped for this run (blocked by the site's protection? try again later)")
     if args.ai and keys:
