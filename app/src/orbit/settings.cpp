@@ -422,7 +422,7 @@ void SettingsScreen::build_sources(Pane &pane) const
     const bool can_save =
         !saving && draft_acknowledged_ && (state.sources.acknowledged || !draft_.empty());
     pane.buttons({{Kind::save_sources, saving ? tr("Saving\xE2\x80\xA6") : tr("Save sources"),
-                   ui::ButtonKind::primary, can_save}});
+                   ui::ButtonKind::secondary, can_save}});
     pane.fine(tr("Saved for this console and its paired devices."));
 }
 
@@ -946,7 +946,7 @@ void SettingsScreen::build_more(Pane &pane) const
     pane.fine(tr("On this PS5, the browser version is the Orbit Store icon in your Media area. On a "
               "phone or computer, pair it under Pair a device."));
     if (ctx_.open_browser)
-        pane.buttons({{Kind::open_browser, tr("Open browser version"), ui::ButtonKind::primary}});
+        pane.buttons({{Kind::open_browser, tr("Open browser version"), ui::ButtonKind::secondary}});
     pane.gap(12.0f);
     pane.rule();
     const std::string running = app_release_version(ctx_.app_version);
