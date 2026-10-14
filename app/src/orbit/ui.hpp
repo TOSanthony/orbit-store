@@ -122,7 +122,7 @@ void modal(DrawList &list, const Rect &r);
 // The same panel as lighter frosted glass: the page behind (art included) shows through,
 // blurred. Set frame.glass first; without a glass texture it falls back to the dark panel.
 void glass_modal(DrawList &list, const Rect &r, std::uint32_t glass_texture, float radius = 0.0f,
-                 Color tint = Color::rgb(0x3c3c3c, 0.58f));
+                 Color tint = Color::rgb(0x282828, 0.8f));
 
 // A field's surface: the fill, with a hairline of light along its top edge.
 void surface(DrawList &list, const Rect &r, float radius, Color fill);
