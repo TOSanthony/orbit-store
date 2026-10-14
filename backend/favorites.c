@@ -29,6 +29,11 @@ int favorite_set_locked(const cJSON *input, char *error, size_t cap) {
         for (size_t i = 0; i < orbit.release_count; i++)
             if (!strcmp(id, orbit.releases[i].game_id))
                 known = true;
+        /* The person's own NAS games live in a separate list. */
+        const cJSON *entry;
+        cJSON_ArrayForEach(entry, orbit.nas_catalog)
+            if (!strcmp(id, json_text(entry, "gameId")))
+                known = true;
         if (!known) {
             copy_text(error, cap, "Game is not in this catalogue.");
             return 404;
