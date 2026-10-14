@@ -1218,6 +1218,12 @@
   "A grid of dots with a gentle pulse.": "Pontrács lágy lüktetéssel.",
   "Mountains": "Hegyek",
   "Layered ridges at sunset.": "Egymásra rétegződő gerincek naplementekor.",
-  "Themes": "Témák",
-  "Update the download service to keep this after a restart.": "Frissítsd a letöltési szolgáltatást, hogy ez újraindítás után is megmaradjon."
+  "Update the download service to keep this after a restart.": "Frissítsd a letöltési szolgáltatást, hogy ez újraindítás után is megmaradjon.",
+  "Personalisation": "Személyre szabás",
+  "Background": "Háttér",
+  "Sounds": "Hangok",
+  "Menu sounds are on: you hear a sound when you move and select.": "A menühangok be vannak kapcsolva: mozgáskor és kiválasztáskor hang hallatszik.",
+  "Menu sounds are off. The app is silent.": "A menühangok ki vannak kapcsolva. Az alkalmazás néma.",
+  "Turn off sounds": "Hangok kikapcsolása",
+  "Turn on sounds": "Hangok bekapcsolása"
 }

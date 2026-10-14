@@ -1218,6 +1218,12 @@
   "A grid of dots with a gentle pulse.": "A grid of dots with a gentle pulse.",
   "Mountains": "Mountains",
   "Layered ridges at sunset.": "Layered ridges at sunset.",
-  "Themes": "Themes",
-  "Update the download service to keep this after a restart.": "Update the download service to keep this after a restart."
+  "Update the download service to keep this after a restart.": "Update the download service to keep this after a restart.",
+  "Personalisation": "Personalisation",
+  "Background": "Background",
+  "Sounds": "Sounds",
+  "Menu sounds are on: you hear a sound when you move and select.": "Menu sounds are on: you hear a sound when you move and select.",
+  "Menu sounds are off. The app is silent.": "Menu sounds are off. The app is silent.",
+  "Turn off sounds": "Turn off sounds",
+  "Turn on sounds": "Turn on sounds"
 }

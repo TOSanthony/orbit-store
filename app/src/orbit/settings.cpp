@@ -33,7 +33,7 @@ constexpr float kViewTop = 230.0f;    // content scrolls under the title
 constexpr float kViewBottom = 990.0f; // and stops above the hints
 constexpr float kCardRadius = 14.0f;
 constexpr int kSectionCount = static_cast<int>(SettingsScreen::Section::count);
-constexpr const char *kSections[] = {/* i18n */ "Themes", /* i18n */ "Download sources", /* i18n */ "Storage", /* i18n */ "Pair a device",
+constexpr const char *kSections[] = {/* i18n */ "Personalisation", /* i18n */ "Download sources", /* i18n */ "Storage", /* i18n */ "Pair a device",
                                      /* i18n */ "Game catalogue",   /* i18n */ "Updates", "Orbit Zero",
                                      /* i18n */ "More settings"};
 constexpr const char *kSavedElf = "/data/orbit-store/orbit_store.elf";
@@ -897,7 +897,8 @@ void SettingsScreen::build_zero(Pane &pane) const
 void SettingsScreen::build_appearance(Pane &pane) const
 {
     const ui::Type &type = ctx_.type;
-    pane.heading(tr("Themes"));
+    pane.heading(tr("Personalisation"));
+    pane.subheading(tr("Background"));
     pane.body(tr("Choose the background of the app. Game artwork still shows over it."));
     pane.gap(10.0f);
     for (std::size_t i = 0; i < appearance::count(); ++i)
@@ -935,6 +936,15 @@ void SettingsScreen::build_appearance(Pane &pane) const
     if (ctx_.store.setting_result().setting == Setting::appearance)
         pane.error(ctx_.store.setting_result().error);
     pane.fine(tr("Saved on this console. Animated backgrounds use a little more graphics power."));
+    pane.gap(12.0f);
+    pane.rule();
+    pane.subheading(tr("Sounds"));
+    pane.body(ctx_.sounds_on ? tr("Menu sounds are on: you hear a sound when you move and select.")
+                             : tr("Menu sounds are off. The app is silent."));
+    pane.buttons({{Kind::sounds_toggle, ctx_.sounds_on ? tr("Turn off sounds") : tr("Turn on sounds"),
+                   ui::ButtonKind::secondary}});
+    if (ctx_.store.setting_result().setting == Setting::sounds)
+        pane.error(ctx_.store.setting_result().error);
 }
 
 void SettingsScreen::build_more(Pane &pane) const
@@ -963,6 +973,10 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
     feedback.play(hui::audio::Cue::select);
     switch (control.kind)
     {
+    case Kind::sounds_toggle:
+        ctx_.sounds_on = !ctx_.sounds_on; // at once; the service keeps it for next time
+        ctx_.store.set_sounds_off(!ctx_.sounds_on);
+        break;
     case Kind::appearance:
         // Shown at once, kept by the download service (the app itself cannot write to /data).
         ctx_.appearance = static_cast<std::size_t>(control.index);

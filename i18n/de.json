@@ -1218,6 +1218,12 @@
   "A grid of dots with a gentle pulse.": "Ein Punktraster mit sanftem Puls.",
   "Mountains": "Berge",
   "Layered ridges at sunset.": "Gestaffelte Bergkämme bei Sonnenuntergang.",
-  "Themes": "Designs",
-  "Update the download service to keep this after a restart.": "Aktualisiere den Download-Dienst, damit die Auswahl nach einem Neustart erhalten bleibt."
+  "Update the download service to keep this after a restart.": "Aktualisiere den Download-Dienst, damit die Auswahl nach einem Neustart erhalten bleibt.",
+  "Personalisation": "Anpassung",
+  "Background": "Hintergrund",
+  "Sounds": "Töne",
+  "Menu sounds are on: you hear a sound when you move and select.": "Menütöne sind an: Beim Bewegen und Auswählen ist ein Ton zu hören.",
+  "Menu sounds are off. The app is silent.": "Menütöne sind aus. Die App ist stumm.",
+  "Turn off sounds": "Töne ausschalten",
+  "Turn on sounds": "Töne einschalten"
 }

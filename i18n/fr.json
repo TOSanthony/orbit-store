@@ -1227,6 +1227,12 @@
   "A grid of dots with a gentle pulse.": "Une grille de points au rythme doux.",
   "Mountains": "Montagnes",
   "Layered ridges at sunset.": "Crêtes superposées au coucher du soleil.",
-  "Themes": "Thèmes",
-  "Update the download service to keep this after a restart.": "Mettez à jour le service de téléchargement pour conserver ce choix après un redémarrage."
+  "Update the download service to keep this after a restart.": "Mettez à jour le service de téléchargement pour conserver ce choix après un redémarrage.",
+  "Personalisation": "Personnalisation",
+  "Background": "Arrière-plan",
+  "Sounds": "Sons",
+  "Menu sounds are on: you hear a sound when you move and select.": "Sons du menu activés : un son se fait entendre quand vous vous déplacez et sélectionnez.",
+  "Menu sounds are off. The app is silent.": "Sons du menu désactivés. L’application est silencieuse.",
+  "Turn off sounds": "Désactiver les sons",
+  "Turn on sounds": "Activer les sons"
 }

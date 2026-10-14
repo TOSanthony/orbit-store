@@ -1236,6 +1236,12 @@
   "A grid of dots with a gentle pulse.": "Сетка точек с плавной пульсацией.",
   "Mountains": "Горы",
   "Layered ridges at sunset.": "Слоистые хребты на закате.",
-  "Themes": "Темы",
-  "Update the download service to keep this after a restart.": "Обновите службу загрузки, чтобы сохранить это после перезапуска."
+  "Update the download service to keep this after a restart.": "Обновите службу загрузки, чтобы сохранить это после перезапуска.",
+  "Personalisation": "Персонализация",
+  "Background": "Фон",
+  "Sounds": "Звуки",
+  "Menu sounds are on: you hear a sound when you move and select.": "Звуки меню включены: при перемещении и выборе слышен звук.",
+  "Menu sounds are off. The app is silent.": "Звуки меню выключены. Приложение работает без звука.",
+  "Turn off sounds": "Выключить звуки",
+  "Turn on sounds": "Включить звуки"
 }

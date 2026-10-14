@@ -192,8 +192,9 @@ int main()
                                                 static_cast<std::uint64_t>(now));
         feedback.clear();
         app.update(input, dt, feedback);
-        for (const audio::CueEvent &event : feedback.cues)
-            sounds.play(mixer, audio::SoundSet::glass, event);
+        if (context.sounds_on)
+            for (const audio::CueEvent &event : feedback.cues)
+                sounds.play(mixer, audio::SoundSet::glass, event);
         if (feedback.rumble_strength > 0.0f)
             pad.rumble(feedback.rumble_strength, feedback.rumble_seconds);
         pad.tick(dt);

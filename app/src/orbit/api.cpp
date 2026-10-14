@@ -525,6 +525,18 @@ Result<bool> Client::set_delete_archives(bool enabled)
     return result;
 }
 
+Result<bool> Client::set_sounds_off(bool off)
+{
+    Result<bool> result;
+    const http::Response response = send("POST", "/api/v1/settings/sounds",
+                                         off ? "{\"soundsOff\":true}" : "{\"soundsOff\":false}");
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    result.value = json::parse(response.body, &value) ? value.flag("soundsOff", off) : off;
+    return result;
+}
+
 Result<std::string> Client::set_appearance(const std::string &id)
 {
     Result<std::string> result;

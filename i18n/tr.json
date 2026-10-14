@@ -1218,6 +1218,12 @@
   "A grid of dots with a gentle pulse.": "Hafif bir nabızla atan nokta ızgarası.",
   "Mountains": "Dağlar",
   "Layered ridges at sunset.": "Gün batımında üst üste binen sırtlar.",
-  "Themes": "Temalar",
-  "Update the download service to keep this after a restart.": "Bunun yeniden başlatmadan sonra korunması için indirme hizmetini güncelleyin."
+  "Update the download service to keep this after a restart.": "Bunun yeniden başlatmadan sonra korunması için indirme hizmetini güncelleyin.",
+  "Personalisation": "Kişiselleştirme",
+  "Background": "Arka plan",
+  "Sounds": "Sesler",
+  "Menu sounds are on: you hear a sound when you move and select.": "Menü sesleri açık: gezinirken ve seçim yaparken ses duyulur.",
+  "Menu sounds are off. The app is silent.": "Menü sesleri kapalı. Uygulama sessiz.",
+  "Turn off sounds": "Sesleri kapat",
+  "Turn on sounds": "Sesleri aç"
 }

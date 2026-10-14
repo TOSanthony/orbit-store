@@ -142,7 +142,7 @@ void App::open_settings(SettingsScreen::Section section, bool content)
 {
     settings_open_ = true;
     game_open_ = false;
-    // Opens on Themes; until the download notice is accepted, on Sources so it is seen first.
+    // Opens on Personalisation; until the download notice is accepted, on Sources so it is seen first.
     if (section == SettingsScreen::Section::appearance && !ctx_.store.state().sources.acknowledged)
         section = SettingsScreen::Section::sources;
     settings_.open(section, content);
@@ -243,6 +243,7 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
         appearance_synced_ = true;
         if (!state.system.appearance.empty())
             ctx_.appearance = appearance::find(state.system.appearance);
+        ctx_.sounds_on = !state.system.sounds_off;
     }
     ctx_.store.set_fast(false);
     toast_time_ = std::max(0.0f, toast_time_ - dt);

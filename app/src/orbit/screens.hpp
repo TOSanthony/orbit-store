@@ -72,6 +72,7 @@ struct Context
     // Opens the exact option and destination; the browser still asks to proceed.
     std::function<bool(const BrowserSelection &)> open_download;
     float clock = 0.0f; // seconds since the app opened
+    bool sounds_on = true;      // menu sounds; read by the main loop
     std::size_t appearance = 0; // the chosen background (orbit::appearance preset)
 };
 
@@ -564,6 +565,7 @@ class SettingsScreen final : public Screen
         download_limit_less,
         download_limit_more,
         appearance, // index of a background preset
+        sounds_toggle,
     };
     struct Control
     {

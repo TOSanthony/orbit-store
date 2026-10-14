@@ -1218,6 +1218,12 @@
   "A grid of dots with a gentle pulse.": "Een raster van stippen met een zachte puls.",
   "Mountains": "Bergen",
   "Layered ridges at sunset.": "Gelaagde bergruggen bij zonsondergang.",
-  "Themes": "Thema’s",
-  "Update the download service to keep this after a restart.": "Werk de downloadservice bij om dit na een herstart te behouden."
+  "Update the download service to keep this after a restart.": "Werk de downloadservice bij om dit na een herstart te behouden.",
+  "Personalisation": "Personalisatie",
+  "Background": "Achtergrond",
+  "Sounds": "Geluiden",
+  "Menu sounds are on: you hear a sound when you move and select.": "Menugeluiden staan aan: je hoort een geluid als je beweegt en selecteert.",
+  "Menu sounds are off. The app is silent.": "Menugeluiden staan uit. De app is stil.",
+  "Turn off sounds": "Geluiden uitschakelen",
+  "Turn on sounds": "Geluiden inschakelen"
 }

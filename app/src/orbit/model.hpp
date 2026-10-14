@@ -30,6 +30,7 @@ struct System
     bool state_healthy = true;
     std::int64_t catalogue_revision = 0;
     std::string preferred_storage;
+    bool sounds_off = false; // the TV app's menu sounds are muted
     std::string appearance; // the TV app background preset id the service keeps
     int concurrent_downloads = 1;
     bool delete_archives = true; // Remove a ZIP/7z/RAR download once its files are in place.
