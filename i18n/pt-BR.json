@@ -1201,7 +1201,6 @@
   "Animated": "Animado",
   "Choose the background of the app. Game artwork still shows over it.": "Escolha o plano de fundo do app. A arte dos jogos continua aparecendo por cima.",
   "Saved on this console. Animated backgrounds use a little more graphics power.": "Salvo neste console. Fundos animados usam um pouco mais de poder gráfico.",
-  "Could not save the background.": "Não foi possível salvar o plano de fundo.",
   "Black": "Preto",
   "The original near-black page.": "A página original, quase preta.",
   "Midnight blue": "Azul meia-noite",
@@ -1228,5 +1227,6 @@
   "A grid of dots with a gentle pulse.": "Uma grade de pontos com pulso suave.",
   "Mountains": "Montanhas",
   "Layered ridges at sunset.": "Cristas sobrepostas ao pôr do sol.",
-  "Themes": "Temas"
+  "Themes": "Temas",
+  "Update the download service to keep this after a restart.": "Atualize o serviço de download para manter isso após reiniciar."
 }

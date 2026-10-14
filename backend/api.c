@@ -293,6 +293,7 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
         cJSON_AddNumberToObject(o, "catalogueRevision", orbit.catalog_revision);
         cJSON_AddStringToObject(o, "preferredStorage", orbit.preferred_storage);
         cJSON_AddBoolToObject(o, "deleteArchives", orbit.delete_archives);
+        cJSON_AddStringToObject(o, "appearance", orbit.appearance);
         cJSON_AddNumberToObject(o, "concurrentDownloads", orbit.concurrent_downloads);
         cJSON_AddNumberToObject(o, "httpPort", orbit.port);
         cJSON_AddStringToObject(o, "launcherStatus", orbit.launcher_status);
@@ -446,6 +447,32 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
             else if (post) pthread_cond_broadcast(&orbit.changed);
             cJSON *o = cJSON_CreateObject();
             cJSON_AddNumberToObject(o, "concurrentDownloads", orbit.concurrent_downloads);
+            pthread_mutex_unlock(&orbit.mutex);
+            cJSON_Delete(input);
+            if (rc) {
+                cJSON_Delete(o);
+                return error(c, 503, "Could not save the setting.");
+            }
+            return json_response(c, 200, o);
+        }
+        if ((get || post) && !strcmp(url, "/api/v1/settings/appearance")) {
+            const cJSON *value = cJSON_GetObjectItemCaseSensitive(input, "appearance");
+            bool valid = cJSON_IsString(value) && value->valuestring && value->valuestring[0] &&
+                         strlen(value->valuestring) < sizeof orbit.appearance;
+            for (const char *p = valid ? value->valuestring : ""; *p; p++)
+                if (!((*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9') || *p == '-')) valid = false;
+            if (post && !valid) {
+                cJSON_Delete(input);
+                return error(c, 400, "Expected appearance.");
+            }
+            pthread_mutex_lock(&orbit.mutex);
+            char previous[sizeof orbit.appearance];
+            memcpy(previous, orbit.appearance, sizeof previous);
+            if (post) snprintf(orbit.appearance, sizeof orbit.appearance, "%s", value->valuestring);
+            int rc = post ? state_save_locked() : 0;
+            if (rc) memcpy(orbit.appearance, previous, sizeof previous);
+            cJSON *o = cJSON_CreateObject();
+            cJSON_AddStringToObject(o, "appearance", orbit.appearance);
             pthread_mutex_unlock(&orbit.mutex);
             cJSON_Delete(input);
             if (rc) {

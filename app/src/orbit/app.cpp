@@ -237,6 +237,13 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
     const Snapshot &state = ctx_.store.state();
     ctx_.art.set_token(state.token);
     ctx_.art.tick();
+    // The background the service kept wins once, at start (a newer service; older ones send none).
+    if (!appearance_synced_ && state.have_system)
+    {
+        appearance_synced_ = true;
+        if (!state.system.appearance.empty())
+            ctx_.appearance = appearance::find(state.system.appearance);
+    }
     ctx_.store.set_fast(false);
     toast_time_ = std::max(0.0f, toast_time_ - dt);
     status_age_ += dt;

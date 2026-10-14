@@ -1192,7 +1192,6 @@
   "Animated": "Geanimeerd",
   "Choose the background of the app. Game artwork still shows over it.": "Kies de achtergrond van de app. Game-afbeeldingen blijven er bovenop staan.",
   "Saved on this console. Animated backgrounds use a little more graphics power.": "Opgeslagen op deze console. Geanimeerde achtergronden gebruiken iets meer grafisch vermogen.",
-  "Could not save the background.": "De achtergrond kon niet worden opgeslagen.",
   "Black": "Zwart",
   "The original near-black page.": "De oorspronkelijke, bijna zwarte pagina.",
   "Midnight blue": "Middernachtblauw",
@@ -1219,5 +1218,6 @@
   "A grid of dots with a gentle pulse.": "Een raster van stippen met een zachte puls.",
   "Mountains": "Bergen",
   "Layered ridges at sunset.": "Gelaagde bergruggen bij zonsondergang.",
-  "Themes": "Thema’s"
+  "Themes": "Thema’s",
+  "Update the download service to keep this after a restart.": "Werk de downloadservice bij om dit na een herstart te behouden."
 }

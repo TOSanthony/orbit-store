@@ -1192,7 +1192,6 @@
   "Animated": "Animated",
   "Choose the background of the app. Game artwork still shows over it.": "Choose the background of the app. Game artwork still shows over it.",
   "Saved on this console. Animated backgrounds use a little more graphics power.": "Saved on this console. Animated backgrounds use a little more graphics power.",
-  "Could not save the background.": "Could not save the background.",
   "Black": "Black",
   "The original near-black page.": "The original near-black page.",
   "Midnight blue": "Midnight blue",
@@ -1219,5 +1218,6 @@
   "A grid of dots with a gentle pulse.": "A grid of dots with a gentle pulse.",
   "Mountains": "Mountains",
   "Layered ridges at sunset.": "Layered ridges at sunset.",
-  "Themes": "Themes"
+  "Themes": "Themes",
+  "Update the download service to keep this after a restart.": "Update the download service to keep this after a restart."
 }

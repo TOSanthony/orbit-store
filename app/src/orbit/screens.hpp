@@ -679,6 +679,7 @@ class App
     int top_index_ = 0; // the tabs, then search and settings
     bool game_open_ = false;
     bool settings_open_ = false;
+    bool appearance_synced_ = false; // the service's saved background was read once
     bool provider_open_ = false;
     bool provider_start_pending_ = false;
     int provider_focus_ = 1; // Back first, so returning cannot cancel by accident

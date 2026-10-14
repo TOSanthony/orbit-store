@@ -142,6 +142,7 @@ System parse_system(const json::Value &value)
     system.state_healthy = value.flag("stateHealthy", true);
     system.catalogue_revision = value["catalogueRevision"].as_int();
     system.preferred_storage = value.text("preferredStorage");
+    system.appearance = value.text("appearance");
     system.delete_archives = value.flag("deleteArchives", true);
     const auto limit = value["concurrentDownloads"].as_int();
     system.concurrent_downloads = limit >= 1 && limit <= 8 ? static_cast<int>(limit) : 1;

@@ -113,6 +113,8 @@ class Client
     // is the saved choice. A 404 means this Orbit is too old to save one.
     Result<std::string> set_preferred_storage(std::string_view storage_id);
     Result<bool> set_delete_archives(bool enabled);
+    // Keeps the TV app background (a preset id) in the service. A 404 means an older Orbit.
+    Result<std::string> set_appearance(const std::string &id);
     Result<int> set_download_limit(int limit);
     Result<CatalogueStatus> catalogue_status();
     Result<CatalogueStatus> refresh_catalogue();

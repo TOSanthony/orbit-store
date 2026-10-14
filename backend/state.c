@@ -161,6 +161,7 @@ int state_save_locked(void) {
         if (orbit.jobs[i].id[0] && orbit.jobs[i].release.compression[0]) schema = 6;
     cJSON_AddNumberToObject(o, "schema", schema);
     cJSON_AddStringToObject(o, "preferredStorage", orbit.preferred_storage);
+    cJSON_AddStringToObject(o, "appearance", orbit.appearance);
     cJSON_AddBoolToObject(o, "deleteArchives", orbit.delete_archives);
     cJSON_AddNumberToObject(o, "concurrentDownloads", orbit.concurrent_downloads);
     cJSON_AddNumberToObject(o, "debridNextCreate", (double)orbit.debrid_next_create);
@@ -272,6 +273,7 @@ int state_load(void) {
     }
     copy_text(orbit.preferred_storage, sizeof orbit.preferred_storage,
               json_text(o, "preferredStorage"));
+    copy_text(orbit.appearance, sizeof orbit.appearance, json_text(o, "appearance"));
     const cJSON *delete_archives = cJSON_GetObjectItemCaseSensitive(o, "deleteArchives");
     if (cJSON_IsBool(delete_archives)) orbit.delete_archives = cJSON_IsTrue(delete_archives);
     const cJSON *limit = cJSON_GetObjectItemCaseSensitive(o, "concurrentDownloads");

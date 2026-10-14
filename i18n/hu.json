@@ -1192,7 +1192,6 @@
   "Animated": "Animált",
   "Choose the background of the app. Game artwork still shows over it.": "Válaszd ki az alkalmazás hátterét. A játékok képei továbbra is felette jelennek meg.",
   "Saved on this console. Animated backgrounds use a little more graphics power.": "Elmentve ezen a konzolon. Az animált hátterek valamivel több grafikus teljesítményt igényelnek.",
-  "Could not save the background.": "A hátteret nem sikerült elmenteni.",
   "Black": "Fekete",
   "The original near-black page.": "Az eredeti, majdnem fekete oldal.",
   "Midnight blue": "Éjkék",
@@ -1219,5 +1218,6 @@
   "A grid of dots with a gentle pulse.": "Pontrács lágy lüktetéssel.",
   "Mountains": "Hegyek",
   "Layered ridges at sunset.": "Egymásra rétegződő gerincek naplementekor.",
-  "Themes": "Témák"
+  "Themes": "Témák",
+  "Update the download service to keep this after a restart.": "Frissítsd a letöltési szolgáltatást, hogy ez újraindítás után is megmaradjon."
 }

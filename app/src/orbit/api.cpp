@@ -525,6 +525,18 @@ Result<bool> Client::set_delete_archives(bool enabled)
     return result;
 }
 
+Result<std::string> Client::set_appearance(const std::string &id)
+{
+    Result<std::string> result;
+    const http::Response response =
+        send("POST", "/api/v1/settings/appearance", "{\"appearance\":\"" + id + "\"}");
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    result.value = json::parse(response.body, &value) ? value.text("appearance") : id;
+    return result;
+}
+
 Result<CatalogueStatus> Client::catalogue_status()
 {
     Result<CatalogueStatus> result;

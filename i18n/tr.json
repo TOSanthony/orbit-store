@@ -1192,7 +1192,6 @@
   "Animated": "Animasyonlu",
   "Choose the background of the app. Game artwork still shows over it.": "Uygulamanın arka planını seçin. Oyun görselleri yine de üstte görünür.",
   "Saved on this console. Animated backgrounds use a little more graphics power.": "Bu konsola kaydedildi. Animasyonlu arka planlar biraz daha fazla grafik gücü kullanır.",
-  "Could not save the background.": "Arka plan kaydedilemedi.",
   "Black": "Siyah",
   "The original near-black page.": "Orijinal, neredeyse siyah sayfa.",
   "Midnight blue": "Gece mavisi",
@@ -1219,5 +1218,6 @@
   "A grid of dots with a gentle pulse.": "Hafif bir nabızla atan nokta ızgarası.",
   "Mountains": "Dağlar",
   "Layered ridges at sunset.": "Gün batımında üst üste binen sırtlar.",
-  "Themes": "Temalar"
+  "Themes": "Temalar",
+  "Update the download service to keep this after a restart.": "Bunun yeniden başlatmadan sonra korunması için indirme hizmetini güncelleyin."
 }

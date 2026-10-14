@@ -1210,7 +1210,6 @@
   "Animated": "Animowane",
   "Choose the background of the app. Game artwork still shows over it.": "Wybierz tło aplikacji. Grafiki gier nadal wyświetlają się na wierzchu.",
   "Saved on this console. Animated backgrounds use a little more graphics power.": "Zapisano na tej konsoli. Animowane tła wymagają trochę więcej mocy graficznej.",
-  "Could not save the background.": "Nie udało się zapisać tła.",
   "Black": "Czarny",
   "The original near-black page.": "Oryginalne, prawie czarne tło.",
   "Midnight blue": "Granat nocy",
@@ -1237,5 +1236,6 @@
   "A grid of dots with a gentle pulse.": "Siatka kropek z delikatnym pulsem.",
   "Mountains": "Góry",
   "Layered ridges at sunset.": "Nakładające się grzbiety o zachodzie słońca.",
-  "Themes": "Motywy"
+  "Themes": "Motywy",
+  "Update the download service to keep this after a restart.": "Zaktualizuj usługę pobierania, aby zachować ten wybór po ponownym uruchomieniu."
 }

@@ -934,8 +934,8 @@ void SettingsScreen::build_appearance(Pane &pane) const
         ++pane.row;
         pane.y += r.h + 12.0f;
     }
-    if (!error_.empty())
-        pane.error(error_);
+    if (ctx_.store.setting_result().setting == Setting::appearance)
+        pane.error(ctx_.store.setting_result().error);
     pane.fine(tr("Saved on this console. Animated backgrounds use a little more graphics power."));
 }
 
@@ -966,9 +966,11 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
     switch (control.kind)
     {
     case Kind::appearance:
+        // Shown at once, kept by the download service (the app itself cannot write to /data).
         ctx_.appearance = static_cast<std::size_t>(control.index);
-        if (!appearance::save(ctx_.appearance))
-            error_ = tr("Could not save the background.");
+        error_.clear();
+        appearance::save(ctx_.appearance);
+        ctx_.store.set_appearance(appearance::preset(ctx_.appearance).id);
         break;
     case Kind::zero_toggle:
         error_.clear();ctx_.store.set_zero(!state.system.zero_enabled);break;

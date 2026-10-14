@@ -105,6 +105,7 @@ typedef struct {
     char state_dir[512], desktop_storage[512], pair_code[7], tokens[16][65];
     char instance_id[33]; /* New per process; lets clients verify a service restart. */
     char preferred_storage[24];
+    char appearance[24]; /* TV app background preset id (lowercase letters, digits, dashes). */
     char launcher_status[24];
     char launcher_error[192];
     char launcher_registration_method[24];

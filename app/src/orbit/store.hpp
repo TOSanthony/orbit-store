@@ -126,6 +126,7 @@ enum class Setting : std::uint8_t
     tv_install,
     archives,
     download_limit,
+    appearance,
 };
 
 struct SettingResult
@@ -229,6 +230,7 @@ class Store
     void want_settings(bool wanted);
     void set_zero(bool enabled) { send_setting(Setting::zero, {}, {}, enabled); }
     void set_download_limit(int limit) { send_setting(Setting::download_limit, std::to_string(limit)); }
+    void set_appearance(const std::string &id) { send_setting(Setting::appearance, id); }
     void set_delete_archives(bool enabled) { send_setting(Setting::archives, {}, {}, enabled); }
     // Reads the console session again (a fresh pairing code after a restart).
     void refresh_session();

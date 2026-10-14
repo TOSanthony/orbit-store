@@ -1210,7 +1210,6 @@
   "Animated": "Анимированный",
   "Choose the background of the app. Game artwork still shows over it.": "Выберите фон приложения. Обложки игр по-прежнему отображаются поверх него.",
   "Saved on this console. Animated backgrounds use a little more graphics power.": "Сохранено на этой консоли. Анимированные фоны требуют чуть больше графической мощности.",
-  "Could not save the background.": "Не удалось сохранить фон.",
   "Black": "Чёрный",
   "The original near-black page.": "Исходная почти чёрная страница.",
   "Midnight blue": "Полночный синий",
@@ -1237,5 +1236,6 @@
   "A grid of dots with a gentle pulse.": "Сетка точек с плавной пульсацией.",
   "Mountains": "Горы",
   "Layered ridges at sunset.": "Слоистые хребты на закате.",
-  "Themes": "Темы"
+  "Themes": "Темы",
+  "Update the download service to keep this after a restart.": "Обновите службу загрузки, чтобы сохранить это после перезапуска."
 }
