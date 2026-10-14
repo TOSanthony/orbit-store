@@ -1198,7 +1198,6 @@
   "Complete verification on AkiraBox, then wait. Orbit will capture the ready download link and return automatically; you do not need to click an ad or popup.": "Completa la verificación en AkiraBox y espera. Orbit capturará el enlace de descarga disponible y volverá automáticamente; no necesitas pulsar anuncios ni ventanas emergentes.",
   "Waiting for a fresh download link from the provider…": "Esperando un nuevo enlace de descarga del proveedor…",
   "Waiting for the download link": "Esperando el enlace de descarga",
-  "Appearance": "Apariencia",
   "Animated": "Animado",
   "Choose the background of the app. Game artwork still shows over it.": "Elige el fondo de la aplicación. Las imágenes de los juegos se siguen mostrando encima.",
   "Saved on this console. Animated backgrounds use a little more graphics power.": "Guardado en esta consola. Los fondos animados usan algo más de potencia gráfica.",
@@ -1228,5 +1227,6 @@
   "Pulsing dots": "Puntos pulsantes",
   "A grid of dots with a gentle pulse.": "Una cuadrícula de puntos con un pulso suave.",
   "Mountains": "Montañas",
-  "Layered ridges at sunset.": "Cordilleras superpuestas al atardecer."
+  "Layered ridges at sunset.": "Cordilleras superpuestas al atardecer.",
+  "Themes": "Temas"
 }

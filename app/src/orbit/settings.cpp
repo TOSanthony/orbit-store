@@ -33,8 +33,8 @@ constexpr float kViewTop = 230.0f;    // content scrolls under the title
 constexpr float kViewBottom = 990.0f; // and stops above the hints
 constexpr float kCardRadius = 14.0f;
 constexpr int kSectionCount = static_cast<int>(SettingsScreen::Section::count);
-constexpr const char *kSections[] = {/* i18n */ "Download sources", /* i18n */ "Storage", /* i18n */ "Pair a device",
-                                     /* i18n */ "Game catalogue",   /* i18n */ "Updates", "Orbit Zero", /* i18n */ "Appearance",
+constexpr const char *kSections[] = {/* i18n */ "Themes", /* i18n */ "Download sources", /* i18n */ "Storage", /* i18n */ "Pair a device",
+                                     /* i18n */ "Game catalogue",   /* i18n */ "Updates", "Orbit Zero",
                                      /* i18n */ "More settings"};
 constexpr const char *kSavedElf = "/data/orbit-store/orbit_store.elf";
 constexpr const char *kNotice =
@@ -898,7 +898,7 @@ void SettingsScreen::build_zero(Pane &pane) const
 void SettingsScreen::build_appearance(Pane &pane) const
 {
     const ui::Type &type = ctx_.type;
-    pane.heading(tr("Appearance"));
+    pane.heading(tr("Themes"));
     pane.body(tr("Choose the background of the app. Game artwork still shows over it."));
     pane.gap(10.0f);
     for (std::size_t i = 0; i < appearance::count(); ++i)

@@ -1189,7 +1189,6 @@
   "ZIP, 7z and RAR downloads are extracted on the drive after they finish. Orbit refuses password-protected archives and anything that isn’t plain files and folders.": "ZIP, 7z and RAR downloads are extracted on the drive after they finish. Orbit refuses password-protected archives and anything that isn’t plain files and folders.",
   "ZIP, 7z and RAR downloads are extracted on the drive. The archive is deleted once its files are in place.": "ZIP, 7z and RAR downloads are extracted on the drive. The archive is deleted once its files are in place.",
   "ZIP, 7z and RAR downloads are extracted on the drive. The archive is kept next to its files.": "ZIP, 7z and RAR downloads are extracted on the drive. The archive is kept next to its files.",
-  "Appearance": "Appearance",
   "Animated": "Animated",
   "Choose the background of the app. Game artwork still shows over it.": "Choose the background of the app. Game artwork still shows over it.",
   "Saved on this console. Animated backgrounds use a little more graphics power.": "Saved on this console. Animated backgrounds use a little more graphics power.",
@@ -1219,5 +1218,6 @@
   "Pulsing dots": "Pulsing dots",
   "A grid of dots with a gentle pulse.": "A grid of dots with a gentle pulse.",
   "Mountains": "Mountains",
-  "Layered ridges at sunset.": "Layered ridges at sunset."
+  "Layered ridges at sunset.": "Layered ridges at sunset.",
+  "Themes": "Themes"
 }

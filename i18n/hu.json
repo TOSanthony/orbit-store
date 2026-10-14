@@ -1189,7 +1189,6 @@
   "Complete verification on AkiraBox, then wait. Orbit will capture the ready download link and return automatically; you do not need to click an ad or popup.": "Végezd el az ellenőrzést az AkiraBoxon, majd várj. Az Orbit átveszi az elérhető letöltési hivatkozást és automatikusan visszatér; nem kell hirdetésre vagy felugró ablakra kattintanod.",
   "Waiting for a fresh download link from the provider…": "Várakozás a szolgáltató új letöltési hivatkozására…",
   "Waiting for the download link": "Várakozás a letöltési hivatkozásra",
-  "Appearance": "Megjelenés",
   "Animated": "Animált",
   "Choose the background of the app. Game artwork still shows over it.": "Válaszd ki az alkalmazás hátterét. A játékok képei továbbra is felette jelennek meg.",
   "Saved on this console. Animated backgrounds use a little more graphics power.": "Elmentve ezen a konzolon. Az animált hátterek valamivel több grafikus teljesítményt igényelnek.",
@@ -1219,5 +1218,6 @@
   "Pulsing dots": "Pulzáló pontok",
   "A grid of dots with a gentle pulse.": "Pontrács lágy lüktetéssel.",
   "Mountains": "Hegyek",
-  "Layered ridges at sunset.": "Egymásra rétegződő gerincek naplementekor."
+  "Layered ridges at sunset.": "Egymásra rétegződő gerincek naplementekor.",
+  "Themes": "Témák"
 }

@@ -1189,7 +1189,6 @@
   "Complete verification on AkiraBox, then wait. Orbit will capture the ready download link and return automatically; you do not need to click an ad or popup.": "Voltooi de verificatie op AkiraBox en wacht. Orbit neemt de beschikbare downloadlink over en keert automatisch terug; je hoeft niet op advertenties of pop-ups te klikken.",
   "Waiting for a fresh download link from the provider…": "Wachten op een nieuwe downloadlink van de aanbieder…",
   "Waiting for the download link": "Wachten op de downloadlink",
-  "Appearance": "Uiterlijk",
   "Animated": "Geanimeerd",
   "Choose the background of the app. Game artwork still shows over it.": "Kies de achtergrond van de app. Game-afbeeldingen blijven er bovenop staan.",
   "Saved on this console. Animated backgrounds use a little more graphics power.": "Opgeslagen op deze console. Geanimeerde achtergronden gebruiken iets meer grafisch vermogen.",
@@ -1219,5 +1218,6 @@
   "Pulsing dots": "Pulserende stippen",
   "A grid of dots with a gentle pulse.": "Een raster van stippen met een zachte puls.",
   "Mountains": "Bergen",
-  "Layered ridges at sunset.": "Gelaagde bergruggen bij zonsondergang."
+  "Layered ridges at sunset.": "Gelaagde bergruggen bij zonsondergang.",
+  "Themes": "Thema’s"
 }

@@ -1189,7 +1189,6 @@
   "Complete verification on AkiraBox, then wait. Orbit will capture the ready download link and return automatically; you do not need to click an ad or popup.": "AkiraBox doğrulamasını tamamlayın ve bekleyin. Orbit hazır indirme bağlantısını alıp otomatik olarak geri dönecektir; reklamlara veya açılır pencerelere tıklamanız gerekmez.",
   "Waiting for a fresh download link from the provider…": "Sağlayıcıdan yeni bir indirme bağlantısı bekleniyor…",
   "Waiting for the download link": "İndirme bağlantısı bekleniyor",
-  "Appearance": "Görünüm",
   "Animated": "Animasyonlu",
   "Choose the background of the app. Game artwork still shows over it.": "Uygulamanın arka planını seçin. Oyun görselleri yine de üstte görünür.",
   "Saved on this console. Animated backgrounds use a little more graphics power.": "Bu konsola kaydedildi. Animasyonlu arka planlar biraz daha fazla grafik gücü kullanır.",
@@ -1219,5 +1218,6 @@
   "Pulsing dots": "Atan noktalar",
   "A grid of dots with a gentle pulse.": "Hafif bir nabızla atan nokta ızgarası.",
   "Mountains": "Dağlar",
-  "Layered ridges at sunset.": "Gün batımında üst üste binen sırtlar."
+  "Layered ridges at sunset.": "Gün batımında üst üste binen sırtlar.",
+  "Themes": "Temalar"
 }

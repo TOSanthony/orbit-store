@@ -1207,7 +1207,6 @@
   "Complete verification on AkiraBox, then wait. Orbit will capture the ready download link and return automatically; you do not need to click an ad or popup.": "Пройдите проверку на AkiraBox и подождите. Orbit получит готовую ссылку и вернётся автоматически; нажимать на рекламу или всплывающие окна не нужно.",
   "Waiting for a fresh download link from the provider…": "Ожидание новой ссылки на скачивание от провайдера…",
   "Waiting for the download link": "Ожидание ссылки на скачивание",
-  "Appearance": "Оформление",
   "Animated": "Анимированный",
   "Choose the background of the app. Game artwork still shows over it.": "Выберите фон приложения. Обложки игр по-прежнему отображаются поверх него.",
   "Saved on this console. Animated backgrounds use a little more graphics power.": "Сохранено на этой консоли. Анимированные фоны требуют чуть больше графической мощности.",
@@ -1237,5 +1236,6 @@
   "Pulsing dots": "Пульсирующие точки",
   "A grid of dots with a gentle pulse.": "Сетка точек с плавной пульсацией.",
   "Mountains": "Горы",
-  "Layered ridges at sunset.": "Слоистые хребты на закате."
+  "Layered ridges at sunset.": "Слоистые хребты на закате.",
+  "Themes": "Темы"
 }

@@ -513,13 +513,13 @@ class SettingsScreen final : public Screen
   public:
     enum class Section : std::uint8_t
     {
+        appearance,
         sources,
         storage,
         pairing,
         catalogue,
         updates,
         zero,
-        appearance,
         more,
         count,
     };
