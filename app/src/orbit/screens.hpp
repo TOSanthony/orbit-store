@@ -620,7 +620,7 @@ class App
     // Preview and tests: jump straight to a place.
     void show_tab(int tab);
     void open_game(const std::string &game_id);
-    void open_settings(SettingsScreen::Section section = SettingsScreen::Section::sources,
+    void open_settings(SettingsScreen::Section section = SettingsScreen::Section::appearance,
                        bool content = false);
     SettingsScreen &settings()
     {

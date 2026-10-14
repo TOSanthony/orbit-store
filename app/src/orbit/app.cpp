@@ -142,6 +142,9 @@ void App::open_settings(SettingsScreen::Section section, bool content)
 {
     settings_open_ = true;
     game_open_ = false;
+    // Opens on Themes; until the download notice is accepted, on Sources so it is seen first.
+    if (section == SettingsScreen::Section::appearance && !ctx_.store.state().sources.acknowledged)
+        section = SettingsScreen::Section::sources;
     settings_.open(section, content);
 }
 
