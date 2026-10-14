@@ -189,6 +189,16 @@ std::vector<Scenario> scenarios()
                      pause(1.0f, "discover-added"), move(Direction::down),
                      pause(1.0f, "discover-all"), move(Direction::up), move(Direction::up), move(Direction::up),
                      move(Direction::up), pause(0.6f, "top-bar")}});
+    list.push_back({"favourite",
+                    Mode::normal,
+                    false,
+                    {run(4.0f, [](orbit::App &app) { app.show_tab(orbit::tab::discover); }),
+                     move(Direction::down), move(Direction::up), pause(1.0f, "favourite-off"),
+                     tap(Action::west), pause(2.5f, "favourite-on"), tap(Action::west), pause(2.5f, "favourite-again"),
+                     run(1.5f, [](orbit::App &app) { app.open_game("ember-hollow"); }),
+                     pause(1.2f, "favourite-game-off"),
+                     run(1.5f, [](orbit::App &app) { app.open_game("tidewater"); }),
+                     pause(1.2f, "favourite-game-on")}});
     list.push_back({"game", Mode::normal, false,
         {run(1.5f, [](orbit::App &app) { app.open_game("ember-hollow"); }),
          pause(1.2f, "game"), tap(Action::confirm), pause(0.8f, "game-options"),

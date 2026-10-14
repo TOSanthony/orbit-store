@@ -423,8 +423,10 @@ void DiscoverScreen::draw(Frame &frame, bool focused) const
         ui::focus_ring(list, favourite, 30.0f, favourite_focus_.value);
         list.bordered_rect(favourite, 30.0f, ui::color::night1.with_alpha(0.45f), 1.5f,
                            ui::color::text2.with_alpha(0.6f));
-        ui::icon_heart(list, favourite.cx(), favourite.cy(), 25.0f,
-                       state.favourite(game->id) ? ui::color::action_hi : ui::color::text);
+        if (state.favourite(game->id))
+            ui::icon_heart_filled(list, favourite.cx(), favourite.cy(), 25.0f, ui::color::heart);
+        else
+            ui::icon_heart(list, favourite.cx(), favourite.cy(), 25.0f, ui::color::text);
         if (!ctx_.store.favourite_action().error.empty())
             ui::text_fit(list, type.regular, tr(ctx_.store.favourite_action().error), left,
                          kHeroBottom + 26.0f - scroll, 16.0f, 840.0f, ui::color::bad);

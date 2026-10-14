@@ -321,6 +321,24 @@ void icon_heart(DrawList &list, float cx, float cy, float size, Color ink)
     }
 }
 
+void icon_heart_filled(DrawList &list, float cx, float cy, float size, Color fill)
+{
+    // The outline's curve as a polygon, then the outline again so the edge is smooth.
+    constexpr int kPoints = 64;
+    float xy[2 * kPoints];
+    for (int i = 0; i < kPoints; ++i)
+    {
+        const float t = static_cast<float>(i) * 6.2831853f / static_cast<float>(kPoints);
+        const float sn = std::sin(t);
+        xy[2 * i] = cx + size * 0.5f * sn * sn * sn;
+        xy[2 * i + 1] = cy - size / 32.0f *
+                                 (13.0f * std::cos(t) - 5.0f * std::cos(2.0f * t) -
+                                  2.0f * std::cos(3.0f * t) - std::cos(4.0f * t));
+    }
+    list.polygon(xy, kPoints, fill);
+    icon_heart(list, cx, cy, size, fill);
+}
+
 void icon_layers(DrawList &list, float cx, float cy, float size, Color ink)
 {
     // Three stacked diamonds (the browser's "sources" icon).

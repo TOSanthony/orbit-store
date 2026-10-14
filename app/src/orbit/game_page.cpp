@@ -218,12 +218,17 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             if (list)
             {
                 list->bordered_rect(r,44,ui::Color{0,0,0,0},1,ui::color::text.with_alpha(0.35f));
-                if (i == 0) ui::icon_heart(*list,r.cx(),r.cy(),36,ui::color::text);
+                if (i == 0)
+                {
+                    if (state.favourite(game->id))
+                        ui::icon_heart_filled(*list,r.cx(),r.cy(),36,ui::color::heart);
+                    else
+                        ui::icon_heart(*list,r.cx(),r.cy(),36,ui::color::text);
+                }
                 else for (int d=-1;d<=1;++d) list->circle(r.cx()+d*12,r.cy(),3,ui::color::text);
                 if (focus > 0)
                     ui::text(*list,type.regular,i == 0 ? (state.favourite(game->id) ? tr("Saved to favourites") : tr("Add to favourites")) : tr("About this game"),
                              r.cx(),y+123,18,ui::color::text2,ui::Align::center);
-                if (i==0 && state.favourite(game->id)) list->circle(r.cx()+26,r.cy()-26,5,ui::color::text);
             }
         }
         y += 140;

@@ -40,6 +40,8 @@ inline const Color action = Color::rgb(0xffffff);
 inline const Color action_hi = Color::rgb(0xe0e0e0);
 inline const Color ok = Color::rgb(0xffffff);
 inline const Color bad = Color::rgb(0xffffff);
+// A game saved to favourites: the heart is filled with this.
+inline const Color heart = Color::rgb(0xe5384f);
 inline const Color line = Color::rgb(0xffffff, 0.16f);
 // Fields are tonal surfaces, not outlines (the browser's --field tokens).
 inline const Color field = Color::rgb(0xffffff, 0.075f);
@@ -155,6 +157,8 @@ void icon_download(DrawList &list, float cx, float cy, float size, Color ink);
 void icon_chevron(DrawList &list, float cx, float cy, float size, Color ink, bool up = false);
 void icon_back(DrawList &list, float cx, float cy, float size, Color ink);
 void icon_heart(DrawList &list, float cx, float cy, float size, Color ink);
+// The same heart, filled (a game saved to favourites).
+void icon_heart_filled(DrawList &list, float cx, float cy, float size, Color fill);
 void icon_layers(DrawList &list, float cx, float cy, float size, Color ink);
 
 // A hint row in the bottom-right corner, drawn as the browser's footer.
