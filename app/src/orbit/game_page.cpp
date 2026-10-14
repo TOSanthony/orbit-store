@@ -635,9 +635,12 @@ void GamePage::draw(Frame &frame,bool focused) const
     if(sheet_==Sheet::none)return;
     auto &list=frame.overlay;
     list.rounded_rect({0,0,1920,1080},0,ui::Color::rgb(0x000000,0.35f));
-    const ui::Rect panel{70,320,1780,710};
+    // The sheet is laid out for a panel at y 320; it is drawn centred on the screen.
+    constexpr float kSheetShift=(1080.0f-710.0f)*0.5f-320.0f;
+    const ui::Rect panel{70,320+kSheetShift,1780,710};
     frame.glass=true;
     ui::glass_modal(list,panel,frame.glass_texture,30);
+    list.push_transform(1,0,0,0,kSheetShift);
     const auto &release=game->releases[static_cast<std::size_t>(std::clamp(option_,0,static_cast<int>(game->releases.size())-1))];
     const auto now=offer(release);
     const char *title=sheet_==Sheet::downloads?tr("Download options"):sheet_==Sheet::source?tr("Source"):
@@ -676,6 +679,7 @@ void GamePage::draw(Frame &frame,bool focused) const
             list.line(x-9,y-9,x+9,y+9,2,ui::color::text);list.line(x-9,y+9,x+9,y-9,2,ui::color::text);
         }
     }
+    list.pop_transform();
 }
 std::vector<hui::ui::Hint> GamePage::hints() const
 {
