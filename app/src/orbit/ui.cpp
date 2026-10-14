@@ -180,7 +180,8 @@ void modal(DrawList &list, const Rect &r)
     list.bordered_rect(r, kPanelRadius, Color{0, 0, 0, 0}, 1.0f, color::line);
 }
 
-void glass_modal(DrawList &list, const Rect &r, std::uint32_t glass_texture, float radius)
+void glass_modal(DrawList &list, const Rect &r, std::uint32_t glass_texture, float radius,
+                 Color tint)
 {
     if (radius <= 0.0f)
         radius = kPanelRadius;
@@ -193,7 +194,7 @@ void glass_modal(DrawList &list, const Rect &r, std::uint32_t glass_texture, flo
     }
     list.shadow({r.x, r.y + 30.0f, r.w, r.h}, radius, 90.0f, Color::rgb(0x000000, 0.45f));
     list.glass(glass_texture, r, radius, Color::rgb(0xffffff));
-    list.rounded_rect(r, radius, Color::rgb(0x3c3c3c, 0.58f));
+    list.rounded_rect(r, radius, tint);
     list.bordered_rect(r, radius, Color{0, 0, 0, 0}, 1.0f, Color::rgb(0xffffff, 0.16f));
 }
 

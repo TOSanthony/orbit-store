@@ -637,7 +637,8 @@ void GamePage::draw(Frame &frame,bool focused) const
     list.rounded_rect({0,0,1920,1080},0,ui::Color::rgb(0x000000,0.35f));
     const ui::Rect panel{70,320,1780,710};
     frame.glass=true;
-    ui::glass_modal(list,panel,frame.glass_texture,30);
+    // The colour the download plate had: near-black, with the blurred art faintly behind.
+    ui::glass_modal(list,panel,frame.glass_texture,30,ui::Color::rgb(0x111111,0.9f));
     const auto &release=game->releases[static_cast<std::size_t>(std::clamp(option_,0,static_cast<int>(game->releases.size())-1))];
     const auto now=offer(release);
     const char *title=sheet_==Sheet::downloads?tr("Download options"):sheet_==Sheet::source?tr("Source"):
