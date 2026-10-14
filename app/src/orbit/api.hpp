@@ -10,6 +10,7 @@
 #include "orbit/http.hpp"
 #include "orbit/model.hpp"
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -108,7 +109,9 @@ class Client
 
     // ---- settings ----
     // Saves the source choice with the download notice accepted.
-    Result<Sources> save_sources(const std::vector<std::string> &enabled, int notice_version);
+    // nas_url: when set, replaces the saved My NAS index address (empty clears it); unset keeps it.
+    Result<Sources> save_sources(const std::vector<std::string> &enabled, int notice_version,
+                                 const std::optional<std::string> &nas_url = std::nullopt);
     // The drive new downloads start with; empty lets the app choose. The value
     // is the saved choice. A 404 means this Orbit is too old to save one.
     Result<std::string> set_preferred_storage(std::string_view storage_id);

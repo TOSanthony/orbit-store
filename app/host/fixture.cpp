@@ -479,7 +479,11 @@ std::string Fixture::sources_json() const
     return "{\"enabled\":" + enabled + ",\"acknowledged\":" + (acknowledged_ ? "true" : "false") +
            ",\"noticeVersion\":1,\"options\":[{\"id\":\"vikingfile\",\"label\":\"Vikingfile\","
            "\"releaseCount\":2,\"downloadReady\":true},{\"id\":\"archive\",\"label\":"
-           "\"Archive.org\",\"releaseCount\":15,\"downloadReady\":true}]}";
+           "\"Archive.org\",\"releaseCount\":15,\"downloadReady\":true},{\"id\":\"nas\","
+           "\"label\":\"My NAS\",\"releaseCount\":0,\"downloadReady\":true}],\"nasConfigured\":" +
+           std::string(nas_saved_ ? "true" : "false") +
+           ",\"nasHost\":\"nas.example.com\",\"nasCount\":" + (nas_saved_ ? "42" : "0") +
+           ",\"nasError\":\"\"}";
 }
 
 std::string Fixture::catalogue_json() const
@@ -696,6 +700,8 @@ http::Response Fixture::send(const http::Request &request)
         for (const json::Value &id : input["enabled"].items())
             enabled_.push_back(id.as_string());
         acknowledged_ = input.flag("acknowledged");
+        if (!input.text("nasUrl").empty())
+            nas_saved_ = true;
         response.body = sources_json();
         return response;
     }

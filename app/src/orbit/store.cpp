@@ -307,7 +307,8 @@ void Store::send_setting(Setting setting, std::string a, std::string b, bool fla
     signal_.notify();
 }
 
-void Store::save_sources(std::vector<std::string> enabled, int notice_version)
+void Store::save_sources(std::vector<std::string> enabled, int notice_version,
+                         const std::optional<std::string> &nas_url)
 {
     std::string list;
     for (const std::string &id : enabled)
@@ -316,7 +317,11 @@ void Store::save_sources(std::vector<std::string> enabled, int notice_version)
             list += '\n';
         list += id;
     }
-    send_setting(Setting::sources, std::move(list), std::to_string(notice_version));
+    // b: the notice version, then (when the address is sent) a newline and the address.
+    std::string rest = std::to_string(notice_version);
+    if (nas_url)
+        rest += "\n" + *nas_url;
+    send_setting(Setting::sources, std::move(list), std::move(rest), nas_url.has_value());
 }
 
 void Store::set_preferred_storage(const std::string &storage_id)
@@ -932,7 +937,12 @@ void Store::run_setting(Command &command)
             enabled.push_back(command.a.substr(start, end - start));
             start = end + 1;
         }
-        api::Result<Sources> result = client_.save_sources(enabled, std::atoi(command.b.c_str()));
+        const std::size_t cut = command.b.find('\n');
+        std::optional<std::string> nas_url;
+        if (command.flag && cut != std::string::npos)
+            nas_url = command.b.substr(cut + 1);
+        api::Result<Sources> result =
+            client_.save_sources(enabled, std::atoi(command.b.substr(0, cut).c_str()), nas_url);
         error = result.error;
         if (result.ok())
         {

@@ -160,6 +160,10 @@ Sources parse_sources(const json::Value &value)
     }
     sources.acknowledged = value.flag("acknowledged");
     sources.notice_version = static_cast<int>(value["noticeVersion"].as_int());
+    sources.nas_configured = value.flag("nasConfigured");
+    sources.nas_host = value.text("nasHost");
+    sources.nas_count = static_cast<int>(value["nasCount"].as_int());
+    sources.nas_error = value.text("nasError");
     for (const json::Value &item : value["options"].items())
     {
         SourceOption option;

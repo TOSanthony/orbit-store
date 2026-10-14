@@ -458,7 +458,8 @@ std::string update_body(const Client::UpdateRequest &request)
 
 } // namespace
 
-Result<Sources> Client::save_sources(const std::vector<std::string> &enabled, int notice_version)
+Result<Sources> Client::save_sources(const std::vector<std::string> &enabled, int notice_version,
+                                     const std::optional<std::string> &nas_url)
 {
     Result<Sources> result;
     std::string body = "{\"enabled\":[";
@@ -470,6 +471,8 @@ Result<Sources> Client::save_sources(const std::vector<std::string> &enabled, in
     }
     body += "],\"acknowledged\":true,\"noticeVersion\":";
     body += std::to_string(notice_version);
+    if (nas_url)
+        body += ",\"nasUrl\":" + json::quote(*nas_url);
     body += "}";
     const http::Response response = send("POST", "/api/v1/sources", std::move(body));
     if (fail(response, &result))

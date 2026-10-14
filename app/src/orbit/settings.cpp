@@ -32,6 +32,7 @@ constexpr float kContentWidth = 940.0f;
 constexpr float kViewTop = 230.0f;    // content scrolls under the title
 constexpr float kViewBottom = 990.0f; // and stops above the hints
 constexpr float kCardRadius = 14.0f;
+constexpr float kKeyboardTop = 560.0f;
 constexpr int kSectionCount = static_cast<int>(SettingsScreen::Section::count);
 constexpr const char *kSections[] = {/* i18n */ "Personalisation", /* i18n */ "Download sources", /* i18n */ "Storage", /* i18n */ "Pair a device",
                                      /* i18n */ "Game catalogue",   /* i18n */ "Updates", "Orbit Zero",
@@ -231,6 +232,11 @@ struct SettingsScreen::Pane
 
 SettingsScreen::SettingsScreen(Context &context) : Screen(context)
 {
+    nas_keyboard_.style.theme = keyboard_theme();
+    nas_keyboard_.style.bindings = hui::ui::KeyboardBindings::standard();
+    nas_keyboard_.style.max_length = 1000;
+    nas_keyboard_.style.done_label = tr("Done");
+    nas_keyboard_.set_bounds({ui::kGutter + 220.0f, kKeyboardTop + 40.0f, 1280.0f, 400.0f});
 }
 
 void SettingsScreen::open(Section section, bool content)
@@ -271,6 +277,13 @@ void SettingsScreen::load_draft()
     draft_ = state.sources.enabled;
     draft_acknowledged_ = state.sources.acknowledged;
     first_setup_ = !state.sources.acknowledged;
+    nas_url_.clear();
+    nas_edit_ = false;
+}
+
+void SettingsScreen::close_nas_editor()
+{
+    nas_edit_ = false;
 }
 
 bool SettingsScreen::update_available() const
@@ -380,6 +393,44 @@ void SettingsScreen::build_sources(Pane &pane) const
             pane.fine(tr("Complete verification on AkiraBox, then wait for Orbit to check the download link."));
         if (contains(draft_, "datanodes"))
             pane.fine(tr("Scroll to the bottom, select Continue to Download, then Free Download. Wait for the countdown and select Start Download."));
+    }
+
+    // My NAS: the address of the index.json, typed with the on-screen keyboard.
+    if (contains(draft_, "nas"))
+    {
+        pane.subheading(tr("My NAS index address"));
+        const ui::Rect field{pane.x, pane.y, pane.width, 64.0f};
+        if (pane.list != nullptr)
+        {
+            ui::DrawList &list = *pane.list;
+            ui::focus_ring(list, field, 18.0f, pane.amount());
+            list.rounded_rect(field, 18.0f, ui::Color::rgb(0xffffff, 0.08f));
+            const bool typed = !nas_url_.empty();
+            const std::string shown =
+                typed ? nas_url_
+                      : state.sources.nas_configured
+                            ? std::string(tr("Saved address kept. Select to change it."))
+                            : std::string("https://nas.example.com/orbit-secret/index.json");
+            ui::text_fit(list, type.regular, shown, field.x + 24.0f, field.cy() + 7.0f, 20.0f,
+                         field.w - 48.0f, typed ? ui::color::text : ui::color::text3);
+        }
+        pane.add(Kind::nas_url, 0, field, !saving);
+        ++pane.row;
+        pane.y = field.y + field.h + 10.0f;
+        if (state.sources.nas_configured)
+        {
+            if (!state.sources.nas_error.empty())
+                pane.fine(state.sources.nas_host + ": " + state.sources.nas_error);
+            else
+                pane.fine(tr("{host}: {count} games found.",
+                             {{"host", state.sources.nas_host},
+                              {"count", std::to_string(state.sources.nas_count)}}));
+        }
+        else
+        {
+            pane.fine(tr("Enter the https address of the index.json on your NAS."));
+        }
+        pane.gap(6.0f);
     }
 
     // .source-notice, then .source-acknowledgement.
@@ -973,6 +1024,14 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
     feedback.play(hui::audio::Cue::select);
     switch (control.kind)
     {
+    case Kind::nas_url:
+        nas_edit_ = true;
+        if (nas_url_.empty())
+            nas_url_ = "https://";
+        nas_keyboard_.enter();
+        nas_keyboard_.set_length(static_cast<int>(nas_url_.size()));
+        feedback.play(hui::audio::Cue::modal_open);
+        break;
     case Kind::sounds_toggle:
         ctx_.sounds_on = !ctx_.sounds_on; // at once; the service keeps it for next time
         ctx_.store.set_sounds_off(!ctx_.sounds_on);
@@ -1013,8 +1072,18 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
         draft_acknowledged_ = !draft_acknowledged_;
         break;
     case Kind::save_sources:
+    {
         error_.clear();
-        ctx_.store.save_sources(draft_, state.sources.notice_version);
+        // Only a typed address is sent; "https://" alone is the untouched prefix.
+        std::string address = nas_url_;
+        while (!address.empty() && address.back() == ' ')
+            address.pop_back();
+        std::optional<std::string> nas;
+        if (!address.empty() && address != "https://")
+            nas = address;
+        ctx_.store.save_sources(draft_, state.sources.notice_version, nas);
+        break;
+    }
         break;
     case Kind::drive:
     {
@@ -1131,6 +1200,32 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
                 break;
             }
         }
+    }
+
+    // The My NAS address: the keyboard takes every button while it is open.
+    nas_keyboard_.set_active(nas_edit_);
+    nas_keyboard_.update(dt);
+    nas_keyboard_in_.target = nas_edit_ ? 1.0f : 0.0f;
+    nas_keyboard_in_.update(dt, 14.0f);
+    if (focused && nas_edit_)
+    {
+        const hui::ui::Event event = nas_keyboard_.handle(input, feedback);
+        for (int i = 0; i < nas_keyboard_.erased() && !nas_url_.empty(); ++i)
+        {
+            std::size_t pos = nas_url_.size() - 1;
+            while (pos > 0 && (static_cast<unsigned char>(nas_url_[pos]) & 0xc0) == 0x80)
+                --pos;
+            nas_url_.resize(pos);
+        }
+        if (nas_url_.size() + nas_keyboard_.typed().size() <= 1000)
+            nas_url_ += nas_keyboard_.typed();
+        nas_keyboard_.set_length(static_cast<int>(nas_url_.size()));
+        if (event == hui::ui::Event::activated || event == hui::ui::Event::cancelled)
+        {
+            close_nas_editor();
+            feedback.play(hui::audio::Cue::modal_close);
+        }
+        return intent;
     }
 
     float height = 0.0f;
@@ -1375,10 +1470,38 @@ void SettingsScreen::draw(Frame &frame, bool focused) const
     list.pop_clip();
     list.pop_transform();
     list.pop_opacity();
+
+    // ---- the My NAS address keyboard ----
+    if (nas_keyboard_in_.value > 0.01f)
+    {
+        hui::gfx::DrawList &overlay = frame.overlay;
+        frame.glass = true;
+        const float shown = nas_keyboard_in_.value;
+        overlay.push_opacity(shown);
+        overlay.push_transform(1.0f, 0.0f, 0.0f, 0.0f, 60.0f * (1.0f - shown));
+        const ui::Rect panel{0.0f, kKeyboardTop - 120.0f, 1920.0f, 1080.0f - kKeyboardTop + 120.0f};
+        overlay.glass(frame.glass_texture, panel, 0.0f, ui::Color::rgb(0xffffff));
+        overlay.rounded_rect(panel, 0.0f, ui::color::night1.with_alpha(0.78f));
+        overlay.rounded_rect({0.0f, panel.y, 1920.0f, 1.5f}, 0.0f, ui::color::line);
+        ui::text(overlay, type.regular, tr("My NAS index address"), ui::kGutter + 220.0f,
+                 panel.y + 50.0f, 20.0f, ui::color::text2);
+        const ui::Rect field{ui::kGutter + 220.0f, panel.y + 66.0f, 1280.0f, 56.0f};
+        overlay.rounded_rect(field, 16.0f, ui::Color::rgb(0xffffff, 0.1f));
+        ui::text_fit(overlay, type.regular, nas_url_, field.x + 20.0f, field.cy() + 7.0f, 20.0f,
+                     field.w - 40.0f, ui::color::text);
+        hui::ui::Canvas canvas{overlay, ctx_.fonts, frame.glass_texture, ctx_.clock};
+        nas_keyboard_.draw(canvas);
+        overlay.pop_transform();
+        overlay.pop_opacity();
+    }
 }
 
 std::vector<hui::ui::Hint> SettingsScreen::hints() const
 {
+    if (nas_edit_)
+        return {{hui::ui::Button::square, tr("Delete")},
+                {hui::ui::Button::triangle, tr("Space")},
+                {hui::ui::Button::circle, tr("Close")}};
     if (in_content_)
         return {{hui::ui::Button::cross, tr("Select")}, {hui::ui::Button::circle, tr("Back")}};
     return {{hui::ui::Button::dpad, tr("Sections")},

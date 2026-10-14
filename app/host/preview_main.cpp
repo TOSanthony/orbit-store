@@ -323,6 +323,17 @@ std::vector<Scenario> scenarios()
           tap(Action::confirm), pause(1.2f, "settings-service-saved"), tap(Action::confirm),
           pause(0.8f, "settings-restart-confirm"), move(Direction::left), tap(Action::confirm),
           pause(0.6f, "settings-restarting"), pause(40.0f, "settings-restarted")}});
+    // My NAS: the address field and its keyboard.
+    list.push_back(
+        {"nas",
+         Mode::updates,
+         false,
+         {pause(1.0f, "nas-start"),
+          run(0.5f, [](orbit::App &app)
+              { app.open_settings(orbit::SettingsScreen::Section::sources, true); }),
+          move(Direction::right), move(Direction::right), tap(Action::confirm),
+          pause(0.8f, "settings-nas-field"), move(Direction::down), tap(Action::confirm),
+          pause(1.2f, "settings-nas-keyboard"), tap(Action::confirm), pause(0.6f, "settings-nas-typed")}});
     // The background chooser, then an animated choice.
     list.push_back(
         {"appearance",

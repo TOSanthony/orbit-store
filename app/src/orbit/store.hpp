@@ -13,6 +13,7 @@
 #include "orbit/starter.hpp"
 #include "orbit/thread.hpp"
 
+#include <optional>
 #include <atomic>
 #include <cstdint>
 #include <deque>
@@ -216,7 +217,8 @@ class Store
     {
         return setting_;
     }
-    void save_sources(std::vector<std::string> enabled, int notice_version);
+    void save_sources(std::vector<std::string> enabled, int notice_version,
+                      const std::optional<std::string> &nas_url = std::nullopt);
     // Empty lets the app choose (the first external drive).
     void set_preferred_storage(const std::string &storage_id);
     void refresh_catalogue();

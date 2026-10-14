@@ -53,6 +53,11 @@ struct Sources
     bool acknowledged = false;
     int notice_version = 0;
     std::vector<SourceOption> options;
+    // My NAS: the saved address itself is never sent, only its state.
+    bool nas_configured = false;
+    std::string nas_host;
+    int nas_count = 0;
+    std::string nas_error;
 };
 
 // One download option (a "release" at the API boundary).

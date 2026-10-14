@@ -73,6 +73,7 @@ class Fixture final : public http::Transport
 
     // Settings and updates.
     std::vector<std::string> enabled_;
+    bool nas_saved_ = false; // a My NAS address was sent
     bool acknowledged_ = false;
     std::string preferred_ = "usb0";
     double catalogue_checked_ = 0.0; // Unix seconds

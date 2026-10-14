@@ -535,6 +535,10 @@ class SettingsScreen final : public Screen
     Intent update(const InputFrame &input, float dt, Feedback &feedback, bool focused) override;
     void draw(Frame &frame, bool focused) const override;
     std::vector<hui::ui::Hint> hints() const override;
+    bool modal() const override
+    {
+        return nas_edit_;
+    }
     // Previews and tests.
     void confirm_restart()
     {
@@ -566,6 +570,7 @@ class SettingsScreen final : public Screen
         download_limit_more,
         appearance, // index of a background preset
         sounds_toggle,
+        nas_url, // the My NAS index address field
     };
     struct Control
     {
@@ -589,6 +594,7 @@ class SettingsScreen final : public Screen
     void activate(const Control &control, Intent &intent, Feedback &feedback);
     void load_draft();
     bool update_available() const;
+    void close_nas_editor();
 
     Section section_ = Section::sources;
     bool in_content_ = false;
@@ -600,6 +606,11 @@ class SettingsScreen final : public Screen
     std::vector<std::string> draft_;
     bool draft_acknowledged_ = false;
     bool first_setup_ = false; // saving finishes setting up Orbit
+    // My NAS address being typed (empty: keep the saved one) and its keyboard.
+    std::string nas_url_;
+    bool nas_edit_ = false;
+    hui::ui::Keyboard nas_keyboard_;
+    ui::Ease nas_keyboard_in_;
     // Updates: the confirmation steps.
     bool confirm_restart_ = false;
     bool confirm_replace_ = false;
