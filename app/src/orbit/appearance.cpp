@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "orbit/appearance.hpp"
 
+#include "core/save_file.hpp"
+
 #include <cstdint>
 #include <cstdlib>
-#include <filesystem>
-#include <fstream>
 
 namespace orbit::appearance
 {
@@ -93,24 +93,28 @@ std::string path()
 
 std::size_t load()
 {
-    std::ifstream file(path());
+    // No iostreams or std::filesystem: the console's libc++ has no locale support.
     std::string id;
-    if (!file || !std::getline(file, id))
+    if (!hui::save::read_file(path(), &id, 256))
         return 0;
-    while (!id.empty() && (id.back() == '\r' || id.back() == ' '))
-        id.pop_back();
-    return find(id);
+    const std::size_t end = id.find_first_of("\r\n ");
+    return find(end == std::string::npos ? id : id.substr(0, end));
 }
 
 bool save(std::size_t index)
 {
-    const std::filesystem::path where = path();
-    std::error_code ignored;
-    if (where.has_parent_path())
-        std::filesystem::create_directories(where.parent_path(), ignored);
-    std::ofstream file(where, std::ios::trunc);
-    file << preset(index).id << '\n';
-    return static_cast<bool>(file);
+    const std::string where = path();
+    const std::size_t slash = where.find_last_of('/');
+    if (slash != std::string::npos && slash > 0)
+    {
+        // /data/orbit-store is made one level at a time.
+        const std::string folder = where.substr(0, slash);
+        const std::size_t parent = folder.find_last_of('/');
+        if (parent != std::string::npos && parent > 0)
+            hui::save::ensure_directory(folder.substr(0, parent));
+        hui::save::ensure_directory(folder);
+    }
+    return hui::save::write_atomic(where, std::string(preset(index).id) + "\n").empty();
 }
 
 } // namespace orbit::appearance
