@@ -38,7 +38,7 @@ GENRE_MAP = {
     "Pinball": "Arcade", "MOBA": "Strategy",
 }
 THEME_MAP = {"Action": "Action", "Horror": "Horror"}
-IGDB_FIELDS = ("name,summary,storyline,first_release_date,genres.name,themes.name,release_dates.date,release_dates.platform.name,"
+IGDB_FIELDS = ("name,platforms,summary,storyline,first_release_date,genres.name,themes.name,release_dates.date,release_dates.platform.name,"
                "cover.image_id,artworks.image_id,screenshots.image_id")
 
 
@@ -68,6 +68,8 @@ def pick(title, games):
     best, score = None, 0.0
     for game in games:
         ratio = 1.0 if norm(game.get("name", "")) == wanted else difflib.SequenceMatcher(None, norm(game.get("name", "")), wanted).ratio()
+        if ratio >= 0.9 and set(game.get("platforms") or []) & {48, 167}:
+            ratio += 0.05                              # same name on PlayStation beats the PC / Switch entry
         if ratio > score:
             best, score = game, ratio
     return best if best and score >= 0.9 else None
@@ -109,7 +111,7 @@ class Igdb:
         def escape(text):
             return text.replace("\\", "\\\\").replace('"', '\\"')
         body = "\n".join(
-            f'query games "{e["titleId"]}" {{ search "{escape(e["title"])}"; fields {IGDB_FIELDS}; where platforms = (48,167); limit 6; }};'
+            f'query games "{e["titleId"]}" {{ search "{escape(e["title"])}"; fields {IGDB_FIELDS}; limit 10; }};'
             for e in batch)
         for attempt in range(2):
             if not self.token:
@@ -117,7 +119,8 @@ class Igdb:
             try:
                 answer = http_json(self.base + "/multiquery", body,
                                    {"Client-ID": self.id, "Authorization": f"Bearer {self.token}", "Content-Type": "text/plain"})
-                return {item["name"]: item.get("result", []) for item in answer}
+                self.last = json.dumps(answer, ensure_ascii=False)[:500]
+                return {item["name"]: item.get("result", []) for item in answer if isinstance(item, dict)}
             except urllib.error.HTTPError as problem:
                 if problem.code == 401 and attempt == 0:
                     self.token = ""
@@ -191,6 +194,8 @@ def main() -> int:
     except (OSError, ValueError):
         cache = {}
     cache = cache if isinstance(cache, dict) else {}
+    if cache.get("v") != 2:
+        cache = {"v": 2}                               # older cache: its "not found" answers came from a stricter search
     cache.setdefault("facts", {})
     cache.setdefault("none", {})
     cache.setdefault("textfail", {})
@@ -211,7 +216,7 @@ def main() -> int:
     notes = []
 
     # 1. IGDB
-    igdb, looked = Igdb(), 0
+    igdb, looked, warned = Igdb(), 0, False
     if not (igdb.id and igdb.secret):
         print("IGDB_CLIENT_ID / IGDB_CLIENT_SECRET missing", file=sys.stderr)
         return 2
@@ -221,6 +226,9 @@ def main() -> int:
             batch, pending = pending[:min(10, args.max_games - looked)], pending[min(10, args.max_games - looked):]
             looked += len(batch)
             found = igdb.search(batch)
+            if not any(found.get(e["titleId"]) for e in batch) and not warned:
+                warned = True
+                print("  warning: IGDB returned no game for a whole batch; raw answer starts with: " + getattr(igdb, "last", "?"), file=sys.stderr)
             for e in batch:
                 game = pick(e["title"], found.get(e["titleId"], []))
                 if game:
