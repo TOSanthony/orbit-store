@@ -636,9 +636,8 @@ void GamePage::draw(Frame &frame,bool focused) const
     auto &list=frame.overlay;
     list.rounded_rect({0,0,1920,1080},0,ui::Color::rgb(0x000000,0.35f));
     const ui::Rect panel{70,320,1780,710};
-    list.shadow(panel,30,50,ui::Color::rgb(0x000000,0.5f));
-    list.gradient_rect(panel,30,ui::Color::rgb(0x242424,0.98f),ui::Color::rgb(0x101010,0.99f));
-    list.bordered_rect(panel,30,ui::Color{0,0,0,0},1,ui::color::line);
+    frame.glass=true;
+    ui::glass_modal(list,panel,frame.glass_texture,30);
     const auto &release=game->releases[static_cast<std::size_t>(std::clamp(option_,0,static_cast<int>(game->releases.size())-1))];
     const auto now=offer(release);
     const char *title=sheet_==Sheet::downloads?tr("Download options"):sheet_==Sheet::source?tr("Source"):
@@ -650,7 +649,7 @@ void GamePage::draw(Frame &frame,bool focused) const
     list.pop_transform();list.pop_clip();
     if(sheet_==Sheet::downloads)
     {
-        list.rounded_rect({1226,738,596,253},22,ui::Color::rgb(0x111111,0.98f));
+        list.rounded_rect({1226,738,596,253},22,ui::Color::rgb(0x000000,0.28f));
         if(now.show_download && now.drive)
         {
             list.rounded_rect({1252,765,554,1},0,ui::color::line);

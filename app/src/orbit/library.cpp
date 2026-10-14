@@ -1292,7 +1292,8 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
         const LibraryGame *game = selected_game();
         const ui::Rect panel{960.0f - kPanelWidth * 0.5f, 150.0f - 16.0f * (1.0f - in), kPanelWidth,
                              scan_open_ ? 420.0f : 820.0f};
-        ui::modal(overlay, panel);
+        frame.glass = true;
+        ui::glass_modal(overlay, panel, frame.glass_texture);
         const float left = panel.x + 56.0f;
         if (scan_open_)
         {

@@ -452,10 +452,9 @@ void SettingsScreen::build_storage(Pane &pane) const
         {
             ui::DrawList &list = *pane.list;
             ui::focus_ring(list, r, kCardRadius, pane.amount());
-            list.bordered_rect(r, kCardRadius,
-                               chosen ? ui::Color::rgb(0xffffff, 0.25f)
-                                      : ui::Color::rgb(0x151515, 0.8f),
-                               1.0f, chosen ? ui::Color::rgb(0xffffff) : ui::color::line);
+            // The same fills as the source chips.
+            list.rounded_rect(r, kCardRadius,
+                              chosen ? ui::Color::rgb(0xffffff, 0.26f) : ui::Color::rgb(0xffffff, 0.08f));
             const float mx = r.x + 24.0f + 14.0f;
             if (chosen)
             {
@@ -910,9 +909,8 @@ void SettingsScreen::build_appearance(Pane &pane) const
         {
             ui::DrawList &list = *pane.list;
             ui::focus_ring(list, r, kCardRadius, pane.amount());
-            list.bordered_rect(r, kCardRadius,
-                               chosen ? ui::Color::rgb(0xffffff, 0.25f) : ui::Color::rgb(0x151515, 0.8f),
-                               1.0f, chosen ? ui::Color::rgb(0xffffff) : ui::color::line);
+            list.rounded_rect(r, kCardRadius,
+                              chosen ? ui::Color::rgb(0xffffff, 0.26f) : ui::Color::rgb(0xffffff, 0.08f));
             const float mx = r.x + 24.0f + 14.0f;
             if (chosen)
             {

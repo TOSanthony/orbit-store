@@ -119,6 +119,9 @@ void progress_bar(DrawList &list, const Rect &r, float fraction, Color fill);
 
 // The browser's .modal: a dark panel with a hairline edge and a deep shadow.
 void modal(DrawList &list, const Rect &r);
+// The same panel as lighter frosted glass: the page behind (art included) shows through,
+// blurred. Set frame.glass first; without a glass texture it falls back to the dark panel.
+void glass_modal(DrawList &list, const Rect &r, std::uint32_t glass_texture, float radius = 0.0f);
 
 // A field's surface: the fill, with a hairline of light along its top edge.
 void surface(DrawList &list, const Rect &r, float radius, Color fill);

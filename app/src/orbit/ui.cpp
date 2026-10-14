@@ -180,6 +180,23 @@ void modal(DrawList &list, const Rect &r)
     list.bordered_rect(r, kPanelRadius, Color{0, 0, 0, 0}, 1.0f, color::line);
 }
 
+void glass_modal(DrawList &list, const Rect &r, std::uint32_t glass_texture, float radius)
+{
+    if (radius <= 0.0f)
+        radius = kPanelRadius;
+    if (glass_texture == 0)
+    {
+        list.shadow({r.x, r.y + 30.0f, r.w, r.h}, radius, 90.0f, Color::rgb(0x000000, 0.6f));
+        list.gradient_rect(r, radius, Color::rgb(0x242424), Color::rgb(0x151515));
+        list.bordered_rect(r, radius, Color{0, 0, 0, 0}, 1.0f, color::line);
+        return;
+    }
+    list.shadow({r.x, r.y + 30.0f, r.w, r.h}, radius, 90.0f, Color::rgb(0x000000, 0.45f));
+    list.glass(glass_texture, r, radius, Color::rgb(0xffffff));
+    list.rounded_rect(r, radius, Color::rgb(0x3c3c3c, 0.58f));
+    list.bordered_rect(r, radius, Color{0, 0, 0, 0}, 1.0f, Color::rgb(0xffffff, 0.16f));
+}
+
 void field_label(DrawList &list, const Type &type, const Rect &field, std::string_view label)
 {
     orbit::ui::text(list, type.regular, label, field.x, field.y - 12.0f, 16.0f, color::text2);
