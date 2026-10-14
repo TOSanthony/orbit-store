@@ -16,7 +16,8 @@
 #include <time.h>
 
 #define ART_ENTRIES 256
-#define ART_WORKERS 4
+#define ART_WORKERS 8 /* Fetches wait on the server, not on CPU or bandwidth: more run at once. */
+#define ART_NAS_CONCURRENT 3 /* A home NAS gets far fewer at a time than a CDN. */
 #define ART_QUEUE 64
 #define ART_MAX_BYTES (12 * 1024 * 1024)
 #define ART_BUDGET (32 * 1024 * 1024)
@@ -91,6 +92,27 @@ static __thread FetchTiming art_timing;
  * handles so a connection opened without the private-address filter is never
  * reused for it. */
 static __thread CURL *art_handle[2];
+
+static struct {
+    pthread_mutex_t mutex;
+    pthread_cond_t freed;
+    int active;
+} art_nas = {.mutex = PTHREAD_MUTEX_INITIALIZER, .freed = PTHREAD_COND_INITIALIZER};
+
+static void art_nas_enter(void) {
+    pthread_mutex_lock(&art_nas.mutex);
+    while (art_nas.active >= ART_NAS_CONCURRENT)
+        pthread_cond_wait(&art_nas.freed, &art_nas.mutex);
+    art_nas.active++;
+    pthread_mutex_unlock(&art_nas.mutex);
+}
+
+static void art_nas_leave(void) {
+    pthread_mutex_lock(&art_nas.mutex);
+    art_nas.active--;
+    pthread_cond_signal(&art_nas.freed);
+    pthread_mutex_unlock(&art_nas.mutex);
+}
 
 static void art_handles_free(void) {
     for (int i = 0; i < 2; i++) {
@@ -229,7 +251,11 @@ static bool fetch(const char *source, Buffer *buf, const char **mime, char *why,
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, buf);
     curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, stopping);
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    if (nas)
+        art_nas_enter();
     CURLcode code = curl_easy_perform(curl);
+    if (nas)
+        art_nas_leave();
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
     double t_dns = 0, t_connect = 0, t_tls = 0, t_first = 0, t_total = 0;
