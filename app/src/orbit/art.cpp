@@ -15,9 +15,9 @@ namespace
 {
 
 // The backend answers 202 while it fetches from the CDN; ask again shortly,
-// for up to about half a minute.
-constexpr double kPendingDelay = 0.6;
-constexpr int kPendingAttempts = 50;
+// for up to about half a minute. Each ask is cheap, so ask often.
+constexpr double kPendingDelay = 0.3;
+constexpr int kPendingAttempts = 100;
 // More queued requests than this means the player scrolled past them.
 constexpr std::size_t kMaxQueued = 48;
 

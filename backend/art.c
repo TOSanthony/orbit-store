@@ -246,11 +246,12 @@ static void *worker(void *unused) {
             pthread_cond_wait(&art.changed, &art.mutex);
             continue;
         }
+        /* Newest first, like the app: what is on screen now was asked for last,
+         * and what the player scrolled past is served when there is time. */
         char key[ART_KEY];
-        copy_text(key, sizeof key, art.queue[0]);
+        copy_text(key, sizeof key, art.queue[art.queued - 1]);
         ArtEntry *queued = find(key);
         double waited = queued ? art_now() - queued->queued_at : 0;
-        memmove(art.queue[0], art.queue[1], (art.queued - 1) * ART_KEY);
         art.queued--;
         pthread_mutex_unlock(&art.mutex);
 
@@ -344,9 +345,18 @@ int art_get(const char *game_id, const char *kind, unsigned char **data, size_t 
         code = 502;
         if (why_cap)
             copy_text(why, why_cap, e->why);
-    } else if (!art.started || art.queued == ART_QUEUE) {
+    } else if (!art.started) {
         code = 503;
     } else {
+        /* A full queue gives up its oldest request (long since scrolled past)
+         * instead of refusing the one the player is looking at. */
+        if (art.queued == ART_QUEUE) {
+            ArtEntry *old = find(art.queue[0]);
+            if (old && old->state == ART_PENDING)
+                memset(old, 0, sizeof *old);
+            memmove(art.queue[0], art.queue[1], (art.queued - 1) * ART_KEY);
+            art.queued--;
+        }
         /* A free slot, else the least recently used finished one. */
         for (size_t i = 0; i < ART_ENTRIES && !e; i++)
             if (art.entries[i].state == ART_EMPTY)
