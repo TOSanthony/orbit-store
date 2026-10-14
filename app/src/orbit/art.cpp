@@ -4,6 +4,7 @@
 #include "orbit/art.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <utility>
 #include <vector>
 
@@ -64,6 +65,42 @@ void ArtCache::set_token(const std::string &token)
     token_ = token;
 }
 
+void ArtCache::set_log(std::function<void(const std::string &)> log)
+{
+    log_ = std::move(log);
+}
+
+void ArtCache::note(const Decoded &d, double upload_ms, double total_ms)
+{
+    if (!log_)
+        return;
+    char line[240];
+    std::snprintf(line, sizeof line,
+                  "art %s %s: total=%.0fms wait=%.0f http=%.0f(x%d) decode=%.0f ambient=%.0f upload=%.1f %zuB%s",
+                  d.hero ? "hero" : "cover", d.key.substr(0, d.key.find('#')).c_str(), total_ms,
+                  d.wait_ms, d.http_ms, d.attempts + 1, d.decode_ms, d.ambient_ms, upload_ms,
+                  d.bytes, d.ok ? "" : " FAILED");
+    log_(line);
+    Totals &t = totals_;
+    ++t.count;
+    t.total_ms += total_ms;
+    t.max_ms = std::max(t.max_ms, total_ms);
+    t.wait_ms += d.wait_ms;
+    t.http_ms += d.http_ms;
+    t.decode_ms += d.decode_ms + d.ambient_ms;
+    t.upload_ms += upload_ms;
+    if (t.count % 25 == 0)
+    {
+        std::snprintf(line, sizeof line,
+                      "art summary (last 25): avg total=%.0fms max=%.0f | wait=%.0f http=%.0f "
+                      "decode=%.0f upload=%.1f",
+                      t.total_ms / t.count, t.max_ms, t.wait_ms / t.count, t.http_ms / t.count,
+                      t.decode_ms / t.count, t.upload_ms / t.count);
+        log_(line);
+        t = Totals{};
+    }
+}
+
 const Artwork *ArtCache::get(const std::string &game_id, api::ArtKind kind)
 {
     const std::string key = make_key(game_id, kind);
@@ -84,9 +121,11 @@ const Artwork *ArtCache::get(const std::string &game_id, api::ArtKind kind)
     Entry &entry = entries_[key];
     entry.state = State::loading;
     entry.last_used = now;
+    entry.asked_at = now;
     {
         Lock lock(mutex_);
         Request request;
+        request.asked_at = now;
         request.key = key;
         request.game_id = game_id;
         request.kind = kind;
@@ -127,8 +166,10 @@ void ArtCache::tick()
         {
             entry.state = State::failed;
             entry.retry_at = now + limits_.retry_failed;
+            note(decoded, 0.0, (now_seconds() - decoded.asked_at) * 1000.0);
             continue;
         }
+        const double upload_start = now_seconds();
         entry.art.texture = sink_.create(decoded.pixels);
         entry.art.width = decoded.pixels.width;
         entry.art.height = decoded.pixels.height;
@@ -137,6 +178,7 @@ void ArtCache::tick()
         entry.state = entry.art.texture != 0 ? State::ready : State::failed;
         if (entry.state == State::failed)
             entry.retry_at = now + limits_.retry_failed;
+        note(decoded, (now_seconds() - upload_start) * 1000.0, (now_seconds() - decoded.asked_at) * 1000.0);
     }
     evict(api::ArtKind::cover, limits_.max_covers);
     evict(api::ArtKind::hero, limits_.max_heroes);
@@ -211,15 +253,25 @@ bool ArtCache::work_once()
             return false;
         request = std::move(*pick);
         requests_.erase(pick);
+        if (request.started_at == 0.0)
+            request.started_at = now;
         token = token_;
         ++in_flight_;
     }
 
     api::Client client(transport_);
     client.set_token(token);
+    const double http_start = now_seconds();
     api::Result<api::Art> art = client.art(request.game_id, request.kind);
+    request.http_ms += (now_seconds() - http_start) * 1000.0;
     Decoded decoded;
     decoded.key = request.key;
+    decoded.hero = request.kind == api::ArtKind::hero;
+    decoded.asked_at = request.asked_at;
+    decoded.wait_ms = (request.started_at - request.asked_at) * 1000.0;
+    decoded.http_ms = request.http_ms;
+    decoded.attempts = request.attempts;
+    decoded.status = art.status;
     // Still being fetched by the backend, the session is not open yet (a
     // restarted backend), or the artwork workers are busy or still starting
     // (503, as when the app has just started Orbit): ask again shortly
@@ -240,9 +292,16 @@ bool ArtCache::work_once()
         const bool hero = request.kind == api::ArtKind::hero;
         const int width = hero ? limits_.hero_width : limits_.cover_size;
         const int height = hero ? limits_.hero_height : limits_.cover_size;
+        decoded.bytes = art.value.bytes.size();
+        const double decode_start = now_seconds();
         decoded.ok = image::decode(art.value.bytes, width, height, &decoded.pixels);
+        decoded.decode_ms = (now_seconds() - decode_start) * 1000.0;
         if (decoded.ok && !hero)
+        {
+            const double ambient_start = now_seconds();
             decoded.ambient = image::ambient(decoded.pixels);
+            decoded.ambient_ms = (now_seconds() - ambient_start) * 1000.0;
+        }
     }
     inbox_.post([this, decoded = std::move(decoded)]() mutable
                 { uploads_.push_back(std::move(decoded)); });

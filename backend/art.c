@@ -32,6 +32,7 @@ typedef struct {
     char mime[16];
     char why[96]; /* Why the last fetch failed, shown in the 502 answer. */
     time_t used, failed_at;
+    double queued_at; /* Monotonic seconds, for the timing log. */
 } ArtEntry;
 static struct {
     pthread_mutex_t mutex;
@@ -49,6 +50,19 @@ typedef struct {
     unsigned char *data;
     size_t size;
 } Buffer;
+
+static double art_now(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+}
+
+/* Timing of the last fetch on this thread, for the log. */
+typedef struct {
+    double connect, first_byte, total;
+    long status;
+} FetchTiming;
+static __thread FetchTiming art_timing;
 
 static bool art_identifier(const char *id) {
     size_t n = strlen(id);
@@ -178,6 +192,11 @@ static bool fetch(const char *source, Buffer *buf, const char **mime, char *why,
     CURLcode code = curl_easy_perform(curl);
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
+    double t_connect = 0, t_first = 0, t_total = 0;
+    curl_easy_getinfo(curl, CURLINFO_APPCONNECT_TIME, &t_connect);
+    curl_easy_getinfo(curl, CURLINFO_STARTTRANSFER_TIME, &t_first);
+    curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &t_total);
+    art_timing = (FetchTiming){t_connect, t_first, t_total, status};
     curl_easy_cleanup(curl);
     *mime = code == CURLE_OK && status == 200 ? sniff(buf->data, buf->size) : NULL;
     if (!*mime && why_cap) {
@@ -229,6 +248,8 @@ static void *worker(void *unused) {
         }
         char key[ART_KEY];
         copy_text(key, sizeof key, art.queue[0]);
+        ArtEntry *queued = find(key);
+        double waited = queued ? art_now() - queued->queued_at : 0;
         memmove(art.queue[0], art.queue[1], (art.queued - 1) * ART_KEY);
         art.queued--;
         pthread_mutex_unlock(&art.mutex);
@@ -243,11 +264,20 @@ static void *worker(void *unused) {
         Buffer buf = {0};
         const char *mime = NULL;
         char why[96] = {0};
+        double fetch_start = art_now();
+        FetchTiming timing = {0};
         for (size_t i = 0; i < count && !mime; i++) {
             free(buf.data);
             buf = (Buffer){0};
             fetch(urls[i], &buf, &mime, why, sizeof why);
+            timing = art_timing;
         }
+        /* One line per fetch: queue wait, TLS done, first byte, whole transfer. */
+        printf("Orbit art: %s wait=%.0fms tls=%.0fms first-byte=%.0fms transfer=%.0fms "
+               "fetch=%.0fms %zuB %s\n",
+               key, waited * 1000, timing.connect * 1000, timing.first_byte * 1000,
+               timing.total * 1000, (art_now() - fetch_start) * 1000, buf.size,
+               mime ? "ok" : (count ? why : "no url"));
         if (!count)
             copy_text(why, sizeof why, "no usable image address in the catalogue row");
 
@@ -336,6 +366,7 @@ int art_get(const char *game_id, const char *kind, unsigned char **data, size_t 
             copy_text(e->key, sizeof e->key, key);
             e->state = ART_PENDING;
             e->used = now;
+            e->queued_at = art_now();
             copy_text(art.queue[art.queued++], ART_KEY, key);
             pthread_cond_signal(&art.changed);
         }

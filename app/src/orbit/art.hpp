@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <map>
 #include <string>
 
@@ -64,6 +65,9 @@ class ArtCache
     void stop();
     // The backend serves artwork to paired clients only.
     void set_token(const std::string &token);
+    // Where timing lines go (one per image, plus a summary every few dozen).
+    // Optional; called from the frame thread only.
+    void set_log(std::function<void(const std::string &)> log);
 
     // Frame thread: the image when it is ready, else nullptr (and it is asked for).
     const Artwork *get(const std::string &game_id, api::ArtKind kind);
@@ -90,6 +94,7 @@ class ArtCache
         Artwork art;
         double last_used = 0.0;
         double retry_at = 0.0;
+        double asked_at = 0.0; // first get() of this attempt, for the timing log
     };
     struct Request
     {
@@ -98,6 +103,9 @@ class ArtCache
         api::ArtKind kind = api::ArtKind::cover;
         double not_before = 0.0;
         int attempts = 0;
+        double asked_at = 0.0;  // when the screen first asked for it
+        double started_at = 0.0; // when the worker first picked it up
+        double http_ms = 0.0;   // time spent in requests, retries included
     };
     struct Decoded
     {
@@ -105,10 +113,27 @@ class ArtCache
         bool ok = false;
         image::Pixels pixels;
         image::Pixels ambient;
+        // Timing, for the log.
+        bool hero = false;
+        double asked_at = 0.0;
+        double wait_ms = 0.0; // asked -> picked up by the worker
+        double http_ms = 0.0;
+        double decode_ms = 0.0;
+        double ambient_ms = 0.0;
+        int attempts = 0;
+        int status = 0;
+        std::size_t bytes = 0;
+    };
+    struct Totals
+    {
+        int count = 0;
+        double total_ms = 0.0, max_ms = 0.0, wait_ms = 0.0, http_ms = 0.0, decode_ms = 0.0;
+        double upload_ms = 0.0;
     };
 
     void worker();
     void evict(api::ArtKind kind, int keep);
+    void note(const Decoded &decoded, double upload_ms, double total_ms);
 
     http::Transport &transport_;
     TextureSink &sink_;
@@ -117,6 +142,8 @@ class ArtCache
     bool has_token_ = false;               // frame thread only
     Inbox inbox_;
     std::deque<Decoded> uploads_; // frame thread only
+    std::function<void(const std::string &)> log_; // frame thread only
+    Totals totals_;                                // frame thread only
 
     Mutex mutex_;
     Signal signal_;
