@@ -898,6 +898,15 @@ void SettingsScreen::build_appearance(Pane &pane) const
 {
     const ui::Type &type = ctx_.type;
     pane.heading(tr("Personalisation"));
+    pane.subheading(tr("Sounds"));
+    pane.body(ctx_.sounds_on ? tr("Menu sounds are on: you hear a sound when you move and select.")
+                             : tr("Menu sounds are off. The app is silent."));
+    pane.buttons({{Kind::sounds_toggle, ctx_.sounds_on ? tr("Turn off sounds") : tr("Turn on sounds"),
+                   ui::ButtonKind::secondary}});
+    if (ctx_.store.setting_result().setting == Setting::sounds)
+        pane.error(ctx_.store.setting_result().error);
+    pane.gap(12.0f);
+    pane.rule();
     pane.subheading(tr("Background"));
     pane.body(tr("Choose the background of the app. Game artwork still shows over it."));
     pane.gap(10.0f);
@@ -936,15 +945,6 @@ void SettingsScreen::build_appearance(Pane &pane) const
     if (ctx_.store.setting_result().setting == Setting::appearance)
         pane.error(ctx_.store.setting_result().error);
     pane.fine(tr("Saved on this console. Animated backgrounds use a little more graphics power."));
-    pane.gap(12.0f);
-    pane.rule();
-    pane.subheading(tr("Sounds"));
-    pane.body(ctx_.sounds_on ? tr("Menu sounds are on: you hear a sound when you move and select.")
-                             : tr("Menu sounds are off. The app is silent."));
-    pane.buttons({{Kind::sounds_toggle, ctx_.sounds_on ? tr("Turn off sounds") : tr("Turn on sounds"),
-                   ui::ButtonKind::secondary}});
-    if (ctx_.store.setting_result().setting == Setting::sounds)
-        pane.error(ctx_.store.setting_result().error);
 }
 
 void SettingsScreen::build_more(Pane &pane) const
