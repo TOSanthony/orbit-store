@@ -649,7 +649,7 @@ void GamePage::draw(Frame &frame,bool focused) const
     list.pop_transform();list.pop_clip();
     if(sheet_==Sheet::downloads)
     {
-        list.rounded_rect({1226,738,596,253},22,ui::Color::rgb(0x000000,0.28f));
+        // No darker plate here: the popup keeps one even colour.
         if(now.show_download && now.drive)
         {
             list.rounded_rect({1252,765,554,1},0,ui::color::line);
