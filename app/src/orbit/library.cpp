@@ -381,7 +381,7 @@ std::vector<LibraryScreen::Control> LibraryScreen::page_controls() const
         {
             const float rw =
                 ui::button_width(type, tr("Reset library filters"), 18.0f, ui::ButtonKind::secondary);
-            out.push_back({Kind::reset, 0, row, {960.0f - rw * 0.5f, y + 140.0f, rw, 44.0f}});
+            out.push_back({Kind::reset, 0, row, {960.0f - rw * 0.5f, y + 210.0f, rw, 44.0f}});
             return out;
         }
         for (int i = 0; i < static_cast<int>(rows_.size()); ++i)
