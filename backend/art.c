@@ -57,6 +57,26 @@ static double art_now(void) {
     return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
 }
 
+/* The timing line also goes to <state dir>/art.log (read it over FTP at
+ * /data/orbit-store/art.log): the payload's standard output is not kept
+ * anywhere a person can fetch it. Capped; the old file becomes art.prev.log. */
+static void art_log_file(const char *line) {
+    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+    char path[300], old[300];
+    snprintf(path, sizeof path, "%s/art.log", orbit.state_dir);
+    snprintf(old, sizeof old, "%s/art.prev.log", orbit.state_dir);
+    pthread_mutex_lock(&lock);
+    FILE *f = fopen(path, "a");
+    if (f) {
+        fputs(line, f);
+        long size = ftell(f);
+        fclose(f);
+        if (size > 256 * 1024)
+            rename(path, old);
+    }
+    pthread_mutex_unlock(&lock);
+}
+
 /* Timing of the last fetch on this thread, for the log. */
 typedef struct {
     double connect, first_byte, total;
@@ -274,11 +294,15 @@ static void *worker(void *unused) {
             timing = art_timing;
         }
         /* One line per fetch: queue wait, TLS done, first byte, whole transfer. */
-        printf("Orbit art: %s wait=%.0fms tls=%.0fms first-byte=%.0fms transfer=%.0fms "
-               "fetch=%.0fms %zuB %s\n",
-               key, waited * 1000, timing.connect * 1000, timing.first_byte * 1000,
-               timing.total * 1000, (art_now() - fetch_start) * 1000, buf.size,
-               mime ? "ok" : (count ? why : "no url"));
+        char line[400];
+        snprintf(line, sizeof line,
+                 "Orbit art: %s wait=%.0fms tls=%.0fms first-byte=%.0fms transfer=%.0fms "
+                 "fetch=%.0fms %zuB %s\n",
+                 key, waited * 1000, timing.connect * 1000, timing.first_byte * 1000,
+                 timing.total * 1000, (art_now() - fetch_start) * 1000, buf.size,
+                 mime ? "ok" : (count ? why : "no url"));
+        fputs(line, stdout);
+        art_log_file(line);
         if (!count)
             copy_text(why, sizeof why, "no usable image address in the catalogue row");
 
