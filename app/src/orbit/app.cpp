@@ -1,6 +1,7 @@
 // Orbit Store TV app - The app: top bar, tabs, the game page, status and dialogs.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "orbit/appearance.hpp"
 #include "orbit/mark.hpp"
 #include "orbit/screens.hpp"
 #include "orbit/i18n.hpp"
@@ -79,6 +80,7 @@ App::App(Context &context)
       updates_(context, Category::updates), library_(context), downloads_(context),
       game_(context), settings_(context)
 {
+    ctx_.appearance = appearance::load();
     top_focus_.resize(kTopItems);
     backdrop_in_.snap(1.0f);
 }
@@ -644,16 +646,9 @@ void App::draw_game_header(hui::gfx::DrawList &list) const
 void App::draw(Frame &frame) const
 {
     const Snapshot &state = ctx_.store.state();
-    // The browser's body: navy to near-black, lit from the top left towards
-    // #133070 (the shader adds its highlight, so it gets the difference).
-    frame.backdrop.mode = hui::gfx::BackdropMode::gradient;
-    frame.backdrop.colors[0] = ui::color::night1;
-    frame.backdrop.colors[1] = ui::color::night0;
-    frame.backdrop.colors[2] = ui::Color::rgb(0x101010);
-    frame.backdrop.params[0] = 0.08f;
-    frame.backdrop.params[1] = 0.0f;
-    frame.backdrop.params[2] = 1.0f;
-    frame.backdrop.time = ctx_.clock;
+    // The page behind everything: the background chosen in Settings > Appearance
+    // (black by default); game art draws over it.
+    frame.backdrop = appearance::backdrop(ctx_.appearance, ctx_.clock);
 
     hui::gfx::DrawList &scene = frame.scene;
     const bool ready = state.have_system && state.link != Link::connecting &&

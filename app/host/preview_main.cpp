@@ -323,6 +323,17 @@ std::vector<Scenario> scenarios()
           tap(Action::confirm), pause(1.2f, "settings-service-saved"), tap(Action::confirm),
           pause(0.8f, "settings-restart-confirm"), move(Direction::left), tap(Action::confirm),
           pause(0.6f, "settings-restarting"), pause(40.0f, "settings-restarted")}});
+    // The background chooser, then an animated choice.
+    list.push_back(
+        {"appearance",
+         Mode::updates,
+         false,
+         {pause(1.5f, "appearance-start"),
+          run(0.5f, [](orbit::App &app)
+              { app.open_settings(orbit::SettingsScreen::Section::appearance, true); }),
+          pause(0.8f, "settings-appearance"), move(Direction::down), move(Direction::down),
+          move(Direction::down), move(Direction::down), move(Direction::down),
+          move(Direction::down), tap(Action::confirm), pause(2.0f, "settings-appearance-aurora")}});
     return list;
 }
 
@@ -341,6 +352,8 @@ int main(int argc, char **argv)
     const std::string only = argc > 3 && std::string(argv[3]) != "all" ? argv[3] : "";
     const int width = argc > 5 ? std::atoi(argv[4]) : 1920;
     const int height = argc > 5 ? std::atoi(argv[5]) : 1080;
+    // The chosen background is kept beside the pictures, not in /data.
+    setenv("ORBIT_APPEARANCE_FILE", "build/preview/appearance.cfg", 0);
     const char *backend = std::getenv("ORBIT_BACKEND");
     // ORBIT_LANG=de renders the screens in German, from the repository's catalogues.
     if (const char *language = std::getenv("ORBIT_LANG"))

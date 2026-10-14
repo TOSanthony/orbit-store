@@ -6,6 +6,7 @@
 // a controller. Each section is laid out by one function that, given a draw
 // list, also draws it, so what the focus moves between is what is drawn.
 
+#include "orbit/appearance.hpp"
 #include "orbit/screens.hpp"
 #include "orbit/i18n.hpp"
 
@@ -33,7 +34,8 @@ constexpr float kViewBottom = 990.0f; // and stops above the hints
 constexpr float kCardRadius = 14.0f;
 constexpr int kSectionCount = static_cast<int>(SettingsScreen::Section::count);
 constexpr const char *kSections[] = {/* i18n */ "Download sources", /* i18n */ "Storage", /* i18n */ "Pair a device",
-                                     /* i18n */ "Game catalogue",   /* i18n */ "Updates", "Orbit Zero", /* i18n */ "More settings"};
+                                     /* i18n */ "Game catalogue",   /* i18n */ "Updates", "Orbit Zero", /* i18n */ "Appearance",
+                                     /* i18n */ "More settings"};
 constexpr const char *kSavedElf = "/data/orbit-store/orbit_store.elf";
 constexpr const char *kNotice =
     /* i18n */ "You are responsible for checking that your downloads are lawful. Third-party downloads are "
@@ -310,6 +312,9 @@ void SettingsScreen::build(Pane &pane) const
         break;
     case Section::zero:
         build_zero(pane);
+        break;
+    case Section::appearance:
+        build_appearance(pane);
         break;
     default:
         build_more(pane);
@@ -890,6 +895,50 @@ void SettingsScreen::build_zero(Pane &pane) const
     } else pane.body("No computer paired. Use Console setup in the desktop app to connect.");
 }
 
+void SettingsScreen::build_appearance(Pane &pane) const
+{
+    const ui::Type &type = ctx_.type;
+    pane.heading(tr("Appearance"));
+    pane.body(tr("Choose the background of the app. Game artwork still shows over it."));
+    pane.gap(10.0f);
+    for (std::size_t i = 0; i < appearance::count(); ++i)
+    {
+        const appearance::Preset &preset = appearance::preset(i);
+        const bool chosen = i == ctx_.appearance;
+        const ui::Rect r{pane.x, pane.y, pane.width, 92.0f};
+        if (pane.list != nullptr)
+        {
+            ui::DrawList &list = *pane.list;
+            ui::focus_ring(list, r, kCardRadius, pane.amount());
+            list.bordered_rect(r, kCardRadius,
+                               chosen ? ui::Color::rgb(0xffffff, 0.25f) : ui::Color::rgb(0x151515, 0.8f),
+                               1.0f, chosen ? ui::Color::rgb(0xffffff) : ui::color::line);
+            const float mx = r.x + 24.0f + 14.0f;
+            if (chosen)
+            {
+                list.circle(mx, r.cy(), 14.0f, ui::color::action);
+                ui::icon_check(list, mx, r.cy(), 16.0f, ui::color::night1, 2.4f);
+            }
+            else
+                list.ring(mx, r.cy(), 13.5f, 1.0f, ui::color::text3);
+            const float tx = mx + 14.0f + 20.0f;
+            const float rx = r.x + r.w - 24.0f;
+            ui::text_fit(list, type.medium, tr(preset.name), tx, r.cy() - 6.0f, 21.0f, 470.0f, ui::color::text);
+            ui::text_fit(list, type.regular, tr(preset.about), tx, r.cy() + 22.0f, 16.0f, 470.0f,
+                         ui::color::text2);
+            if (preset.animated)
+                ui::text(list, type.medium, tr("Animated"), rx, r.cy() + 7.0f, 19.0f, ui::color::text2,
+                         ui::Align::right);
+        }
+        pane.add(Kind::appearance, static_cast<int>(i), r, true);
+        ++pane.row;
+        pane.y += r.h + 12.0f;
+    }
+    if (!error_.empty())
+        pane.error(error_);
+    pane.fine(tr("Saved on this console. Animated backgrounds use a little more graphics power."));
+}
+
 void SettingsScreen::build_more(Pane &pane) const
 {
     const Snapshot &state = ctx_.store.state();
@@ -916,6 +965,11 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
     feedback.play(hui::audio::Cue::select);
     switch (control.kind)
     {
+    case Kind::appearance:
+        ctx_.appearance = static_cast<std::size_t>(control.index);
+        if (!appearance::save(ctx_.appearance))
+            error_ = tr("Could not save the background.");
+        break;
     case Kind::zero_toggle:
         error_.clear();ctx_.store.set_zero(!state.system.zero_enabled);break;
     case Kind::download_limit_less:

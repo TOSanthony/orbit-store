@@ -72,6 +72,7 @@ struct Context
     // Opens the exact option and destination; the browser still asks to proceed.
     std::function<bool(const BrowserSelection &)> open_download;
     float clock = 0.0f; // seconds since the app opened
+    std::size_t appearance = 0; // the chosen background (orbit::appearance preset)
 };
 
 // The tabs, in the browser storefront's order; it opens on Discover.
@@ -518,6 +519,7 @@ class SettingsScreen final : public Screen
         catalogue,
         updates,
         zero,
+        appearance,
         more,
         count,
     };
@@ -561,6 +563,7 @@ class SettingsScreen final : public Screen
         archives_toggle,
         download_limit_less,
         download_limit_more,
+        appearance, // index of a background preset
     };
     struct Control
     {
@@ -577,6 +580,7 @@ class SettingsScreen final : public Screen
     void build_pairing(Pane &pane) const;
     void build_catalogue(Pane &pane) const;
     void build_updates(Pane &pane) const;
+    void build_appearance(Pane &pane) const;
     void build_more(Pane &pane) const;
     void build_zero(Pane &pane) const;
     std::vector<Control> controls(float *height = nullptr) const;
