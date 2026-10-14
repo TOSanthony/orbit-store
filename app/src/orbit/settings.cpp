@@ -746,7 +746,7 @@ void SettingsScreen::build_updates(Pane &pane) const
                                 : installable ? tr("Update TV app")
                                               : tr("Replace with this release");
             row.push_back({installable ? Kind::tv_install : Kind::tv_replace, label,
-                           ui::ButtonKind::primary,
+                           ui::ButtonKind::secondary,
                            !disabled && wait == 0 && fresh && !confirm_replace_});
         }
         pane.buttons(row);
@@ -771,7 +771,7 @@ void SettingsScreen::build_updates(Pane &pane) const
                            "replaces it with release {version}. This app keeps running until you "
                            "close it.",
                            {{"version", tv.latest_version}}));
-            pane.buttons({{Kind::tv_replace, tr("Replace"), ui::ButtonKind::primary,
+            pane.buttons({{Kind::tv_replace, tr("Replace"), ui::ButtonKind::secondary,
                            !disabled && wait == 0 && fresh, 1},
                           {Kind::tv_keep, tr("Keep my copy")}});
         }
@@ -841,7 +841,7 @@ void SettingsScreen::build_updates(Pane &pane) const
                                                : tr("Orbit didn\xE2\x80\x99t restart"),
                     text, restart == Restart::failed);
         if (ctx_.store.can_start())
-            pane.buttons({{Kind::restart_retry, tr("Try again"), ui::ButtonKind::primary}});
+            pane.buttons({{Kind::restart_retry, tr("Try again"), ui::ButtonKind::secondary}});
     }
     else if (!state.have_service_update || !service.available)
     {
@@ -873,13 +873,13 @@ void SettingsScreen::build_updates(Pane &pane) const
                  installing                                  ? tr("Installing\xE2\x80\xA6")
                  : service.latest_version == running_service ? tr("Reinstall release")
                                                              : tr("Install update"),
-                 service.update_available ? ui::ButtonKind::primary : ui::ButtonKind::secondary,
+                 ui::ButtonKind::secondary,
                  !disabled && wait == 0 && fresh});
         }
         if (!confirm_restart_)
             row.push_back(
                 {Kind::service_restart, tr("Restart download service"),
-                 service.restart_required ? ui::ButtonKind::primary : ui::ButtonKind::secondary,
+                 ui::ButtonKind::secondary,
                  !disabled});
         pane.buttons(row);
         std::string status;
@@ -912,7 +912,7 @@ void SettingsScreen::build_updates(Pane &pane) const
                         tr("Active downloads pause. This app stops Orbit and starts it again, then "
                         "you can resume your downloads from Downloads."));
             pane.buttons(
-                {{Kind::restart_confirm, tr("Restart now"), ui::ButtonKind::primary, !disabled},
+                {{Kind::restart_confirm, tr("Restart now"), ui::ButtonKind::secondary, !disabled},
                  {Kind::restart_cancel, tr("Not now")}});
         }
         if (error_setting_ == Setting::service_check ||
@@ -940,7 +940,7 @@ void SettingsScreen::build_zero(Pane &pane) const
             "Your preference uses the PS5 when the selected source is reachable, otherwise your computer. Running downloads keep their route." :
             "Downloads run on your computer and transfer to your selected PS5 drive. Keep Orbit Zero open.");
         pane.error(system.zero_error);
-        pane.buttons({{Kind::zero_toggle,system.zero_enabled?"Turn off Orbit Zero":"Enable Orbit Zero",ui::ButtonKind::primary,!ctx_.store.setting_result().busy}});
+        pane.buttons({{Kind::zero_toggle,system.zero_enabled?"Turn off Orbit Zero":"Enable Orbit Zero",ui::ButtonKind::secondary,!ctx_.store.setting_result().busy}});
         if(ctx_.store.setting_result().setting==Setting::zero) pane.error(ctx_.store.setting_result().error);
     } else pane.body("No computer paired. Use Console setup in the desktop app to connect.");
 }
