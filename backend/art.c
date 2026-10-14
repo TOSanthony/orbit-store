@@ -79,10 +79,26 @@ static void art_log_file(const char *line) {
 
 /* Timing of the last fetch on this thread, for the log. */
 typedef struct {
-    double connect, first_byte, total;
-    long status;
+    double dns, connect, tls, first_byte, total;
+    long status, new_connections;
 } FetchTiming;
 static __thread FetchTiming art_timing;
+
+/* One curl handle per worker and kind of source, kept between images. A new
+ * handle meant a new DNS lookup, TCP and TLS handshake for every image (2-4 s
+ * on the console, measured); curl_easy_reset keeps the open connections and
+ * the DNS cache, so each worker pays that once per host. The NAS gets its own
+ * handles so a connection opened without the private-address filter is never
+ * reused for it. */
+static __thread CURL *art_handle[2];
+
+static void art_handles_free(void) {
+    for (int i = 0; i < 2; i++) {
+        if (art_handle[i])
+            curl_easy_cleanup(art_handle[i]);
+        art_handle[i] = NULL;
+    }
+}
 
 static bool art_identifier(const char *id) {
     size_t n = strlen(id);
@@ -181,7 +197,12 @@ static bool fetch(const char *source, Buffer *buf, const char **mime, char *why,
         protocols = "http";
     }
 #endif
-    CURL *curl = curl_easy_init();
+    bool nas = nas_url_allowed(source);
+    CURL *curl = art_handle[nas ? 1 : 0];
+    if (curl)
+        curl_easy_reset(curl);
+    else
+        curl = art_handle[nas ? 1 : 0] = curl_easy_init();
     if (!curl)
         return false;
     struct curl_blob ca = {(void *)orbit_ca, sizeof orbit_ca - 1, CURL_BLOB_COPY};
@@ -193,7 +214,6 @@ static bool fetch(const char *source, Buffer *buf, const char **mime, char *why,
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, protocols);
     /* Catalogue artwork may redirect; the user's NAS never does and never bypasses the
      * private-address filter. */
-    bool nas = nas_url_allowed(source);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, nas ? 0L : 1L);
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 3L);
     if (nas) {
@@ -212,12 +232,15 @@ static bool fetch(const char *source, Buffer *buf, const char **mime, char *why,
     CURLcode code = curl_easy_perform(curl);
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
-    double t_connect = 0, t_first = 0, t_total = 0;
-    curl_easy_getinfo(curl, CURLINFO_APPCONNECT_TIME, &t_connect);
+    double t_dns = 0, t_connect = 0, t_tls = 0, t_first = 0, t_total = 0;
+    long fresh = 0;
+    curl_easy_getinfo(curl, CURLINFO_NAMELOOKUP_TIME, &t_dns);
+    curl_easy_getinfo(curl, CURLINFO_CONNECT_TIME, &t_connect);
+    curl_easy_getinfo(curl, CURLINFO_APPCONNECT_TIME, &t_tls);
     curl_easy_getinfo(curl, CURLINFO_STARTTRANSFER_TIME, &t_first);
     curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &t_total);
-    art_timing = (FetchTiming){t_connect, t_first, t_total, status};
-    curl_easy_cleanup(curl);
+    curl_easy_getinfo(curl, CURLINFO_NUM_CONNECTS, &fresh);
+    art_timing = (FetchTiming){t_dns, t_connect, t_tls, t_first, t_total, status, fresh};
     *mime = code == CURLE_OK && status == 200 ? sniff(buf->data, buf->size) : NULL;
     if (!*mime && why_cap) {
         /* Host only, never the secret folder of a NAS address. */
@@ -296,10 +319,11 @@ static void *worker(void *unused) {
         /* One line per fetch: queue wait, TLS done, first byte, whole transfer. */
         char line[400];
         snprintf(line, sizeof line,
-                 "Orbit art: %s wait=%.0fms tls=%.0fms first-byte=%.0fms transfer=%.0fms "
-                 "fetch=%.0fms %zuB %s\n",
-                 key, waited * 1000, timing.connect * 1000, timing.first_byte * 1000,
-                 timing.total * 1000, (art_now() - fetch_start) * 1000, buf.size,
+                 "Orbit art: %s wait=%.0fms %s dns=%.0fms tcp=%.0fms tls=%.0fms first-byte=%.0fms "
+                 "transfer=%.0fms fetch=%.0fms %zuB %s\n",
+                 key, waited * 1000, timing.new_connections ? "new-conn" : "reused",
+                 timing.dns * 1000, timing.connect * 1000, timing.tls * 1000,
+                 timing.first_byte * 1000, timing.total * 1000, (art_now() - fetch_start) * 1000, buf.size,
                  mime ? "ok" : (count ? why : "no url"));
         fputs(line, stdout);
         art_log_file(line);
@@ -328,6 +352,7 @@ static void *worker(void *unused) {
         }
     }
     pthread_mutex_unlock(&art.mutex);
+    art_handles_free();
     return NULL;
 }
 
