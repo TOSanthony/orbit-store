@@ -42,6 +42,9 @@ inline const Color ok = Color::rgb(0xffffff);
 inline const Color bad = Color::rgb(0xffffff);
 // A game saved to favourites: the heart is filled with this.
 inline const Color heart = Color::rgb(0xe5384f);
+// The space ring in the download options: this game fits / does not fit.
+inline const Color fits = Color::rgb(0x4ade80);
+inline const Color short_of = Color::rgb(0xff5c5c);
 inline const Color line = Color::rgb(0xffffff, 0.16f);
 // Fields are tonal surfaces, not outlines (the browser's --field tokens).
 inline const Color field = Color::rgb(0xffffff, 0.075f);

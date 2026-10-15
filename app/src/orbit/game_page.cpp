@@ -660,9 +660,47 @@ void GamePage::draw(Frame &frame,bool focused) const
         // No darker plate here: the popup keeps one even colour.
         if(now.show_download && now.drive)
         {
-            list.rounded_rect({1252,765,554,1},0,ui::color::line);
-            ui::text_fit(list,type.regular,now.plan.planned?tr("After your queue"):tr("After queue + this download"),1252,808,21,370,ui::color::text2);
-            ui::text(list,type.medium,now.plan.after<0?tr("{size} short",{{"size",format_bytes(-now.plan.after)}}):format_bytes(now.plan.after),1806,808,22,ui::color::text,ui::Align::right);
+            const Drive &drive=*now.drive;
+            if(drive.total_bytes>0)
+            {
+                // The drive as a ring: what is used or queued (white), this game
+                // (green, red when it does not fit) and what stays free.
+                const double total=drive.total_bytes;
+                const double game_bytes=release.size_bytes+release.extracted_bytes;
+                const double queued=std::max(0.0,total-drive.projected_free_bytes-(now.plan.planned?game_bytes:0.0));
+                const double room=std::max(0.0,total-queued);
+                const double game_shown=std::min(game_bytes,room);
+                const bool fits=now.plan.after>=0;
+                const float used_part=static_cast<float>(std::clamp(queued/total,0.0,1.0));
+                const float game_part=static_cast<float>(std::clamp(game_shown/total,0.0,1.0));
+                constexpr float cx=1330,cy=699,radius=66,thickness=13,tau=6.2831853f;
+                const ui::Color game_color=fits?ui::color::fits:ui::color::short_of;
+                list.ring(cx,cy,radius,thickness,ui::Color::rgb(0xffffff,0.27f));
+                if(used_part>0.0f)list.arc(cx,cy,radius,thickness,0.0f,used_part*tau,ui::color::text,true);
+                if(game_part>0.0f)list.arc(cx,cy,radius,thickness,(used_part+0.006f)*tau,game_part*tau,game_color,true);
+                const std::string centre=format_bytes(std::abs(now.plan.after));
+                const float size=ui::fit_size(type.semibold,centre,21,14,94);
+                ui::text(list,type.semibold,centre,cx,cy-1,size,fits?ui::color::text:ui::color::short_of,ui::Align::center);
+                ui::text(list,type.regular,fits?tr("free after"):tr("short"),cx,cy+22,14,ui::color::text2,ui::Align::center);
+                const struct { std::string label; double bytes; ui::Color dot; } rows[]={
+                    {tr("Used and queued"),queued,ui::color::text},
+                    {tr("This game"),game_bytes,game_color},
+                    {fits?tr("Free after install"):tr("Short by"),std::abs(now.plan.after),fits?ui::Color::rgb(0xffffff,0.35f):ui::color::short_of}};
+                for(int i=0;i<3;++i)
+                {
+                    const float y=cy-46+static_cast<float>(i)*46;
+                    list.circle(1434,y,7,rows[i].dot);
+                    ui::text_fit(list,type.regular,rows[i].label,1453,y+6,18,200,ui::color::text2);
+                    ui::text(list,type.medium,format_bytes(rows[i].bytes),1806,y+7,19,ui::color::text,ui::Align::right);
+                    if(i<2)list.rounded_rect({1434,y+23,372,1},0,ui::color::line);
+                }
+            }
+            else
+            {
+                list.rounded_rect({1252,765,554,1},0,ui::color::line);
+                ui::text_fit(list,type.regular,now.plan.planned?tr("After your queue"):tr("After queue + this download"),1252,808,21,370,ui::color::text2);
+                ui::text(list,type.medium,now.plan.after<0?tr("{size} short",{{"size",format_bytes(-now.plan.after)}}):format_bytes(now.plan.after),1806,808,22,ui::color::text,ui::Align::right);
+            }
         }
         ui::paragraph(list,type.regular,tr("Saves a file to your console. Installation and launching are separate."),1252,958,17,554,24,ui::color::text3,3);
     }
@@ -674,7 +712,7 @@ void GamePage::draw(Frame &frame,bool focused) const
         {
             const std::string label=primary_label(release,download_again_,waiting_,now.collection,state,torbox_);
             const float size=ui::fit_size(type.medium,label,25,18,c.rect.w-45);
-            ui::button(list,type,c.rect,label,ui::ButtonKind::light,focus,c.enabled,size);
+            ui::button(list,type,c.rect,label,sheet_==Sheet::downloads?ui::ButtonKind::secondary:ui::ButtonKind::light,focus,c.enabled,size);
         }
         else if(c.slot==Slot::back)ui::button(list,type,c.rect,tr("Back"),ui::ButtonKind::secondary,focus,true,22);
         else
