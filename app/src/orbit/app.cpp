@@ -758,7 +758,7 @@ void App::draw(Frame &frame) const
 
     if (provider_open_) draw_provider(frame);
 
-    // ---- controller hints, over a fade that lets content scroll beneath ----
+    // ---- controller hints, in a pill over the page ----
     std::vector<hui::ui::Hint> items;
     if (provider_open_)
         items = {{hui::ui::Button::cross, tr("Select")}, {hui::ui::Button::circle, tr("Back")}};
@@ -776,12 +776,6 @@ void App::draw(Frame &frame) const
         items = screen().hints();
     if (items.empty())
         return;
-    // The fade spans the whole screen on every tab, Discover and Library included.
-    const float hints_left = 0.0f;
-    overlay.gradient_rect({hints_left, 960.0f, 1920.0f - hints_left, 50.0f}, 0.0f,
-                          ui::color::night0.with_alpha(0.0f), ui::color::night0.with_alpha(0.95f));
-    overlay.rounded_rect({hints_left, 1010.0f, 1920.0f - hints_left, 70.0f}, 0.0f,
-                         ui::color::night0.with_alpha(0.95f));
     ui::hints(overlay, type, items);
 }
 

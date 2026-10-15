@@ -487,13 +487,31 @@ void hints(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &i
 {
     // Right-aligned at the gutter, 1.6 rem apart, 0.85 rem labels.
     constexpr float kLabel = 17.0f;
-    float x = 1920.0f - kGutter;
+    constexpr float kPad = 28.0f;
+    constexpr float kPillHeight = 56.0f;
+    const auto item_width = [&](const hui::ui::Hint &h)
+    {
+        float width = glyph_width(type, h.button) + 10.0f + type.regular.measure(h.label, kLabel);
+        if (h.second != hui::ui::Button::none)
+            width += glyph_width(type, h.second) + 6.0f;
+        return width;
+    };
+    if (items.empty())
+        return;
+    // A pill in the popups' colours behind the controls: it grows with their
+    // number and with the width of their labels.
+    float total = 2.0f * kPad + 32.0f * static_cast<float>(items.size() - 1);
+    for (const hui::ui::Hint &h : items)
+        total += item_width(h);
+    const Rect pill{1920.0f - kGutter - total, kHintY - kPillHeight * 0.5f, total, kPillHeight};
+    list.shadow({pill.x, pill.y + 8.0f, pill.w, pill.h}, kPillHeight * 0.5f, 30.0f,
+                Color::rgb(0x000000, 0.45f));
+    list.gradient_rect(pill, kPillHeight * 0.5f, Color::rgb(0x242424), Color::rgb(0x151515));
+    list.bordered_rect(pill, kPillHeight * 0.5f, Color{0, 0, 0, 0}, 1.0f, color::line);
+    float x = 1920.0f - kGutter - kPad;
     for (auto it = items.rbegin(); it != items.rend(); ++it)
     {
-        const float label = type.regular.measure(it->label, kLabel);
-        float width = glyph_width(type, it->button) + 10.0f + label;
-        if (it->second != hui::ui::Button::none)
-            width += glyph_width(type, it->second) + 6.0f;
+        const float width = item_width(*it);
         float at = x - width;
         at += glyph(list, type, it->button, at, color::text);
         if (it->second != hui::ui::Button::none)
