@@ -483,7 +483,8 @@ float glyph(DrawList &list, const Type &type, hui::ui::Button button, float x, C
 
 } // namespace
 
-void hints(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &items)
+void hints(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &items,
+           std::uint32_t glass_texture)
 {
     // Right-aligned at the gutter, 1.6 rem apart, 0.85 rem labels.
     constexpr float kLabel = 17.0f;
@@ -498,14 +499,14 @@ void hints(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &i
     };
     if (items.empty())
         return;
-    // A pill in the settings buttons' colour behind the controls: it grows with their
+    // A pill in the game popups' glass behind the controls: it grows with their
     // number and with the width of their labels.
     float total = 2.0f * kPad + 32.0f * static_cast<float>(items.size() - 1);
     for (const hui::ui::Hint &h : items)
         total += item_width(h);
     const Rect pill{1920.0f - kGutter - total, kHintY - kPillHeight * 0.5f, total, kPillHeight};
-    // The settings buttons' translucent white (ButtonKind::secondary).
-    list.rounded_rect(pill, kPillHeight * 0.5f, Color::rgb(0xffffff, 0.1f));
+    // The same frosted glass as the game popups.
+    glass_modal(list, pill, glass_texture, kPillHeight * 0.5f);
     float x = 1920.0f - kGutter - kPad;
     for (auto it = items.rbegin(); it != items.rend(); ++it)
     {

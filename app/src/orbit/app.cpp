@@ -776,7 +776,7 @@ void App::draw(Frame &frame) const
         items = screen().hints();
     if (items.empty())
         return;
-    ui::hints(overlay, type, items);
+    ui::hints(overlay, type, items, frame.glass_texture);
 }
 
 } // namespace orbit

@@ -162,7 +162,8 @@ void icon_heart_filled(DrawList &list, float cx, float cy, float size, Color fil
 void icon_layers(DrawList &list, float cx, float cy, float size, Color ink);
 
 // A hint row in the bottom-right corner, drawn as the browser's footer.
-void hints(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &items);
+void hints(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &items,
+           std::uint32_t glass_texture = 0);
 
 // A value that eases toward a target (focus fades, scrolling, crossfades).
 struct Ease
