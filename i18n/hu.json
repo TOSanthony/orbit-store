@@ -1079,6 +1079,7 @@
   "Use Measure game sizes in Storage": "Használd a Játékméretek mérése lehetőséget a Tárhelyben.",
   "Use application/json.": "Használd az application/json típust.",
   "Use the console IP address or a .local or .home.arpa hostname to access Orbit.": "Az Orbit eléréséhez használd a konzol IP-címét vagy egy .local vagy .home.arpa végződésű gépnevet.",
+  "used": "használt",
   "Uses your TorBox account. Follow preparation in Downloads.": "A TorBox-fiókodat használja. Kövesd az előkészítést a Letöltésekben.",
   "Uses your TorBox account. Preparation may take time; follow it in Downloads.": "A TorBox-fiókodat használja. Az előkészítés időt vehet igénybe; kövesd a Letöltésekben.",
   "Verification cancelled": "Ellenőrzés megszakítva",

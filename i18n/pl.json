@@ -1083,6 +1083,7 @@
   "Use Measure game sizes in Storage": "Użyj opcji Zmierz rozmiary gier w sekcji Pamięć",
   "Use application/json.": "Użyj application/json.",
   "Use the console IP address or a .local or .home.arpa hostname to access Orbit.": "Aby otworzyć Orbit, użyj adresu IP konsoli lub nazwy hosta .local albo .home.arpa.",
+  "used": "zajęte",
   "Uses your TorBox account. Follow preparation in Downloads.": "Używa konta TorBox. Śledź przygotowanie w Pobranych.",
   "Uses your TorBox account. Preparation may take time; follow it in Downloads.": "Używa konta TorBox. Przygotowanie może potrwać; śledź je w Pobranych.",
   "Verification cancelled": "Anulowano weryfikację",

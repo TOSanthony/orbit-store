@@ -1083,6 +1083,7 @@
   "Use Measure game sizes in Storage": "Используйте «Измерить размеры игр» в разделе «Хранилище»",
   "Use application/json.": "Используйте application/json.",
   "Use the console IP address or a .local or .home.arpa hostname to access Orbit.": "Для доступа к Orbit используйте IP-адрес консоли или имя хоста в домене .local или .home.arpa.",
+  "used": "занято",
   "Uses your TorBox account. Follow preparation in Downloads.": "Используется ваш аккаунт TorBox. Следите за подготовкой в разделе загрузок.",
   "Uses your TorBox account. Preparation may take time; follow it in Downloads.": "Используется ваш аккаунт TorBox. Подготовка может занять время; следите за ней в разделе загрузок.",
   "Verification cancelled": "Проверка отменена",

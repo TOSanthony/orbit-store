@@ -1079,6 +1079,7 @@
   "Use Measure game sizes in Storage": "Depolama'da Oyun boyutlarını ölç'ü kullanın",
   "Use application/json.": "application/json kullanın.",
   "Use the console IP address or a .local or .home.arpa hostname to access Orbit.": "Orbit’e erişmek için konsolun IP adresini veya .local ya da .home.arpa uzantılı bir ana bilgisayar adını kullanın.",
+  "used": "kullanılan",
   "Uses your TorBox account. Follow preparation in Downloads.": "TorBox hesabınızı kullanır. Hazırlığı İndirmeler’den takip edin.",
   "Uses your TorBox account. Preparation may take time; follow it in Downloads.": "TorBox hesabınızı kullanır. Hazırlık zaman alabilir; İndirmeler’den takip edin.",
   "Verification cancelled": "Doğrulama iptal edildi",
