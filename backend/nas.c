@@ -114,6 +114,18 @@ void nas_changed_locked(void) {
     pthread_cond_broadcast(&nas.wake);
 }
 
+/* The catalogue refresh button also re-reads the NAS index when My NAS is on. Returns whether a
+ * read was started or is already running. */
+bool nas_refresh_locked(void) {
+    if (!active_locked()) return false;
+    if (!nas.busy && !nas.pending) nas_changed_locked();
+    return true;
+}
+
+bool nas_busy_locked(void) {
+    return nas.busy || nas.pending;
+}
+
 size_t nas_count_locked(void) {
     return orbit.nas_count;
 }

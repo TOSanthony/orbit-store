@@ -159,6 +159,8 @@ bool nas_url_valid(const char *url);
 bool nas_url_allowed(const char *url);
 void nas_origin_set(const char *index_url);
 void nas_changed_locked(void);
+bool nas_refresh_locked(void);
+bool nas_busy_locked(void);
 void nas_status_locked(cJSON *out);
 size_t nas_count_locked(void);
 int nas_start(void);

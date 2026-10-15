@@ -542,7 +542,7 @@ cJSON *catalog_status(void) {
         if (!seen) games++;
     }
     cJSON_AddBoolToObject(o, "available", refresh.started);
-    cJSON_AddBoolToObject(o, "busy", refresh.busy || refresh.pending);
+    cJSON_AddBoolToObject(o, "busy", refresh.busy || refresh.pending || nas_busy_locked());
     cJSON_AddBoolToObject(o, "cached", refresh.cached);
     cJSON_AddNumberToObject(o, "revision", orbit.catalog_revision);
     cJSON_AddNumberToObject(o, "feedVersion", refresh.feed_version);
@@ -558,6 +558,8 @@ cJSON *catalog_status(void) {
 int catalog_refresh(char *error, size_t cap) {
     int code = 202;
     pthread_mutex_lock(&orbit.mutex);
+    /* My NAS has its own index; the same button re-reads it when it is on. */
+    const bool nas_started = nas_refresh_locked();
     if (!refresh.started || refresh.stop || orbit.stop) {
         code = 409; copy_text(error, cap, "Catalogue refresh is available while Orbit is running on your PS5.");
     } else if (refresh.busy || refresh.pending) {
@@ -568,6 +570,12 @@ int catalog_refresh(char *error, size_t cap) {
         refresh.pending = true;
         refresh.error[0] = 0;
         pthread_cond_signal(&refresh.changed);
+    }
+    /* A refusal about the Orbit catalogue (already refreshing, wait, not running) does not hide
+     * that the NAS index was just re-read. */
+    if (nas_started && code != 202) {
+        code = 202;
+        error[0] = 0;
     }
     pthread_mutex_unlock(&orbit.mutex);
     return code;
