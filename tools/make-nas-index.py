@@ -314,7 +314,7 @@ def logo_title(raw: str, title_id: str = "") -> str:
         text = tag.group(0)
         source, alt = re.search(r'src="([^"]*)"', text), re.search(r'alt="([^"]*)"', text)
         if source and alt and re.search(r"/titles/[^/\"]*" + re.escape(title_id) + r"[^/\"]*/logo\.\w+", source.group(1)) and alt.group(1).strip():
-            return " ".join(htmllib.unescape(alt.group(1)).replace("\u2122", "").replace("\u00ae", "").replace("\u00a9", "").split())
+            return " ".join(htmllib.unescape(alt.group(1)).split())
     return ""
 
 
@@ -353,7 +353,7 @@ def prospero_parse(page: str, title_id: str, cdn: str):
     else:
         page_title = ""
     return {
-        "name": clean_text(_text(head.group(1)).replace("\u2122", "").replace("\u00ae", "").strip() if head else "", 60) or clean_text(logo_title(raw, title_id), 60) or clean_text(page_title.replace("\u2122", "").replace("\u00ae", ""), 60),
+        "name": clean_text(_text(head.group(1)).strip() if head else "", 60) or clean_text(logo_title(raw, title_id), 60) or clean_text(page_title, 60),
         "publisher": clean_text(publisher, 60),
         "region": region,
         "icon": icon,
