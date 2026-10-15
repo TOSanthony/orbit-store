@@ -382,6 +382,7 @@
   "Folder transfer identity does not match.": "A mappaátvitel azonosító adatai nem egyeznek.",
   "Format": "Formátum",
   "free after": "szabad utána",
+  "free after install": "szabad a telepítés után",
   "Free after install": "Szabad a telepítés után",
   "Free now": "Jelenleg szabad",
   "From {path}": "Innen: {path}",

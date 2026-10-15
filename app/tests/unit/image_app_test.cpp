@@ -204,12 +204,12 @@ TEST(App, GameDetailsQueuesTheSelectedEditionAndDrive)
     h.settle();
     h.press(Action::confirm); // Download options
     h.frame(Direction::up); // Save to
-    h.frame(Direction::left); // Delivery
-    h.frame(Direction::left); // Source
+    h.frame(Direction::up); // Delivery
+    h.frame(Direction::up); // Source
     h.press(Action::confirm);
     h.frame(Direction::down); // version 1.05
     h.press(Action::confirm); // Return to Source setting
-    h.frame(Direction::right);h.frame(Direction::right); // Save to
+    h.frame(Direction::down);h.frame(Direction::down); // Save to
     h.press(Action::confirm);
     h.frame(Direction::down); // Internal storage
     h.press(Action::confirm);
@@ -303,7 +303,7 @@ TEST(App, BrowserHandoffNeverSubstitutesADisconnectedDrive)
     h.press(Action::confirm); // Disabled primary falls back to Source.
     EXPECT_EQ(opened,0);
     EXPECT_FALSE(h.store.action().busy);
-    h.frame(Direction::right);h.frame(Direction::right); // Save to
+    h.frame(Direction::down);h.frame(Direction::down); // Save to
     h.press(Action::confirm);
     h.press(Action::confirm); // Explicitly select remaining internal drive.
     h.frame(Direction::down);

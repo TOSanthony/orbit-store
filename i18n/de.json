@@ -382,6 +382,7 @@
   "Folder transfer identity does not match.": "Die Kennung der Ordnerübertragung stimmt nicht überein.",
   "Format": "Format",
   "free after": "frei danach",
+  "free after install": "frei nach der Installation",
   "Free after install": "Frei nach der Installation",
   "Free now": "Derzeit frei",
   "From {path}": "Von {path}",

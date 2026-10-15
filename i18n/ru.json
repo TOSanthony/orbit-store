@@ -382,6 +382,7 @@
   "Folder transfer identity does not match.": "Идентификатор передачи папки не совпадает.",
   "Format": "Формат",
   "free after": "свободно после",
+  "free after install": "свободно после установки",
   "Free after install": "Свободно после установки",
   "Free now": "Свободно сейчас",
   "From {path}": "Из {path}",

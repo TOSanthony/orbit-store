@@ -382,82 +382,180 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
     float y = 0;
     if (sheet == Sheet::downloads)
     {
-        const float width = 554;
-        const auto setting = [&](Slot slot,float x,const std::string &label,const std::string &value,const std::string &note)
+        // Cover and title on the left; settings, storage and the download button on the right.
+        constexpr float nx = 570, nw = 1236;
+        float ry = 0;
+        const auto setting = [&](Slot slot,FactIcon icon,const std::string &label,const std::string &value,const std::string &note)
         {
-            const ui::Rect r{x,0,width,128};
+            const ui::Rect r{nx,ry,nw,84};
             const float f = focused && static_cast<int>(out.controls.size()) == focus_ ? 1 : 0;
             out.controls.push_back({slot,0,r,!waiting_,false});
             if (list)
             {
                 ui::focus_ring(*list,r,20,f);ui::surface(*list,r,20,ui::color::field);
-                ui::text(*list,type.regular,label,x+26,36,21,ui::color::text2);
-                ui::text_fit(*list,type.medium,value,x+26,76,26,width-65,ui::color::text);
-                ui::text_fit(*list,type.regular,note,x+26,108,20,width-85,ui::color::text2);
-                const float cx = x + width - 30;
-                list->line(cx-4,57,cx+3,64,2,ui::color::text2);
-                list->line(cx+3,64,cx-4,71,2,ui::color::text2);
+                list->circle(nx+52,ry+42,26,ui::Color::rgb(0xffffff,0.14f));
+                fact_icon(*list,type,icon,nx+52,ry+42,32,ui::color::text);
+                ui::text(*list,type.regular,label,nx+98,ry+31,17,ui::color::text2);
+                const float value_w = std::min(type.medium.measure(value,25),nw-170);
+                ui::text_fit(*list,type.medium,value,nx+98,ry+64,25,nw-170,ui::color::text);
+                if (!note.empty())
+                    ui::text_fit(*list,type.regular,note,nx+98+value_w+14,ry+64,17,nw-170-value_w-14,ui::color::text2);
+                const float cx = nx + nw - 34;
+                list->line(cx-5,ry+35,cx+3,ry+42,2,ui::color::text2);
+                list->line(cx+3,ry+42,cx-5,ry+49,2,ui::color::text2);
             }
+            ry += 96;
         };
-        setting(Slot::source,116,tr("Source"),release.provider + " \xC2\xB7 " + format_label(release),
+        setting(Slot::source,FactIcon::source,tr("Source"),release.provider + " \xC2\xB7 " + format_label(release),
                 release.title_id + (release.version.empty()?"":" \xC2\xB7 v"+release.version) + " \xC2\xB7 " + format_bytes(release.size_bytes));
         if (now.show_download)
         {
-            setting(Slot::delivery,684,tr("Download using"),state.system.zero_enabled ? "Orbit Zero" : torbox_ ? "TorBox" : tr("{provider} directly",{{"provider",release.provider}}),
+            setting(Slot::delivery,FactIcon::download,tr("Download using"),state.system.zero_enabled ? "Orbit Zero" : torbox_ ? "TorBox" : tr("{provider} directly",{{"provider",release.provider}}),
                     state.system.zero_enabled ? "Uses your computer preference" : state.debrid.supports(release) && !torbox_ ? tr("TorBox available") : "");
-            setting(Slot::drive,1252,tr("Save to"),now.drive ? i18n::place(now.drive->label) : tr("Select storage"),
+            setting(Slot::drive,FactIcon::disk,tr("Save to"),now.drive ? i18n::place(now.drive->label) : tr("Select storage"),
                     now.drive ? tr("{size} free",{{"size",format_bytes(now.drive->free_bytes)}}) : "");
         }
-        y=162;
-        const float width_notes=1040;
+        ry -= 96;
+        ry += 84 + 12;
+        if (list)
+        {
+            // Left column: the cover, the title and a few pills.
+            const ui::Rect cover{116,0,400,400};
+            list->shadow({cover.x,cover.y+10,cover.w,cover.h},ui::kArtRadius,28,ui::Color::rgb(0x000000,0.45f));
+            draw_cover(ctx_,*list,*game,cover,ui::kArtRadius);
+            ui::text_fit(*list,type.semibold,game->title,116,446,28,400,ui::color::text);
+            std::vector<std::string> pills{release.platform=="ps4"?"PS4":"PS5"};
+            if (!release.version.empty()) pills.push_back("v"+release.version);
+            pills.push_back(format_bytes(release.size_bytes));
+            float px = 116;
+            for (const auto &pill : pills)
+            {
+                const float w = type.medium.measure(pill,17)+36;
+                if (px+w > 516) break;
+                list->rounded_rect({px,466,w,40},20,ui::Color::rgb(0xffffff,0.16f));
+                ui::text(*list,type.medium,pill,px+w*0.5f,493,17,ui::color::text,ui::Align::center);
+                px += w + 8;
+            }
+        }
+        if (now.show_download && now.drive && list)
+        {
+            const Drive &drive=*now.drive;
+            const ui::Rect card_rect{nx,ry,nw,150};
+            ui::surface(*list,card_rect,20,ui::color::field);
+            if(drive.total_bytes>0)
+            {
+                // The drive as a ring: what is used or queued (white), this game
+                // (green, red when it does not fit) and what stays free.
+                const double total=drive.total_bytes;
+                const double game_bytes=release.size_bytes+release.extracted_bytes;
+                const double queued=std::max(0.0,total-drive.projected_free_bytes-(now.plan.planned?game_bytes:0.0));
+                const double room=std::max(0.0,total-queued);
+                const double game_shown=std::min(game_bytes,room);
+                const bool fits=now.plan.after>=0;
+                const float used_part=static_cast<float>(std::clamp(queued/total,0.0,1.0));
+                const float game_part=static_cast<float>(std::clamp(game_shown/total,0.0,1.0));
+                constexpr float radius=54,thickness=12,tau=6.2831853f;
+                const float cy=ry+75,cx=nx+28+radius+6,right=nx+nw-28;
+                const ui::Color game_color=fits?ui::color::fits:ui::color::short_of;
+                const struct { std::string label; double bytes; ui::Color dot; } rows[]={
+                    {tr("Used and queued"),queued,ui::color::text},
+                    {tr("This game"),game_bytes,game_color},
+                    {fits?tr("Free after install"):tr("Short by"),std::abs(now.plan.after),fits?ui::Color::rgb(0xffffff,0.35f):ui::color::short_of}};
+                float values_w=0,labels_w=0;
+                for(const auto &row:rows)
+                {
+                    values_w=std::max(values_w,type.medium.measure(format_bytes(row.bytes),20));
+                    labels_w=std::max(labels_w,type.regular.measure(row.label,20));
+                }
+                const float label_x=right-values_w-40-labels_w;
+                const float dot_x=label_x-24;
+                list->ring(cx,cy,radius,thickness,ui::Color::rgb(0xffffff,0.27f));
+                if(used_part>0.0f)list->arc(cx,cy,radius,thickness,0.0f,used_part*tau,ui::color::text,true);
+                if(game_part>0.0f)list->arc(cx,cy,radius,thickness,(used_part+0.006f)*tau,game_part*tau,game_color,true);
+                const float text_x=cx+radius+thickness+36;
+                const std::string centre=format_bytes(std::abs(now.plan.after));
+                const float size=ui::fit_size(type.semibold,centre,30,18,std::max(60.0f,dot_x-40-text_x));
+                ui::text(*list,type.semibold,centre,text_x,cy+2,size,fits?ui::color::text:ui::color::short_of);
+                ui::text(*list,type.regular,fits?tr("free after install"):tr("short"),text_x,cy+30,17,ui::color::text2);
+                for(int i=0;i<3;++i)
+                {
+                    const float y=cy-40+static_cast<float>(i)*40;
+                    list->circle(dot_x,y,6,rows[i].dot);
+                    ui::text(*list,type.regular,rows[i].label,label_x,y+7,20,ui::color::text2);
+                    ui::text(*list,type.medium,format_bytes(rows[i].bytes),right,y+7,20,ui::color::text,ui::Align::right);
+                    if(i<2)list->rounded_rect({dot_x-6,y+20,right-dot_x+6,1},0,ui::color::line);
+                }
+            }
+            else
+            {
+                ui::text_fit(*list,type.regular,now.plan.planned?tr("After your queue"):tr("After queue + this download"),nx+28,ry+82,22,nw-420,ui::color::text2);
+                ui::text(*list,type.medium,now.plan.after<0?tr("{size} short",{{"size",format_bytes(-now.plan.after)}}):format_bytes(now.plan.after),nx+nw-28,ry+82,24,ui::color::text,ui::Align::right);
+            }
+        }
+        if (now.show_download && now.drive) ry += 150 + 24;
+        {
+            // The download button with its explanation beside it.
+            const std::string label=primary_label(release,download_again_,waiting_,now.collection,state,torbox_);
+            const ui::Rect button{nx,ry,520,84};
+            control(Slot::primary,0,button,label,primary_enabled(release,now));
+            if (list)
+            {
+                const float label_w=type.medium.measure(label,23);
+                ui::icon_download(*list,button.cx()-label_w*0.5f-28,button.cy(),26,ui::color::text);
+                ui::paragraph(*list,type.regular,one_per_line(tr("Saves a file to your console. Installation and launching are separate.")),
+                              nx+520+32,ry+34,17,nw-552,24,ui::color::text3,3);
+            }
+            ry += 84 + 28;
+        }
+        y=ry;
+        const float width_notes=1180;
         const float notes_top=y;
         if (!release.compression.empty()) {
-            paragraph(one_per_line(tr("Compressed download. Orbit checks the files and available space before extraction. A password may be required.")),116,y,width_notes,20); y+=16;
+            paragraph(one_per_line(tr("Compressed download. Orbit checks the files and available space before extraction. A password may be required.")),nx,y,width_notes,20); y+=16;
         }
-        if (!release.notes.empty()) { paragraph(release.notes,116,y,width_notes,20); y+=16; }
+        if (!release.notes.empty()) { paragraph(release.notes,nx,y,width_notes,20); y+=16; }
         if (now.show_download && release.browser_available && !torbox_)
         {
-            paragraph(tr("{provider}: start here",{{"provider",release.provider}}),116,y,width_notes,25,ui::color::text);y+=16;
-            paragraph(tr("1. Select Open {provider} on PS5. Your selected game and drive are kept.",{{"provider",release.provider}}),116,y,width_notes,20);y+=12;
+            paragraph(tr("{provider}: start here",{{"provider",release.provider}}),nx,y,width_notes,25,ui::color::text);y+=16;
+            paragraph(tr("1. Select Open {provider} on PS5. Your selected game and drive are kept.",{{"provider",release.provider}}),nx,y,width_notes,20);y+=12;
             paragraph(release.source_id=="akirabox"
                 ? tr("Complete verification on AkiraBox, then wait for Orbit to check the download link.")
                 : release.source_id=="datanodes"
                 ? tr("Scroll to the bottom, select Continue to Download, then Free Download. Wait for the countdown and select Start Download.")
-                : tr("2. On {provider}, complete any verification and select Download.",{{"provider",release.provider}}),116,y,width_notes,20);y+=12;
-            paragraph(tr("3. Return to the Orbit Store app. Orbit checks the file and adds it to Downloads."),116,y,width_notes,20);y+=16;
+                : tr("2. On {provider}, complete any verification and select Download.",{{"provider",release.provider}}),nx,y,width_notes,20);y+=12;
+            paragraph(tr("3. Return to the Orbit Store app. Orbit checks the file and adds it to Downloads."),nx,y,width_notes,20);y+=16;
             if (!state.have_browser || !state.browser.available)
             {
                 paragraph(state.browser_error.empty() ? tr("Provider verification is available on the PS5 only.")
-                                                     : std::string(tr(std::string_view(state.browser_error))),116,y,width_notes,20);
+                                                     : std::string(tr(std::string_view(state.browser_error))),nx,y,width_notes,20);
                 y+=12;
             }
         }
         if(now.show_download && release.browser_available && !torbox_)
-            out.controls.push_back({Slot::reading,0,{116,notes_top,width_notes,y-notes_top},true,false});
+            out.controls.push_back({Slot::reading,0,{nx,notes_top,520,y-notes_top},true,false});
         if (now.show_download && (torbox_ || (state.debrid.connected && !state.debrid.supports(release))))
-        { paragraph(delivery_note(release),116,y,width_notes,21);y+=18; }
+        { paragraph(delivery_note(release),nx,y,width_notes,21);y+=18; }
         if (now.collection.library)
         {
             paragraph(now.collection.kind == CollectionState::Kind::related
                 ? tr("A related copy is in Library. Its format, filename or version does not confirm a match for this option.")
-                : tr("In your Library on {location}.",{{"location",i18n::place(now.collection.library->location)}}),116,y,width_notes);
+                : tr("In your Library on {location}.",{{"location",i18n::place(now.collection.library->location)}}),nx,y,width_notes);
             y+=16;
             if (now.collection.kind == CollectionState::Kind::related)
-            { control(Slot::related,0,{116,y,450,58},tr("View related copy"));y+=80; }
+            { control(Slot::related,0,{nx,y,450,58},tr("View related copy"));y+=80; }
         }
         if (!download_again_ && (now.collection.kind == CollectionState::Kind::library ||
             (now.collection.job && now.collection.job->status == "complete")))
-        { control(Slot::again,0,{116,y,450,58},tr("Download another copy"));y+=80; }
+        { control(Slot::again,0,{nx,y,450,58},tr("Download another copy"));y+=80; }
         if (now.collection.job && now.collection.job->status == "complete")
-        { paragraph(tr("Download history records a completed transfer. Find it in Library to check its current location."),116,y,width_notes,20);y+=16; }
+        { paragraph(tr("Download history records a completed transfer. Find it in Library to check its current location."),nx,y,width_notes,20);y+=16; }
         if (now.show_download && (!now.drive || !now.plan.enough))
         {
             paragraph(!now.drive ? tr("Connect a writable drive to your PS5.") :
-                tr("Not enough space after unfinished downloads. Free space or cancel an item in Downloads."),116,y,width_notes);
+                tr("Not enough space after unfinished downloads. Free space or cancel an item in Downloads."),nx,y,width_notes);
             y+=16;
         }
-        paragraph(error_,116,y,width_notes);
-        control(Slot::primary,0,{1252,842,554,84},"",primary_enabled(release,now),true,true);
+        paragraph(error_,nx,y,width_notes);
     }
     else if (sheet == Sheet::source)
     {
@@ -808,67 +906,6 @@ void GamePage::draw(Frame &frame,bool focused) const
     list.push_transform(1,0,0,0,kBodyTop-sheet_scroll_.value);
     const auto where=compose(&list,sheet_,focused);
     list.pop_transform();list.pop_clip();
-    if(sheet_==Sheet::downloads)
-    {
-        // No darker plate here: the popup keeps one even colour.
-        if(now.show_download && now.drive)
-        {
-            const Drive &drive=*now.drive;
-            if(drive.total_bytes>0)
-            {
-                // The drive as a ring: what is used or queued (white), this game
-                // (green, red when it does not fit) and what stays free.
-                const double total=drive.total_bytes;
-                const double game_bytes=release.size_bytes+release.extracted_bytes;
-                const double queued=std::max(0.0,total-drive.projected_free_bytes-(now.plan.planned?game_bytes:0.0));
-                const double room=std::max(0.0,total-queued);
-                const double game_shown=std::min(game_bytes,room);
-                const bool fits=now.plan.after>=0;
-                const float used_part=static_cast<float>(std::clamp(queued/total,0.0,1.0));
-                const float game_part=static_cast<float>(std::clamp(game_shown/total,0.0,1.0));
-                constexpr float cy=699,radius=66,thickness=13,tau=6.2831853f,right=1806;
-                const ui::Color game_color=fits?ui::color::fits:ui::color::short_of;
-                const struct { std::string label; double bytes; ui::Color dot; } rows[]={
-                    {tr("Used and queued"),queued,ui::color::text},
-                    {tr("This game"),game_bytes,game_color},
-                    {fits?tr("Free after install"):tr("Short by"),std::abs(now.plan.after),fits?ui::Color::rgb(0xffffff,0.35f):ui::color::short_of}};
-                // Built from the right: the sizes, then each label in full, then
-                // the ring, which moves left as far as the text needs.
-                float values_w=0,labels_w=0;
-                for(const auto &row:rows)
-                {
-                    values_w=std::max(values_w,type.medium.measure(format_bytes(row.bytes),19));
-                    labels_w=std::max(labels_w,type.regular.measure(row.label,18));
-                }
-                const float label_x=right-values_w-24-labels_w;
-                const float dot_x=label_x-19;
-                const float cx=dot_x-24-radius;
-                const ui::Color game_arc=game_color;
-                list.ring(cx,cy,radius,thickness,ui::Color::rgb(0xffffff,0.27f));
-                if(used_part>0.0f)list.arc(cx,cy,radius,thickness,0.0f,used_part*tau,ui::color::text,true);
-                if(game_part>0.0f)list.arc(cx,cy,radius,thickness,(used_part+0.006f)*tau,game_part*tau,game_arc,true);
-                const std::string centre=format_bytes(std::abs(now.plan.after));
-                const float size=ui::fit_size(type.semibold,centre,21,14,94);
-                ui::text(list,type.semibold,centre,cx,cy-1,size,fits?ui::color::text:ui::color::short_of,ui::Align::center);
-                ui::text(list,type.regular,fits?tr("free after"):tr("short"),cx,cy+22,14,ui::color::text2,ui::Align::center);
-                for(int i=0;i<3;++i)
-                {
-                    const float y=cy-46+static_cast<float>(i)*46;
-                    list.circle(dot_x,y,7,rows[i].dot);
-                    ui::text(list,type.regular,rows[i].label,label_x,y+6,18,ui::color::text2);
-                    ui::text(list,type.medium,format_bytes(rows[i].bytes),right,y+7,19,ui::color::text,ui::Align::right);
-                    if(i<2)list.rounded_rect({dot_x-7,y+23,right-dot_x+7,1},0,ui::color::line);
-                }
-            }
-            else
-            {
-                list.rounded_rect({1252,765,554,1},0,ui::color::line);
-                ui::text_fit(list,type.regular,now.plan.planned?tr("After your queue"):tr("After queue + this download"),1252,808,21,370,ui::color::text2);
-                ui::text(list,type.medium,now.plan.after<0?tr("{size} short",{{"size",format_bytes(-now.plan.after)}}):format_bytes(now.plan.after),1806,808,22,ui::color::text,ui::Align::right);
-            }
-        }
-        ui::paragraph(list,type.regular,one_per_line(tr("Saves a file to your console. Installation and launching are separate.")),1252,958,17,554,24,ui::color::text3,3);
-    }
     for(std::size_t i=0;i<where.controls.size();++i)
     {
         const auto &c=where.controls[i];if(!c.fixed)continue;

@@ -382,6 +382,7 @@
   "Folder transfer identity does not match.": "Klasör aktarımı kimliği eşleşmiyor.",
   "Format": "Biçim",
   "free after": "sonra boş",
+  "free after install": "kurulumdan sonra boş",
   "Free after install": "Kurulumdan sonra boş",
   "Free now": "Şu an boş",
   "From {path}": "Kaynak: {path}",

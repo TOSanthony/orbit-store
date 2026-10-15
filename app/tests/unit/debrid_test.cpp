@@ -144,12 +144,13 @@ struct DebridHarness
         input(Direction::none,true); // Review
         EXPECT_FALSE(store.action().busy);
         input(Direction::up); // Save to
-        input(Direction::left); // Delivery
+        input(Direction::up); // Delivery
         input(Direction::none,true);
         ASSERT_TRUE(page.modal());
         input(Direction::down); // TorBox
         input(Direction::none,true); // Returns to Delivery setting
         EXPECT_TRUE(page.modal());
+        input(Direction::down); // Save to
         input(Direction::down); // Primary
 
     }

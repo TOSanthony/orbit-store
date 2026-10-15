@@ -382,6 +382,7 @@
   "Folder transfer identity does not match.": "L’identité du transfert de dossier ne correspond pas.",
   "Format": "Format",
   "free after": "libre après",
+  "free after install": "libre après l’installation",
   "Free after install": "Libre après l’installation",
   "Free now": "Libre actuellement",
   "From {path}": "Depuis {path}",
