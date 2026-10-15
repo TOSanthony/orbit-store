@@ -1414,7 +1414,9 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
     if (in_content_ && !all.empty())
     {
         const Control &here = all[static_cast<std::size_t>(at)];
-        if (here.row == all.back().row)
+        if (here.row == all.front().row && all.front().row != all.back().row)
+            target = 0.0f; // the first row shows the heading and text above it too
+        else if (here.row == all.back().row)
             target = limit; // the last row shows what follows it too
         else if (here.rect.y - target < kViewTop + 60.0f)
             target = here.rect.y - (kViewTop + 60.0f);
