@@ -417,12 +417,18 @@ void DiscoverScreen::draw(Frame &frame, bool focused) const
         list.pop_transform();
         list.pop_opacity();
         list.push_opacity(hero_alpha);
-        ui::button(list, type, {left, button_top - scroll, 234.0f, 60.0f}, tr("View game"),
-                   ui::ButtonKind::light, button_focus_.value);
+        // The same glass look as the buttons on the game page: a translucent
+        // fill and a thin white edge.
+        const ui::Rect view{left, button_top - scroll, 234.0f, 60.0f};
+        ui::button(list, type, view, tr("View game"), ui::ButtonKind::secondary,
+                   button_focus_.value);
+        list.bordered_rect(view, 30.0f, ui::Color{0, 0, 0, 0}, 1.0f,
+                           ui::color::text.with_alpha(0.35f));
         const ui::Rect favourite{left + 252.0f, button_top - scroll, 60.0f, 60.0f};
         ui::focus_ring(list, favourite, 30.0f, favourite_focus_.value);
-        list.bordered_rect(favourite, 30.0f, ui::color::night1.with_alpha(0.45f), 1.5f,
-                           ui::color::text2.with_alpha(0.6f));
+        list.rounded_rect(favourite, 30.0f, ui::Color::rgb(0xffffff, 0.1f));
+        list.bordered_rect(favourite, 30.0f, ui::Color{0, 0, 0, 0}, 1.0f,
+                           ui::color::text.with_alpha(0.35f));
         if (state.favourite(game->id))
             ui::icon_heart_filled(list, favourite.cx(), favourite.cy(), 25.0f, ui::color::heart);
         else
