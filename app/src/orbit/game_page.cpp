@@ -209,7 +209,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             ? std::string(game_category(*game)==Category::dlc ? tr("Choose a DLC") : tr("Choose an update"))
             : primary_label(release, download_again_, waiting_, now.collection, state, torbox_);
         const float button_width = std::clamp(type.medium.measure(label, 23) + 76, 460.0f, 800.0f);
-        control(Slot::primary, 0, {kLeft,y,button_width,88}, label, !waiting_, false, true);
+        control(Slot::primary, 0, {kLeft,y,button_width,88}, label, !waiting_, false, false);
         for (int i=0;i<2;++i)
         {
             const ui::Rect r{kLeft + button_width + 24 + i * 108.0f,y,88,88};
