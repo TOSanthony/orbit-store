@@ -13,6 +13,14 @@ namespace
 constexpr float kBodyTop = 430.0f;
 constexpr float kBodyBottom = 978.0f;
 constexpr float kLeft = 70.0f;
+// Each sentence on its own line ("A. B." becomes "A.\nB.").
+std::string one_per_line(std::string text)
+{
+    for (std::size_t at = text.find(". "); at != std::string::npos; at = text.find(". ", at + 1))
+        text.replace(at + 1, 1, "\n");
+    return text;
+}
+
 std::string primary_label(const Release &release, bool again, bool waiting,
                          const CollectionState &collection, const Snapshot &state, bool torbox)
 {
@@ -272,7 +280,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         const float width_notes=1040;
         const float notes_top=y;
         if (!release.compression.empty()) {
-            paragraph(tr("Compressed download. Orbit checks the files and available space before extraction. A password may be required."),116,y,width_notes,20); y+=16;
+            paragraph(one_per_line(tr("Compressed download. Orbit checks the files and available space before extraction. A password may be required.")),116,y,width_notes,20); y+=16;
         }
         if (!release.notes.empty()) { paragraph(release.notes,116,y,width_notes,20); y+=16; }
         if (now.show_download && release.browser_available && !torbox_)
@@ -673,26 +681,38 @@ void GamePage::draw(Frame &frame,bool focused) const
                 const bool fits=now.plan.after>=0;
                 const float used_part=static_cast<float>(std::clamp(queued/total,0.0,1.0));
                 const float game_part=static_cast<float>(std::clamp(game_shown/total,0.0,1.0));
-                constexpr float cx=1330,cy=699,radius=66,thickness=13,tau=6.2831853f;
+                constexpr float cy=699,radius=66,thickness=13,tau=6.2831853f,right=1806;
                 const ui::Color game_color=fits?ui::color::fits:ui::color::short_of;
-                list.ring(cx,cy,radius,thickness,ui::Color::rgb(0xffffff,0.27f));
-                if(used_part>0.0f)list.arc(cx,cy,radius,thickness,0.0f,used_part*tau,ui::color::text,true);
-                if(game_part>0.0f)list.arc(cx,cy,radius,thickness,(used_part+0.006f)*tau,game_part*tau,game_color,true);
-                const std::string centre=format_bytes(std::abs(now.plan.after));
-                const float size=ui::fit_size(type.semibold,centre,21,14,94);
-                ui::text(list,type.semibold,centre,cx,cy-1,size,fits?ui::color::text:ui::color::short_of,ui::Align::center);
-                ui::text(list,type.regular,fits?tr("free after"):tr("short"),cx,cy+22,14,ui::color::text2,ui::Align::center);
                 const struct { std::string label; double bytes; ui::Color dot; } rows[]={
                     {tr("Used and queued"),queued,ui::color::text},
                     {tr("This game"),game_bytes,game_color},
                     {fits?tr("Free after install"):tr("Short by"),std::abs(now.plan.after),fits?ui::Color::rgb(0xffffff,0.35f):ui::color::short_of}};
+                // Built from the right: the sizes, then each label in full, then
+                // the ring, which moves left as far as the text needs.
+                float values_w=0,labels_w=0;
+                for(const auto &row:rows)
+                {
+                    values_w=std::max(values_w,type.medium.measure(format_bytes(row.bytes),19));
+                    labels_w=std::max(labels_w,type.regular.measure(row.label,18));
+                }
+                const float label_x=right-values_w-24-labels_w;
+                const float dot_x=label_x-19;
+                const float cx=dot_x-24-radius;
+                const ui::Color game_arc=game_color;
+                list.ring(cx,cy,radius,thickness,ui::Color::rgb(0xffffff,0.27f));
+                if(used_part>0.0f)list.arc(cx,cy,radius,thickness,0.0f,used_part*tau,ui::color::text,true);
+                if(game_part>0.0f)list.arc(cx,cy,radius,thickness,(used_part+0.006f)*tau,game_part*tau,game_arc,true);
+                const std::string centre=format_bytes(std::abs(now.plan.after));
+                const float size=ui::fit_size(type.semibold,centre,21,14,94);
+                ui::text(list,type.semibold,centre,cx,cy-1,size,fits?ui::color::text:ui::color::short_of,ui::Align::center);
+                ui::text(list,type.regular,fits?tr("free after"):tr("short"),cx,cy+22,14,ui::color::text2,ui::Align::center);
                 for(int i=0;i<3;++i)
                 {
                     const float y=cy-46+static_cast<float>(i)*46;
-                    list.circle(1434,y,7,rows[i].dot);
-                    ui::text_fit(list,type.regular,rows[i].label,1453,y+6,18,200,ui::color::text2);
-                    ui::text(list,type.medium,format_bytes(rows[i].bytes),1806,y+7,19,ui::color::text,ui::Align::right);
-                    if(i<2)list.rounded_rect({1434,y+23,372,1},0,ui::color::line);
+                    list.circle(dot_x,y,7,rows[i].dot);
+                    ui::text(list,type.regular,rows[i].label,label_x,y+6,18,ui::color::text2);
+                    ui::text(list,type.medium,format_bytes(rows[i].bytes),right,y+7,19,ui::color::text,ui::Align::right);
+                    if(i<2)list.rounded_rect({dot_x-7,y+23,right-dot_x+7,1},0,ui::color::line);
                 }
             }
             else
@@ -702,7 +722,7 @@ void GamePage::draw(Frame &frame,bool focused) const
                 ui::text(list,type.medium,now.plan.after<0?tr("{size} short",{{"size",format_bytes(-now.plan.after)}}):format_bytes(now.plan.after),1806,808,22,ui::color::text,ui::Align::right);
             }
         }
-        ui::paragraph(list,type.regular,tr("Saves a file to your console. Installation and launching are separate."),1252,958,17,554,24,ui::color::text3,3);
+        ui::paragraph(list,type.regular,one_per_line(tr("Saves a file to your console. Installation and launching are separate.")),1252,958,17,554,24,ui::color::text3,3);
     }
     for(std::size_t i=0;i<where.controls.size();++i)
     {
