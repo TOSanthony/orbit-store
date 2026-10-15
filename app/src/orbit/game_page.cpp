@@ -335,11 +335,38 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         if (!game->tagline.empty()) y += 15;
         paragraph(game->description, kLeft, y, std::min(width, type.regular.measure("0", 22) * 54), 22);
         y += 24;
-        std::string meta = release.provider + " \xC2\xB7 " + format_label(release) + " \xC2\xB7 " +
-                           format_bytes(release.size_bytes) + " \xC2\xB7 " + (release.platform == "ps4" ? "PS4" : "PS5");
-        if (!game->genre.empty()) meta += " \xC2\xB7 " + i18n::genre(game->genre);
-        if (!game->release_date.empty()) meta += " \xC2\xB7 " + game->release_date.substr(0, 4);
-        paragraph(meta, kLeft, y, width, 22);
+        // Server, format, size and platform as pills shaped like the download button.
+        {
+            const struct { FactIcon icon; std::string text; } pills[] = {
+                {FactIcon::source,release.provider},
+                {FactIcon::format,format_label(release)},
+                {FactIcon::download,format_bytes(release.size_bytes)},
+                {FactIcon::platform,release.platform == "ps4" ? "PS4" : "PS5"}};
+            float px = kLeft, py = y + 6;
+            for (const auto &pill : pills)
+            {
+                if (pill.text.empty()) continue;
+                const float text_w = type.medium.measure(pill.text, 23);
+                const float w = 22 + 32 + 12 + text_w + 28;
+                if (px > kLeft && px + w > kLeft + 1000) { px = kLeft; py += 76; }
+                if (list)
+                {
+                    const ui::Rect r{px,py,w,64};
+                    list->rounded_rect(r,32,ui::Color::rgb(0xffffff,0.157f));
+                    list->bordered_rect(r,32,ui::Color{0,0,0,0},1,ui::color::text.with_alpha(0.35f));
+                    fact_icon(*list,type,pill.icon,px+22+16,r.cy(),36,ui::color::text);
+                    ui::text(*list,type.medium,pill.text,px+22+32+12,r.cy()+8,23,ui::color::text);
+                }
+                px += w + 12;
+            }
+            y = py + 64 + 24;
+        }
+        {
+            std::string meta;
+            if (!game->genre.empty()) meta = i18n::genre(game->genre);
+            if (!game->release_date.empty()) meta += (meta.empty() ? "" : " \xC2\xB7 ") + game->release_date.substr(0, 4);
+            paragraph(meta, kLeft, y, width, 22);
+        }
         y = std::max(830.0f, y + 60);
         const std::string label = choosing(*game)
             ? std::string(game_category(*game)==Category::dlc ? tr("Choose a DLC") : tr("Choose an update"))
