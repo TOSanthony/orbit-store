@@ -21,6 +21,134 @@ std::string one_per_line(std::string text)
     return text;
 }
 
+
+// ---- the badges of "About this game" ----
+enum class FactIcon { platform, genre, calendar, publisher, download, disk, globe, version, format, source, title_id };
+
+void fact_icon(hui::gfx::DrawList &list, const ui::Type &type, FactIcon icon, float cx, float cy,
+               float size, ui::Color ink)
+{
+    const float k = size / 40.0f;
+    const float t = 2.4f * k;
+    const auto line = [&](float x1, float y1, float x2, float y2, float w = 0.0f)
+    { list.line(cx + x1 * k, cy + y1 * k, cx + x2 * k, cy + y2 * k, w > 0 ? w * k : t, ink); };
+    const auto box = [&](float x, float y, float w, float h, float radius)
+    {
+        list.bordered_rect({cx + x * k, cy + y * k, w * k, h * k}, radius * k, ui::Color{0, 0, 0, 0}, t, ink);
+    };
+    const auto dot = [&](float x, float y, float r) { list.circle(cx + x * k, cy + y * k, r * k, ink); };
+    // An elliptical arc as a polyline, angles in radians from the right, clockwise.
+    const auto arc = [&](float x, float y, float rx, float ry, float from, float to)
+    {
+        constexpr int kSteps = 20;
+        float px = x + rx * std::cos(from), py = y + ry * std::sin(from);
+        for (int i = 1; i <= kSteps; ++i)
+        {
+            const float a = from + (to - from) * static_cast<float>(i) / kSteps;
+            const float nx = x + rx * std::cos(a), ny = y + ry * std::sin(a);
+            line(px, py, nx, ny);
+            px = nx;
+            py = ny;
+        }
+    };
+    constexpr float kPi = 3.14159265f;
+    switch (icon)
+    {
+    case FactIcon::platform:
+        box(-17, -12, 34, 24, 7);
+        ui::text(list, type.semibold, "PS5", cx, cy + 4.5f * k, 13.0f * k, ink, ui::Align::center);
+        break;
+    case FactIcon::genre:
+        box(-18, -9, 36, 20, 10);
+        line(-11, 0, -5, 0);
+        line(-8, -3, -8, 3);
+        dot(8, -2, 1.8f);
+        dot(12, 2, 1.8f);
+        break;
+    case FactIcon::calendar:
+        box(-14, -12, 28, 26, 5);
+        line(-14, -4, 14, -4, 2.2f);
+        line(-7, -16, -7, -9);
+        line(7, -16, 7, -9);
+        for (int i = 0; i < 3; ++i) dot(-7.0f + 7.0f * static_cast<float>(i), 5, 1.4f);
+        break;
+    case FactIcon::publisher:
+    {
+        dot(0, -6, 6);
+        float xy[34];
+        for (int i = 0; i < 17; ++i)
+        {
+            const float a = kPi + kPi * static_cast<float>(i) / 16.0f;
+            xy[i * 2] = cx + 13.0f * k * std::cos(a);
+            xy[i * 2 + 1] = cy + 14.0f * k + 13.0f * k * std::sin(a);
+        }
+        list.polygon(xy, 17, ink);
+        break;
+    }
+    case FactIcon::download:
+        line(0, -14, 0, 4, 2.6f);
+        line(-7, -3, 0, 4, 2.6f);
+        line(7, -3, 0, 4, 2.6f);
+        line(-14, 4, -14, 13, 2.6f);
+        line(-14, 13, 14, 13, 2.6f);
+        line(14, 13, 14, 4, 2.6f);
+        break;
+    case FactIcon::disk:
+        arc(0, -8, 12, 4.5f, 0.0f, 2.0f * kPi);
+        line(-12, -8, -12, 8);
+        line(12, -8, 12, 8);
+        arc(0, 8, 12, 4.5f, 0.0f, kPi);
+        arc(0, 0, 12, 4.5f, 0.0f, kPi);
+        break;
+    case FactIcon::globe:
+        list.ring(cx, cy, 15 * k, t, ink);
+        arc(0, 0, 6.5f, 15, 0.0f, 2.0f * kPi);
+        line(-15, 0, 15, 0, 2.0f);
+        line(-12, -8, 12, -8, 2.0f);
+        line(-12, 8, 12, 8, 2.0f);
+        break;
+    case FactIcon::version:
+        line(-14, -3, -3, -14);
+        line(-3, -14, 14, -14);
+        line(14, -14, 14, 3);
+        line(14, 3, 3, 14);
+        line(3, 14, -14, -3);
+        dot(7, -7, 2);
+        break;
+    case FactIcon::format:
+        line(0, -14, 14, -7);
+        line(14, -7, 14, 7);
+        line(14, 7, 0, 14);
+        line(0, 14, -14, 7);
+        line(-14, 7, -14, -7);
+        line(-14, -7, 0, -14);
+        line(-14, -7, 0, 0, 2.2f);
+        line(0, 0, 14, -7, 2.2f);
+        line(0, 0, 0, 14, 2.2f);
+        break;
+    case FactIcon::source:
+    {
+        dot(-6, 3, 7);
+        dot(3, -3, 9);
+        dot(10, 4, 6);
+        list.rounded_rect({cx - 6 * k, cy + 3 * k, 16 * k, 7 * k}, 0, ink);
+        const ui::Color cut = ui::color::night3;
+        line(0, -2, 0, 5, 2.4f);
+        list.line(cx, cy - 2 * k, cx, cy + 5 * k, 2.4f * k, cut);
+        float tri[6] = {cx - 4.5f * k, cy + 3.5f * k, cx + 4.5f * k, cy + 3.5f * k, cx, cy + 8.5f * k};
+        list.polygon(tri, 3, cut);
+        break;
+    }
+    case FactIcon::title_id:
+        box(-16, -11, 32, 22, 5);
+        list.ring(cx - 8 * k, cy - 1 * k, 3.4f * k, 2.0f * k, ink);
+        line(-13, 7, -3, 7, 2.0f);
+        line(1, -4, 11, -4, 2.0f);
+        line(1, 2, 9, 2, 2.0f);
+        break;
+    }
+}
+
 std::string primary_label(const Release &release, bool again, bool waiting,
                          const CollectionState &collection, const Snapshot &state, bool torbox)
 {
@@ -377,32 +505,45 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
     }
     else if (sheet == Sheet::about)
     {
-        paragraph(game->description,116,y,1650,25);y+=30;
-        std::vector<std::pair<std::string,std::string>> facts;
-        if(!game->publisher.empty())facts.emplace_back(tr("Publisher"),game->publisher);
-        if(!game->release_date.empty())facts.emplace_back(tr("Release date"),format_date(game->release_date));
-        if(!game->genre.empty())facts.emplace_back(tr("Genre"),i18n::genre(game->genre));
-        facts.emplace_back(tr("Format"),format_label(release));
-        facts.emplace_back(tr("Title ID"),release.title_id);
-        facts.emplace_back(tr("Source"),release.provider);
-        if(!release.version.empty())facts.emplace_back(tr("Version"),release.version);
-        if(!release.region.empty())facts.emplace_back(tr("Region"),release.region);
-        facts.emplace_back(release.compression.empty()?tr("Download size"):tr("Compressed size"),format_bytes(release.size_bytes));
-        if(!release.compression.empty() && release.extracted_bytes > 0)facts.emplace_back(tr("Size after extracting"),format_bytes(release.extracted_bytes));
-        for(std::size_t first=0;first<facts.size();first+=3)
+        paragraph(game->description,116,y,1650,25);y+=40;
+        struct Fact { FactIcon icon; std::string value; std::string label; };
+        std::vector<Fact> facts;
+        facts.push_back({FactIcon::platform,release.platform=="ps4"?"PS4":"PS5",tr("Platform")});
+        if(!game->genre.empty())facts.push_back({FactIcon::genre,i18n::genre(game->genre),tr("Genre")});
+        if(!game->release_date.empty())facts.push_back({FactIcon::calendar,format_date(game->release_date),tr("Release date")});
+        if(!game->publisher.empty())facts.push_back({FactIcon::publisher,game->publisher,tr("Publisher")});
+        facts.push_back({FactIcon::download,format_bytes(release.size_bytes),tr("Download size")});
+        if(!release.compression.empty() && release.extracted_bytes > 0)
+            facts.push_back({FactIcon::disk,format_bytes(release.extracted_bytes),tr("Size on disk")});
+        if(!release.region.empty())facts.push_back({FactIcon::globe,release.region,tr("Region")});
+        if(!release.version.empty())facts.push_back({FactIcon::version,release.version,tr("Version")});
+        facts.push_back({FactIcon::format,format_label(release),tr("Format")});
+        facts.push_back({FactIcon::source,release.provider,tr("Source")});
+        if(!release.title_id.empty())facts.push_back({FactIcon::title_id,release.title_id,tr("Title ID")});
+        // The cover on the left, the facts in two columns on the right at the cover's height.
+        constexpr float kCover=420,kGap=12,kColumnGap=14,kMaxTile=76;
+        const float grid_x=116+kCover+48;
+        const float tile_w=(1806-grid_x-kColumnGap)*0.5f;
+        const int rows=std::max(1,static_cast<int>((facts.size()+1)/2));
+        const float tile_h=std::min(kMaxTile,(kCover-kGap*static_cast<float>(rows-1))/static_cast<float>(rows));
+        if(list)
         {
-            float bottom=y;
-            for(std::size_t i=first;i<std::min(first+3,facts.size());++i)
+            const ui::Rect cover{116,y,kCover,kCover};
+            list->shadow({cover.x,cover.y+10,cover.w,cover.h},ui::kArtRadius,28,ui::Color::rgb(0x000000,0.45f));
+            draw_cover(ctx_,*list,*game,cover,ui::kArtRadius);
+            for(std::size_t i=0;i<facts.size();++i)
             {
-                const float x=116+static_cast<float>(i-first)*568;
-                float fy=y;
-                paragraph(facts[i].first,x,fy,520,19,ui::color::text3);fy+=10;
-                paragraph(facts[i].second,x,fy,520,24,ui::color::text);
-                bottom=std::max(bottom,fy);
+                const float x=grid_x+static_cast<float>(i%2)*(tile_w+kColumnGap);
+                const float ty=y+static_cast<float>(i/2)*(tile_h+kGap);
+                const ui::Rect tile{x,ty,tile_w,tile_h};
+                list->rounded_rect(tile,18,ui::Color::rgb(0xffffff,0.157f));
+                fact_icon(*list,type,facts[i].icon,x+46,tile.cy(),40,ui::color::text);
+                ui::text_fit(*list,type.semibold,facts[i].value,x+82,tile.cy()-3,23,tile_w-106,ui::color::text);
+                ui::text_fit(*list,type.regular,facts[i].label,x+82,tile.cy()+20,16,tile_w-106,ui::color::text2);
             }
-            y=bottom+35;
         }
-        paragraph(tr("Saves a file to your console. Installation and launching are separate."),116,y,1690,20);
+        y+=kCover+24;
+        paragraph(tr("Saves a file to your console. Installation and launching are separate."),116,y,1690,20,ui::color::text3);
     }
     out.end=y+20;
     return out;
