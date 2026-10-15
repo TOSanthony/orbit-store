@@ -208,7 +208,7 @@ TEST_F(I18nTest, ShippedHungarianCatalogueAndFormats)
 {
     ASSERT_TRUE(i18n::load(std::string(HUI_SOURCE_DIR) + "/../i18n", "hu"));
     EXPECT_EQ(i18n::language(), "hu");
-    EXPECT_STREQ(tr("Browse"), "Böngészés");
+    EXPECT_STREQ(tr("Library"), "Könyvtár");
     EXPECT_STREQ(tr("Download to PS5"), "Letöltés PS5-re");
     EXPECT_STREQ(tr("Region"), "Régió");
     EXPECT_EQ(trn(1, "{count} game", "{count} games"), "1 játék");
