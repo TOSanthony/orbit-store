@@ -1183,21 +1183,36 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
             list.bordered_rect(
                 r, 18.0f, on ? ui::Color::rgb(0xffffff, 0.12f) : ui::Color::rgb(0xffffff, 0.04f),
                 1.0f, on ? ui::Color::rgb(0xffffff, 0.55f) : ui::Color{0, 0, 0, 0});
-            ui::text_fit(list, type.regular, i18n::place(drive.label), r.x + 26.0f, r.y + 42.0f, 20.0f,
-                         r.w - 52.0f, ui::color::text);
-            ui::text_fit(list, type.regular, drive.path, r.x + 26.0f, r.y + 70.0f, 17.0f,
-                         r.w - 52.0f, ui::color::text2);
+            // Usage ring on the left, always white so it matches the rest of the app.
             const float used =
-                drive.total > 0.0 ? static_cast<float>(drive.used / drive.total) : 0.0f;
-            ui::progress_bar(list, {r.x + 26.0f, r.y + 88.0f, r.w - 52.0f, 5.0f}, used,
-                             ui::color::action);
-            ui::text(list, type.medium, tr("{size} free", {{"size", format_bytes(drive.free)}}),
-                     r.x + 26.0f,
-                     r.y + 124.0f, 18.0f, ui::color::text);
-            ui::text(list, type.regular,
-                     tr("{used} used of {total}",
-                        {{"used", format_bytes(drive.used)}, {"total", format_bytes(drive.total)}}),
-                     r.x + 26.0f, r.y + 150.0f, 17.0f, ui::color::text2);
+                drive.total > 0.0
+                    ? std::clamp(static_cast<float>(drive.used / drive.total), 0.0f, 1.0f)
+                    : 0.0f;
+            const float ring_x = r.x + 74.0f;
+            const float ring_y = r.y + 85.0f;
+            list.ring(ring_x, ring_y, 50.0f, 10.0f, ui::Color::rgb(0xffffff, 0.27f));
+            if (used > 0.0f)
+                list.arc(ring_x, ring_y, 50.0f, 10.0f, 0.0f, used * 6.2831853f,
+                         ui::Color::rgb(0xffffff), true);
+            char percent[16];
+            std::snprintf(percent, sizeof percent, "%d%%",
+                          static_cast<int>(used * 100.0f + 0.5f));
+            ui::text(list, type.semibold, percent, ring_x, ring_y + 6.0f, 26.0f, ui::color::text,
+                     ui::Align::center);
+            ui::text(list, type.regular, tr("used"), ring_x, ring_y + 26.0f, 15.0f,
+                     ui::color::text2, ui::Align::center);
+            const float tx = r.x + 146.0f;
+            const float tw = r.w - 146.0f - 20.0f;
+            ui::text_fit(list, type.regular, i18n::place(drive.label), tx, r.y + 50.0f, 20.0f, tw,
+                         ui::color::text);
+            ui::text_fit(list, type.regular, drive.path, tx, r.y + 76.0f, 17.0f, tw,
+                         ui::color::text2);
+            ui::text_fit(list, type.medium, tr("{size} free", {{"size", format_bytes(drive.free)}}),
+                         tx, r.y + 114.0f, 20.0f, tw, ui::color::text);
+            ui::text_fit(list, type.regular,
+                         tr("{used} used of {total}",
+                            {{"used", format_bytes(drive.used)}, {"total", format_bytes(drive.total)}}),
+                         tx, r.y + 142.0f, 15.0f, tw, ui::color::text2);
         }
         if (!drives.empty())
         {
