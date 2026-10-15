@@ -498,16 +498,14 @@ void hints(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &i
     };
     if (items.empty())
         return;
-    // A pill in the popups' colours behind the controls: it grows with their
+    // A pill in the settings buttons' colour behind the controls: it grows with their
     // number and with the width of their labels.
     float total = 2.0f * kPad + 32.0f * static_cast<float>(items.size() - 1);
     for (const hui::ui::Hint &h : items)
         total += item_width(h);
     const Rect pill{1920.0f - kGutter - total, kHintY - kPillHeight * 0.5f, total, kPillHeight};
-    list.shadow({pill.x, pill.y + 8.0f, pill.w, pill.h}, kPillHeight * 0.5f, 30.0f,
-                Color::rgb(0x000000, 0.45f));
-    list.gradient_rect(pill, kPillHeight * 0.5f, Color::rgb(0x242424), Color::rgb(0x151515));
-    list.bordered_rect(pill, kPillHeight * 0.5f, Color{0, 0, 0, 0}, 1.0f, color::line);
+    // The settings buttons' translucent white (ButtonKind::secondary).
+    list.rounded_rect(pill, kPillHeight * 0.5f, Color::rgb(0xffffff, 0.1f));
     float x = 1920.0f - kGutter - kPad;
     for (auto it = items.rbegin(); it != items.rend(); ++it)
     {
