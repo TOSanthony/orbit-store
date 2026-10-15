@@ -414,24 +414,24 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         float ry = 0;
         const auto setting = [&](Slot slot,FactIcon icon,const std::string &label,const std::string &value,const std::string &note)
         {
-            const ui::Rect r{nx,ry,nw,84};
+            const ui::Rect r{nx,ry,nw,76};
             const float f = focused && static_cast<int>(out.controls.size()) == focus_ ? 1 : 0;
             out.controls.push_back({slot,0,r,!waiting_,false});
             if (list)
             {
                 ui::focus_ring(*list,r,20,f);ui::surface(*list,r,20,ui::color::field);
-                list->circle(nx+52,ry+42,26,ui::Color::rgb(0xffffff,0.14f));
-                fact_icon(*list,type,icon,nx+52,ry+42,32,ui::color::text);
-                ui::text(*list,type.regular,label,nx+98,ry+31,17,ui::color::text2);
-                const float value_w = std::min(type.medium.measure(value,25),nw-170);
-                ui::text_fit(*list,type.medium,value,nx+98,ry+64,25,nw-170,ui::color::text);
+                list->circle(nx+50,ry+38,24,ui::Color::rgb(0xffffff,0.14f));
+                fact_icon(*list,type,icon,nx+50,ry+38,30,ui::color::text);
+                ui::text(*list,type.regular,label,nx+92,ry+29,17,ui::color::text2);
+                const float value_w = std::min(type.medium.measure(value,24),nw-160);
+                ui::text_fit(*list,type.medium,value,nx+92,ry+60,24,nw-160,ui::color::text);
                 if (!note.empty())
-                    ui::text_fit(*list,type.regular,note,nx+98+value_w+14,ry+64,17,nw-170-value_w-14,ui::color::text2);
+                    ui::text_fit(*list,type.regular,note,nx+92+value_w+14,ry+60,17,nw-160-value_w-14,ui::color::text2);
                 const float cx = nx + nw - 34;
-                list->line(cx-5,ry+35,cx+3,ry+42,2,ui::color::text2);
-                list->line(cx+3,ry+42,cx-5,ry+49,2,ui::color::text2);
+                list->line(cx-5,ry+31,cx+3,ry+38,2,ui::color::text2);
+                list->line(cx+3,ry+38,cx-5,ry+45,2,ui::color::text2);
             }
-            ry += 96;
+            ry += 86;
         };
         setting(Slot::source,FactIcon::source,tr("Source"),release.provider + " \xC2\xB7 " + format_label(release),
                 release.title_id + (release.version.empty()?"":" \xC2\xB7 v"+release.version) + " \xC2\xB7 " + format_bytes(release.size_bytes));
@@ -442,8 +442,8 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             setting(Slot::drive,FactIcon::disk,tr("Save to"),now.drive ? i18n::place(now.drive->label) : tr("Select storage"),
                     now.drive ? tr("{size} free",{{"size",format_bytes(now.drive->free_bytes)}}) : "");
         }
-        ry -= 96;
-        ry += 84 + 12;
+        ry -= 86;
+        ry += 76 + 10;
         if (list)
         {
             // Left column: the cover, the title and a few pills.
@@ -467,7 +467,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         if (now.show_download && now.drive && list)
         {
             const Drive &drive=*now.drive;
-            const ui::Rect card_rect{nx,ry,nw,150};
+            const ui::Rect card_rect{nx,ry,nw,140};
             ui::surface(*list,card_rect,20,ui::color::field);
             if(drive.total_bytes>0)
             {
@@ -482,7 +482,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                 const float used_part=static_cast<float>(std::clamp(queued/total,0.0,1.0));
                 const float game_part=static_cast<float>(std::clamp(game_shown/total,0.0,1.0));
                 constexpr float radius=54,thickness=12,tau=6.2831853f;
-                const float cy=ry+75,cx=nx+28+radius+6,right=nx+nw-28;
+                const float cy=ry+70,cx=nx+28+radius+6,right=nx+nw-28;
                 const ui::Color game_color=fits?ui::color::fits:ui::color::short_of;
                 const struct { std::string label; double bytes; ui::Color dot; } rows[]={
                     {tr("Used and queued"),queued,ui::color::text},
@@ -506,7 +506,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                 ui::text(*list,type.regular,fits?tr("free after install"):tr("short"),text_x,cy+30,17,ui::color::text2);
                 for(int i=0;i<3;++i)
                 {
-                    const float y=cy-40+static_cast<float>(i)*40;
+                    const float y=cy-38+static_cast<float>(i)*38;
                     list->circle(dot_x,y,6,rows[i].dot);
                     ui::text(*list,type.regular,rows[i].label,label_x,y+7,20,ui::color::text2);
                     ui::text(*list,type.medium,format_bytes(rows[i].bytes),right,y+7,20,ui::color::text,ui::Align::right);
@@ -519,20 +519,20 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                 ui::text(*list,type.medium,now.plan.after<0?tr("{size} short",{{"size",format_bytes(-now.plan.after)}}):format_bytes(now.plan.after),nx+nw-28,ry+82,24,ui::color::text,ui::Align::right);
             }
         }
-        if (now.show_download && now.drive) ry += 150 + 24;
+        if (now.show_download && now.drive) ry += 140 + 20;
         {
             // The download button with its explanation beside it.
             const std::string label=primary_label(release,download_again_,waiting_,now.collection,state,torbox_);
-            const ui::Rect button{nx,ry,520,84};
+            const ui::Rect button{nx,ry,520,80};
             control(Slot::primary,0,button,label,primary_enabled(release,now));
             if (list)
             {
                 const float label_w=type.medium.measure(label,23);
                 ui::icon_download(*list,button.cx()-label_w*0.5f-28,button.cy(),26,ui::color::text);
                 ui::paragraph(*list,type.regular,one_per_line(tr("Saves a file to your console. Installation and launching are separate.")),
-                              nx+520+32,ry+34,17,nw-552,24,ui::color::text3,3);
+                              nx+520+32,ry+32,17,nw-552,24,ui::color::text3,3);
             }
-            ry += 84 + 28;
+            ry += 80 + 22;
         }
         y=ry;
         const float width_notes=1180;
