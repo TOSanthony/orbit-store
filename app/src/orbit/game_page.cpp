@@ -219,9 +219,6 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         const float button_width = std::clamp(type.medium.measure(label, 23) + 76, 460.0f, 800.0f);
         const ui::Rect primary_rect{kLeft,y,button_width,88};
         control(Slot::primary, 0, primary_rect, label, !waiting_, false, false);
-        // The same 1 px edge as the favourite and About buttons.
-        if (list)
-            list->bordered_rect(primary_rect,44,ui::Color{0,0,0,0},1,ui::color::text.with_alpha(0.35f));
         for (int i=0;i<2;++i)
         {
             const ui::Rect r{kLeft + button_width + 24 + i * 108.0f,y,88,88};
@@ -229,7 +226,6 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             const float focus = control(slot,0,r,"",!waiting_);
             if (list)
             {
-                list->bordered_rect(r,44,ui::Color{0,0,0,0},1,ui::color::text.with_alpha(0.35f));
                 if (i == 0)
                 {
                     if (state.favourite(game->id))
