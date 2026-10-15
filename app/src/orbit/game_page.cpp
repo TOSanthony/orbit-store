@@ -637,9 +637,15 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         if(!game->genre.empty())facts.push_back({FactIcon::genre,i18n::genre(game->genre),tr("Genre")});
         if(!game->release_date.empty())facts.push_back({FactIcon::calendar,format_date(game->release_date),tr("Release date")});
         if(!game->publisher.empty())facts.push_back({FactIcon::publisher,game->publisher,tr("Publisher")});
-        facts.push_back({FactIcon::download,format_bytes(release.size_bytes),tr("Download size")});
-        if(!release.compression.empty() && release.extracted_bytes > 0)
-            facts.push_back({FactIcon::disk,format_bytes(release.extracted_bytes),tr("Size on disk")});
+        // Without extraction the download is what lands on the disk; archives show both sizes.
+        if(release.compression.empty())
+            facts.push_back({FactIcon::disk,format_bytes(release.size_bytes),tr("Size on disk")});
+        else
+        {
+            facts.push_back({FactIcon::download,format_bytes(release.size_bytes),tr("Download size")});
+            if(release.extracted_bytes > 0)
+                facts.push_back({FactIcon::disk,format_bytes(release.extracted_bytes),tr("Size on disk")});
+        }
         if(!release.region.empty())facts.push_back({FactIcon::globe,release.region,tr("Region")});
         if(!release.version.empty())facts.push_back({FactIcon::version,release.version,tr("Version")});
         facts.push_back({FactIcon::format,format_label(release),tr("Format")});
