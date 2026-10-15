@@ -202,10 +202,10 @@ std::vector<Scenario> scenarios()
     list.push_back({"game", Mode::normal, false,
         {run(1.5f, [](orbit::App &app) { app.open_game("ember-hollow"); }),
          pause(1.2f, "game"), tap(Action::confirm), pause(0.8f, "game-options"),
-         move(Direction::up), move(Direction::left), move(Direction::left), tap(Action::confirm),
+         move(Direction::up), move(Direction::up), move(Direction::up), tap(Action::confirm),
          pause(0.8f, "game-source"), move(Direction::down), tap(Action::confirm),
-         move(Direction::right), move(Direction::right), tap(Action::confirm),
-         pause(0.8f, "game-drive-menu"), tap(Action::back), move(Direction::left), tap(Action::confirm),
+         move(Direction::down), move(Direction::down), tap(Action::confirm),
+         pause(0.8f, "game-drive-menu"), tap(Action::back), move(Direction::up), tap(Action::confirm),
          pause(0.8f, "game-delivery"), tap(Action::back), tap(Action::back),
          move(Direction::right), move(Direction::right), tap(Action::confirm), pause(0.8f, "game-about")}});
     list.push_back({"game-browser", Mode::normal, false,

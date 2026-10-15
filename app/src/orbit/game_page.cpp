@@ -630,7 +630,6 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
     }
     else if (sheet == Sheet::about)
     {
-        paragraph(game->description,116,y,1650,25);y+=40;
         struct Fact { FactIcon icon; std::string value; std::string label; };
         std::vector<Fact> facts;
         facts.push_back({FactIcon::platform,release.platform=="ps4"?"PS4":"PS5",tr("Platform")});
@@ -963,7 +962,8 @@ std::vector<hui::ui::Hint> GamePage::hints() const
 {
     const auto where=compose(nullptr,sheet_,false);
     const bool reading=focus_>=0 && focus_<static_cast<int>(where.controls.size()) && where.controls[static_cast<std::size_t>(focus_)].slot==Slot::reading;
-    if(sheet_==Sheet::about || reading)return {{hui::ui::Button::dpad,tr("Scroll")},{hui::ui::Button::circle,tr("Back")}};
+    if(reading)return {{hui::ui::Button::dpad,tr("Scroll")},{hui::ui::Button::circle,tr("Back")}};
+    if(sheet_==Sheet::about)return {{hui::ui::Button::circle,tr("Back")}};
     if (sheet_ == Sheet::none)
         return {{hui::ui::Button::cross,tr("Select")},{hui::ui::Button::circle,tr("Back")},
                 {hui::ui::Button::triangle,tr("Favourite")},{hui::ui::Button::square,tr("Details")}};
