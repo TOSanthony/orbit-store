@@ -539,7 +539,9 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         const float width_notes=1180;
         const float notes_top=y;
         if (!release.compression.empty()) {
-            paragraph(one_per_line(tr("Compressed download. Orbit checks the files and available space before extraction. A password may be required.")),nx,y,width_notes,20); y+=16;
+            // The three sentences share one line, shrunk a little when a translation is long.
+            const std::string compressed=tr("Compressed download. Orbit checks the files and available space before extraction. A password may be required.");
+            paragraph(compressed,nx,y,nw,ui::fit_size(type.regular,compressed,20,14,nw)); y+=16;
         }
         if (!release.notes.empty()) { paragraph(release.notes,nx,y,width_notes,20); y+=16; }
         if (now.show_download && release.browser_available && !torbox_)
