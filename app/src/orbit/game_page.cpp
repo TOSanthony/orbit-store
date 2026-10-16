@@ -12,6 +12,8 @@ namespace
 {
 constexpr float kBodyTop = 430.0f;
 constexpr float kBodyBottom = 978.0f;
+// About and Download options use a slightly taller panel.
+constexpr float kTallExtra = 70.0f;
 constexpr float kLeft = 70.0f;
 // Each sentence on its own line ("A. B." becomes "A.\nB.").
 std::string one_per_line(std::string text)
@@ -853,7 +855,8 @@ Intent GamePage::update(const InputFrame &input,float dt,Feedback &feedback,bool
         feedback.play(hui::audio::Cue::back);return intent;
     }
     auto &scroll=sheet_==Sheet::none?page_scroll_:sheet_scroll_;
-    const float visible=sheet_==Sheet::none?980:kBodyBottom-kBodyTop;
+    const float extra=(sheet_==Sheet::about||sheet_==Sheet::downloads)?kTallExtra:0.0f;
+    const float visible=sheet_==Sheet::none?980:kBodyBottom+extra-kBodyTop;
     bool moved=false;
     bool read_scroll=false;
     if(focused && input.nav!=Direction::none)
@@ -915,10 +918,11 @@ float GamePage::centre_shift(Sheet sheet) const
 {
     if(sheet!=Sheet::about && sheet!=Sheet::downloads)return 0.0f;
     const auto where=compose(nullptr,sheet,false);
-    if(where.content<=0.0f || where.end>kBodyBottom-kBodyTop)return 0.0f;
-    // Free space runs from just under the header (sheet y 415) to the panel's bottom edge (1030).
-    const float shift=(615.0f-where.content)*0.5f-15.0f;
-    return std::clamp(shift,0.0f,kBodyBottom-kBodyTop-where.content);
+    const float room=kBodyBottom+kTallExtra-kBodyTop;
+    if(where.content<=0.0f || where.end>room)return 0.0f;
+    // Free space runs from just under the header (sheet y 415) to the panel's bottom edge.
+    const float shift=(615.0f+kTallExtra-where.content)*0.5f-15.0f;
+    return std::clamp(shift,0.0f,room-where.content);
 }
 void GamePage::draw(Frame &frame,bool focused) const
 {
@@ -939,8 +943,9 @@ void GamePage::draw(Frame &frame,bool focused) const
     auto &list=frame.overlay;
     list.rounded_rect({0,0,1920,1080},0,ui::Color::rgb(0x000000,0.35f));
     // The sheet is laid out for a panel at y 320; it is drawn centred on the screen.
-    constexpr float kSheetShift=(1080.0f-710.0f)*0.5f-320.0f;
-    const ui::Rect panel{70,320+kSheetShift,1780,710};
+    const float extra=(sheet_==Sheet::about||sheet_==Sheet::downloads)?kTallExtra:0.0f;
+    const float kSheetShift=(1080.0f-(710.0f+extra))*0.5f-320.0f;
+    const ui::Rect panel{70,320+kSheetShift,1780,710+extra};
     frame.glass=true;
     ui::glass_modal(list,panel,frame.glass_texture,30);
     list.push_transform(1,0,0,0,kSheetShift);
@@ -949,7 +954,7 @@ void GamePage::draw(Frame &frame,bool focused) const
     const char *title=sheet_==Sheet::downloads?tr("Download options"):sheet_==Sheet::source?tr("Source"):
         sheet_==Sheet::delivery?tr("Download using"):sheet_==Sheet::storage?tr("Save to"):tr("About this game");
     ui::text_fit(list,type.medium,title,270,386,34,1380,ui::color::text);
-    list.push_clip({100,kBodyTop-8,1720,kBodyBottom-kBodyTop+8});
+    list.push_clip({100,kBodyTop-8,1720,kBodyBottom+extra-kBodyTop+8});
     list.push_transform(1,0,0,0,kBodyTop-sheet_scroll_.value+centre_shift(sheet_));
     const auto where=compose(&list,sheet_,focused);
     list.pop_transform();list.pop_clip();
