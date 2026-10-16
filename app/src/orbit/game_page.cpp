@@ -554,11 +554,11 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             // The download button with its explanation beside it.
             const std::string label=primary_label(release,download_again_,waiting_,now.collection,state,torbox_);
             const ui::Rect button{nx,ry,520,80};
-            control(Slot::primary,0,button,label,primary_enabled(release,now));
+            const float button_focus=control(Slot::primary,0,button,label,primary_enabled(release,now));
             if (list)
             {
                 const float label_w=type.medium.measure(label,23);
-                ui::icon_download(*list,button.cx()-label_w*0.5f-28,button.cy(),26,ui::color::text);
+                ui::icon_download(*list,button.cx()-label_w*0.5f-28,button.cy(),26,ui::state_ink(button_focus));
                 ui::paragraph(*list,type.regular,one_per_line(tr("Saves a file to your console. Installation and launching are separate.")),
                               nx+520+32,ry+32,17,nw-552,24,ui::color::text3,3);
             }
