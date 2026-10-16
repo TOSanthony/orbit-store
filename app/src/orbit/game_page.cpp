@@ -535,6 +535,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             }
             ry += 80 + 22;
         }
+        out.content=std::max(510.0f,ry-22);
         y=ry;
         const float width_notes=1180;
         const float notes_top=y;
@@ -677,6 +678,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         }
         y+=kCover+24;
         paragraph(tr("Saves a file to your console. Installation and launching are separate."),116,y,1690,20,ui::color::text3);
+        out.content=y;
     }
     out.end=y+20;
     return out;
@@ -908,6 +910,16 @@ Intent GamePage::update(const InputFrame &input,float dt,Feedback &feedback,bool
     return intent;
 }
 
+// Without notes to scroll, the sheet content sits in the middle of the window.
+float GamePage::centre_shift(Sheet sheet) const
+{
+    if(sheet!=Sheet::about && sheet!=Sheet::downloads)return 0.0f;
+    const auto where=compose(nullptr,sheet,false);
+    if(where.content<=0.0f || where.end>kBodyBottom-kBodyTop)return 0.0f;
+    // Free space runs from just under the header (sheet y 415) to the panel's bottom edge (1030).
+    const float shift=(615.0f-where.content)*0.5f-15.0f;
+    return std::clamp(shift,0.0f,kBodyBottom-kBodyTop-where.content);
+}
 void GamePage::draw(Frame &frame,bool focused) const
 {
     const auto &state=ctx_.store.state();
@@ -938,7 +950,7 @@ void GamePage::draw(Frame &frame,bool focused) const
         sheet_==Sheet::delivery?tr("Download using"):sheet_==Sheet::storage?tr("Save to"):tr("About this game");
     ui::text_fit(list,type.medium,title,270,386,34,1380,ui::color::text);
     list.push_clip({100,kBodyTop-8,1720,kBodyBottom-kBodyTop+8});
-    list.push_transform(1,0,0,0,kBodyTop-sheet_scroll_.value);
+    list.push_transform(1,0,0,0,kBodyTop-sheet_scroll_.value+centre_shift(sheet_));
     const auto where=compose(&list,sheet_,focused);
     list.pop_transform();list.pop_clip();
     for(std::size_t i=0;i<where.controls.size();++i)
