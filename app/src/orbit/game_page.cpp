@@ -31,6 +31,7 @@ enum class FactIcon { platform, platform4, genre, calendar, publisher, download,
 void fact_icon(hui::gfx::DrawList &list, const ui::Type &type, FactIcon icon, float cx, float cy,
                float size, ui::Color ink)
 {
+    (void)type;
     const float k = size / 40.0f;
     const float t = 2.4f * k;
     const auto line = [&](float x1, float y1, float x2, float y2, float w = 0.0f)
@@ -59,16 +60,34 @@ void fact_icon(hui::gfx::DrawList &list, const ui::Type &type, FactIcon icon, fl
     {
     case FactIcon::platform:
     case FactIcon::platform4:
-        box(-17, -12, 34, 24, 7);
-        ui::text(list, type.semibold, icon == FactIcon::platform4 ? "PS4" : "PS5", cx, cy + 4.5f * k, 13.0f * k, ink, ui::Align::center);
+        // The four PlayStation shapes: triangle, circle, square and cross.
+        line(-9, -15, -3, -5);
+        line(-3, -5, -15, -5);
+        line(-15, -5, -9, -15);
+        list.ring(cx + 8 * k, cy - 10 * k, 5.5f * k, t, ink);
+        box(-14.5f, 3, 11, 11, 2.5f);
+        line(3, 3, 14, 14);
+        line(14, 3, 3, 14);
         break;
     case FactIcon::genre:
-        box(-18, -9, 36, 20, 10);
-        line(-11, 0, -5, 0);
-        line(-8, -3, -8, 3);
-        dot(8, -2, 1.8f);
-        dot(12, 2, 1.8f);
+    {
+        // A game controller, outlined; the d-pad and four buttons inside.
+        static const float kBody[] = {
+            18.0f,5.0f, 17.7f,2.4f, 17.3f,-0.2f, 16.8f,-2.6f, 16.0f,-5.1f, 14.9f,-7.7f, 13.6f,-9.8f, 11.7f,-11.9f, 9.6f,-13.3f, 6.9f,-13.8f, 4.3f,-13.4f, 2.0f,-12.0f, 0.0f,-11.0f, -2.7f,-12.5f, -4.9f,-13.6f, -7.7f,-13.8f, -10.2f,-13.0f, -12.2f,-11.4f, -13.8f,-9.5f, -15.1f,-7.2f, -16.1f,-4.7f, -16.9f,-2.0f, -17.4f,0.5f, -17.8f,3.2f, -18.0f,5.8f, -17.8f,8.5f, -16.6f,10.8f, -14.5f,12.3f, -11.9f,12.6f, -9.6f,11.7f, -7.4f,9.9f, -5.7f,7.9f, -4.1f,5.8f, -2.2f,4.0f, 0.4f,3.3f, 2.6f,4.3f, 4.5f,6.2f, 6.2f,8.5f, 8.0f,10.4f, 10.1f,11.9f, 12.5f,12.7f, 15.0f,12.1f, 16.9f,10.4f, 17.9f,8.0f};
+        constexpr int kCount = static_cast<int>(sizeof(kBody) / sizeof(kBody[0])) / 2;
+        for (int i = 0; i < kCount; ++i)
+        {
+            const int j = (i + 1) % kCount;
+            line(kBody[i * 2], kBody[i * 2 + 1], kBody[j * 2], kBody[j * 2 + 1]);
+        }
+        line(-12.2f, -2.3f, -4.6f, -2.3f, 2.6f);
+        line(-8.4f, -6.1f, -8.4f, 1.5f, 2.6f);
+        dot(8.3f, -5.6f, 1.4f);
+        dot(8.3f, 1.7f, 1.4f);
+        dot(11.9f, -2.0f, 1.4f);
+        dot(4.6f, -2.0f, 1.4f);
         break;
+    }
     case FactIcon::calendar:
         box(-14, -12, 28, 26, 5);
         line(-14, -4, 14, -4, 2.2f);
