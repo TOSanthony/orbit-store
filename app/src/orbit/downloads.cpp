@@ -636,7 +636,7 @@ void DownloadsScreen::draw(Frame &frame, bool focused) const
             const float width = type.medium.measure(label, 16.0f) + 2.0f * 22.0f;
             const bool on = is_focused && a == button_;
             ui::button(list, type, {ax, row.y + kRowPad + 128.0f + extra_height, width, 38.0f}, label,
-                       a == 0 ? ui::ButtonKind::primary : ui::ButtonKind::secondary,
+                       on ? ui::ButtonKind::primary : ui::ButtonKind::secondary,
                        on ? 1.0f : 0.0f, !ctx_.store.action().busy, 16.0f);
             ax += width + 12.0f;
         }
@@ -666,7 +666,8 @@ void DownloadsScreen::draw(Frame &frame, bool focused) const
         overlay.rounded_rect({0.0f, 0.0f, 1920.0f, 1080.0f}, 0.0f,
                              ui::color::night0.with_alpha(0.55f));
         const ui::Rect panel{360.0f, 290.0f - 16.0f * (1.0f - in), 1200.0f, 500.0f};
-        ui::modal(overlay, panel);
+        frame.glass = true;
+        ui::glass_modal(overlay, panel, frame.glass_texture);
         ui::text_fit(overlay, type.light,
                  dialog_cancelled_ ? (dialog_forget_ ? tr("Remove from history?") : tr("Delete this cancelled download?")) : tr("Cancel this download?"), panel.x + 56.0f,
                  panel.y + 100.0f, 46.0f, panel.w - 112.0f, ui::color::text);
@@ -685,7 +686,7 @@ void DownloadsScreen::draw(Frame &frame, bool focused) const
         float bx = panel.x + 56.0f;
         for (int b = 0; b < (dialog_forget_ ? 2 : 3); ++b)
         {
-            const ui::ButtonKind kind = b == 1 ? ui::ButtonKind::danger : ui::ButtonKind::secondary;
+            const ui::ButtonKind kind = b == dialog_button_ ? ui::ButtonKind::primary : (b == 1 ? ui::ButtonKind::danger : ui::ButtonKind::secondary);
             const float width = ui::button_width(ctx_.type, tr(buttons[b]), 18.0f, kind);
             ui::button(overlay, type, {bx, panel.y + panel.h - 104.0f, width, 48.0f},
                        tr(buttons[b]), kind, b == dialog_button_ ? 1.0f : 0.0f, !ctx_.store.action().busy, 18.0f);
