@@ -293,7 +293,7 @@ std::vector<Scenario> scenarios()
           pause(1.2f, "library"), move(Direction::down), move(Direction::down),
           move(Direction::left), move(Direction::left), move(Direction::left),
           pause(0.8f, "library-grid"), tap(Action::confirm), pause(0.8f, "library-details"),
-          move(Direction::right), tap(Action::confirm), pause(1.2f, "library-copy"),
+          move(Direction::right), pause(0.8f, "library-details-copy"), tap(Action::confirm), pause(1.2f, "library-copy"),
           tap(Action::back), tap(Action::back), move(Direction::up), move(Direction::up),
           tap(Action::confirm), pause(1.2f, "library-storage")}});
     list.push_back({"settings",

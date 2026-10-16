@@ -1375,9 +1375,11 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                     const char *text = c.index == 0
                                            ? (game->mounted ? tr("Unmount game") : tr("Mount game"))
                                            : tr(kActions[c.index]);
+                    // The selected action is the white one; the others stay translucent.
+                    const float action_focus = panel_focus(Kind::action, c.index);
                     ui::button(overlay, type, {c.rect.x, c.rect.y, c.rect.w, c.rect.h}, text,
-                               c.index == 0 ? ui::ButtonKind::primary : ui::ButtonKind::secondary,
-                               panel_focus(Kind::action, c.index),
+                               action_focus > 0.5f ? ui::ButtonKind::primary : ui::ButtonKind::secondary,
+                               action_focus,
                                !library.working() && game->on_drive &&
                                    (c.index == 0 || !game->mounted),
                                18.0f);
