@@ -153,6 +153,16 @@ void fact_icon(hui::gfx::DrawList &list, const ui::Type &type, FactIcon icon, fl
     }
 }
 
+// Disk images (exFAT, FFPKG) land on the disk as they are; ZIP and PKG are downloads.
+FactIcon size_icon(const Release &release)
+{
+    std::string upper = release.format;
+    for (char &c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    const bool disk_image = release.compression.empty() &&
+        (upper == "EXFAT" || upper == "FFPKG" || upper == "FFPFSC");
+    return disk_image ? FactIcon::disk : FactIcon::download;
+}
+
 std::string primary_label(const Release &release, bool again, bool waiting,
                          const CollectionState &collection, const Snapshot &state, bool torbox)
 {
@@ -341,16 +351,11 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         y += 24;
         // Server, format, size and platform as pills shaped like the download button.
         {
-            // Disk images (exFAT, FFPKG) land on the disk as they are; ZIP and PKG are downloads.
-            std::string upper = release.format;
-            for (char &c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-            const bool disk_image = release.compression.empty() &&
-                (upper == "EXFAT" || upper == "FFPKG" || upper == "FFPFSC");
-            const FactIcon size_icon = disk_image ? FactIcon::disk : FactIcon::download;
+            const FactIcon size_kind = size_icon(release);
             const struct { FactIcon icon; std::string text; } pills[] = {
                 {FactIcon::source,release.provider},
                 {FactIcon::format,format_label(release)},
-                {size_icon,format_bytes(release.size_bytes)},
+                {size_kind,format_bytes(release.size_bytes)},
                 {release.platform == "ps4" ? FactIcon::platform4 : FactIcon::platform,release.platform == "ps4" ? "PS4" : "PS5"}};
             float px = kLeft, py = y + 6;
             for (const auto &pill : pills)
@@ -461,16 +466,18 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             list->shadow({cover.x,cover.y+10,cover.w,cover.h},ui::kArtRadius,28,ui::Color::rgb(0x000000,0.45f));
             draw_cover(ctx_,*list,*game,cover,ui::kArtRadius);
             ui::text_fit(*list,type.semibold,game->title,116,446,28,400,ui::color::text);
-            std::vector<std::string> pills{release.platform=="ps4"?"PS4":"PS5"};
-            if (!release.version.empty()) pills.push_back("v"+release.version);
-            pills.push_back(format_bytes(release.size_bytes));
+            struct Pill { FactIcon icon; std::string text; };
+            std::vector<Pill> pills{{release.platform=="ps4"?FactIcon::platform4:FactIcon::platform,release.platform=="ps4"?"PS4":"PS5"}};
+            if (!release.version.empty()) pills.push_back({FactIcon::version,"v"+release.version});
+            pills.push_back({size_icon(release),format_bytes(release.size_bytes)});
             float px = 116;
             for (const auto &pill : pills)
             {
-                const float w = type.medium.measure(pill,17)+36;
+                const float w = 12+26+8+type.medium.measure(pill.text,17)+16;
                 if (px+w > 516) break;
                 list->rounded_rect({px,466,w,40},20,ui::Color::rgb(0xffffff,0.16f));
-                ui::text(*list,type.medium,pill,px+w*0.5f,493,17,ui::color::text,ui::Align::center);
+                fact_icon(*list,type,pill.icon,px+12+13,486,26,ui::color::text);
+                ui::text(*list,type.medium,pill.text,px+12+26+8,493,17,ui::color::text);
                 px += w + 8;
             }
         }
@@ -509,6 +516,13 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                 list->ring(cx,cy,radius,thickness,ui::Color::rgb(0xffffff,0.27f));
                 if(used_part>0.0f)list->arc(cx,cy,radius,thickness,0.0f,used_part*tau,ui::color::text,true);
                 if(game_part>0.0f)list->arc(cx,cy,radius,thickness,(used_part+0.006f)*tau,game_part*tau,game_color,true);
+                {
+                    // Share of the drive taken once this game is installed.
+                    const int percent=static_cast<int>(std::lround(std::clamp((queued+game_bytes)/total,0.0,1.0)*100.0));
+                    const ui::Color ink=fits?ui::color::text:ui::color::short_of;
+                    ui::text(*list,type.semibold,std::to_string(percent)+"%",cx,cy+4,24,ink,ui::Align::center);
+                    ui::text(*list,type.regular,tr("used"),cx,cy+23,13,ui::color::text2,ui::Align::center);
+                }
                 const float text_x=cx+radius+thickness+36;
                 const std::string centre=format_bytes(std::abs(now.plan.after));
                 const float size=ui::fit_size(type.semibold,centre,30,18,std::max(60.0f,dot_x-40-text_x));
