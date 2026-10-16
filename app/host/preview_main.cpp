@@ -199,6 +199,13 @@ std::vector<Scenario> scenarios()
                      pause(1.2f, "favourite-game-off"),
                      run(1.5f, [](orbit::App &app) { app.open_game("tidewater"); }),
                      pause(1.2f, "favourite-game-on")}});
+    list.push_back({"discover-heart",
+                    Mode::normal,
+                    false,
+                    {run(4.0f, [](orbit::App &app) { app.show_tab(orbit::tab::discover); }),
+                     move(Direction::down), move(Direction::up), move(Direction::right),
+                     pause(1.0f, "discover-heart-on"),
+                     tap(Action::west), pause(2.5f, "discover-heart-off")}});
     list.push_back({"game-round",
                     Mode::normal,
                     false,

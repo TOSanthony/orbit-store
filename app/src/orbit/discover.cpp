@@ -425,14 +425,14 @@ void DiscoverScreen::draw(Frame &frame, bool focused) const
         list.bordered_rect(view, 30.0f, ui::Color{0, 0, 0, 0}, 1.0f,
                            ui::color::text.with_alpha(0.35f));
         const ui::Rect favourite{left + 252.0f, button_top - scroll, 60.0f, 60.0f};
-        ui::focus_ring(list, favourite, 30.0f, favourite_focus_.value);
-        list.rounded_rect(favourite, 30.0f, ui::Color::rgb(0xffffff, 0.1f));
+        ui::button(list, type, favourite, "", ui::ButtonKind::secondary, favourite_focus_.value);
         list.bordered_rect(favourite, 30.0f, ui::Color{0, 0, 0, 0}, 1.0f,
                            ui::color::text.with_alpha(0.35f));
         if (state.favourite(game->id))
             ui::icon_heart_filled(list, favourite.cx(), favourite.cy(), 25.0f, ui::color::heart);
         else
-            ui::icon_heart(list, favourite.cx(), favourite.cy(), 25.0f, ui::color::text);
+            ui::icon_heart(list, favourite.cx(), favourite.cy(), 25.0f,
+                           favourite_focus_.value > 0.5f ? ui::Color::rgb(0x080808) : ui::color::text);
         if (!ctx_.store.favourite_action().error.empty())
             ui::text_fit(list, type.regular, tr(ctx_.store.favourite_action().error), left,
                          kHeroBottom + 26.0f - scroll, 16.0f, 840.0f, ui::color::bad);
