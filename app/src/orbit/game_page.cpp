@@ -3,6 +3,7 @@
 #include "orbit/screens.hpp"
 #include "orbit/i18n.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <limits>
 
@@ -340,10 +341,16 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         y += 24;
         // Server, format, size and platform as pills shaped like the download button.
         {
+            // Disk images (exFAT, FFPKG) land on the disk as they are; ZIP and PKG are downloads.
+            std::string upper = release.format;
+            for (char &c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            const bool disk_image = release.compression.empty() &&
+                (upper == "EXFAT" || upper == "FFPKG" || upper == "FFPFSC");
+            const FactIcon size_icon = disk_image ? FactIcon::disk : FactIcon::download;
             const struct { FactIcon icon; std::string text; } pills[] = {
                 {FactIcon::source,release.provider},
                 {FactIcon::format,format_label(release)},
-                {FactIcon::download,format_bytes(release.size_bytes)},
+                {size_icon,format_bytes(release.size_bytes)},
                 {release.platform == "ps4" ? FactIcon::platform4 : FactIcon::platform,release.platform == "ps4" ? "PS4" : "PS5"}};
             float px = kLeft, py = y + 6;
             for (const auto &pill : pills)
