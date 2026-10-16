@@ -216,7 +216,8 @@ std::vector<Scenario> scenarios()
          move(Direction::right), tap(Action::confirm), pause(0.6f, "game-browser-about")}});
     list.push_back({"game-ps4", Mode::normal, false,
         {run(1.5f, [](orbit::App &app) { app.open_game("copper-circuit-ps4"); }),
-         pause(1.0f, "game-ps4"), tap(Action::confirm), pause(1.0f, "game-ps4-options")}});
+         pause(1.0f, "game-ps4"), tap(Action::confirm), pause(1.0f, "game-ps4-options"),
+         tap(Action::back), move(Direction::right), move(Direction::right), tap(Action::confirm), pause(0.8f, "game-ps4-about")}});
     list.push_back({"game-library", Mode::normal, false,
         {run(1.5f, [](orbit::App &app) { app.open_game("quiet-harbour"); }),
          tap(Action::confirm), pause(1.0f, "game-library")}});

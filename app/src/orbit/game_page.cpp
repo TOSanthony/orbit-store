@@ -23,7 +23,7 @@ std::string one_per_line(std::string text)
 
 
 // ---- the badges of "About this game" ----
-enum class FactIcon { platform, genre, calendar, publisher, download, disk, globe, version, format, source, title_id };
+enum class FactIcon { platform, platform4, genre, calendar, publisher, download, disk, globe, version, format, source, title_id };
 
 void fact_icon(hui::gfx::DrawList &list, const ui::Type &type, FactIcon icon, float cx, float cy,
                float size, ui::Color ink)
@@ -55,8 +55,9 @@ void fact_icon(hui::gfx::DrawList &list, const ui::Type &type, FactIcon icon, fl
     switch (icon)
     {
     case FactIcon::platform:
+    case FactIcon::platform4:
         box(-17, -12, 34, 24, 7);
-        ui::text(list, type.semibold, "PS5", cx, cy + 4.5f * k, 13.0f * k, ink, ui::Align::center);
+        ui::text(list, type.semibold, icon == FactIcon::platform4 ? "PS4" : "PS5", cx, cy + 4.5f * k, 13.0f * k, ink, ui::Align::center);
         break;
     case FactIcon::genre:
         box(-18, -9, 36, 20, 10);
@@ -341,7 +342,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                 {FactIcon::source,release.provider},
                 {FactIcon::format,format_label(release)},
                 {FactIcon::download,format_bytes(release.size_bytes)},
-                {FactIcon::platform,release.platform == "ps4" ? "PS4" : "PS5"}};
+                {release.platform == "ps4" ? FactIcon::platform4 : FactIcon::platform,release.platform == "ps4" ? "PS4" : "PS5"}};
             float px = kLeft, py = y + 6;
             for (const auto &pill : pills)
             {
@@ -632,7 +633,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
     {
         struct Fact { FactIcon icon; std::string value; std::string label; };
         std::vector<Fact> facts;
-        facts.push_back({FactIcon::platform,release.platform=="ps4"?"PS4":"PS5",tr("Platform")});
+        facts.push_back({release.platform=="ps4"?FactIcon::platform4:FactIcon::platform,release.platform=="ps4"?"PS4":"PS5",tr("Platform")});
         if(!game->genre.empty())facts.push_back({FactIcon::genre,i18n::genre(game->genre),tr("Genre")});
         if(!game->release_date.empty())facts.push_back({FactIcon::calendar,format_date(game->release_date),tr("Release date")});
         if(!game->publisher.empty())facts.push_back({FactIcon::publisher,game->publisher,tr("Publisher")});
