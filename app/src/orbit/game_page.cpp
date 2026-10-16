@@ -131,18 +131,14 @@ void fact_icon(hui::gfx::DrawList &list, const ui::Type &type, FactIcon icon, fl
         line(0, 0, 0, 14, 2.2f);
         break;
     case FactIcon::source:
-    {
-        dot(-6, 3, 7);
-        dot(3, -3, 9);
-        dot(10, 4, 6);
-        list.rounded_rect({cx - 6 * k, cy + 3 * k, 16 * k, 7 * k}, 0, ink);
-        const ui::Color cut = ui::color::night3;
-        line(0, -2, 0, 5, 2.4f);
-        list.line(cx, cy - 2 * k, cx, cy + 5 * k, 2.4f * k, cut);
-        float tri[6] = {cx - 4.5f * k, cy + 3.5f * k, cx + 4.5f * k, cy + 3.5f * k, cx, cy + 8.5f * k};
-        list.polygon(tri, 3, cut);
+        // A server: two stacked units with a light and a slot each.
+        box(-16, -16, 32, 14, 5);
+        box(-16, 2, 32, 14, 5);
+        dot(-9, -9, 1.8f);
+        dot(-9, 9, 1.8f);
+        line(-2, -9, 9, -9, 2.0f);
+        line(-2, 9, 9, 9, 2.0f);
         break;
-    }
     case FactIcon::title_id:
         box(-16, -11, 32, 22, 5);
         list.ring(cx - 8 * k, cy - 1 * k, 3.4f * k, 2.0f * k, ink);
@@ -558,7 +554,8 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             if (list)
             {
                 const float label_w=type.medium.measure(label,23);
-                ui::icon_download(*list,button.cx()-label_w*0.5f-28,button.cy(),26,ui::state_ink(button_focus));
+                ui::icon_download(*list,button.cx()-label_w*0.5f-28,button.cy(),26,
+                                  primary_enabled(release,now)?ui::state_ink(button_focus):ui::color::text.with_alpha(0.4f));
                 ui::paragraph(*list,type.regular,one_per_line(tr("Saves a file to your console. Installation and launching are separate.")),
                               nx+520+32,ry+32,17,nw-552,24,ui::color::text3,3);
             }
