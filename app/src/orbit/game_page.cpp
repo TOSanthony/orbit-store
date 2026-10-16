@@ -544,6 +544,11 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             }
         }
         if (now.show_download && now.drive) ry += 140 + 20;
+        // A game already in Library: the second-copy button sits on the cover's bottom edge, the
+        // sentence above it, and the main button is centred in the space left under the source row.
+        const bool anchored = !now.show_download && !download_again_ && !now.collection.job &&
+            now.collection.kind == CollectionState::Kind::library && now.collection.library != nullptr;
+        if (anchored) ry = (ry - 12 + 295.0f) * 0.5f - 40.0f;
         {
             // The download button with its explanation beside it.
             const std::string label=primary_label(release,download_again_,waiting_,now.collection,state,torbox_);
@@ -557,6 +562,13 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                               nx+520+32,ry+32,17,nw-552,24,ui::color::text3,3);
             }
             ry += 80 + 22;
+        }
+        if (anchored)
+        {
+            float py = 295;
+            paragraph(tr("In your Library on {location}.",{{"location",i18n::place(now.collection.library->location)}}),nx,py,nw);
+            control(Slot::again,0,{nx,342,450,58},tr("Download another copy"));
+            ry = 400 + 22;
         }
         out.content=std::max(510.0f,ry-22);
         y=ry;
@@ -589,7 +601,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             out.controls.push_back({Slot::reading,0,{nx,notes_top,520,y-notes_top},true,false});
         if (now.show_download && (torbox_ || (state.debrid.connected && !state.debrid.supports(release))))
         { paragraph(delivery_note(release),nx,y,width_notes,21);y+=18; }
-        if (now.collection.library)
+        if (now.collection.library && !anchored)
         {
             paragraph(now.collection.kind == CollectionState::Kind::related
                 ? tr("A related copy is in Library. Its format, filename or version does not confirm a match for this option.")
@@ -598,7 +610,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             if (now.collection.kind == CollectionState::Kind::related)
             { control(Slot::related,0,{nx,y,450,58},tr("View related copy"));y+=80; }
         }
-        if (!download_again_ && (now.collection.kind == CollectionState::Kind::library ||
+        if (!anchored && !download_again_ && (now.collection.kind == CollectionState::Kind::library ||
             (now.collection.job && now.collection.job->status == "complete")))
         { control(Slot::again,0,{nx,y,450,58},tr("Download another copy"));y+=80; }
         if (now.collection.job && now.collection.job->status == "complete")
