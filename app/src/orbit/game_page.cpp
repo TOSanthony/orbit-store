@@ -405,9 +405,9 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                     if (state.favourite(game->id))
                         ui::icon_heart_filled(*list,r.cx(),r.cy(),36,ui::color::heart);
                     else
-                        ui::icon_heart(*list,r.cx(),r.cy(),36,ui::color::text);
+                        ui::icon_heart(*list,r.cx(),r.cy(),36,focus > 0.5f ? ui::Color::rgb(0x080808) : ui::color::text);
                 }
-                else for (int d=-1;d<=1;++d) list->circle(r.cx()+d*12,r.cy(),3,ui::color::text);
+                else for (int d=-1;d<=1;++d) list->circle(r.cx()+d*12,r.cy(),3,focus > 0.5f ? ui::Color::rgb(0x080808) : ui::color::text);
                 if (focus > 0)
                     ui::text(*list,type.regular,i == 0 ? (state.favourite(game->id) ? tr("Saved to favourites") : tr("Add to favourites")) : tr("About this game"),
                              r.cx(),y+123,18,ui::color::text2,ui::Align::center);
