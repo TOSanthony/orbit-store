@@ -100,9 +100,19 @@ enum class ButtonKind : std::uint8_t
 constexpr float kButtonHeight = 54.0f;
 float button_width(const Type &type, std::string_view label, float size = 20.0f,
                    ButtonKind kind = ButtonKind::primary);
+// The one state rule for every pill: resting = faint translucent fill with a
+// thin edge; active (chosen, the cursor elsewhere) = a little paler; focus
+// (the cursor on it) = solid white. plain_rest draws nothing at rest (text tabs).
+// Draws the ring and the fill; state_ink() is the matching text colour.
+void state_fill(DrawList &list, const Rect &r, float radius, float focus, bool active = false,
+                bool plain_rest = false);
+Color state_ink(float focus, bool active = false, bool plain_rest = false);
+// Secondary text on a pill: grey at rest, dark grey on the solid white state.
+Color state_ink_dim(float focus);
 // A pill button. focus (0..1) draws the ring and grows a primary button.
 void button(DrawList &list, const Type &type, const Rect &r, std::string_view label,
-            ButtonKind kind, float focus, bool enabled = true, float size = 20.0f);
+            ButtonKind kind, float focus, bool enabled = true, float size = 20.0f,
+            bool active = false);
 
 // A small rounded label ("PS5", a genre, a status). Returns its width.
 float chip(DrawList &list, const Type &type, float x, float cy, std::string_view label, Color fill,

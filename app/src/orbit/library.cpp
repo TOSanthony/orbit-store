@@ -53,10 +53,8 @@ void library_icon(hui::gfx::DrawList &list, float cx, float cy, bool scan, ui::C
 void header_action(hui::gfx::DrawList &list, const ui::Type &type, const ui::Rect &r,
                    std::string_view text, float focus, bool scan, bool enabled)
 {
-    const ui::Color ink = ui::color::text.with_alpha(enabled ? 1.0f : 0.4f);
-    ui::focus_ring(list, r, r.h * 0.5f, focus);
-    list.bordered_rect(r, r.h * 0.5f, ui::color::night3.with_alpha(0.5f), 2.0f,
-                       ui::color::text2.with_alpha(0.45f));
+    const ui::Color ink = enabled ? ui::state_ink(focus) : ui::color::text.with_alpha(0.4f);
+    ui::state_fill(list, r, r.h * 0.5f, focus);
     const float width = type.medium.measure(text, 20.0f) + 40.0f;
     library_icon(list, r.cx() - width * 0.5f + 12.0f, r.cy(), scan, ink);
     ui::text(list, type.medium, text, r.cx() - width * 0.5f + 40.0f, r.cy() + 7.0f, 20.0f, ink);
@@ -1054,22 +1052,20 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
         {
             const ui::Rect r = rect(Kind::view, v).inset(5.0f);
             const bool on = v == view_;
-            ui::focus_ring(list, r, r.h * 0.5f, amount(Kind::view, v));
-            if (on)
-                list.rounded_rect(r, r.h * 0.5f, ui::Color::rgb(0xf4f4f4));
-            const ui::Color ink = on ? ui::Color::rgb(0x080808) : ui::color::text2;
+            // Chosen view = active (pale); solid white while the cursor is on it.
+            ui::state_fill(list, r, r.h * 0.5f, amount(Kind::view, v), on, true);
+            const ui::Color ink = ui::state_ink(amount(Kind::view, v), on, true);
             ui::text(list, type.medium, tr(kViews[v]), r.cx(), r.cy() + 7.0f, 20.0f, ink,
                      ui::Align::center);
         }
         // .library-filters
         const ui::Rect search = rect(Kind::search, 0);
-        ui::focus_ring(list, search, search.h * 0.5f, amount(Kind::search, 0));
-        ui::surface(list, search, search.h * 0.5f,
-                    keyboard_open_ ? ui::color::field_open : ui::color::field);
-        ui::icon_search(list, search.x + 34.0f, search.cy(), 24.0f, ui::color::text2);
+        const float sf = amount(Kind::search, 0);
+        ui::state_fill(list, search, search.h * 0.5f, sf, keyboard_open_);
+        ui::icon_search(list, search.x + 34.0f, search.cy(), 24.0f, ui::state_ink_dim(sf));
         ui::text_fit(list, type.regular, query_.empty() ? tr("Search your library") : query_,
                      search.x + 60.0f, search.cy() + 7.0f, 20.0f, search.w - 90.0f,
-                     query_.empty() ? ui::color::text3 : ui::color::text);
+                     query_.empty() ? ui::state_ink_dim(sf) : ui::state_ink(sf, keyboard_open_));
         const ui::Rect location = rect(Kind::location, 0);
         ui::select_field(list, type, location, location_.empty() ? std::string(tr("All locations")) : i18n::place(location_),
                          amount(Kind::location, 0), picker_.open && picking_ == Kind::location,

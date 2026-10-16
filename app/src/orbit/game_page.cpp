@@ -300,19 +300,19 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         out.controls.push_back({slot, index, r, enabled, false});
         if (list)
         {
-            ui::focus_ring(*list, r, 20, focus);
-            ui::surface(*list, r, 20, checked ? ui::color::field_open : ui::color::field);
+            // Chosen option = active (pale); solid white while the cursor is on it.
+            ui::state_fill(*list, r, 20, focus, checked);
             list->push_opacity(enabled ? 1 : 0.4f);
             if (checked)
             {
-                list->circle(x + 34, y + 44, 15, ui::color::text);
-                ui::icon_check(*list, x + 34, y + 44, 18, ui::color::night1);
+                list->circle(x + 34, y + 44, 15, focus > 0.5f ? ui::color::night1 : ui::color::text);
+                ui::icon_check(*list, x + 34, y + 44, 18, focus > 0.5f ? ui::color::text : ui::color::night1);
             }
-            else list->ring(x + 34, y + 44, 14, 1, ui::color::text3);
-            ui::paragraph(*list, type.medium, title, x + 68, y + 47, 27, text_width, 35, ui::color::text, 999);
+            else list->ring(x + 34, y + 44, 14, 1, focus > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::color::text3);
+            ui::paragraph(*list, type.medium, title, x + 68, y + 47, 27, text_width, 35, ui::state_ink(focus, checked), 999);
             if (!detail.empty())
                 ui::paragraph(*list, type.regular, detail, x + 68, y + 35 + title_height, 21,
-                              text_width, 30.45f, ui::color::text2, 999);
+                              text_width, 30.45f, ui::state_ink_dim(focus), 999);
             list->pop_opacity();
         }
         return height;
@@ -434,17 +434,18 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             out.controls.push_back({slot,0,r,!waiting_,false});
             if (list)
             {
-                ui::focus_ring(*list,r,20,f);ui::surface(*list,r,20,ui::color::field);
-                list->circle(nx+50,ry+38,24,ui::Color::rgb(0xffffff,0.14f));
-                fact_icon(*list,type,icon,nx+50,ry+38,30,ui::color::text);
-                ui::text(*list,type.regular,label,nx+92,ry+29,17,ui::color::text2);
+                ui::state_fill(*list,r,20,f);
+                const ui::Color ink=ui::state_ink(f),dim=ui::state_ink_dim(f);
+                list->circle(nx+50,ry+38,24,f>0.5f?ui::Color::rgb(0x080808,0.1f):ui::Color::rgb(0xffffff,0.14f));
+                fact_icon(*list,type,icon,nx+50,ry+38,30,ink);
+                ui::text(*list,type.regular,label,nx+92,ry+29,17,dim);
                 const float value_w = std::min(type.medium.measure(value,24),nw-160);
-                ui::text_fit(*list,type.medium,value,nx+92,ry+60,24,nw-160,ui::color::text);
+                ui::text_fit(*list,type.medium,value,nx+92,ry+60,24,nw-160,ink);
                 if (!note.empty())
-                    ui::text_fit(*list,type.regular,note,nx+92+value_w+14,ry+60,17,nw-160-value_w-14,ui::color::text2);
+                    ui::text_fit(*list,type.regular,note,nx+92+value_w+14,ry+60,17,nw-160-value_w-14,dim);
                 const float cx = nx + nw - 34;
-                list->line(cx-5,ry+31,cx+3,ry+38,2,ui::color::text2);
-                list->line(cx+3,ry+38,cx-5,ry+45,2,ui::color::text2);
+                list->line(cx-5,ry+31,cx+3,ry+38,2,dim);
+                list->line(cx+3,ry+38,cx-5,ry+45,2,dim);
             }
             ry += 86;
         };
@@ -1004,9 +1005,10 @@ void GamePage::draw(Frame &frame,bool focused) const
         else if(c.slot==Slot::back)ui::button(list,type,c.rect,tr("Back"),ui::ButtonKind::secondary,focus,true,22);
         else
         {
-            ui::focus_ring(list,c.rect,c.rect.h/2,focus);
+            ui::state_fill(list,c.rect,c.rect.h/2,focus);
             const float x=c.rect.cx(),y=c.rect.cy();
-            list.line(x-9,y-9,x+9,y+9,2,ui::color::text);list.line(x-9,y+9,x+9,y-9,2,ui::color::text);
+            const ui::Color ink=ui::state_ink(focus);
+            list.line(x-9,y-9,x+9,y+9,2,ink);list.line(x-9,y+9,x+9,y-9,2,ink);
         }
     }
     list.pop_transform();

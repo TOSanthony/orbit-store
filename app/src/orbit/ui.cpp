@@ -60,31 +60,53 @@ float button_width(const Type &type, std::string_view label, float size, ButtonK
     return type.medium.measure(label, size) + 2.0f * 28.0f;
 }
 
+void state_fill(DrawList &list, const Rect &r, float radius, float focus, bool active,
+                bool plain_rest)
+{
+    const float t = std::clamp(focus, 0.0f, 1.0f);
+    const auto mix = [t](float a, float b) { return a + (b - a) * t; };
+    focus_ring(list, r, radius, focus); // the glow goes behind the fill
+    const float rest_fill = active ? 0.13f : (plain_rest ? 0.0f : 0.05f);
+    const float rest_edge = active ? 0.20f : (plain_rest ? 0.0f : 0.14f);
+    const Color white = Color::rgb(0xf4f4f4);
+    const Color fill{mix(1.0f, white.r), mix(1.0f, white.g), mix(1.0f, white.b),
+                     mix(rest_fill, 1.0f)};
+    list.bordered_rect(r, radius, fill, 1.0f, Color{1.0f, 1.0f, 1.0f, mix(rest_edge, 0.0f)});
+}
+
+Color state_ink(float focus, bool active, bool plain_rest)
+{
+    const float t = std::clamp(focus, 0.0f, 1.0f);
+    const Color rest = (plain_rest && !active) ? color::text2 : color::text;
+    const auto mix = [t](float a, float b) { return a + (b - a) * t; };
+    return Color{mix(rest.r, 0.031f), mix(rest.g, 0.031f), mix(rest.b, 0.031f), 1.0f};
+}
+
+Color state_ink_dim(float focus)
+{
+    const float t = std::clamp(focus, 0.0f, 1.0f);
+    const Color rest = color::text2;
+    const auto mix = [t](float a, float b) { return a + (b - a) * t; };
+    return Color{mix(rest.r, 0.3f), mix(rest.g, 0.3f), mix(rest.b, 0.3f), mix(rest.a, 1.0f)};
+}
+
 void button(DrawList &list, const Type &type, const Rect &r, std::string_view label,
-            ButtonKind kind, float focus, bool enabled, float size)
+            ButtonKind kind, float focus, bool enabled, float size, bool active)
 {
     // A focused primary button grows a little, as on the web; the ring follows it.
     const float scale = kind == ButtonKind::primary ? 1.0f + 0.04f * focus : 1.0f;
     list.push_transform(scale, r.cx(), r.cy(), 0.0f, 0.0f);
-    // One state rule for every button: resting = faint translucent pill with a
-    // thin edge; selected (focus) = solid white with dark text.
-    const float t = std::clamp(focus, 0.0f, 1.0f);
-    auto mix = [t](float a, float b) { return a + (b - a) * t; };
-    const Color rest_fill = Color::rgb(0xffffff, 0.05f);
-    const Color rest_edge = Color::rgb(0xffffff, 0.14f);
-    const Color white = Color::rgb(0xf4f4f4);
-    Color fill{mix(1.0f, white.r), mix(1.0f, white.g), mix(1.0f, white.b), mix(rest_fill.a, 1.0f)};
-    Color edge{1.0f, 1.0f, 1.0f, mix(rest_edge.a, 0.0f)};
-    Color ink{mix(color::text.r, 0.031f), mix(color::text.g, 0.031f), mix(color::text.b, 0.031f), 1.0f};
-    (void)kind;
-    if (!enabled)
+    if (enabled)
     {
-        fill = Color::rgb(0xffffff, 0.04f);
-        edge = Color::rgb(0xffffff, 0.08f);
-        ink = color::text.with_alpha(0.4f);
+        state_fill(list, r, r.h * 0.5f, focus, active);
     }
-    focus_ring(list, r, r.h * 0.5f, focus); // the glow goes behind the fill
-    list.bordered_rect(r, r.h * 0.5f, fill, 1.0f, edge);
+    else
+    {
+        focus_ring(list, r, r.h * 0.5f, focus);
+        list.bordered_rect(r, r.h * 0.5f, Color::rgb(0xffffff, 0.04f), 1.0f,
+                           Color::rgb(0xffffff, 0.08f));
+    }
+    const Color ink = enabled ? state_ink(focus, active) : color::text.with_alpha(0.4f);
     text_fit(list, type.medium, label, r.cx(), r.cy() + size * 0.36f, size, r.w - 32.0f, ink,
              Align::center);
     list.pop_transform();
@@ -208,14 +230,12 @@ void select_field(DrawList &list, const Type &type, const Rect &r, std::string_v
                          : look == FieldLook::glass ? 20.0f
                                                     : 14.0f;
     const float pad = look == FieldLook::pill ? 25.0f : 20.0f;
-    focus_ring(list, r, radius, focus);
-    if (look == FieldLook::glass)
-        surface(list, r, radius, open ? color::glass_on : color::glass);
-    else
-        surface(list, r, radius, open ? color::field_open : color::field);
-    const Color ink = enabled ? color::text : color::text3;
+    // The same state rule as the buttons: open = active (pale), cursor = solid white.
+    state_fill(list, r, radius, focus, open);
+    const Color ink = enabled ? state_ink(focus, open) : color::text3;
     text_fit(list, type.regular, value, r.x + pad, r.cy() + 6.5f, 18.0f, r.w - pad - 50.0f, ink);
-    icon_chevron(list, r.x + r.w - 30.0f, r.cy(), 20.0f, color::text2, open);
+    icon_chevron(list, r.x + r.w - 30.0f, r.cy(), 20.0f,
+                 focus > 0.5f ? Color::rgb(0x080808) : color::text2, open);
 }
 
 void select_menu(DrawList &list, const Type &type, const Rect &trigger,
@@ -264,6 +284,9 @@ void select_menu(DrawList &list, const Type &type, const Rect &trigger,
         // The controller's option is the cursor: solid white, like a focused tile.
         if (is_active)
             list.rounded_rect(row, 13.0f, Color::rgb(0xf4f4f4));
+        else if (is_selected) // chosen, the cursor elsewhere: the pale active state
+            list.bordered_rect(row, 13.0f, Color::rgb(0xffffff, 0.13f), 1.0f,
+                               Color::rgb(0xffffff, 0.2f));
         const Color ink = is_active     ? Color::rgb(0x080808)
                           : is_selected ? color::text
                                         : color::text2;

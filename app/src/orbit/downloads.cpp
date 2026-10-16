@@ -449,14 +449,10 @@ void DownloadsScreen::draw(Frame &frame, bool focused) const
         const float width = label_width + 7.0f + type.medium.measure(number, 18.0f) + 2.0f * 18.0f;
         const ui::Rect pill{x, kChipsY, width, kChipHeight};
         const bool current = view == view_;
-        ui::focus_ring(list, pill, pill.h * 0.5f,
-                       focused && on_views_ && current && !dialog_open_ ? 1.0f : 0.0f);
-        if (current)
-            list.rounded_rect(pill, pill.h * 0.5f, ui::Color::rgb(0xf4f4f4));
-        else
-            list.bordered_rect(pill, pill.h * 0.5f, ui::Color::rgb(0xffffff, 0.05f), 1.0f,
-                               ui::Color::rgb(0xffffff, 0.14f));
-        const ui::Color ink = current ? ui::Color::rgb(0x080808) : ui::color::text;
+        const float chip_focus = focused && on_views_ && current && !dialog_open_ ? 1.0f : 0.0f;
+        // Chosen view = active; white only while the cursor is on the chips.
+        ui::state_fill(list, pill, pill.h * 0.5f, chip_focus, current);
+        const ui::Color ink = ui::state_ink(chip_focus, current);
         ui::text(list, type.medium, label, pill.x + 18.0f, pill.cy() + 6.5f, 18.0f, ink);
         ui::text(list, type.medium, number, pill.x + 18.0f + label_width + 7.0f, pill.cy() + 6.5f,
                  18.0f, ink.with_alpha(0.65f));

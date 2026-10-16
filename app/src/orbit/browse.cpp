@@ -508,22 +508,22 @@ void BrowseScreen::draw(Frame &frame, bool focused) const
 
     // .search-field: a tonal pill, brighter while typing.
     const ui::Rect field{1920.0f - ui::kGutter - kFieldWidth, kFieldY, kFieldWidth, kFieldHeight};
-    ui::focus_ring(list, field, field.h * 0.5f, field_focus_.value);
-    ui::surface(list, field, field.h * 0.5f,
-                keyboard_open_ ? ui::color::field_open : ui::color::field);
-    ui::icon_search(list, field.x + 34.0f, field.cy(), 24.0f, ui::color::text2);
+    const float sf = field_focus_.value;
+    ui::state_fill(list, field, field.h * 0.5f, sf, keyboard_open_);
+    ui::icon_search(list, field.x + 34.0f, field.cy(), 24.0f, ui::state_ink_dim(sf));
     if (filters_.query.empty())
     {
         ui::text(list, type.regular, tr("Search games or title ID"), field.x + 60.0f, field.cy() + 7.0f,
-                 20.0f, ui::color::text3);
+                 20.0f, ui::state_ink_dim(sf));
     }
     else
     {
         const float w = ui::text_fit(list, type.regular, filters_.query, field.x + 60.0f,
-                                     field.cy() + 7.0f, 20.0f, field.w - 90.0f, ui::color::text);
+                                     field.cy() + 7.0f, 20.0f, field.w - 90.0f,
+                                     ui::state_ink(sf, keyboard_open_));
         if (keyboard_open_ && static_cast<int>(ctx_.clock * 2.0f) % 2 == 0)
             list.rounded_rect({field.x + 63.0f + w, field.cy() - 12.0f, 2.0f, 24.0f}, 1.0f,
-                              ui::color::text);
+                              ui::state_ink(sf, keyboard_open_));
     }
 
     // .collection-tabs: All games and Favourites, one tonal track with the chosen side lit.
@@ -537,12 +537,10 @@ void BrowseScreen::draw(Frame &frame, bool focused) const
         const ui::Rect chip{x, kChipsY, chip_width(type, c), kChipHeight};
         const ui::Rect lit = chip.inset(5.0f);
         const bool on = (c == 1) == filters_.favourites;
-        ui::focus_ring(list, lit, lit.h * 0.5f, control_focus_[c]);
-        if (on)
-            list.rounded_rect(lit, lit.h * 0.5f, ui::Color::rgb(0xf4f4f4));
-
+        // Chosen side = active (pale); solid white while the cursor is on it.
+        ui::state_fill(list, lit, lit.h * 0.5f, control_focus_[c], on, true);
         ui::text(list, type.medium, tr(kChips[c]), chip.cx(), chip.cy() + 7.0f, 20.0f,
-                 on ? ui::Color::rgb(0x080808) : ui::color::text, ui::Align::center);
+                 ui::state_ink(control_focus_[c], on, true), ui::Align::center);
         x += chip.w;
     }
 

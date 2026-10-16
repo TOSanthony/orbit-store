@@ -483,18 +483,17 @@ void App::draw_top_bar(hui::gfx::DrawList &list) const
             r.w += 10.0f + count_width;
         const bool current = i == tab_;
         const float focus = top_focus_[static_cast<std::size_t>(i)].value;
-        ui::focus_ring(list, r, r.h * 0.5f, focus);
-        if (current)
-            list.bordered_rect(r, r.h * 0.5f, ui::Color::rgb(0xffffff, 0.13f), 1.0f,
-                               ui::Color::rgb(0xffffff, 0.2f));
+        ui::state_fill(list, r, r.h * 0.5f, focus, current, true);
         ui::text(list, type.regular, tr(kTabs[i]), r.x + kTabPad, kTopY + 8.0f, kTabSize,
-                 current || focus > 0.5f ? ui::color::text : ui::color::text2);
+                 ui::state_ink(focus, current, true));
         if (counted)
         {
             const ui::Rect pill{r.x + r.w - kTabPad - count_width, kTopY - 11.0f, count_width,
                                 22.0f};
-            list.rounded_rect(pill, 11.0f, ui::color::action);
-            ui::text(list, type.semibold, count, pill.cx(), kTopY + 5.0f, 14.0f, ui::color::night1,
+            // On the white selected pill the badge turns dark.
+            list.rounded_rect(pill, 11.0f, focus > 0.5f ? ui::color::night1 : ui::color::action);
+            ui::text(list, type.semibold, count, pill.cx(), kTopY + 5.0f, 14.0f,
+                     focus > 0.5f ? ui::color::text : ui::color::night1,
                      ui::Align::center);
         }
     }
@@ -509,16 +508,16 @@ void App::draw_top_bar(hui::gfx::DrawList &list) const
     for (const auto &icon : icons)
     {
         const float focus = top_focus_[static_cast<std::size_t>(icon.index)].value;
-        ui::focus_ring(list, {icon.x - kIcon * 0.5f, kTopY - kIcon * 0.5f, kIcon, kIcon},
+        ui::state_fill(list, {icon.x - kIcon * 0.5f, kTopY - kIcon * 0.5f, kIcon, kIcon},
                        kIcon * 0.5f, focus);
-        list.circle(icon.x, kTopY, kIcon * 0.5f, ui::Color::rgb(0xffffff, 0.08f));
+        const ui::Color ink = ui::state_ink(focus);
         if (icon.index == kSearchItem)
         {
-            ui::icon_search(list, icon.x, kTopY, 26.0f, ui::color::text);
+            ui::icon_search(list, icon.x, kTopY, 26.0f, ink);
         }
         else
         {
-            ui::icon_settings(list, icon.x, kTopY, 26.0f, ui::color::text);
+            ui::icon_settings(list, icon.x, kTopY, 26.0f, ink);
             if (update_badge())
             {
                 // An update is waiting under App settings.

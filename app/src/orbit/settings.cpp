@@ -360,21 +360,21 @@ void SettingsScreen::build_sources(Pane &pane) const
         const ui::Rect r{cx, cy, w, 60.0f};
         if (pane.list != nullptr)
         {
-            ui::focus_ring(*pane.list, r, 30.0f, pane.amount());
-            pane.list->rounded_rect(
-                r, 30.0f, on ? ui::Color::rgb(0xffffff, 0.26f) : ui::Color::rgb(0xffffff, 0.08f));
+            const float f = pane.amount();
+            ui::state_fill(*pane.list, r, 30.0f, f, on);
             const float mx = r.x + 22.0f + 13.0f;
             if (on)
             {
-                pane.list->circle(mx, r.cy(), 13.0f, ui::color::action);
-                ui::icon_check(*pane.list, mx, r.cy(), 15.0f, ui::color::night1, 2.4f);
+                pane.list->circle(mx, r.cy(), 13.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
+                ui::icon_check(*pane.list, mx, r.cy(), 15.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.4f);
             }
             else
             {
-                pane.list->ring(mx, r.cy(), 12.0f, 2.0f, ui::Color::rgb(0xffffff, 0.55f));
+                pane.list->ring(mx, r.cy(), 12.0f, 2.0f,
+                                f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::Color::rgb(0xffffff, 0.55f));
             }
             ui::text(*pane.list, type.medium, option.label, mx + 13.0f + 18.0f, r.cy() + 7.5f,
-                     21.0f, ui::color::text);
+                     21.0f, ui::state_ink(f, on));
         }
         pane.add(Kind::source, i, r, !saving);
         cx += w + 14.0f;
@@ -445,21 +445,22 @@ void SettingsScreen::build_sources(Pane &pane) const
     const ui::Rect box{pane.x, pane.y, pane.width, 44.0f + 28.0f * static_cast<float>(lines)};
     if (pane.list != nullptr)
     {
-        ui::focus_ring(*pane.list, box, 16.0f, pane.amount());
-        pane.list->rounded_rect(box, 16.0f, ui::Color::rgb(0xffffff, 0.06f));
+        const float f = pane.amount();
+        ui::state_fill(*pane.list, box, 16.0f, f, draft_acknowledged_);
         const float mx = box.x + 26.0f + 16.0f;
         const float my = box.y + 22.0f + 16.0f;
         if (draft_acknowledged_)
         {
-            pane.list->circle(mx, my, 16.0f, ui::color::action);
-            ui::icon_check(*pane.list, mx, my, 18.0f, ui::color::night1, 2.6f);
+            pane.list->circle(mx, my, 16.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
+            ui::icon_check(*pane.list, mx, my, 18.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.6f);
         }
         else
         {
-            pane.list->ring(mx, my, 15.0f, 2.0f, ui::Color::rgb(0xffffff, 0.55f));
+            pane.list->ring(mx, my, 15.0f, 2.0f,
+                            f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::Color::rgb(0xffffff, 0.55f));
         }
         ui::paragraph(*pane.list, type.regular, agree, box.x + 76.0f, box.y + 22.0f + 21.0f, 19.0f,
-                      text_w, 28.0f, ui::color::text, 4);
+                      text_w, 28.0f, ui::state_ink(f, draft_acknowledged_), 4);
     }
     pane.add(Kind::acknowledge, 0, box, !saving);
     ++pane.row;
@@ -502,31 +503,29 @@ void SettingsScreen::build_storage(Pane &pane) const
         if (pane.list != nullptr)
         {
             ui::DrawList &list = *pane.list;
-            ui::focus_ring(list, r, kCardRadius, pane.amount());
-            // The same fills as the source chips.
-            list.rounded_rect(r, kCardRadius,
-                              chosen ? ui::Color::rgb(0xffffff, 0.26f) : ui::Color::rgb(0xffffff, 0.08f));
+            const float f = pane.amount();
+            ui::state_fill(list, r, kCardRadius, f, chosen);
             const float mx = r.x + 24.0f + 14.0f;
             if (chosen)
             {
-                list.circle(mx, r.cy(), 14.0f, ui::color::action);
-                ui::icon_check(list, mx, r.cy(), 16.0f, ui::color::night1, 2.4f);
+                list.circle(mx, r.cy(), 14.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
+                ui::icon_check(list, mx, r.cy(), 16.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.4f);
             }
             else
             {
-                list.ring(mx, r.cy(), 13.5f, 1.0f, ui::color::text3);
+                list.ring(mx, r.cy(), 13.5f, 1.0f, f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::color::text3);
             }
             const float tx = mx + 14.0f + 20.0f;
             const float rx = r.x + r.w - 24.0f;
             // Without a right column, the left text may use the whole card.
             const float fit = right.empty() && right_detail.empty() ? rx - tx : 470.0f;
             ui::text_fit(list, type.medium, title, tx, r.cy() - 6.0f, 21.0f, fit,
-                         ui::color::text);
+                         ui::state_ink(f, chosen));
             ui::text_fit(list, type.regular, detail, tx, r.cy() + 22.0f, 16.0f, fit,
-                         ui::color::text2);
-            ui::text(list, type.medium, right, rx, r.cy() - 6.0f, 19.0f, ui::color::text,
+                         ui::state_ink_dim(f));
+            ui::text(list, type.medium, right, rx, r.cy() - 6.0f, 19.0f, ui::state_ink(f, chosen),
                      ui::Align::right);
-            ui::text(list, type.regular, right_detail, rx, r.cy() + 22.0f, 16.0f, ui::color::text2,
+            ui::text(list, type.regular, right_detail, rx, r.cy() + 22.0f, 16.0f, ui::state_ink_dim(f),
                      ui::Align::right);
         }
         pane.add(Kind::drive, index, r, !saving);
@@ -969,24 +968,23 @@ void SettingsScreen::build_appearance(Pane &pane) const
         if (pane.list != nullptr)
         {
             ui::DrawList &list = *pane.list;
-            ui::focus_ring(list, r, kCardRadius, pane.amount());
-            list.rounded_rect(r, kCardRadius,
-                              chosen ? ui::Color::rgb(0xffffff, 0.26f) : ui::Color::rgb(0xffffff, 0.08f));
+            const float f = pane.amount();
+            ui::state_fill(list, r, kCardRadius, f, chosen);
             const float mx = r.x + 24.0f + 14.0f;
             if (chosen)
             {
-                list.circle(mx, r.cy(), 14.0f, ui::color::action);
-                ui::icon_check(list, mx, r.cy(), 16.0f, ui::color::night1, 2.4f);
+                list.circle(mx, r.cy(), 14.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
+                ui::icon_check(list, mx, r.cy(), 16.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.4f);
             }
             else
-                list.ring(mx, r.cy(), 13.5f, 1.0f, ui::color::text3);
+                list.ring(mx, r.cy(), 13.5f, 1.0f, f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::color::text3);
             const float tx = mx + 14.0f + 20.0f;
             const float rx = r.x + r.w - 24.0f;
-            ui::text_fit(list, type.medium, tr(preset.name), tx, r.cy() - 6.0f, 21.0f, 470.0f, ui::color::text);
+            ui::text_fit(list, type.medium, tr(preset.name), tx, r.cy() - 6.0f, 21.0f, 470.0f, ui::state_ink(f, chosen));
             ui::text_fit(list, type.regular, tr(preset.about), tx, r.cy() + 22.0f, 16.0f, 470.0f,
-                         ui::color::text2);
+                         ui::state_ink_dim(f));
             if (preset.animated)
-                ui::text(list, type.medium, tr("Animated"), rx, r.cy() + 7.0f, 19.0f, ui::color::text2,
+                ui::text(list, type.medium, tr("Animated"), rx, r.cy() + 7.0f, 19.0f, ui::state_ink_dim(f),
                          ui::Align::right);
         }
         pane.add(Kind::appearance, static_cast<int>(i), r, true);
@@ -1450,12 +1448,9 @@ void SettingsScreen::draw(Frame &frame, bool focused) const
                          kNavWidth, kNavItem};
         const bool current = i == static_cast<int>(section_);
         const float focus = nav_focus_[i];
-        ui::focus_ring(list, r, r.h * 0.5f, focus);
-        if (current)
-            list.bordered_rect(r, r.h * 0.5f, ui::Color::rgb(0xffffff, 0.13f), 1.0f,
-                               ui::Color::rgb(0xffffff, 0.2f));
+        ui::state_fill(list, r, r.h * 0.5f, focus, current, true);
         ui::text(list, type.medium, tr(kSections[i]), r.x + 30.0f, r.cy() + 7.5f, 21.0f,
-                 current || focus > 0.5f ? ui::color::text : ui::color::text2);
+                 ui::state_ink(focus, current, true));
         if (static_cast<Section>(i) == Section::updates && update_available())
             list.circle(r.x + r.w - 32.0f, r.cy(), 7.0f, ui::color::action_hi);
     }
