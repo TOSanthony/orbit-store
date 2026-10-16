@@ -66,34 +66,25 @@ void button(DrawList &list, const Type &type, const Rect &r, std::string_view la
     // A focused primary button grows a little, as on the web; the ring follows it.
     const float scale = kind == ButtonKind::primary ? 1.0f + 0.04f * focus : 1.0f;
     list.push_transform(scale, r.cx(), r.cy(), 0.0f, 0.0f);
-    Color fill;
-    Color ink = color::text;
-    switch (kind)
-    {
-    case ButtonKind::primary:
-        fill = color::action;
-        ink = color::night1;
-        break;
-    case ButtonKind::light:
-        fill = color::text;
-        ink = color::night0;
-        break;
-    case ButtonKind::danger:
-        fill = Color::rgb(0xffffff, 0.16f);
-        ink = Color::rgb(0xffffff);
-        break;
-    default:
-        fill = Color::rgb(0xffffff, 0.1f);
-        break;
-    }
+    // One state rule for every button: resting = faint translucent pill with a
+    // thin edge; selected (focus) = solid white with dark text.
+    const float t = std::clamp(focus, 0.0f, 1.0f);
+    auto mix = [t](float a, float b) { return a + (b - a) * t; };
+    const Color rest_fill = Color::rgb(0xffffff, 0.05f);
+    const Color rest_edge = Color::rgb(0xffffff, 0.14f);
+    const Color white = Color::rgb(0xf4f4f4);
+    Color fill{mix(1.0f, white.r), mix(1.0f, white.g), mix(1.0f, white.b), mix(rest_fill.a, 1.0f)};
+    Color edge{1.0f, 1.0f, 1.0f, mix(rest_edge.a, 0.0f)};
+    Color ink{mix(color::text.r, 0.031f), mix(color::text.g, 0.031f), mix(color::text.b, 0.031f), 1.0f};
+    (void)kind;
     if (!enabled)
     {
-        fill = kind == ButtonKind::primary ? color::action.with_alpha(0.4f)
-                                           : Color::rgb(0xffffff, 0.04f);
+        fill = Color::rgb(0xffffff, 0.04f);
+        edge = Color::rgb(0xffffff, 0.08f);
         ink = color::text.with_alpha(0.4f);
     }
     focus_ring(list, r, r.h * 0.5f, focus); // the glow goes behind the fill
-    list.rounded_rect(r, r.h * 0.5f, fill);
+    list.bordered_rect(r, r.h * 0.5f, fill, 1.0f, edge);
     text_fit(list, type.medium, label, r.cx(), r.cy() + size * 0.36f, size, r.w - 32.0f, ink,
              Align::center);
     list.pop_transform();
