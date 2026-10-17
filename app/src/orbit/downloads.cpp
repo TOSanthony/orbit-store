@@ -20,10 +20,10 @@ namespace
 
 // The browser's Downloads page at 1920 x 1080: .page-heading, the
 // .download-tabs chips, then .queue rows (70 rem at most, 0.4 rem apart).
-constexpr float kTitleBaseline = 192.0f;
-constexpr float kChipsY = 236.0f;
+constexpr float kTitleBaseline = 176.0f; // as the Games and Library titles
+constexpr float kChipsY = 218.0f;
 constexpr float kChipHeight = 42.0f;
-constexpr float kListTop = 302.0f;
+constexpr float kListTop = 284.0f;
 constexpr float kRowHeight = 210.0f;
 constexpr float kRowGap = 8.0f;
 constexpr float kRowWidth = 1400.0f;
@@ -420,7 +420,7 @@ void DownloadsScreen::draw(Frame &frame, bool focused) const
     const Snapshot &state = ctx_.store.state();
     const ui::Type &type = ctx_.type;
 
-    const float title = ui::text(list, type.light, tr("Downloads"), ui::kGutter, kTitleBaseline, 56.0f,
+    const float title = ui::text(list, type.semibold, tr("Downloads"), ui::kGutter, kTitleBaseline, 60.0f,
                                  ui::color::text);
     int active = 0;
     int attention = 0;
