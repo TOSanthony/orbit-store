@@ -683,11 +683,9 @@ void App::draw_blocked(hui::gfx::DrawList &list) const
 
 void App::draw_game_header(hui::gfx::DrawList &list) const
 {
-    // A game page is its own screen: Back and the brand, no tabs or tools.
+    // A game page is its own screen: just the brand, where it is on every tab (Circle goes back).
     const ui::Type &type = ctx_.type;
-    list.circle(ui::kGutter + kIcon * 0.5f, kTopY, kIcon * 0.5f, ui::Color::rgb(0xffffff, 0.08f));
-    ui::icon_back(list, ui::kGutter + kIcon * 0.5f, kTopY, 24.0f, ui::color::text);
-    const float x = ui::kGutter + kIcon + 36.0f;
+    const float x = ui::kGutter;
     if (ctx_.mark != 0)
         list.image(ctx_.mark, {x - 2.0f, kTopY - 22.0f, 44.0f, 44.0f}, hui::gfx::kFullUv,
                    ui::Color::rgb(0xffffff));
