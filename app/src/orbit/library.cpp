@@ -506,21 +506,24 @@ std::vector<LibraryScreen::Control> LibraryScreen::panel_controls() const
         if (game->managed && library.can(game->mounted ? "unmount_game" : "mount_game"))
         {
             const char *text = game->mounted ? tr("Unmount game") : tr("Mount game");
-            const float w = ui::button_width(type, text, 18.0f);
+            const float w = ui::button_width(type, text, 18.0f, ui::ButtonKind::primary,
+                                             game->mounted ? ui::Glyph::unmount : ui::Glyph::mount);
             out.push_back({Kind::action, 0, 0, {x, y, w, 48.0f}});
             x += w + 12.0f;
         }
         if (transfer && library.can("copy_game_source") && library.can("storage_job_status"))
         {
             const float w =
-                ui::button_width(type, tr("Copy to drive"), 18.0f, ui::ButtonKind::secondary);
+                ui::button_width(type, tr("Copy to drive"), 18.0f, ui::ButtonKind::secondary,
+                                 ui::Glyph::copy);
             out.push_back({Kind::action, 1, 0, {x, y, w, 48.0f}});
             x += w + 12.0f;
         }
         if (transfer && library.can("move_game_source") && library.can("storage_job_status"))
         {
             const float w =
-                ui::button_width(type, tr("Move to drive"), 18.0f, ui::ButtonKind::secondary);
+                ui::button_width(type, tr("Move to drive"), 18.0f, ui::ButtonKind::secondary,
+                                 ui::Glyph::move);
             out.push_back({Kind::action, 2, 0, {x, y, w, 48.0f}});
         }
         return out;
@@ -1468,7 +1471,10 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                                action_focus,
                                !library.working() && game->on_drive &&
                                    (c.index == 0 || !game->mounted),
-                               18.0f);
+                               18.0f, false,
+                               c.index == 0 ? (game->mounted ? ui::Glyph::unmount : ui::Glyph::mount)
+                               : c.index == 1 ? ui::Glyph::copy
+                                              : ui::Glyph::move);
                 }
                 float fy = 400.0f + 80.0f;
                 if (game->managed && game->can_manage_source && game->on_drive && game->mounted)

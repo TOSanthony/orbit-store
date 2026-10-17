@@ -51,13 +51,23 @@ void focus_ring(DrawList &list, const Rect &r, float radius, float amount)
                        Color::rgb(0xffffff, amount));
 }
 
-float button_width(const Type &type, std::string_view label, float size, ButtonKind kind)
+namespace
+{
+// Room a button's icon takes left of its label: the icon and a gap.
+float glyph_room(Glyph with, float size)
+{
+    return with == Glyph::none ? 0.0f : size * 1.1f + 10.0f;
+}
+} // namespace
+
+float button_width(const Type &type, std::string_view label, float size, ButtonKind kind,
+                   Glyph with)
 {
     // .primary: 2 rem of padding each side and an 11 rem minimum; other
     // buttons 1.4 rem of padding.
     if (kind == ButtonKind::primary)
-        return std::max(220.0f, type.medium.measure(label, size) + 2.0f * 40.0f);
-    return type.medium.measure(label, size) + 2.0f * 28.0f;
+        return std::max(220.0f, type.medium.measure(label, size) + glyph_room(with, size) + 2.0f * 40.0f);
+    return type.medium.measure(label, size) + glyph_room(with, size) + 2.0f * 28.0f;
 }
 
 void state_fill(DrawList &list, const Rect &r, float radius, float focus, bool active,
@@ -91,7 +101,7 @@ Color state_ink_dim(float focus)
 }
 
 void button(DrawList &list, const Type &type, const Rect &r, std::string_view label,
-            ButtonKind kind, float focus, bool enabled, float size, bool active)
+            ButtonKind kind, float focus, bool enabled, float size, bool active, Glyph with)
 {
     // A focused primary button grows a little, as on the web; the ring follows it.
     const float scale = kind == ButtonKind::primary ? 1.0f + 0.04f * focus : 1.0f;
@@ -107,8 +117,22 @@ void button(DrawList &list, const Type &type, const Rect &r, std::string_view la
                            Color::rgb(0xffffff, 0.08f));
     }
     const Color ink = enabled ? state_ink(focus, active) : color::text.with_alpha(0.4f);
-    text_fit(list, type.medium, label, r.cx(), r.cy() + size * 0.36f, size, r.w - 32.0f, ink,
-             Align::center);
+    if (with == Glyph::none)
+    {
+        text_fit(list, type.medium, label, r.cx(), r.cy() + size * 0.36f, size, r.w - 32.0f, ink,
+                 Align::center);
+    }
+    else
+    {
+        // The icon and the label sit together, centred as a pair.
+        const float room = glyph_room(with, size);
+        const float text_w = std::min(type.medium.measure(label, size), r.w - 32.0f - room);
+        const float left = r.cx() - (room + text_w) * 0.5f;
+        const float icon = size * 1.1f;
+        glyph(list, with, left + icon * 0.5f, r.cy(), icon, ink);
+        text_fit(list, type.medium, label, left + room, r.cy() + size * 0.36f, size, text_w + 2.0f,
+                 ink);
+    }
     list.pop_transform();
 }
 
@@ -403,6 +427,53 @@ void icon_check(DrawList &list, float cx, float cy, float size, Color ink, float
               ink);
     list.line(cx - size * 0.08f, cy + size * 0.26f, cx + size * 0.34f, cy - size * 0.24f, thickness,
               ink);
+}
+
+void glyph(DrawList &list, Glyph which, float cx, float cy, float size, Color ink)
+{
+    const float t = std::max(1.8f, size * 0.09f);
+    switch (which)
+    {
+    case Glyph::none:
+        break;
+    case Glyph::mount:
+    {
+        // A disc seen from above, with a small hub.
+        list.ring(cx, cy, size * 0.4f, t, ink);
+        list.ring(cx, cy, size * 0.1f, t, ink);
+        break;
+    }
+    case Glyph::unmount:
+    {
+        // Eject: a triangle over a bar.
+        const float w = size * 0.36f;
+        list.line(cx - w, cy + size * 0.06f, cx + w, cy + size * 0.06f, t, ink);
+        list.line(cx - w, cy + size * 0.06f, cx, cy - size * 0.34f, t, ink);
+        list.line(cx + w, cy + size * 0.06f, cx, cy - size * 0.34f, t, ink);
+        list.line(cx - w, cy + size * 0.36f, cx + w, cy + size * 0.36f, t, ink);
+        break;
+    }
+    case Glyph::copy:
+    {
+        // Two sheets, the back one peeking out.
+        const float s = size * 0.52f;
+        const Color none{0, 0, 0, 0};
+        list.bordered_rect({cx - size * 0.38f, cy - size * 0.38f, s, s}, 3.0f, none, t, ink);
+        list.bordered_rect({cx - size * 0.14f, cy - size * 0.14f, s, s}, 3.0f, none, t, ink);
+        break;
+    }
+    case Glyph::move:
+    {
+        // An arrow running into a bar.
+        const float w = size * 0.4f;
+        list.line(cx - w, cy, cx + w * 0.7f, cy, t, ink);
+        list.line(cx + w * 0.7f - size * 0.2f, cy - size * 0.2f, cx + w * 0.7f, cy, t, ink);
+        list.line(cx + w * 0.7f - size * 0.2f, cy + size * 0.2f, cx + w * 0.7f, cy, t, ink);
+        list.line(cx + w + size * 0.02f, cy - size * 0.3f, cx + w + size * 0.02f, cy + size * 0.3f, t,
+                  ink);
+        break;
+    }
+    }
 }
 
 void icon_download(DrawList &list, float cx, float cy, float size, Color ink)

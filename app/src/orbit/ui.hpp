@@ -98,8 +98,18 @@ enum class ButtonKind : std::uint8_t
 };
 // The browser's .primary: 0.75 rem padding around a 1 rem label.
 constexpr float kButtonHeight = 54.0f;
+// A small line icon that can sit left of a button's label.
+enum class Glyph
+{
+    none,
+    mount,   // a disc going in
+    unmount, // eject
+    copy,    // two sheets
+    move,    // an arrow to a bar
+};
+void glyph(DrawList &list, Glyph which, float cx, float cy, float size, Color ink);
 float button_width(const Type &type, std::string_view label, float size = 20.0f,
-                   ButtonKind kind = ButtonKind::primary);
+                   ButtonKind kind = ButtonKind::primary, Glyph with = Glyph::none);
 // The one state rule for every pill: resting = faint translucent fill with a
 // thin edge; active (chosen, the cursor elsewhere) = a little paler; focus
 // (the cursor on it) = solid white. plain_rest draws nothing at rest (text tabs).
@@ -112,7 +122,7 @@ Color state_ink_dim(float focus);
 // A pill button. focus (0..1) draws the ring and grows a primary button.
 void button(DrawList &list, const Type &type, const Rect &r, std::string_view label,
             ButtonKind kind, float focus, bool enabled = true, float size = 20.0f,
-            bool active = false);
+            bool active = false, Glyph with = Glyph::none);
 
 // A small rounded label ("PS5", a genre, a status). Returns its width.
 float chip(DrawList &list, const Type &type, float x, float cy, std::string_view label, Color fill,
