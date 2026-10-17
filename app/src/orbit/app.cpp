@@ -665,6 +665,10 @@ void App::draw(Frame &frame) const
                        (state.have_catalog || state.setup_needed());
     if (!ready)
     {
+        // The opening and offline screens always show the aurora: the chosen background is only
+        // known once the download service has answered (the app cannot keep it on /data itself).
+        static const std::size_t aurora = appearance::find("aurora");
+        frame.backdrop = appearance::backdrop(aurora, ctx_.clock);
         draw_status(frame);
         return;
     }
