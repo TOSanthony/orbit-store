@@ -17,7 +17,7 @@ PS5_LIB := $(PS5_PAYLOAD_SDK)/target/user/homebrew
 PS5_STRIP := $(PS5_PAYLOAD_SDK)/bin/prospero-strip
 GENERATED := build/generated/assets.h build/generated/catalog.h build/generated/ca.h build/generated/network.h build/generated/launcher.h
 PAYLOAD_SOURCES := $(SOURCES) launcher/install.c launcher/platform_ps5.c
-PAYLOAD_CC = $(PS5_CC) $(CPPFLAGS) $(CFLAGS) -DORBIT_INSTALL_LAUNCHER -Wno-unreachable-code-generic-assoc -I$(PS5_LIB)/include
+PAYLOAD_CC = $(PS5_CC) $(CPPFLAGS) $(CFLAGS) -DORBIT_INSTALL_LAUNCHER -DORBIT_EMBED_INSTALL_HELPER -Wno-unreachable-code-generic-assoc -I$(PS5_LIB)/include
 # The SDK opens DT_NEEDED libraries in order. AppInst uses Ipmi internally;
 # retain and load Ipmi first even though Orbit does not call its API directly.
 PS5_LAUNCHER_LIBS := -Wl,--push-state,--no-as-needed -lSceIpmi -Wl,--pop-state -lSceAppInstUtil
@@ -25,7 +25,7 @@ PS5_ARCHIVE_DEPS := build/sevenzip-ps5.o .deps/7zip-ps5/liborbit7zip.a
 HOST_ARCHIVE_DEPS := build/sevenzip-host.o .deps/7zip-host/liborbit7zip.a
 ARCHIVE_LIBS := -larchive -llzma -lbz2 -lz build/sevenzip-ps5.o -Wl,--whole-archive .deps/7zip-ps5/liborbit7zip.a -Wl,--no-whole-archive -lc++ -lc++abi -lunwind
 HOST_ARCHIVE_LIBS := -L/usr/local/lib -l:libarchive.a -llzma -lbz2 -lz build/sevenzip-host.o -Wl,--whole-archive .deps/7zip-host/liborbit7zip.a -Wl,--no-whole-archive -lstdc++
-PAYLOAD_LIBS := -L$(PS5_LIB)/lib -lcurl -lmicrohttpd -lssl -lcrypto $(ARCHIVE_LIBS) $(PS5_LAUNCHER_LIBS)
+PAYLOAD_LIBS := build/install-helper-blob.o -L$(PS5_LIB)/lib -lcurl -lmicrohttpd -lssl -lcrypto $(ARCHIVE_LIBS) $(PS5_LAUNCHER_LIBS)
 PS5_FS_WRAPS := -Wl,--wrap=openat -Wl,--wrap=mkdirat -Wl,--wrap=fstatat -Wl,--wrap=linkat -Wl,--wrap=renameat -Wl,--wrap=unlinkat
 .PHONY: host payload payload-core test-backend test-launcher test-payload-imports test-updates
 .deps/7zip-host/liborbit7zip.a: tools/build-7zip.sh tools/7zip-orbit.mak tools/patch-7zip.py
@@ -38,6 +38,7 @@ build/sevenzip-ps5.o: backend/sevenzip.cpp backend/sevenzip.h .deps/7zip-ps5/lib
 	$(PS5_PAYLOAD_SDK)/bin/prospero-clang++ -std=c++17 -O2 -Wall -Wextra -Werror -I.deps/7zip/CPP -c $< -o $@
 build/orbit-host build/orbit-test build/orbit-api-recovery-test build/orbit-transfer-benchmark-test: $(HOST_ARCHIVE_DEPS)
 build/orbit_runtime.elf build/orbit_store.elf build/orbit_core.elf build/orbit_transfer_benchmark.elf: $(PS5_ARCHIVE_DEPS)
+build/orbit_runtime.elf build/orbit_store.elf: build/install-helper-blob.o
 build/generated/network.h build/generated/launcher.h &: tools/embed-launcher.py config/network.json launcher/sce_sys/param.json launcher/sce_sys/icon0.png
 	python3 tools/embed-launcher.py
 host: build/orbit-host
@@ -46,6 +47,12 @@ build/orbit-host: $(SOURCES) $(HEADERS) $(GENERATED)
 build/orbit-test: $(SOURCES) $(HEADERS) $(GENERATED)
 	$(HOST_CC) $(CPPFLAGS) $(CFLAGS) -DORBIT_DESKTOP -DORBIT_TEST $(SOURCES) -o $@ -lcurl -lmicrohttpd -lssl -lcrypto $(HOST_ARCHIVE_LIBS) -lpthread -lm
 payload: build/orbit_store.elf
+# The program the service sends to the ELF loader to install a package, then carries as data.
+build/install-helper.elf: helper/install_helper.c helper/install_proto.h Makefile
+	$(PS5_CC) -Os -Wall -Wextra -Werror -DPS5_BUILD -Ihelper -I$(PS5_LIB)/include $< -o $@ $(PS5_LAUNCHER_LIBS) -lSceNetCtl -lSceUserService -lSceSystemService -lSceNet
+	$(PS5_STRIP) --strip-debug $@
+build/install-helper-blob.o: helper/install_helper_blob.S build/install-helper.elf
+	$(PS5_CC) -c $< -o $@
 # The runtime is the copy saved on the console for payload managers to start.
 build/orbit_runtime.elf: $(PAYLOAD_SOURCES) $(HEADERS) launcher/install.h $(GENERATED) Makefile
 	$(PAYLOAD_CC) $(PAYLOAD_SOURCES) -o $@ $(PAYLOAD_LIBS) $(PS5_FS_WRAPS)
