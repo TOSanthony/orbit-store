@@ -438,10 +438,10 @@ std::vector<LibraryScreen::Control> LibraryScreen::page_controls() const
         {
             const float mw =
                 ui::button_width(type, tr("Measure game sizes"), 18.0f, ui::ButtonKind::secondary);
-            out.push_back({Kind::measure, 0, row, {1920.0f - ui::kGutter - mw, y, mw, 44.0f}});
+            out.push_back({Kind::measure, 0, row, {ui::kGutter, y - 20.0f, mw, 44.0f}});
             ++row;
         }
-        y += 110.0f;
+        y += 132.0f;
         const std::vector<const LibraryGame *> games = drive_games();
         // The drive's games as a grid of tiles: cover, title and size.
         for (int g = 0; g < static_cast<int>(games.size()); ++g)
@@ -1255,7 +1255,7 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
             for (const LibraryGame *g : games)
                 measured += g->size >= 0.0 ? 1 : 0;
             const float heading =
-                rect(Kind::drive, static_cast<int>(drives.size()) - 1).y + 170.0f + 60.0f;
+                rect(Kind::drive, static_cast<int>(drives.size()) - 1).y + 170.0f + 128.0f;
             ui::text(list, type.medium, tr("Games on {drive}", {{"drive", i18n::place(drive->label)}}),
                      ui::kGutter, heading, 22.0f,
                      ui::color::text);
