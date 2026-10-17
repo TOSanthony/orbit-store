@@ -1530,7 +1530,6 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                 // .library-action-confirm
                 const ui::Rect box{left - 20.0f, 380.0f, panel.w - 72.0f,
                                    mode_ == 1 ? 260.0f : 450.0f};
-                overlay.rounded_rect(box, 16.0f, ui::Color::rgb(0x000000, 0.18f));
                 const std::string heading =
                     mode_ == 1   ? std::string(tr("Unmount this game?"))
                     : mode_ == 2 ? tr("Copy {title}", {{"title", game->title}})
@@ -1653,11 +1652,8 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
             trigger.y -= scroll_.value;
         }
         frame.glass = true;
-        // Over the details panel the destination list wears the panel's own surface.
         ui::select_menu(frame.overlay, type, trigger, options, selected, picker_.active,
-                        picker_.in.value, frame.glass_texture,
-                        picking_ == Kind::destination ? ui::Color::rgb(0x282828, 0.8f)
-                                                      : ui::color::popover);
+                        picker_.in.value, frame.glass_texture);
     }
 
     // ---- keyboard ----
