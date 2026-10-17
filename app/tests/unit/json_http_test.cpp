@@ -123,6 +123,17 @@ TEST(Http, ReadsTheVersionHeaderOfTheSavedCopy)
     EXPECT_TRUE(response.orbit_version.empty());
 }
 
+TEST(Http, MovesAPlainBodyOutOfTheReplyInsteadOfCopyingIt)
+{
+    std::string raw = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nX-Orbit-Version: 2.0\r\n\r\nhelloEXTRA";
+    http::Response response;
+    ASSERT_TRUE(http::parse_response(raw, &response, &raw));
+    EXPECT_EQ(response.body, "hello");
+    EXPECT_EQ(response.orbit_version, "2.0");
+    std::string truncated = "HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\nhello";
+    EXPECT_FALSE(http::parse_response(truncated, &response, &truncated));
+}
+
 TEST(Http, RejectsTruncatedOrForeignReplies)
 {
     http::Response response;

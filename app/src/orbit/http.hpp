@@ -69,6 +69,8 @@ std::string format_request(const Request &request, std::string_view host, std::u
 // Parses a complete reply read until the server closed the connection.
 // Handles Content-Length and chunked bodies. Returns false (with
 // response->error set) when the bytes are not a valid HTTP/1.x reply.
-bool parse_response(std::string_view raw, Response *response);
+// With `owned` (the string `raw` views), a plain body is moved out instead of copied: a 60 MB
+// reply is then never held twice.
+bool parse_response(std::string_view raw, Response *response, std::string *owned = nullptr);
 
 } // namespace orbit::http

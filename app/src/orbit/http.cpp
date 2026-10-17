@@ -106,6 +106,24 @@ bool parse_unsigned(std::string_view text, std::size_t *out, int base = 10)
     return true;
 }
 
+// The Content-Length in a reply's header block, when it has one.
+bool content_length(std::string_view head, std::size_t *length)
+{
+    std::size_t at = head.find("\r\n");
+    while (at != std::string_view::npos)
+    {
+        const std::size_t start = at + 2;
+        const std::size_t end = head.find("\r\n", start);
+        const std::string_view line =
+            head.substr(start, end == std::string_view::npos ? end : end - start);
+        const std::size_t colon = line.find(':');
+        if (colon != std::string_view::npos && iequals(trim(line.substr(0, colon)), "content-length"))
+            return parse_unsigned(trim(line.substr(colon + 1)), length);
+        at = end;
+    }
+    return false;
+}
+
 bool dechunk(std::string_view body, std::string *out)
 {
     out->clear();
@@ -223,6 +241,7 @@ Response SocketTransport::send(const Request &request)
 
     const std::size_t limit = (request.max_bytes != 0 ? request.max_bytes : kDefaultLimit) + 16384;
     std::string raw;
+    bool sized = false;
     char buffer[16384];
     for (;;)
     {
@@ -239,6 +258,20 @@ Response SocketTransport::send(const Request &request)
             return response;
         }
         raw.append(buffer, static_cast<std::size_t>(n));
+        if (!sized)
+        {
+            // Once the headers are in, make room for the whole body at once: growing a string by
+            // doubling would briefly hold two copies of a large reply.
+            const std::size_t head_end = raw.find("\r\n\r\n");
+            if (head_end != std::string::npos)
+            {
+                sized = true;
+                std::size_t length = 0;
+                if (content_length(raw.substr(0, head_end), &length) && length > 0 &&
+                    head_end + 4 + length <= limit)
+                    raw.reserve(head_end + 4 + length);
+            }
+        }
         if (raw.size() > limit)
         {
             response.error = "reply too large";
@@ -247,11 +280,11 @@ Response SocketTransport::send(const Request &request)
         }
     }
     close(fd);
-    parse_response(raw, &response);
+    parse_response(raw, &response, &raw);
     return response;
 }
 
-bool parse_response(std::string_view raw, Response *response)
+bool parse_response(std::string_view raw, Response *response, std::string *owned)
 {
     response->status = 0;
     response->body.clear();
@@ -324,7 +357,16 @@ bool parse_response(std::string_view raw, Response *response)
             response->error = "truncated reply";
             return false;
         }
-        response->body.assign(body.substr(0, length));
+        if (owned != nullptr)
+        {
+            owned->erase(0, head_end + 4);
+            owned->resize(length);
+            response->body = std::move(*owned);
+        }
+        else
+        {
+            response->body.assign(body.substr(0, length));
+        }
     }
     else
     {
