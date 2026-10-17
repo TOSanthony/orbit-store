@@ -375,7 +375,8 @@ std::vector<LibraryScreen::Control> LibraryScreen::page_controls() const
         out.push_back({Kind::scan, 0, row, {right - w, 112.0f, w, 66.0f}});
         right -= w + 16.0f;
     }
-    if (!state.have_library || !library.ready() || library.stale || section_ == 1)
+    // Refresh only matters when the library is missing or unavailable; Scan for games covers the rest.
+    if (!state.have_library || !library.ready())
     {
         const float w = ui::button_width(type, tr("Refresh library"), 18.0f, ui::ButtonKind::secondary);
         out.push_back({Kind::refresh, 0, row, {right - w, 112.0f, w, 66.0f}});
