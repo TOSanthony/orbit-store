@@ -1239,7 +1239,8 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
             const float tw = r.w - 146.0f - 20.0f;
             ui::text_fit(list, type.regular, i18n::place(drive.label), tx, r.y + 50.0f, 20.0f, tw,
                          ink);
-            ui::text_fit(list, type.regular, drive.path, tx, r.y + 76.0f, 17.0f, tw,
+            // The console's drive is the /user mount, but its games are kept under /data.
+            ui::text_fit(list, type.regular, drive.path == "/user" ? "/data" : drive.path, tx, r.y + 76.0f, 17.0f, tw,
                          dim);
             ui::text_fit(list, type.medium, tr("{size} free", {{"size", format_bytes(drive.free)}}),
                          tx, r.y + 114.0f, 20.0f, tw, ink);
