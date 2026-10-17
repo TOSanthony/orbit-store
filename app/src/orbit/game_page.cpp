@@ -598,7 +598,6 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         out.content=std::max(top+510.0f,ry-22);
         y=ry;
         const float width_notes=1180;
-        const float notes_top=y;
         if (!release.compression.empty()) {
             // The three sentences share one line, shrunk a little when a translation is long.
             const std::string compressed=tr("Compressed download. Orbit checks the files and available space before extraction. A password may be required.");
@@ -622,8 +621,6 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                 y+=12;
             }
         }
-        if(now.show_download && release.browser_available && !torbox_)
-            out.controls.push_back({Slot::reading,0,{nx,notes_top,520,y-notes_top},true,false});
         if (now.show_download && (torbox_ || (state.debrid.connected && !state.debrid.supports(release))))
         { paragraph(delivery_note(release),nx,y,width_notes,21);y+=18; }
         if (now.collection.library && !anchored)
@@ -933,7 +930,8 @@ Intent GamePage::update(const InputFrame &input,float dt,Feedback &feedback,bool
             scroll.target=next;
         }
         if(read_scroll) {}
-        else if((sheet_==Sheet::none || sheet_==Sheet::about) && (input.nav==Direction::up || input.nav==Direction::down))
+        else if(sheet_==Sheet::about && (input.nav==Direction::up || input.nav==Direction::down)) {}
+        else if(sheet_==Sheet::none && (input.nav==Direction::up || input.nav==Direction::down))
             scroll.target=std::clamp(scroll.target+(input.nav==Direction::down?150.0f:-150.0f),0.0f,std::max(0.0f,where.end-visible));
         else
         {
@@ -965,6 +963,7 @@ Intent GamePage::update(const InputFrame &input,float dt,Feedback &feedback,bool
         }
     }
     scroll.target=std::clamp(scroll.target,0.0f,std::max(0.0f,where.end-visible));
+    if(sheet_==Sheet::about || sheet_==Sheet::downloads)scroll.target=0;
     scroll.update(dt,18);
     if(focused && input.is_pressed(Action::confirm))
     {
@@ -975,16 +974,19 @@ Intent GamePage::update(const InputFrame &input,float dt,Feedback &feedback,bool
     return intent;
 }
 
-// Without notes to scroll, the sheet content sits in the middle of the window.
-float GamePage::centre_shift(Sheet sheet) const
+// The two read-only sheets never scroll: their content is centred in the window, and shrunk
+// a little when a long provider note would not fit.
+GamePage::Fit GamePage::fit(Sheet sheet) const
 {
-    if(sheet!=Sheet::about && sheet!=Sheet::downloads)return 0.0f;
+    if(sheet!=Sheet::about && sheet!=Sheet::downloads)return {1.0f,0.0f};
     const auto where=compose(nullptr,sheet,false);
-    const float room=kBodyBottom+kTallExtra-kBodyTop;
-    if(where.content<=0.0f || where.end>room)return 0.0f;
-    // Free space runs from just under the header (sheet y 415) to the panel's bottom edge.
-    const float shift=(615.0f+kTallExtra-where.content)*0.5f-15.0f;
-    return std::clamp(shift,0.0f,room-where.content);
+    // The block runs from the game's title (about y 36) to the last line; its middle sits at y 340.
+    constexpr float kTop=36.0f,kMiddle=340.0f,kMaxHeight=556.0f;
+    const float bottom=std::max(where.content,where.end-20.0f);
+    const float height=bottom-kTop;
+    if(height<=0.0f)return {1.0f,0.0f};
+    const float scale=std::min(1.0f,kMaxHeight/height);
+    return {scale,kMiddle-scale*(kTop+bottom)*0.5f};
 }
 void GamePage::draw(Frame &frame,bool focused) const
 {
@@ -1017,7 +1019,8 @@ void GamePage::draw(Frame &frame,bool focused) const
         sheet_==Sheet::delivery?tr("Download using"):sheet_==Sheet::storage?tr("Save to"):tr("About this game");
     ui::text_fit(list,type.medium,title,116,386,34,1380,ui::color::text);
     list.push_clip({100,kBodyTop-8,1720,kBodyBottom+extra-kBodyTop+8});
-    list.push_transform(1,0,0,0,kBodyTop-sheet_scroll_.value+centre_shift(sheet_));
+    const auto placed=fit(sheet_);
+    list.push_transform(placed.scale,960,0,0,kBodyTop-sheet_scroll_.value+placed.shift);
     const auto where=compose(&list,sheet_,focused);
     list.pop_transform();list.pop_clip();
     for(std::size_t i=0;i<where.controls.size();++i)

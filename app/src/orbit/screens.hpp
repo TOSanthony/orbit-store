@@ -492,7 +492,8 @@ class GamePage final : public Screen
     Offer offer(const Release &release) const;
     bool primary_enabled(const Release &release, const Offer &offer) const;
     Layout compose(hui::gfx::DrawList *list, Sheet sheet, bool focused) const;
-    float centre_shift(Sheet sheet) const;
+    struct Fit { float scale; float shift; };
+    Fit fit(Sheet sheet) const;
     void show_sheet(Sheet sheet, Slot preferred = Slot::primary, int index = 0);
     // chosen: a release was just picked in the list; Back from a pack's list returns to the page.
     void back_sheet(bool chosen = false);
