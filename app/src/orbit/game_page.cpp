@@ -982,6 +982,8 @@ Intent GamePage::update(const InputFrame &input,float dt,Feedback &feedback,bool
 GamePage::Fit GamePage::fit(Sheet sheet) const
 {
     if(sheet!=Sheet::about && sheet!=Sheet::downloads)return {1.0f,0.0f};
+    // About this game is placed exactly like the download options of the same game.
+    sheet=Sheet::downloads;
     const auto where=compose(nullptr,sheet,false);
     // The block runs from the game's title (about y 36) to the last line; its middle sits at y 340.
     constexpr float kTop=36.0f,kMiddle=321.0f,kMaxHeight=582.0f;
