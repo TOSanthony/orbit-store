@@ -230,6 +230,13 @@ void App::handle_intent(const Intent &intent, Feedback &feedback)
     }
 }
 
+bool App::ready_now() const
+{
+    const Snapshot &state = ctx_.store.state();
+    return state.have_system && state.link != Link::connecting &&
+           (state.have_catalog || state.setup_needed()) && warmed_;
+}
+
 void App::update(const InputFrame &input, float dt, Feedback &feedback)
 {
     ctx_.clock += dt;
@@ -250,8 +257,37 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
     status_age_ += dt;
 
     const InputFrame idle{};
-    const bool ready = state.have_system && state.link != Link::connecting &&
+    const bool known = state.have_system && state.link != Link::connecting &&
                        (state.have_catalog || state.setup_needed());
+    if (known && !warmed_)
+    {
+        // Cold start: hold the opening screen while Discover's first images load.
+        constexpr float kHoldMin = 0.8f;
+        constexpr float kHoldMax = 3.0f;
+        hold_ += dt;
+        bool loaded = true;
+        bool any = false;
+        if (tab_ == tab::discover && !state.setup_needed())
+        {
+            const std::vector<std::string> first = discover_first_games(state, ctx_.today);
+            for (std::size_t i = 0; i < first.size(); ++i)
+            {
+                any = true;
+                if (i == 0)
+                {
+                    ctx_.art.get(first[i], api::ArtKind::hero);
+                    loaded = loaded && ctx_.art.settled(first[i], api::ArtKind::hero);
+                }
+                ctx_.art.get(first[i], api::ArtKind::cover);
+                loaded = loaded && ctx_.art.settled(first[i], api::ArtKind::cover);
+            }
+        }
+        if (hold_ >= kHoldMax || !any || (loaded && hold_ >= kHoldMin))
+            warmed_ = true;
+    }
+    if (warmed_ && reveal_ < 1.0f)
+        reveal_ = std::min(1.0f, reveal_ + dt / 0.4f);
+    const bool ready = ready_now();
     if (!ready)
     {
         // The opening and offline screens move on by themselves. Once Orbit is
@@ -661,8 +697,7 @@ void App::draw(Frame &frame) const
     frame.backdrop = appearance::backdrop(ctx_.appearance, ctx_.clock);
 
     hui::gfx::DrawList &scene = frame.scene;
-    const bool ready = state.have_system && state.link != Link::connecting &&
-                       (state.have_catalog || state.setup_needed());
+    const bool ready = ready_now();
     if (!ready)
     {
         // The opening and offline screens always show the aurora: the chosen background is only
@@ -671,6 +706,17 @@ void App::draw(Frame &frame) const
         frame.backdrop = appearance::backdrop(aurora, ctx_.clock);
         draw_status(frame);
         return;
+    }
+    // First reveal: the opening screen fades out as the app fades in over it.
+    const bool revealing = reveal_ < 1.0f;
+    if (revealing)
+    {
+        static const std::size_t aurora = appearance::find("aurora");
+        frame.backdrop = appearance::backdrop(aurora, ctx_.clock);
+        scene.push_opacity(1.0f - reveal_);
+        draw_status(frame);
+        scene.pop_opacity();
+        scene.push_opacity(reveal_);
     }
 
     // ---- art behind everything, crossfading between games ----
@@ -709,6 +755,9 @@ void App::draw(Frame &frame) const
             screen().draw(frame, area_ == Area::content && !settings_open_ && !provider_open_);
         draw_top_bar(scene);
     }
+
+    if (revealing)
+        scene.pop_opacity();
 
     hui::gfx::DrawList &overlay = frame.overlay;
 

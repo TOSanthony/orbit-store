@@ -71,6 +71,8 @@ class ArtCache
 
     // Frame thread: the image when it is ready, else nullptr (and it is asked for).
     const Artwork *get(const std::string &game_id, api::ArtKind kind);
+    // Frame thread: the image was asked for and has arrived or given up.
+    bool settled(const std::string &game_id, api::ArtKind kind) const;
     // Frame thread, once per frame: textures from finished decodes, eviction.
     void tick();
     // Nothing queued, fetching or waiting for upload (previews wait for this).

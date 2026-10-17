@@ -101,6 +101,12 @@ void ArtCache::note(const Decoded &d, double upload_ms, double total_ms)
     }
 }
 
+bool ArtCache::settled(const std::string &game_id, api::ArtKind kind) const
+{
+    const auto found = entries_.find(make_key(game_id, kind));
+    return found != entries_.end() && found->second.state != State::loading;
+}
+
 const Artwork *ArtCache::get(const std::string &game_id, api::ArtKind kind)
 {
     const std::string key = make_key(game_id, kind);

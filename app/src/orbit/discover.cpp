@@ -59,6 +59,25 @@ std::vector<std::string> hero_lines(const hui::ui::FontRef &font, const std::str
 
 } // namespace
 
+std::vector<std::string> discover_first_games(const Snapshot &state, std::string_view today)
+{
+    constexpr std::size_t kVisible = 7; // six covers and the edge of the next
+    std::vector<int> first = newly_added_games(state.games);
+    if (first.empty())
+        first = latest_games(state.games, today);
+    if (first.empty())
+    {
+        BrowseFilters all;
+        all.sort = Sort::size_desc;
+        all.with_apps = true;
+        first = browse(state.games, all, {});
+    }
+    std::vector<std::string> ids;
+    for (std::size_t i = 0; i < first.size() && i < kVisible; ++i)
+        ids.push_back(state.games[static_cast<std::size_t>(first[i])].id);
+    return ids;
+}
+
 DiscoverScreen::DiscoverScreen(Context &context) : Screen(context)
 {
     hero_in_.snap(1.0f);

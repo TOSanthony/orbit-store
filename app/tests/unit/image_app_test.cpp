@@ -138,7 +138,8 @@ struct AppHarness
     App app{context};
     Feedback feedback;
 
-    explicit AppHarness(host::FixtureMode mode = host::FixtureMode::normal) : backend(mode)
+    explicit AppHarness(host::FixtureMode mode = host::FixtureMode::normal, bool through_opening = true)
+        : backend(mode)
     {
         transport.reply = [this](const http::Request &request)
         {
@@ -152,6 +153,10 @@ struct AppHarness
         context.app_version = "01.000.000";
         store.poll_once();
         frame();
+        // The opening screen holds until Discover's first images arrive or 3 s pass,
+        // then fades out over 0.4 s: run past it, as a player would.
+        for (int i = 0; through_opening && i < 240; ++i)
+            frame();
     }
     void frame(Direction nav = Direction::none, std::uint32_t press = 0)
     {
@@ -176,6 +181,31 @@ struct AppHarness
             frame();
     }
 };
+
+TEST(App, OpeningScreenWaitsForDiscoverImagesButNeverMoreThanThreeSeconds)
+{
+    {
+        // Nothing serves the images: the opening screen lets go at 3 s, then fades for 0.4 s.
+        AppHarness h(host::FixtureMode::normal, false);
+        h.settle(150); // 2.5 s
+        EXPECT_TRUE(h.app.opening());
+        h.settle(30); // 3.0 s
+        EXPECT_TRUE(h.app.opening());
+        h.settle(30); // past the fade
+        EXPECT_FALSE(h.app.opening());
+    }
+    {
+        // Images arrive at once: it still stays 0.8 s, then it is gone after the fade.
+        AppHarness h(host::FixtureMode::normal, false);
+        h.settle(10);
+        while (h.art.work_once())
+            h.settle(1);
+        h.settle(20); // 0.5 s in total
+        EXPECT_TRUE(h.app.opening());
+        h.settle(80); // 1.7 s: held 0.8 s, faded 0.4 s
+        EXPECT_FALSE(h.app.opening());
+    }
+}
 
 TEST(App, OpensAGameAndQueuesADownloadToTheDownloadsTab)
 {

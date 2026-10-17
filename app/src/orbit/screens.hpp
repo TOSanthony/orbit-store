@@ -182,6 +182,10 @@ void refuse(Feedback &feedback, const InputFrame &input);
 // The kit theme the on-screen keyboard is drawn in.
 hui::ui::Theme keyboard_theme();
 
+// The games Discover shows first: the featured game, then the first rail's covers.
+// Used at start-up to load them before the screen is revealed.
+std::vector<std::string> discover_first_games(const Snapshot &state, std::string_view today);
+
 // ---- the screens ----
 
 class DiscoverScreen final : public Screen
@@ -655,6 +659,11 @@ class App
     {
         return tab_;
     }
+    // The opening screen is still held or fading out (once per launch).
+    bool opening() const
+    {
+        return reveal_ < 1.0f;
+    }
     DownloadsScreen &downloads()
     {
         return downloads_;
@@ -696,6 +705,12 @@ class App
     int top_index_ = 0; // the tabs, then search and settings
     bool game_open_ = false;
     bool settings_open_ = false;
+    // Start-up: the opening screen stays until Discover's first images are in (at least
+    // kHoldMin, at most kHoldMax seconds), then fades into it once.
+    bool ready_now() const;
+    bool warmed_ = false;
+    float hold_ = 0.0f;
+    float reveal_ = 0.0f; // 0 opening screen ... 1 the app
     bool appearance_synced_ = false; // the service's saved background was read once
     bool provider_open_ = false;
     bool provider_start_pending_ = false;
