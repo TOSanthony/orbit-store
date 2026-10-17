@@ -17,6 +17,7 @@
 #include <atomic>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -153,6 +154,9 @@ struct ActionState
 class Store
 {
   public:
+    // Console log line sink, for tracing the service restart.
+    void set_log(std::function<void(const std::string &)> log) { log_ = std::move(log); }
+
     // The transport (and starter, if any) must outlive the store. start()
     // launches the worker; tests may instead call poll_once() and
     // run_next_action() directly. Without a starter the app only waits for
@@ -300,6 +304,7 @@ class Store
 
     api::Client client_;
     starter::Starter *starter_;
+    std::function<void(const std::string &)> log_;
     Inbox inbox_;
     Snapshot state_;
     ActionState action_;

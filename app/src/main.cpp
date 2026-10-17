@@ -157,6 +157,7 @@ int main()
     orbit::Store store(transport, &starter);
     orbit::ArtCache art(art_transport, textures);
     art.set_log([](const std::string &line) { sys::log("[ORBIT] %s", line.c_str()); });
+    store.set_log([](const std::string &line) { sys::log("[ORBIT] %s", line.c_str()); });
     store.start();
     art.start();
 

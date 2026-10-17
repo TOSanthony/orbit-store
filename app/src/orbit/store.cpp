@@ -1026,7 +1026,12 @@ void Store::run_setting(Command &command)
         std::string saved_image, saved_image_version;
         if (command.setting == Setting::service_restart && starter_ != nullptr)
         {
+            if (log_) log_("restart: fetching the service copy");
             api::Result<SavedPayload> saved = client_.saved_payload();
+            if (log_)
+                log_("restart: service copy " + (saved.ok() ? std::to_string(saved.value.image.size()) + " bytes, version " +
+                                                                  saved.value.version
+                                                            : "unavailable (" + saved.error + ")"));
             if (saved.ok())
             {
                 saved_image = std::move(saved.value.image);
@@ -1040,8 +1045,11 @@ void Store::run_setting(Command &command)
         request.version = command.a;
         request.checksum = command.b;
         request.confirmed = command.setting == Setting::service_restart;
+        if (log_ && command.setting == Setting::service_restart) log_("restart: asking Orbit to stop");
         api::Result<ServiceUpdate> result = client_.service_action(request);
         error = result.error;
+        if (log_ && command.setting == Setting::service_restart)
+            log_(std::string("restart: stop ") + (result.ok() ? "accepted" : "refused (" + error + ")"));
         if (result.ok() && command.setting == Setting::service_restart)
         {
             if (starter_ != nullptr)
