@@ -25,6 +25,23 @@ std::string one_per_line(std::string text)
 }
 
 
+// The About button and sheet are named for what the page is: a game, an app, a DLC or an update.
+static const char *about_title(const Game &game)
+{
+    switch (game_category(game))
+    {
+    case Category::apps:
+        return tr("About this app");
+    case Category::dlc:
+        return tr("About this DLC");
+    case Category::updates:
+        return tr("About this update");
+    case Category::game:
+        break;
+    }
+    return tr("About this game");
+}
+
 // ---- the badges of "About this game" ----
 enum class FactIcon { platform, platform4, genre, calendar, publisher, download, disk, globe, version, format, source, title_id };
 
@@ -425,7 +442,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                 }
                 else for (int d=-1;d<=1;++d) list->circle(r.cx()+d*12,r.cy(),3,focus > 0.5f ? ui::Color::rgb(0x080808) : ui::color::text);
                 if (focus > 0)
-                    ui::text(*list,type.regular,i == 0 ? (state.favourite(game->id) ? tr("Saved to favourites") : tr("Add to favourites")) : tr("About this game"),
+                    ui::text(*list,type.regular,i == 0 ? (state.favourite(game->id) ? tr("Saved to favourites") : tr("Add to favourites")) : about_title(*game),
                              r.cx(),y+123,18,ui::color::text2,ui::Align::center);
             }
         }
@@ -1076,7 +1093,7 @@ void GamePage::draw(Frame &frame,bool focused) const
     const auto &release=game->releases[static_cast<std::size_t>(std::clamp(option_,0,static_cast<int>(game->releases.size())-1))];
     const auto now=offer(release);
     const char *title=sheet_==Sheet::downloads?tr("Download options"):sheet_==Sheet::source?tr("Source"):
-        sheet_==Sheet::delivery?tr("Download using"):sheet_==Sheet::storage?tr("Save to"):tr("About this game");
+        sheet_==Sheet::delivery?tr("Download using"):sheet_==Sheet::storage?tr("Save to"):about_title(*game);
     ui::text_fit(list,type.medium,title,116,386,34,1380,ui::color::text);
     list.push_clip({100,kBodyTop-8,1720,kBodyBottom+extra-kBodyTop+8});
     const auto placed=fit(sheet_);
