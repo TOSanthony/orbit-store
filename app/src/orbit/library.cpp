@@ -330,7 +330,14 @@ std::vector<const LibraryGame *> LibraryScreen::drive_games() const
         return out;
     for (const LibraryGame &game : state.library.games)
     {
-        if (game.on_drive && game.path.rfind(drive->path, 0) == 0)
+        if (!game.on_drive)
+            continue;
+        // The console's own storage is the /user mount, but its games live under /data.
+        const bool console = drive->path == "/user" && game.path.rfind("/data/", 0) == 0;
+        const bool inside = game.path == drive->path ||
+                            (game.path.size() > drive->path.size() &&
+                             game.path.rfind(drive->path, 0) == 0 && game.path[drive->path.size()] == '/');
+        if (console || inside)
             out.push_back(&game);
     }
     return out;
