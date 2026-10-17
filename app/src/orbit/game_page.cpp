@@ -445,7 +445,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         const float rw = side ? 606.0f : nw;
         constexpr float kRowsHeight = 3 * 76.0f + 2 * 10.0f;
         // The game's title sits above the cover; everything else is lowered to match.
-        constexpr float top = 52;
+        constexpr float top = 96;
         float ry = top;
         const auto setting = [&](Slot slot,FactIcon icon,const std::string &label,const std::string &value,const std::string &note)
         {
@@ -486,7 +486,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             const ui::Rect cover{116,top,400,400};
             list->shadow({cover.x,cover.y+10,cover.w,cover.h},ui::kArtRadius,28,ui::Color::rgb(0x000000,0.45f));
             draw_cover(ctx_,*list,*game,cover,ui::kArtRadius);
-            ui::text_fit(*list,type.semibold,game->title,116,top-22,28,400,ui::color::text);
+            ui::text_fit(*list,type.semibold,game->title,116,top-28,44,1690,ui::color::text);
             struct Pill { FactIcon icon; std::string text; };
             std::vector<Pill> pills{{release.platform=="ps4"?FactIcon::platform4:FactIcon::platform,release.platform=="ps4"?"PS4":"PS5"}};
             if (!release.version.empty()) pills.push_back({FactIcon::version,"v"+release.version});
@@ -721,14 +721,14 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         const int rows=std::max(1,static_cast<int>((facts.size()+1)/2));
         const float tile_h=std::min(kMaxTile,(kCover-kGap*static_cast<float>(rows-1))/static_cast<float>(rows));
         // The game's title sits above the cover, like on the download options.
-        constexpr float top=52;
+        constexpr float top=96;
         y=top;
         if(list)
         {
             const ui::Rect cover{116,y,kCover,kCover};
             list->shadow({cover.x,cover.y+10,cover.w,cover.h},ui::kArtRadius,28,ui::Color::rgb(0x000000,0.45f));
             draw_cover(ctx_,*list,*game,cover,ui::kArtRadius);
-            ui::text_fit(*list,type.semibold,game->title,116,top-22,28,kCover,ui::color::text);
+            ui::text_fit(*list,type.semibold,game->title,116,top-28,44,1690,ui::color::text);
             for(std::size_t i=0;i<facts.size();++i)
             {
                 const float x=grid_x+static_cast<float>(i%2)*(tile_w+kColumnGap);
