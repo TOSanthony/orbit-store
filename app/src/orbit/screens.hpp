@@ -494,6 +494,7 @@ class GamePage final : public Screen
     Layout compose(hui::gfx::DrawList *list, Sheet sheet, bool focused) const;
     struct Fit { float scale; float shift; };
     Fit fit(Sheet sheet) const;
+    mutable bool fresh_layout_ = false; // measure as if the game were not installed
     void show_sheet(Sheet sheet, Slot preferred = Slot::primary, int index = 0);
     // chosen: a release was just picked in the list; Back from a pack's list returns to the page.
     void back_sheet(bool chosen = false);

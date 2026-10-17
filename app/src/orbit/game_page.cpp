@@ -280,7 +280,8 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
     if (game == nullptr || game->releases.empty()) return out;
     const int selected = std::clamp(option_, 0, static_cast<int>(game->releases.size()) - 1);
     const auto &release = game->releases[static_cast<std::size_t>(selected)];
-    const Offer now = offer(release);
+    Offer now = offer(release);
+    if (fresh_layout_) { now.collection = CollectionState{}; now.show_download = true; }
     const auto paragraph = [&](const std::string &text, float x, float &y, float width,
                                float size = 22.0f, ui::Color ink = ui::color::text2)
     {
@@ -442,7 +443,8 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         // With a drive to save to, the three option rows take the left half of the column and
         // the storage card the right half, as tall as the three rows.
         const bool side = now.show_download && now.drive != nullptr;
-        const float rw = side ? 606.0f : nw;
+        // An existing download keeps the Source row at the width it has when downloading.
+        const float rw = (side || (!now.show_download && now.collection.job)) ? 606.0f : nw;
         constexpr float kRowsHeight = 3 * 76.0f + 2 * 10.0f;
         // The game's title sits above the cover; everything else is lowered to match.
         constexpr float top = 96;
@@ -568,6 +570,8 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         }
         if (side) ry = top + kRowsHeight + 30.0f;
         else if (now.show_download && now.drive) ry += 140 + 20;
+        // With an existing download, the button keeps the place it has when downloading.
+        else if (!now.show_download && now.collection.job) ry = top + kRowsHeight + 30.0f;
         // A game already in Library: the second-copy button sits on the cover's bottom edge, the
         // sentence above it, and the main button is centred in the space left under the source row.
         const bool anchored = !now.show_download && !download_again_ && !now.collection.job &&
@@ -983,8 +987,12 @@ GamePage::Fit GamePage::fit(Sheet sheet) const
 {
     if(sheet!=Sheet::about && sheet!=Sheet::downloads)return {1.0f,0.0f};
     // About this game is placed exactly like the download options of the same game.
+    // The layout of a game that is not installed is the reference, so the cover and title
+    // do not move when the sheet shows an existing download or library copy instead.
     sheet=Sheet::downloads;
+    fresh_layout_=true;
     const auto where=compose(nullptr,sheet,false);
+    fresh_layout_=false;
     // The block runs from the game's title (about y 36) to the last line; its middle sits at y 340.
     constexpr float kTop=36.0f,kMiddle=321.0f,kMaxHeight=582.0f;
     const float bottom=std::max(where.content,where.end-20.0f);
