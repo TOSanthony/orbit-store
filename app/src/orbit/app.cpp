@@ -620,16 +620,17 @@ void App::draw_status(Frame &frame) const
     const ui::Type &type = ctx_.type;
     const Snapshot &state = ctx_.store.state();
     const bool offline = status_offline(state);
-    const float size = 220.0f;
+    const float size = 400.0f;
+    constexpr float kMarkY = 340.0f; // the mark's centre; the texts sit below it
     const float x = 960.0f - size * 0.5f;
-    const float y = 330.0f - size * 0.5f;
+    const float y = kMarkY - size * 0.5f;
     // A breathing blue glow behind the mark, and the light running round its ring.
     const float breathe = 0.5f + 0.5f * std::sin(ctx_.clock * 2.6f);
     list.glow({x + 40.0f, y + 40.0f, size - 80.0f, size - 80.0f}, size * 0.5f, 120.0f,
               ui::Color::rgb(0xffffff, (offline ? 0.18f : 0.30f) + 0.16f * breathe));
     const float in = std::clamp(ctx_.clock / 0.7f, 0.0f, 1.0f);
     list.push_opacity(in);
-    list.push_transform(0.88f + 0.12f * in, 960.0f, 330.0f, 0.0f, 0.0f);
+    list.push_transform(0.88f + 0.12f * in, 960.0f, kMarkY, 0.0f, 0.0f);
     if (ctx_.loader_mark != 0)
         list.image(offline ? ctx_.mark : ctx_.loader_mark, {x, y, size, size}, hui::gfx::kFullUv,
                    ui::Color::rgb(0xffffff, offline ? 0.55f : 1.0f));
