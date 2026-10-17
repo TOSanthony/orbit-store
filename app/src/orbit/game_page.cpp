@@ -502,11 +502,21 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             std::vector<Pill> pills{{release.platform=="ps4"?FactIcon::platform4:FactIcon::platform,release.platform=="ps4"?"PS4":"PS5"}};
             if (!release.version.empty()) pills.push_back({FactIcon::version,"v"+release.version});
             pills.push_back({size_icon(release),format_bytes(release.size_bytes)});
-            float px = 116;
+            // The pills are centred under the cover; those that do not fit are left out.
+            const auto pill_width = [&](const Pill &pill) { return 12+26+8+type.medium.measure(pill.text,17)+16; };
+            std::size_t shown = 0;
+            float total = 0;
             for (const auto &pill : pills)
             {
-                const float w = 12+26+8+type.medium.measure(pill.text,17)+16;
-                if (px+w > 516) break;
+                const float w = pill_width(pill) + (shown > 0 ? 8.0f : 0.0f);
+                if (total+w > cover.w) break;
+                total += w;++shown;
+            }
+            float px = cover.cx() - total*0.5f;
+            for (std::size_t i = 0; i < shown; ++i)
+            {
+                const auto &pill = pills[i];
+                const float w = pill_width(pill);
                 list->rounded_rect({px,top+420,w,40},20,ui::Color::rgb(0xffffff,0.16f));
                 fact_icon(*list,type,pill.icon,px+12+13,top+440,26,ui::color::text);
                 ui::text(*list,type.medium,pill.text,px+12+26+8,top+447,17,ui::color::text);
