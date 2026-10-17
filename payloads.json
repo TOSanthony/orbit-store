@@ -4,11 +4,11 @@
     {
       "name": "Orbit Store",
       "filename": "orbit_store.elf",
-      "url": "https://github.com/TOSanthony/orbit-store/releases/download/v1.2.137/orbit_store.elf",
+      "url": "https://github.com/TOSanthony/orbit-store/releases/download/v1.2.138/orbit_store.elf",
       "description": "A modern PS5 download manager with a native TV app, resumable downloads and phone controls.",
-      "version": "v1.2.137",
+      "version": "v1.2.138",
       "category": "Utilities",
-      "checksum": "1ca3db688f1aaa593296dae494179f5d9b5a453c0797db84083ded0337253f23",
+      "checksum": "4a4290ddfd1f68a51b4ae1e6fcbf3ac2978240aa3c0b950d46d8c081cf5d0dc5",
       "receiveProtocol": 1
     }
   ]
