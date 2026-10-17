@@ -1271,5 +1271,6 @@
   "The installation stopped before it finished.": "A telepítés megszakadt, mielőtt befejeződött volna.",
   "The installation did not make progress.": "A telepítés nem haladt előre.",
   "Install the base game before its updates and add-ons.": "Telepítsd az alapjátékot a frissítései és kiegészítői előtt.",
-  "There is not enough free space on the console to install this package.": "Nincs elég szabad hely a konzolon a csomag telepítéséhez."
+  "There is not enough free space on the console to install this package.": "Nincs elég szabad hely a konzolon a csomag telepítéséhez.",
+  "Console": "Konzol"
 }

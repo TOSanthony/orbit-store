@@ -35,7 +35,7 @@ constexpr float kCardRadius = 14.0f;
 constexpr float kKeyboardTop = 560.0f;
 constexpr int kSectionCount = static_cast<int>(SettingsScreen::Section::count);
 constexpr const char *kSections[] = {/* i18n */ "Personalisation", /* i18n */ "Language", /* i18n */ "Download sources", /* i18n */ "Storage", /* i18n */ "Pair a device",
-                                     /* i18n */ "Game catalogue",   /* i18n */ "Updates", "Orbit Zero",
+                                     /* i18n */ "Game catalogue",   /* i18n */ "Console", /* i18n */ "Updates", "Orbit Zero",
                                      /* i18n */ "More settings"};
 constexpr const char *kSavedElf = "/data/orbit-store/orbit_store.elf";
 constexpr const char *kNotice =
@@ -127,6 +127,20 @@ void section_icon(hui::gfx::DrawList &list, SettingsScreen::Section section, flo
                                     cy - tile - gap * 0.5f + static_cast<float>(row) * (tile + gap),
                                     tile, tile},
                                    size * 0.07f, none, t, ink);
+        break;
+    }
+    case Section::console:
+    {
+        // The four PlayStation shapes: triangle, circle, square and cross.
+        const float k = size / 36.0f;
+        const float tt = std::max(2.0f, size * 0.075f);
+        list.line(cx - 9.0f * k, cy - 15.0f * k, cx - 3.0f * k, cy - 5.0f * k, tt, ink);
+        list.line(cx - 3.0f * k, cy - 5.0f * k, cx - 15.0f * k, cy - 5.0f * k, tt, ink);
+        list.line(cx - 15.0f * k, cy - 5.0f * k, cx - 9.0f * k, cy - 15.0f * k, tt, ink);
+        list.ring(cx + 8.0f * k, cy - 10.0f * k, 5.5f * k, tt, ink);
+        list.bordered_rect({cx - 14.5f * k, cy + 3.0f * k, 11.0f * k, 11.0f * k}, 2.5f * k, none, tt, ink);
+        list.line(cx + 3.0f * k, cy + 3.0f * k, cx + 14.0f * k, cy + 14.0f * k, tt, ink);
+        list.line(cx + 14.0f * k, cy + 3.0f * k, cx + 3.0f * k, cy + 14.0f * k, tt, ink);
         break;
     }
     case Section::updates:
@@ -463,6 +477,9 @@ void SettingsScreen::build(Pane &pane) const
     case Section::catalogue:
         build_catalogue(pane);
         break;
+    case Section::console:
+        build_console(pane);
+        break;
     case Section::updates:
         build_updates(pane);
         break;
@@ -723,19 +740,6 @@ void SettingsScreen::build_storage(Pane &pane) const
                    ui::ButtonKind::secondary, !archives_saving}});
     if (result.setting == Setting::archives && !result.error.empty())
         pane.error(result.error);
-    pane.gap(12.0f);
-    pane.rule();
-    pane.heading(tr("Installing downloaded packages"));
-    pane.body(state.system.install_pkgs
-                  ? tr("A downloaded .pkg is installed on your PS5 once Orbit has checked it.")
-                  : tr("A downloaded .pkg stays in the homebrew folder. Orbit does not install it."));
-    const bool install_saving = result.busy && result.setting == Setting::install_pkgs;
-    pane.buttons({{Kind::install_pkgs_toggle,
-                   state.system.install_pkgs ? tr("Stop installing packages after download")
-                                             : tr("Install packages after download"),
-                   ui::ButtonKind::secondary, !install_saving}});
-    if (result.setting == Setting::install_pkgs && !result.error.empty())
-        pane.error(result.error);
 }
 
 // ---- Pair a device (src/Pairing.tsx, on the console) ----
@@ -836,7 +840,19 @@ void SettingsScreen::build_catalogue(Pane &pane) const
     if (state.have_catalogue_status && !catalogue.available)
         pane.fine(tr("Refreshing works with Orbit running on your PS5. This copy uses its bundled "
                   "catalogue."));
-    pane.gap(14.0f);
+    if (error_setting_ == Setting::catalogue && !error_.empty())
+        pane.notice({}, tr(error_));
+    else if (!catalogue.error.empty())
+        pane.notice({}, tr(catalogue.error));
+}
+
+// ---- Console: what depends on the PlayStation the games are for ----
+
+void SettingsScreen::build_console(Pane &pane) const
+{
+    const Snapshot &state = ctx_.store.state();
+    const SettingResult &result = ctx_.store.setting_result();
+    pane.heading(tr("Console"));
     pane.body(state.system.ps4_hidden
                   ? tr("PS4 games are hidden. A game that also comes in a PS5 version stays, with its PS5 options.")
                   : tr("PS4 games are shown next to PS5 games."));
@@ -845,10 +861,19 @@ void SettingsScreen::build_catalogue(Pane &pane) const
                    ui::ButtonKind::secondary, !ps4_saving}});
     if (result.setting == Setting::ps4 && !result.error.empty())
         pane.error(result.error);
-    if (error_setting_ == Setting::catalogue && !error_.empty())
-        pane.notice({}, tr(error_));
-    else if (!catalogue.error.empty())
-        pane.notice({}, tr(catalogue.error));
+    pane.gap(12.0f);
+    pane.rule();
+    pane.heading(tr("Installing downloaded packages"));
+    pane.body(state.system.install_pkgs
+                  ? tr("A downloaded .pkg is installed on your PS5 once Orbit has checked it.")
+                  : tr("A downloaded .pkg stays in the homebrew folder. Orbit does not install it."));
+    const bool install_saving = result.busy && result.setting == Setting::install_pkgs;
+    pane.buttons({{Kind::install_pkgs_toggle,
+                   state.system.install_pkgs ? tr("Stop installing packages after download")
+                                             : tr("Install packages after download"),
+                   ui::ButtonKind::secondary, !install_saving}});
+    if (result.setting == Setting::install_pkgs && !result.error.empty())
+        pane.error(result.error);
 }
 
 // ---- Updates: this app (src/TvApp.tsx) and the download service (src/Updates.tsx) ----

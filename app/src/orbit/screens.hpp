@@ -539,6 +539,7 @@ class SettingsScreen final : public Screen
         storage,
         pairing,
         catalogue,
+        console,
         updates,
         zero,
         more,
@@ -610,6 +611,7 @@ class SettingsScreen final : public Screen
     void build_storage(Pane &pane) const;
     void build_pairing(Pane &pane) const;
     void build_catalogue(Pane &pane) const;
+    void build_console(Pane &pane) const;
     void build_updates(Pane &pane) const;
     void build_appearance(Pane &pane) const;
     void build_language(Pane &pane) const;

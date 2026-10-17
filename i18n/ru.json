@@ -1291,5 +1291,6 @@
   "The installation stopped before it finished.": "Установка остановилась, не завершившись.",
   "The installation did not make progress.": "Установка не продвигается.",
   "Install the base game before its updates and add-ons.": "Сначала установите базовую игру, затем её обновления и дополнения.",
-  "There is not enough free space on the console to install this package.": "На консоли недостаточно свободного места для установки этого пакета."
+  "There is not enough free space on the console to install this package.": "На консоли недостаточно свободного места для установки этого пакета.",
+  "Console": "Консоль"
 }

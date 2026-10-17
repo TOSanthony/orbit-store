@@ -1281,5 +1281,6 @@
   "The installation stopped before it finished.": "A instalação parou antes de terminar.",
   "The installation did not make progress.": "A instalação não avançou.",
   "Install the base game before its updates and add-ons.": "Instale o jogo base antes de suas atualizações e conteúdos adicionais.",
-  "There is not enough free space on the console to install this package.": "Não há espaço livre suficiente no console para instalar este pacote."
+  "There is not enough free space on the console to install this package.": "Não há espaço livre suficiente no console para instalar este pacote.",
+  "Console": "Console"
 }

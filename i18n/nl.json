@@ -1271,5 +1271,6 @@
   "The installation stopped before it finished.": "De installatie is gestopt voordat deze klaar was.",
   "The installation did not make progress.": "De installatie vorderde niet.",
   "Install the base game before its updates and add-ons.": "Installeer eerst het basisspel, vóór de updates en add-ons.",
-  "There is not enough free space on the console to install this package.": "Er is niet genoeg vrije ruimte op de console om dit pakket te installeren."
+  "There is not enough free space on the console to install this package.": "Er is niet genoeg vrije ruimte op de console om dit pakket te installeren.",
+  "Console": "Console"
 }

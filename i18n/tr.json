@@ -1271,5 +1271,6 @@
   "The installation stopped before it finished.": "Yükleme tamamlanmadan durdu.",
   "The installation did not make progress.": "Yükleme ilerlemedi.",
   "Install the base game before its updates and add-ons.": "Güncellemelerden ve ek içeriklerden önce temel oyunu yükle.",
-  "There is not enough free space on the console to install this package.": "Bu paketi yüklemek için konsolda yeterli boş alan yok."
+  "There is not enough free space on the console to install this package.": "Bu paketi yüklemek için konsolda yeterli boş alan yok.",
+  "Console": "Konsol"
 }
