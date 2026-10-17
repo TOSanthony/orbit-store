@@ -439,10 +439,15 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
     {
         // Cover and title on the left; settings, storage and the download button on the right.
         constexpr float nx = 570, nw = 1236;
+        // With a drive to save to, the three option rows take the left half of the column and
+        // the storage card the right half, as tall as the three rows.
+        const bool side = now.show_download && now.drive != nullptr;
+        const float rw = side ? 606.0f : nw;
+        constexpr float kRowsHeight = 3 * 76.0f + 2 * 10.0f;
         float ry = 0;
         const auto setting = [&](Slot slot,FactIcon icon,const std::string &label,const std::string &value,const std::string &note)
         {
-            const ui::Rect r{nx,ry,nw,76};
+            const ui::Rect r{nx,ry,rw,76};
             const float f = focused && static_cast<int>(out.controls.size()) == focus_ ? 1 : 0;
             out.controls.push_back({slot,0,r,!waiting_,false});
             if (list)
@@ -452,11 +457,11 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                 list->circle(nx+50,ry+38,24,f>0.5f?ui::Color::rgb(0x080808,0.1f):ui::Color::rgb(0xffffff,0.14f));
                 fact_icon(*list,type,icon,nx+50,ry+38,30,ink);
                 ui::text(*list,type.regular,label,nx+92,ry+29,17,dim);
-                const float value_w = std::min(type.medium.measure(value,24),nw-160);
-                ui::text_fit(*list,type.medium,value,nx+92,ry+60,24,nw-160,ink);
-                if (!note.empty())
-                    ui::text_fit(*list,type.regular,note,nx+92+value_w+14,ry+60,17,nw-160-value_w-14,dim);
-                const float cx = nx + nw - 34;
+                const float value_w = std::min(type.medium.measure(value,24),rw-160);
+                ui::text_fit(*list,type.medium,value,nx+92,ry+60,24,rw-160,ink);
+                if (!note.empty() && rw-160-value_w-14 > 120)
+                    ui::text_fit(*list,type.regular,note,nx+92+value_w+14,ry+60,17,rw-160-value_w-14,dim);
+                const float cx = nx + rw - 34;
                 list->line(cx-5,ry+31,cx+3,ry+38,2,dim);
                 list->line(cx+3,ry+38,cx-5,ry+45,2,dim);
             }
@@ -498,7 +503,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         if (now.show_download && now.drive && list)
         {
             const Drive &drive=*now.drive;
-            const ui::Rect card_rect{nx,ry,nw,140};
+            const ui::Rect card_rect = side ? ui::Rect{nx+rw+24,0,rw,kRowsHeight} : ui::Rect{nx,ry,nw,140};
             ui::surface(*list,card_rect,20,ui::color::field);
             if(drive.total_bytes>0)
             {
@@ -513,7 +518,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                 const float used_part=static_cast<float>(std::clamp(queued/total,0.0,1.0));
                 const float game_part=static_cast<float>(std::clamp(game_shown/total,0.0,1.0));
                 constexpr float radius=54,thickness=12,tau=6.2831853f;
-                const float cy=ry+70,cx=nx+28+radius+6,right=nx+nw-28;
+                const float cy=card_rect.cy(),cx=card_rect.x+28+radius+6,right=card_rect.x+card_rect.w-28;
                 const ui::Color game_color=fits?ui::color::fits:ui::color::short_of;
                 const struct { std::string label; double bytes; ui::Color dot; } rows[]={
                     {tr("Used and queued"),queued,ui::color::text},
@@ -525,8 +530,9 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                     values_w=std::max(values_w,type.medium.measure(format_bytes(row.bytes),20));
                     labels_w=std::max(labels_w,type.regular.measure(row.label,20));
                 }
-                const float label_x=right-values_w-40-labels_w;
-                const float dot_x=label_x-24;
+                const float text_x=cx+radius+thickness+(side?30.0f:36.0f);
+                const float dot_x=side?text_x+6.0f:right-values_w-40-labels_w-24;
+                const float label_x=side?dot_x+24.0f:dot_x+24.0f;
                 list->ring(cx,cy,radius,thickness,ui::Color::rgb(0xffffff,0.27f));
                 if(used_part>0.0f)list->arc(cx,cy,radius,thickness,0.0f,used_part*tau,ui::color::text,true);
                 if(game_part>0.0f)list->arc(cx,cy,radius,thickness,(used_part+0.006f)*tau,game_part*tau,game_color,true);
@@ -537,14 +543,15 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                     ui::text(*list,type.semibold,std::to_string(percent)+"%",cx,cy+4,24,ink,ui::Align::center);
                     ui::text(*list,type.regular,tr("used"),cx,cy+23,13,ui::color::text2,ui::Align::center);
                 }
-                const float text_x=cx+radius+thickness+36;
                 const std::string centre=format_bytes(std::abs(now.plan.after));
-                const float size=ui::fit_size(type.semibold,centre,30,18,std::max(60.0f,dot_x-40-text_x));
-                ui::text(*list,type.semibold,centre,text_x,cy+2,size,fits?ui::color::text:ui::color::short_of);
-                ui::text(*list,type.regular,fits?tr("free after install"):tr("short"),text_x,cy+30,17,ui::color::text2);
+                const float centre_w=side?right-text_x:std::max(60.0f,dot_x-40-text_x);
+                const float size=ui::fit_size(type.semibold,centre,30,18,centre_w);
+                const float head_y=side?card_rect.y+58:cy+2;
+                ui::text(*list,type.semibold,centre,text_x,head_y,size,fits?ui::color::text:ui::color::short_of);
+                ui::text(*list,type.regular,fits?tr("free after install"):tr("short"),text_x,head_y+28,17,ui::color::text2);
                 for(int i=0;i<3;++i)
                 {
-                    const float y=cy-38+static_cast<float>(i)*38;
+                    const float y=side?card_rect.y+128+static_cast<float>(i)*38:cy-38+static_cast<float>(i)*38;
                     list->circle(dot_x,y,6,rows[i].dot);
                     ui::text(*list,type.regular,rows[i].label,label_x,y+7,20,ui::color::text2);
                     ui::text(*list,type.medium,format_bytes(rows[i].bytes),right,y+7,20,ui::color::text,ui::Align::right);
@@ -553,11 +560,12 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             }
             else
             {
-                ui::text_fit(*list,type.regular,now.plan.planned?tr("After your queue"):tr("After queue + this download"),nx+28,ry+82,22,nw-420,ui::color::text2);
-                ui::text(*list,type.medium,now.plan.after<0?tr("{size} short",{{"size",format_bytes(-now.plan.after)}}):format_bytes(now.plan.after),nx+nw-28,ry+82,24,ui::color::text,ui::Align::right);
+                ui::text_fit(*list,type.regular,now.plan.planned?tr("After your queue"):tr("After queue + this download"),card_rect.x+28,card_rect.cy()+6,22,card_rect.w-200,ui::color::text2);
+                ui::text(*list,type.medium,now.plan.after<0?tr("{size} short",{{"size",format_bytes(-now.plan.after)}}):format_bytes(now.plan.after),card_rect.x+card_rect.w-28,card_rect.cy()+6,24,ui::color::text,ui::Align::right);
             }
         }
-        if (now.show_download && now.drive) ry += 140 + 20;
+        if (side) ry = kRowsHeight + 30.0f;
+        else if (now.show_download && now.drive) ry += 140 + 20;
         // A game already in Library: the second-copy button sits on the cover's bottom edge, the
         // sentence above it, and the main button is centred in the space left under the source row.
         const bool anchored = !now.show_download && !download_again_ && !now.collection.job &&
