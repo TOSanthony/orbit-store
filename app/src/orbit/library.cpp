@@ -24,11 +24,38 @@ constexpr int kColumns = 6;
 constexpr float kTile = 268.333f;
 constexpr float kColumnStep = (1920.0f - 2.0f * ui::kGutter - kTile) / (kColumns - 1);
 constexpr float kCardStep = 346.0f;
+constexpr int kStorageColumns = 4;
+constexpr float kStorageTileW = 400.0f, kStorageTileH = 120.0f;
 constexpr float kKeyboardTop = 560.0f;
 constexpr const char *kViews[] = {/* i18n */ "All games", /* i18n */ "Installed", /* i18n */ "On drive", /* i18n */ "Unavailable"};
 constexpr int kViewCount = 4;
 constexpr const char *kSections[] = {/* i18n */ "Games", /* i18n */ "Storage"};
 constexpr float kPanelWidth = 1000.0f;
+
+// A small drive (a stacked cylinder), drawn before the size of a game.
+void drive_icon(hui::gfx::DrawList &list, float cx, float cy, float size, ui::Color ink)
+{
+    const float k = size / 24.0f, t = 2.0f * k;
+    const auto arc = [&](float y, float from, float to)
+    {
+        constexpr int kSteps = 16;
+        float px = cx + 9.0f * k * std::cos(from), py = cy + y * k + 3.4f * k * std::sin(from);
+        for (int i = 1; i <= kSteps; ++i)
+        {
+            const float a = from + (to - from) * static_cast<float>(i) / kSteps;
+            const float nx = cx + 9.0f * k * std::cos(a), ny = cy + y * k + 3.4f * k * std::sin(a);
+            list.line(px, py, nx, ny, t, ink);
+            px = nx;
+            py = ny;
+        }
+    };
+    constexpr float kPi = 3.14159265f;
+    arc(-6.0f, 0.0f, 2.0f * kPi);
+    list.line(cx - 9.0f * k, cy - 6.0f * k, cx - 9.0f * k, cy + 6.0f * k, t, ink);
+    list.line(cx + 9.0f * k, cy - 6.0f * k, cx + 9.0f * k, cy + 6.0f * k, t, ink);
+    arc(0.0f, 0.0f, kPi);
+    arc(6.0f, 0.0f, kPi);
+}
 
 void library_icon(hui::gfx::DrawList &list, float cx, float cy, bool scan, ui::Color ink)
 {
@@ -416,11 +443,14 @@ std::vector<LibraryScreen::Control> LibraryScreen::page_controls() const
         }
         y += 110.0f;
         const std::vector<const LibraryGame *> games = drive_games();
+        // The drive's games as a grid of tiles: cover, title and size.
         for (int g = 0; g < static_cast<int>(games.size()); ++g)
             out.push_back({Kind::storage_game,
                            g,
-                           row++,
-                           {ui::kGutter, y + static_cast<float>(g) * 64.0f, 1400.0f, 58.0f}});
+                           row + g / kStorageColumns,
+                           {ui::kGutter + static_cast<float>(g % kStorageColumns) * (kStorageTileW + 20.0f),
+                            y + static_cast<float>(g / kStorageColumns) * (kStorageTileH + 16.0f),
+                            kStorageTileW, kStorageTileH}});
     }
     return out;
 }
@@ -1246,15 +1276,26 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                 const LibraryGame &game = *games[static_cast<std::size_t>(g)];
                 const ui::Rect r = rect(Kind::storage_game, g);
                 const float focus = amount(Kind::storage_game, g);
-                ui::state_fill(list, r, 12.0f, focus);
-                ui::text_fit(list, type.medium, game.title, r.x + 20.0f, r.cy() + 7.0f, 19.0f,
-                             900.0f, ui::state_ink(focus));
-                ui::text(list, type.regular,
-                         game.size >= 0.0                    ? format_bytes(game.size)
-                         : game.size_status == "unavailable" ? tr("Unavailable")
-                                                             : tr("Not measured"),
-                         r.x + r.w - 20.0f, r.cy() + 7.0f, 17.0f, ui::state_ink_dim(focus),
-                         ui::Align::right);
+                ui::state_fill(list, r, 18.0f, focus);
+                const ui::Color ink = ui::state_ink(focus), dim = ui::state_ink_dim(focus);
+                const ui::Rect cover{r.x + 16.0f, r.y + 16.0f, r.h - 32.0f, r.h - 32.0f};
+                if (const Game *art = catalogue_game(state, game.title_id))
+                    draw_cover(ctx_, list, *art, cover, 12.0f);
+                else
+                {
+                    list.gradient_rect(cover, 12.0f, ui::Color::rgb(0x242424), ui::Color::rgb(0x151515));
+                    if (ctx_.mark != 0)
+                        list.image(ctx_.mark, cover.inset(14.0f), hui::gfx::kFullUv,
+                                   ui::Color::rgb(0xffffff, 0.6f));
+                }
+                const float tx = cover.x + cover.w + 18.0f, tw = r.x + r.w - tx - 16.0f;
+                ui::text_fit(list, type.medium, game.title, tx, r.cy() - 6.0f, 21.0f, tw, ink);
+                drive_icon(list, tx + 11.0f, r.cy() + 24.0f, 20.0f, dim);
+                ui::text_fit(list, type.regular,
+                             game.size >= 0.0                    ? format_bytes(game.size)
+                             : game.size_status == "unavailable" ? tr("Unavailable")
+                                                                 : tr("Not measured"),
+                             tx + 30.0f, r.cy() + 31.0f, 18.0f, tw - 30.0f, dim);
             }
             if (!games.empty())
                 ui::paragraph(list, type.regular,
@@ -1262,7 +1303,7 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                               "more than one title, so these sizes are not a drive total."),
                               ui::kGutter,
                               rect(Kind::storage_game, static_cast<int>(games.size()) - 1).y +
-                                  100.0f,
+                                  kStorageTileH + 40.0f,
                               15.0f, 1000.0f, 23.0f, ui::color::text3, 2);
         }
     }
