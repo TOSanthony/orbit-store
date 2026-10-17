@@ -1263,5 +1263,8 @@
   },
   "Game": "Игра",
   "Automatic": "Автоматически",
-  "Choose the language of the app. Automatic follows the console’s language.": "Выберите язык приложения. «Автоматически» — язык консоли."
+  "Choose the language of the app. Automatic follows the console’s language.": "Выберите язык приложения. «Автоматически» — язык консоли.",
+  "Keyboard": "Клавиатура",
+  "The on-screen keyboard’s letters. Automatic uses AZERTY when the app is in French.": "Раскладка букв экранной клавиатуры. «Автоматически» — AZERTY, когда приложение на французском.",
+  "App language": "Язык приложения"
 }

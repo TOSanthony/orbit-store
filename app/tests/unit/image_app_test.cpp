@@ -207,6 +207,20 @@ TEST(App, OpeningScreenWaitsForDiscoverImagesButNeverMoreThanThreeSeconds)
     }
 }
 
+TEST(App, KeyboardLettersFollowTheChoiceAndAutomaticIsAzertyOnlyInFrench)
+{
+    AppHarness h;
+    h.context.keyboard_choice = "azerty";
+    h.frame();
+    EXPECT_TRUE(h.context.azerty);
+    h.context.keyboard_choice = "qwerty";
+    h.frame();
+    EXPECT_FALSE(h.context.azerty);
+    h.context.keyboard_choice = "auto"; // the tests run in English
+    h.frame();
+    EXPECT_FALSE(h.context.azerty);
+}
+
 TEST(App, OpensAGameAndQueuesADownloadToTheDownloadsTab)
 {
     AppHarness h;

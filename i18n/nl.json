@@ -1243,5 +1243,8 @@
   },
   "Game": "Spel",
   "Automatic": "Automatisch",
-  "Choose the language of the app. Automatic follows the console’s language.": "Kies de taal van de app. ‘Automatisch’ volgt de taal van de console."
+  "Choose the language of the app. Automatic follows the console’s language.": "Kies de taal van de app. ‘Automatisch’ volgt de taal van de console.",
+  "Keyboard": "Toetsenbord",
+  "The on-screen keyboard’s letters. Automatic uses AZERTY when the app is in French.": "De letters van het schermtoetsenbord. ‘Automatisch’ gebruikt AZERTY wanneer de app in het Frans staat.",
+  "App language": "Taal van de app"
 }

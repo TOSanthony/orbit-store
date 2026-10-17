@@ -129,6 +129,7 @@ enum class Setting : std::uint8_t
     download_limit,
     appearance,
     language,
+    keyboard,
     sounds,
 };
 
@@ -237,6 +238,7 @@ class Store
     void set_sounds_off(bool off) { send_setting(Setting::sounds, {}, {}, off); }
     void set_appearance(const std::string &id) { send_setting(Setting::appearance, id); }
     void set_language(const std::string &code) { send_setting(Setting::language, code); }
+    void set_keyboard(const std::string &layout) { send_setting(Setting::keyboard, layout); }
     // The interface language changed: screens that keep translated text build it again.
     void language_changed();
     void set_delete_archives(bool enabled) { send_setting(Setting::archives, {}, {}, enabled); }

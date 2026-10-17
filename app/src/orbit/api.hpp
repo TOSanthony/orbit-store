@@ -120,6 +120,7 @@ class Client
     Result<bool> set_sounds_off(bool off); // 404: an older Orbit
     Result<std::string> set_appearance(const std::string &id);
     Result<std::string> set_language(const std::string &code);
+    Result<std::string> set_keyboard(const std::string &layout);
     Result<int> set_download_limit(int limit);
     Result<CatalogueStatus> catalogue_status();
     Result<CatalogueStatus> refresh_catalogue();

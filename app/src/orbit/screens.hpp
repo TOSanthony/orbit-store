@@ -75,6 +75,8 @@ struct Context
     bool sounds_on = true;      // menu sounds; read by the main loop
     std::size_t appearance = 0; // the chosen background (orbit::appearance preset)
     int system_language = 1;    // the console's language, for the automatic choice
+    bool azerty = false;                  // the keyboards use the French letter order (set by the App)
+    std::string keyboard_choice = "auto"; // "auto" (AZERTY in French), "qwerty" or "azerty"
     std::string language_choice = "auto"; // what the player chose: "auto" or a catalogue code
     std::string language_dir;   // where the catalogues are
 };
@@ -581,6 +583,7 @@ class SettingsScreen final : public Screen
         download_limit_less,
         download_limit_more,
         appearance, // index of a background preset
+        keyboard,   // 0 follows the language, 1 QWERTY, 2 AZERTY
         language,   // 0 follows the console, then the catalogue languages in order
         sounds_toggle,
         nas_url, // the My NAS index address field
@@ -722,6 +725,7 @@ class App
     bool warmed_ = false;
     float hold_ = 0.0f;
     float reveal_ = 0.0f; // 0 opening screen ... 1 the app
+    bool keyboard_synced_ = false;   // the service's saved keyboard was read once
     bool language_synced_ = false;   // the service's saved language was read once
     bool appearance_synced_ = false; // the service's saved background was read once
     bool provider_open_ = false;

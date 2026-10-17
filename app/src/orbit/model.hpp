@@ -32,6 +32,7 @@ struct System
     std::string preferred_storage;
     bool sounds_off = false; // the TV app's menu sounds are muted
     std::string appearance; // the TV app background preset id the service keeps
+    std::string keyboard;   // the TV app keyboard letters the service keeps: "", "auto", "qwerty" or "azerty"
     std::string language;   // the TV app language the service keeps: "", "auto" or a catalogue code
     int concurrent_downloads = 1;
     bool delete_archives = true; // Remove a ZIP/7z/RAR download once its files are in place.

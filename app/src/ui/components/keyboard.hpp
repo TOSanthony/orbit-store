@@ -48,6 +48,7 @@ struct KeyboardLayout
     KeyboardLayout &add_row(std::vector<KeyboardKey> keys);
 
     static KeyboardLayout letters(); // digits, qwerty, punctuation; shift, symbols, space
+    static KeyboardLayout letters_azerty(); // the same keys in the French order
     static KeyboardLayout symbols(); // the companion of letters()
     static KeyboardLayout numeric(); // a 3 x 4 pad: digits, backspace, done
     static KeyboardLayout email();   // letters with @ . _ - and a ".com" key
@@ -171,6 +172,8 @@ class Keyboard
     }
     // Silent; the focus stays as near as the new layout allows.
     void set_layout(int index);
+    // The letters in the French order (AZERTY) or the default; the other layouts stay.
+    void set_azerty(bool on);
     KeyboardShift shift() const
     {
         return shift_;
@@ -288,6 +291,7 @@ class Keyboard
     std::vector<KeyboardLayout> layouts_;
     int layout_ = 0;
     gfx::Rect bounds_{0.0f, 0.0f, 800.0f, 360.0f};
+    bool azerty_ = false;
     int row_ = 0;
     int key_ = 0;
     float column_ = 0.5f; // where the player really is, in columns

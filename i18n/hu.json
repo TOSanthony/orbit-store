@@ -1243,5 +1243,8 @@
   },
   "Game": "Játék",
   "Automatic": "Automatikus",
-  "Choose the language of the app. Automatic follows the console’s language.": "Válaszd ki az alkalmazás nyelvét. Az „Automatikus” a konzol nyelvét követi."
+  "Choose the language of the app. Automatic follows the console’s language.": "Válaszd ki az alkalmazás nyelvét. Az „Automatikus” a konzol nyelvét követi.",
+  "Keyboard": "Billentyűzet",
+  "The on-screen keyboard’s letters. Automatic uses AZERTY when the app is in French.": "A képernyő-billentyűzet betűi. Az „Automatikus” AZERTY-t használ, ha az alkalmazás franciául fut.",
+  "App language": "Az alkalmazás nyelve"
 }

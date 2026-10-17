@@ -215,6 +215,22 @@ KeyboardLayout KeyboardLayout::letters()
     return layout;
 }
 
+KeyboardLayout KeyboardLayout::letters_azerty()
+{
+    KeyboardLayout layout;
+    layout.name = "abc";
+    layout.columns = 10;
+    layout.add_row("1234567890").add_row("azertyuiop").add_row("qsdfghjklm").add_row("wxcvbn,.?'");
+    // The same punctuation as letters(), doubled up under shift.
+    layout.rows[3][6].shifted = ";";
+    layout.rows[3][7].shifted = ":";
+    layout.rows[3][8].shifted = "!";
+    layout.rows[3][9].shifted = "\"";
+    layout.add_row({wide(KeyKind::shift, 2), wide(KeyKind::layout, 1), wide(KeyKind::space, 3),
+                    wide(KeyKind::backspace, 2), wide(KeyKind::done, 2)});
+    return layout;
+}
+
 KeyboardLayout KeyboardLayout::symbols()
 {
     KeyboardLayout layout;
@@ -253,6 +269,14 @@ KeyboardLayout KeyboardLayout::email()
 Keyboard::Keyboard()
 {
     set_layouts({KeyboardLayout::letters(), KeyboardLayout::symbols()});
+}
+
+void Keyboard::set_azerty(bool on)
+{
+    if (on == azerty_)
+        return;
+    azerty_ = on;
+    set_layouts({on ? KeyboardLayout::letters_azerty() : KeyboardLayout::letters(), KeyboardLayout::symbols()});
 }
 
 void Keyboard::set_layouts(std::vector<KeyboardLayout> layouts)

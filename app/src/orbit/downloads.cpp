@@ -409,6 +409,7 @@ Intent DownloadsScreen::update(const InputFrame &input, float dt, Feedback &feed
     scroll_.update(dt, 11.0f);
     dialog_in_.target = dialog_open_ ? 1.0f : 0.0f;
     dialog_in_.update(dt, 16.0f);
+    password_keyboard_.set_azerty(ctx_.azerty);
     password_keyboard_.set_active(password_open_);
     password_keyboard_.update(dt);
     return intent;

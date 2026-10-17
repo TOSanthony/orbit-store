@@ -244,6 +244,15 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
     const Snapshot &state = ctx_.store.state();
     ctx_.art.set_token(state.token);
     ctx_.art.tick();
+    // The keyboard letters: the player's choice, else AZERTY when the app is in French.
+    if (!keyboard_synced_ && state.have_system)
+    {
+        keyboard_synced_ = true;
+        if (!state.system.keyboard.empty())
+            ctx_.keyboard_choice = state.system.keyboard;
+    }
+    ctx_.azerty = ctx_.keyboard_choice == "azerty" ||
+                  (ctx_.keyboard_choice != "qwerty" && i18n::language() == "fr");
     // The language the service kept wins once, at start (the app opens in the console's language).
     if (!language_synced_ && state.have_system)
     {

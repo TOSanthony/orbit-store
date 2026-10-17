@@ -295,6 +295,7 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
         cJSON_AddBoolToObject(o, "deleteArchives", orbit.delete_archives);
         cJSON_AddStringToObject(o, "appearance", orbit.appearance);
         cJSON_AddStringToObject(o, "language", orbit.language);
+        cJSON_AddStringToObject(o, "keyboard", orbit.keyboard);
         cJSON_AddBoolToObject(o, "soundsOff", orbit.sounds_off);
         cJSON_AddNumberToObject(o, "concurrentDownloads", orbit.concurrent_downloads);
         cJSON_AddNumberToObject(o, "httpPort", orbit.port);
@@ -470,6 +471,31 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
             if (rc) orbit.sounds_off = previous;
             cJSON *o = cJSON_CreateObject();
             cJSON_AddBoolToObject(o, "soundsOff", orbit.sounds_off);
+            pthread_mutex_unlock(&orbit.mutex);
+            cJSON_Delete(input);
+            if (rc) {
+                cJSON_Delete(o);
+                return error(c, 503, "Could not save the setting.");
+            }
+            return json_response(c, 200, o);
+        }
+        if ((get || post) && !strcmp(url, "/api/v1/settings/keyboard")) {
+            const cJSON *value = cJSON_GetObjectItemCaseSensitive(input, "keyboard");
+            bool valid = cJSON_IsString(value) && value->valuestring &&
+                         (!strcmp(value->valuestring, "auto") || !strcmp(value->valuestring, "qwerty") ||
+                          !strcmp(value->valuestring, "azerty"));
+            if (post && !valid) {
+                cJSON_Delete(input);
+                return error(c, 400, "Expected keyboard.");
+            }
+            pthread_mutex_lock(&orbit.mutex);
+            char previous[sizeof orbit.keyboard];
+            memcpy(previous, orbit.keyboard, sizeof previous);
+            if (post) snprintf(orbit.keyboard, sizeof orbit.keyboard, "%s", value->valuestring);
+            int rc = post ? state_save_locked() : 0;
+            if (rc) memcpy(orbit.keyboard, previous, sizeof previous);
+            cJSON *o = cJSON_CreateObject();
+            cJSON_AddStringToObject(o, "keyboard", orbit.keyboard);
             pthread_mutex_unlock(&orbit.mutex);
             cJSON_Delete(input);
             if (rc) {

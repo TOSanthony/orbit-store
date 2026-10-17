@@ -1016,6 +1016,42 @@ void SettingsScreen::build_language(Pane &pane) const
 {
     const ui::Type &type = ctx_.type;
     pane.heading(tr("Language"));
+    pane.subheading(tr("Keyboard"));
+    pane.body(tr("The on-screen keyboard\xE2\x80\x99s letters. Automatic uses AZERTY when the app is in French."));
+    pane.gap(10.0f);
+    {
+        const char *names[] = {tr("Automatic"), "QWERTY", "AZERTY"};
+        constexpr float kGap = 12.0f;
+        const float w = (pane.width - 2.0f * kGap) / 3.0f;
+        const std::string &kb = ctx_.keyboard_choice;
+        for (int i = 0; i < 3; ++i)
+        {
+            const bool chosen = i == 0 ? kb != "qwerty" && kb != "azerty" : kb == (i == 1 ? "qwerty" : "azerty");
+            const ui::Rect r{pane.x + static_cast<float>(i) * (w + kGap), pane.y, w, 76.0f};
+            if (pane.list != nullptr)
+            {
+                ui::DrawList &list = *pane.list;
+                const float f = pane.amount();
+                ui::state_fill(list, r, kCardRadius, f, chosen);
+                const float mx = r.x + 24.0f + 14.0f;
+                if (chosen)
+                {
+                    list.circle(mx, r.cy(), 14.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
+                    ui::icon_check(list, mx, r.cy(), 16.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.4f);
+                }
+                else
+                    list.ring(mx, r.cy(), 13.5f, 1.0f, f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::color::text3);
+                ui::text_fit(list, type.medium, names[i], mx + 34.0f, r.cy() + 7.0f, 21.0f, w - 90.0f,
+                             ui::state_ink(f, chosen));
+            }
+            pane.add(Kind::keyboard, i, r, true);
+        }
+        ++pane.row;
+        pane.y += 76.0f + 10.0f;
+    }
+    pane.gap(12.0f);
+    pane.rule();
+    pane.subheading(tr("App language"));
     pane.body(tr("Choose the language of the app. Automatic follows the console\xE2\x80\x99s language."));
     pane.gap(10.0f);
     const std::string_view system = i18n::resolve({}, ctx_.system_language);
@@ -1059,7 +1095,7 @@ void SettingsScreen::build_language(Pane &pane) const
         ++pane.row;
         pane.y += r.h + 10.0f;
     }
-    if (ctx_.store.setting_result().setting == Setting::language)
+    if (ctx_.store.setting_result().setting == Setting::language || ctx_.store.setting_result().setting == Setting::keyboard)
         pane.error(ctx_.store.setting_result().error);
 }
 
@@ -1107,6 +1143,11 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
         error_.clear();
         appearance::save(ctx_.appearance);
         ctx_.store.set_appearance(appearance::preset(ctx_.appearance).id);
+        break;
+    case Kind::keyboard:
+        ctx_.keyboard_choice = control.index == 1 ? "qwerty" : control.index == 2 ? "azerty" : "auto";
+        error_.clear();
+        ctx_.store.set_keyboard(ctx_.keyboard_choice);
         break;
     case Kind::language:
     {
@@ -1280,6 +1321,7 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
     }
 
     // The My NAS address: the keyboard takes every button while it is open.
+    nas_keyboard_.set_azerty(ctx_.azerty);
     nas_keyboard_.set_active(nas_edit_);
     nas_keyboard_.update(dt);
     nas_keyboard_in_.target = nas_edit_ ? 1.0f : 0.0f;

@@ -564,6 +564,18 @@ Result<std::string> Client::set_language(const std::string &code)
     return result;
 }
 
+Result<std::string> Client::set_keyboard(const std::string &layout)
+{
+    Result<std::string> result;
+    const http::Response response =
+        send("POST", "/api/v1/settings/keyboard", "{\"keyboard\":\"" + layout + "\"}");
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    result.value = json::parse(response.body, &value) ? value.text("keyboard") : layout;
+    return result;
+}
+
 Result<CatalogueStatus> Client::catalogue_status()
 {
     Result<CatalogueStatus> result;

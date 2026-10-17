@@ -933,6 +933,19 @@ void Store::run_setting(Command &command)
                 });
         break;
     }
+    case Setting::keyboard:
+    {
+        const api::Result<std::string> result = client_.set_keyboard(command.a);
+        error = result.status == 404 ? tr("Update the download service to keep this after a restart.") : result.error;
+        if (result.ok())
+            inbox_.post(
+                [this, layout = result.value]()
+                {
+                    state_.system.keyboard = layout;
+                    ++state_.serial;
+                });
+        break;
+    }
     case Setting::archives:
     {
         api::Result<bool> result = client_.set_delete_archives(command.flag);

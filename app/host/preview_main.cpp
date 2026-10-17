@@ -383,7 +383,9 @@ std::vector<Scenario> scenarios()
                     {pause(1.5f, "language-start"),
                      run(1.0f, [](orbit::App &app)
                          { app.open_settings(orbit::SettingsScreen::Section::language, true); }),
-                     pause(0.8f, "settings-language"), move(Direction::down), move(Direction::down),
+                     pause(0.8f, "settings-language"), move(Direction::right), move(Direction::right),
+                     tap(Action::confirm), pause(0.6f, "settings-language-azerty"),
+                     move(Direction::down), move(Direction::down),
                      move(Direction::down), tap(Action::confirm), pause(1.0f, "settings-language-french"),
                      move(Direction::down), pause(0.6f, "settings-language-next"),
                      move(Direction::up), move(Direction::up), move(Direction::up), move(Direction::up),
