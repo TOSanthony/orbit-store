@@ -214,9 +214,10 @@ void LibraryScreen::blur()
     ctx_.store.want_library_storage(false);
 }
 
-void LibraryScreen::show_game(const std::string &title_id, const std::string &source_key)
+void LibraryScreen::show_game(const std::string &title_id, const std::string &source_key, bool stay_in_section)
 {
-    section_ = 0;
+    if (!stay_in_section)
+        section_ = 0;
     selected_ = title_id;
     selected_key_ = source_key;
     mode_ = 0;
@@ -886,7 +887,7 @@ Intent LibraryScreen::update(const InputFrame &input, float dt, Feedback &feedba
                 if (focus_index_ < static_cast<int>(games.size()))
                 {
                     show_game(games[static_cast<std::size_t>(focus_index_)]->title_id,
-                              games[static_cast<std::size_t>(focus_index_)]->source_key);
+                              games[static_cast<std::size_t>(focus_index_)]->source_key, true);
                     feedback.play(hui::audio::Cue::open);
                 }
                 break;

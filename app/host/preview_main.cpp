@@ -316,7 +316,7 @@ std::vector<Scenario> scenarios()
           move(Direction::down), pause(0.6f, "library-storage-focus"), move(Direction::right), pause(0.6f, "library-storage-focus2"),
           move(Direction::left), pause(0.6f, "library-storage-focus1"),
           move(Direction::down), move(Direction::down), pause(0.6f, "library-storage-game"),
-          move(Direction::up), move(Direction::up), move(Direction::right), tap(Action::confirm), move(Direction::down), move(Direction::down), pause(0.8f, "library-storage-grid")}});
+          move(Direction::up), move(Direction::up), move(Direction::right), tap(Action::confirm), move(Direction::down), pause(0.8f, "library-storage-measure"), move(Direction::down), pause(0.8f, "library-storage-grid"), tap(Action::confirm), pause(0.9f, "library-storage-panel"), tap(Action::back), pause(0.9f, "library-storage-after")}});
     list.push_back({"settings",
                     Mode::normal,
                     true,

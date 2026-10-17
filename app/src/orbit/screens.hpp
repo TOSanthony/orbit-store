@@ -308,7 +308,9 @@ class LibraryScreen final : public Screen
         return keyboard_open_ || picker_.open || !selected_.empty() || scan_open_;
     }
     // Opens a game's details (View in Library from a game page).
-    void show_game(const std::string &title_id, const std::string &source_key);
+    // stay_in_section: open the game's panel over the current section (Storage) instead of
+    // switching back to the Games grid.
+    void show_game(const std::string &title_id, const std::string &source_key, bool stay_in_section = false);
     // Previews and tests.
     bool details_open() const
     {
