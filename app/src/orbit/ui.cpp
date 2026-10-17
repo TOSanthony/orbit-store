@@ -240,7 +240,7 @@ void select_field(DrawList &list, const Type &type, const Rect &r, std::string_v
 
 void select_menu(DrawList &list, const Type &type, const Rect &trigger,
                  const std::vector<std::string> &options, int selected, int active, float in,
-                 std::uint32_t glass_texture)
+                 std::uint32_t glass_texture, Color fill)
 {
     if (in <= 0.01f || options.empty())
         return;
@@ -267,11 +267,11 @@ void select_menu(DrawList &list, const Type &type, const Rect &trigger,
     if (glass_texture != 0)
     {
         list.glass(glass_texture, menu, kRadius, Color::rgb(0xffffff));
-        list.rounded_rect(menu, kRadius, color::popover);
+        list.rounded_rect(menu, kRadius, fill);
     }
     else
     {
-        list.rounded_rect(menu, kRadius, color::popover.with_alpha(0.97f));
+        list.rounded_rect(menu, kRadius, fill.with_alpha(0.97f));
     }
     list.bordered_rect(menu, kRadius, Color{0, 0, 0, 0}, 1.0f, Color::rgb(0xffffff, 0.08f));
     for (int r = 0; r < rows; ++r)

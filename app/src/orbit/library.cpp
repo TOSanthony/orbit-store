@@ -1382,30 +1382,6 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
     }
     list.pop_clip();
 
-    // ---- a dropdown's list ----
-    if (picker_.in.value > 0.01f)
-    {
-        int selected = 0;
-        const std::vector<std::string> options = picker_options(&selected);
-        ui::Rect trigger;
-        if (picking_ == Kind::destination)
-        {
-            for (const Control &c : panel_controls())
-            {
-                if (c.kind == Kind::destination)
-                    trigger = c.rect;
-            }
-        }
-        else
-        {
-            trigger = rect(picking_, 0);
-            trigger.y -= scroll_.value;
-        }
-        frame.glass = true;
-        ui::select_menu(frame.overlay, type, trigger, options, selected, picker_.active,
-                        picker_.in.value, frame.glass_texture);
-    }
-
     // ---- the details panel, or the scan dialog ----
     if (panel_in_.value > 0.01f)
     {
@@ -1655,6 +1631,33 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                           ui::color::text3, 2);
         }
         overlay.pop_opacity();
+    }
+
+    // ---- a dropdown's list (after the panel, so it opens above it) ----
+    if (picker_.in.value > 0.01f)
+    {
+        int selected = 0;
+        const std::vector<std::string> options = picker_options(&selected);
+        ui::Rect trigger;
+        if (picking_ == Kind::destination)
+        {
+            for (const Control &c : panel_controls())
+            {
+                if (c.kind == Kind::destination)
+                    trigger = c.rect;
+            }
+        }
+        else
+        {
+            trigger = rect(picking_, 0);
+            trigger.y -= scroll_.value;
+        }
+        frame.glass = true;
+        // Over the details panel the destination list wears the panel's own surface.
+        ui::select_menu(frame.overlay, type, trigger, options, selected, picker_.active,
+                        picker_.in.value, frame.glass_texture,
+                        picking_ == Kind::destination ? ui::Color::rgb(0x282828, 0.8f)
+                                                      : ui::color::popover);
     }
 
     // ---- keyboard ----

@@ -160,7 +160,7 @@ void select_field(DrawList &list, const Type &type, const Rect &r, std::string_v
 // With the frame's glass texture (set frame.glass) the panel is frosted.
 void select_menu(DrawList &list, const Type &type, const Rect &trigger,
                  const std::vector<std::string> &options, int selected, int active, float in,
-                 std::uint32_t glass_texture = 0);
+                 std::uint32_t glass_texture = 0, Color fill = color::popover);
 
 // Line-art icons drawn from shapes.
 void icon_search(DrawList &list, float cx, float cy, float size, Color ink);
