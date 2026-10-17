@@ -342,6 +342,10 @@ LoaderStarter::LoaderStarter(Locations where, std::uint16_t port,
 
 void LoaderStarter::announce(std::string version, std::string image)
 {
+    // Logged so a console log shows whether Orbit handed its copy over before a restart.
+    if (log_ && (!version.empty() || !image.empty()))
+        log_("announce: service copy " + (image.empty() ? std::string("not received") : std::to_string(image.size()) + " bytes") +
+             (version.empty() ? "" : ", version " + version));
     std::lock_guard<std::mutex> lock(mutex_);
     announced_version_ = std::move(version);
     announced_image_ = image.empty() ? nullptr : std::make_shared<const std::string>(std::move(image));
