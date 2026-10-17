@@ -147,6 +147,34 @@ static Installed installed(char *version, size_t cap) {
     return state;
 }
 
+/* The TV app replaces the Media-tab icon: when it is installed (image or folder, in the places
+ * Orbit and ShadowMount read from), the old icon would only be a second entry on the home screen.
+ * Creating /data/orbit-store/force-home-icon keeps the icon anyway. */
+static bool present_at(const char *root, const char *name) {
+    Path p;
+    struct stat st;
+    snprintf(p, sizeof p, "%s%s/%s", orbit.system_root, root, name);
+    return !lstat(p, &st);
+}
+bool tvapp_replaces_launcher(void) {
+    static const char *const roots[] = {"/data/homebrew",      "/mnt/ext0/homebrew", "/mnt/ext1/homebrew",
+                                        "/mnt/usb0/homebrew",  "/mnt/usb1/homebrew", "/mnt/usb2/homebrew",
+                                        "/mnt/usb3/homebrew",  "/mnt/usb4/homebrew", "/mnt/usb5/homebrew",
+                                        "/mnt/usb6/homebrew",  NULL};
+    Path p;
+    struct stat st;
+    at(p, ORBIT_DIR "/force-home-icon");
+    if (!lstat(p, &st))
+        return false;
+    bool present = false;
+    for (int i = 0; roots[i] && !present; i++)
+        present = present_at(roots[i], "PPSA99177/eboot.bin") || present_at(roots[i], NAME);
+    if (!present)
+        present = present_at("/user/app", "PPSA99177/eboot.bin") ||
+                  present_at("/system_ex/app", "PPSA99177/eboot.bin");
+    return present;
+}
+
 static size_t sink_write(char *data, size_t a, size_t b, void *context) {
     Sink *sink = context;
     size_t n = a * b;

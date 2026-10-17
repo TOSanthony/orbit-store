@@ -219,7 +219,7 @@ export interface System {
   localSessionAvailable: boolean;
   pairNotificationAvailable: boolean;
   httpPort: number;
-  launcherStatus: "checking" | "ready" | "error" | "not-included";
+  launcherStatus: "checking" | "ready" | "error" | "not-included" | "tv-app";
 }
 export interface AutoStart {
   available: boolean;

@@ -166,7 +166,7 @@ cJSON *diagnostics_snapshot(void) {
     cJSON_AddBoolToObject(o, "queueBackupCreated", orbit.queue_backup_created);
     cJSON_AddNumberToObject(o, "catalogueRevision", orbit.catalog_revision);
     cJSON *launcher = cJSON_AddObjectToObject(o, "launcher");
-    cJSON_AddStringToObject(launcher, "status", ALLOWED(orbit.launcher_status, "ready", "error", "checking", "not-included"));
+    cJSON_AddStringToObject(launcher, "status", ALLOWED(orbit.launcher_status, "ready", "error", "checking", "not-included", "tv-app"));
     cJSON_AddStringToObject(launcher, "method", ALLOWED(orbit.launcher_registration_method, "title-directory", "app-scan", "not-needed"));
     cJSON_AddBoolToObject(launcher, "hasError", !!*orbit.launcher_error);
     cJSON *downloads = cJSON_AddArrayToObject(o, "downloads");

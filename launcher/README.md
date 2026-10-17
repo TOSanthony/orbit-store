@@ -20,6 +20,10 @@ fails.
 
 The manifest URL is generated from `config/network.json`, alongside the server's port constant. An installed manifest that differs from the build is reported as an error; future port or manifest changes need a migration implementation.
 
+## With the TV app installed
+
+The TV app (`PPSA99177`) replaces this icon. When Orbit finds it (the FFPKG or the folder in `/data/homebrew`, on a drive's `homebrew` folder, or already installed), it does not add the Media-tab icon, and it removes the one it registered earlier with `sceAppInstUtilAppUnInstall`, then deletes its own manifest, icon and state records. `launcherStatus` is then `tv-app`. A title Orbit does not own is never touched. If the removal fails, the records stay and the next start retries. Create `/data/orbit-store/force-home-icon` to keep the icon anyway. Remove the TV app and the next start registers the icon again.
+
 `orbit_core.elf` is available for server-only diagnostics and does not include this installer.
 
 ## Validation

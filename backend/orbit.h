@@ -231,6 +231,7 @@ cJSON *library_snapshot(bool refresh);
 cJSON *library_storage_snapshot(bool refresh);
 int library_action(const cJSON *input, char *error, size_t cap);
 int pairing_notify(void);
+bool tvapp_replaces_launcher(void);
 int tvapp_start(void);
 void tvapp_stop(void);
 cJSON *tvapp_status(void);

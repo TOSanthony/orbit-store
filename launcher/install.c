@@ -145,6 +145,69 @@ static int absent(int parent, const char *name) {
     return errno == ENOENT ? 1 : -1;
 }
 
+static int drop(int parent, const char *name, int flags) {
+    return unlinkat(parent, name, flags) && errno != ENOENT ? -1 : 0;
+}
+
+int orbit_launcher_remove_at(int state_fd, const char *user_parent, int (*prepare)(void),
+                             int (*unregister_title)(void)) {
+    int up = -1, result = -1;
+    const char *step = "open-app-parent";
+    last_error[0] = '\0';
+    errno = 0;
+    up = open(user_parent, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    if (up < 0)
+        goto done;
+    step = "verify-ownership-record";
+    int owned = matches(state_fd, "launcher-owned-v1", owner, sizeof owner - 1);
+    if (owned < 0)
+        goto done;
+    if (!owned) {
+        result = 0; /* Never touch a title Orbit did not create. */
+        goto done;
+    }
+    step = "check-existing-title";
+    int missing = absent(up, title_id);
+    if (missing < 0)
+        goto done;
+    if (!missing) {
+        step = "prepare-app-removal";
+        errno = 0;
+        if (prepare())
+            goto done;
+        step = "unregister-title";
+        errno = 0;
+        if (unregister_title())
+            goto done;
+        /* The files are Orbit's own; a foreign file left in the folder is preserved. */
+        int user = open_dir(up, title_id, false);
+        if (user >= 0) {
+            int us = open_dir(user, "sce_sys", false);
+            if (us >= 0) {
+                drop(us, "param.json", 0);
+                drop(us, "icon0.png", 0);
+                close(us);
+            }
+            drop(user, "sce_sys", AT_REMOVEDIR);
+            close(user);
+        }
+        drop(up, title_id, AT_REMOVEDIR);
+    }
+    step = "clear-launcher-records";
+    if (drop(state_fd, "launcher-ready-v1", 0) || drop(state_fd, "launcher-files-v1", 0) ||
+        drop(state_fd, "launcher-owned-v1", 0) || fsync(state_fd))
+        goto done;
+    result = missing ? 0 : 1;
+done:
+    if (result < 0 && !last_error[0])
+        orbit_launcher_record_error(step, errno, 0);
+    if (up >= 0)
+        close(up);
+    if (result < 0)
+        printf("Orbit launcher icon could not be removed: %s. Server remains available.\n", last_error);
+    return result;
+}
+
 int orbit_launcher_ensure_at(int state_fd, const char *user_parent, int (*prepare)(void),
                              int (*register_title)(void)) {
     int up = -1, user = -1, us = -1, result = -1;

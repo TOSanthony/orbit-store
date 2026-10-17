@@ -287,10 +287,12 @@ int main(int argc, char **argv) {
     }
 #ifdef ORBIT_INSTALL_LAUNCHER
     diagnostics_stage("launcher", "started", 0);
-    int launcher = orbit_launcher_ensure(orbit.state_fd);
+    /* With the TV app installed, the Media-tab icon is a second entry: remove it, do not add it. */
+    bool tv_app = tvapp_replaces_launcher();
+    int launcher = tv_app ? orbit_launcher_remove(orbit.state_fd) : orbit_launcher_ensure(orbit.state_fd);
     pthread_mutex_lock(&orbit.mutex);
     copy_text(orbit.launcher_status, sizeof orbit.launcher_status,
-              launcher >= 0 ? "ready" : "error");
+              launcher < 0 ? "error" : tv_app ? "tv-app" : "ready");
     copy_text(orbit.launcher_error, sizeof orbit.launcher_error, orbit_launcher_last_error());
     copy_text(orbit.launcher_registration_method, sizeof orbit.launcher_registration_method,
               orbit_launcher_registration_method());
@@ -337,6 +339,7 @@ int main(int argc, char **argv) {
     snprintf(ready_message, sizeof ready_message, "Orbit Store :%d | Pair: %s | %s", orbit.port,
              orbit.pair_code,
              !strcmp(orbit.launcher_status, "ready")   ? "Open the Orbit Store icon"
+             : !strcmp(orbit.launcher_status, "tv-app") ? "Open the Orbit Store TV app"
              : !strcmp(orbit.launcher_status, "error") ? "Icon setup failed; server is running"
                                                        : "Server ready");
     diagnostics_stage("notification", "started", 0);
