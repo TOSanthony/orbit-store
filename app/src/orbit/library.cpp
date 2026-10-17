@@ -49,7 +49,7 @@ constexpr float kTile = 268.333f;
 constexpr float kColumnStep = (1920.0f - 2.0f * ui::kGutter - kTile) / (kColumns - 1);
 constexpr float kCardStep = 346.0f;
 constexpr int kStorageColumns = 4;
-constexpr float kStorageTileW = 400.0f, kStorageTileH = 120.0f;
+constexpr float kStorageTileW = 415.0f, kStorageTileH = 120.0f;
 constexpr float kKeyboardTop = 560.0f;
 constexpr const char *kViews[] = {/* i18n */ "All games", /* i18n */ "Installed", /* i18n */ "On drive", /* i18n */ "Unavailable"};
 constexpr int kViewCount = 4;
