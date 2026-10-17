@@ -1246,15 +1246,14 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                 const LibraryGame &game = *games[static_cast<std::size_t>(g)];
                 const ui::Rect r = rect(Kind::storage_game, g);
                 const float focus = amount(Kind::storage_game, g);
-                ui::focus_ring(list, r, 12.0f, focus);
-                list.rounded_rect(r, 12.0f, ui::Color::rgb(0xffffff, 0.04f + 0.04f * focus));
+                ui::state_fill(list, r, 12.0f, focus);
                 ui::text_fit(list, type.medium, game.title, r.x + 20.0f, r.cy() + 7.0f, 19.0f,
-                             900.0f, ui::color::text);
+                             900.0f, ui::state_ink(focus));
                 ui::text(list, type.regular,
                          game.size >= 0.0                    ? format_bytes(game.size)
                          : game.size_status == "unavailable" ? tr("Unavailable")
                                                              : tr("Not measured"),
-                         r.x + r.w - 20.0f, r.cy() + 7.0f, 17.0f, ui::color::text2,
+                         r.x + r.w - 20.0f, r.cy() + 7.0f, 17.0f, ui::state_ink_dim(focus),
                          ui::Align::right);
             }
             if (!games.empty())
