@@ -147,6 +147,7 @@ System parse_system(const json::Value &value)
     system.keyboard = value.text("keyboard");
     system.sounds_off = value.flag("soundsOff", false);
     system.ps4_hidden = value.flag("ps4Hidden", false);
+    system.install_pkgs = value.flag("installPkgs", false);
     system.delete_archives = value.flag("deleteArchives", true);
     const auto limit = value["concurrentDownloads"].as_int();
     system.concurrent_downloads = limit >= 1 && limit <= 8 ? static_cast<int>(limit) : 1;

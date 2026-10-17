@@ -540,6 +540,18 @@ Result<bool> Client::set_ps4_hidden(bool hidden)
     return result;
 }
 
+Result<bool> Client::set_install_pkgs(bool enabled)
+{
+    Result<bool> result;
+    const http::Response response = send("POST", "/api/v1/settings/install-pkgs",
+                                         enabled ? "{\"installPkgs\":true}" : "{\"installPkgs\":false}");
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    result.value = json::parse(response.body, &value) ? value.flag("installPkgs", enabled) : enabled;
+    return result;
+}
+
 Result<bool> Client::set_sounds_off(bool off)
 {
     Result<bool> result;

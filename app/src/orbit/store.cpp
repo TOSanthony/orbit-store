@@ -919,6 +919,19 @@ void Store::run_setting(Command &command)
                 });
         break;
     }
+    case Setting::install_pkgs:
+    {
+        const api::Result<bool> result = client_.set_install_pkgs(command.flag);
+        error = result.status == 404 ? tr("Update the download service to change this here.") : result.error;
+        if (result.ok())
+            inbox_.post(
+                [this, enabled = result.value]()
+                {
+                    state_.system.install_pkgs = enabled;
+                    ++state_.serial;
+                });
+        break;
+    }
     case Setting::sounds:
     {
         const api::Result<bool> result = client_.set_sounds_off(command.flag);

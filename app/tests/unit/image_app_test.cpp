@@ -815,6 +815,21 @@ TEST(App, HidingPs4GamesDropsThemFromTheCatalogueAndShowingBringsThemBack)
     EXPECT_EQ(h.store.state().games.size(), all);
 }
 
+TEST(App, InstallingPackagesAfterDownloadIsOffUntilTheSwitchIsTurnedOn)
+{
+    AppHarness h;
+    h.settle();
+    EXPECT_FALSE(h.store.state().system.install_pkgs);
+    h.store.set_install_pkgs(true);
+    ASSERT_TRUE(h.store.run_next_action());
+    h.settle(3);
+    EXPECT_TRUE(h.store.state().system.install_pkgs);
+    h.store.set_install_pkgs(false);
+    ASSERT_TRUE(h.store.run_next_action());
+    h.settle(3);
+    EXPECT_FALSE(h.store.state().system.install_pkgs);
+}
+
 TEST(App, SettingsChoosesTheDefaultDrive)
 {
     AppHarness h;

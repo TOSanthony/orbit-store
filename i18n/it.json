@@ -1268,5 +1268,10 @@
   "PS4 games are hidden. A game that also comes in a PS5 version stays, with its PS5 options.": "I giochi PS4 sono nascosti. Un gioco disponibile anche in versione PS5 resta visibile, con le sue opzioni PS5.",
   "PS4 games are shown next to PS5 games.": "I giochi PS4 sono mostrati insieme a quelli PS5.",
   "Show PS4 games": "Mostra i giochi PS4",
-  "Hide PS4 games": "Nascondi i giochi PS4"
+  "Hide PS4 games": "Nascondi i giochi PS4",
+  "Installing downloaded packages": "Installazione dei pacchetti scaricati",
+  "A downloaded .pkg is installed on your PS5 once Orbit has checked it.": "Un .pkg scaricato viene installato sulla tua PS5 dopo il controllo di Orbit.",
+  "A downloaded .pkg stays in the homebrew folder. Orbit does not install it.": "Un .pkg scaricato resta nella cartella homebrew. Orbit non lo installa.",
+  "Install packages after download": "Installa i pacchetti dopo il download",
+  "Stop installing packages after download": "Non installare più i pacchetti dopo il download"
 }

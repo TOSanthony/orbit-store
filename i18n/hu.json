@@ -1258,5 +1258,10 @@
   "PS4 games are hidden. A game that also comes in a PS5 version stays, with its PS5 options.": "A PS4-es játékok el vannak rejtve. Az a játék, amelyhez PS5-verzió is van, marad, a PS5-ös opcióival.",
   "PS4 games are shown next to PS5 games.": "A PS4-es játékok a PS5-ösök mellett jelennek meg.",
   "Show PS4 games": "PS4-es játékok megjelenítése",
-  "Hide PS4 games": "PS4-es játékok elrejtése"
+  "Hide PS4 games": "PS4-es játékok elrejtése",
+  "Installing downloaded packages": "Letöltött csomagok telepítése",
+  "A downloaded .pkg is installed on your PS5 once Orbit has checked it.": "A letöltött .pkg fájlt az Orbit ellenőrzése után telepíti a PS5-ödre.",
+  "A downloaded .pkg stays in the homebrew folder. Orbit does not install it.": "A letöltött .pkg a homebrew mappában marad. Az Orbit nem telepíti.",
+  "Install packages after download": "Csomagok telepítése letöltés után",
+  "Stop installing packages after download": "Ne telepítsen csomagokat letöltés után"
 }

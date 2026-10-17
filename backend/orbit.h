@@ -107,6 +107,7 @@ typedef struct {
     char preferred_storage[24];
     bool sounds_off; /* TV app sounds muted (default false = on). */
     bool ps4_hidden; /* TV app hides PS4 titles (default false = shown). */
+    bool install_pkgs; /* Install a downloaded .pkg once it is verified (default false = off). */
     char keyboard[12];   /* TV app keyboard letters: empty or "auto" (AZERTY when the app is in French), "qwerty" or "azerty". */
     char language[12];   /* TV app language: empty or "auto" (follow the console), or a catalogue code such as "fr" or "pt-BR". */
     char appearance[24]; /* TV app background preset id (lowercase letters, digits, dashes). */

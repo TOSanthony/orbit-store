@@ -133,6 +133,7 @@ enum class Setting : std::uint8_t
     keyboard,
     sounds,
     ps4,
+    install_pkgs,
 };
 
 struct SettingResult
@@ -242,6 +243,7 @@ class Store
     void set_download_limit(int limit) { send_setting(Setting::download_limit, std::to_string(limit)); }
     void set_sounds_off(bool off) { send_setting(Setting::sounds, {}, {}, off); }
     void set_ps4_hidden(bool hidden) { send_setting(Setting::ps4, {}, {}, hidden); }
+    void set_install_pkgs(bool enabled) { send_setting(Setting::install_pkgs, {}, {}, enabled); }
     void set_appearance(const std::string &id) { send_setting(Setting::appearance, id); }
     void set_language(const std::string &code) { send_setting(Setting::language, code); }
     void set_keyboard(const std::string &layout) { send_setting(Setting::keyboard, layout); }

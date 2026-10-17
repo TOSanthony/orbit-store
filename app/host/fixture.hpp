@@ -74,6 +74,7 @@ class Fixture final : public http::Transport
     // Settings and updates.
     std::vector<std::string> enabled_;
     bool ps4_hidden_ = false; // the PS4 switch in the catalogue settings
+    bool install_pkgs_ = false; // the install-after-download switch
     bool nas_saved_ = false; // a My NAS address was sent
     bool acknowledged_ = false;
     std::string preferred_ = "usb0";

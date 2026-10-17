@@ -1258,5 +1258,10 @@
   "PS4 games are hidden. A game that also comes in a PS5 version stays, with its PS5 options.": "PS4 oyunları gizli. PS5 sürümü de olan bir oyun, PS5 seçenekleriyle birlikte görünmeye devam eder.",
   "PS4 games are shown next to PS5 games.": "PS4 oyunları PS5 oyunlarının yanında gösterilir.",
   "Show PS4 games": "PS4 oyunlarını göster",
-  "Hide PS4 games": "PS4 oyunlarını gizle"
+  "Hide PS4 games": "PS4 oyunlarını gizle",
+  "Installing downloaded packages": "İndirilen paketleri yükleme",
+  "A downloaded .pkg is installed on your PS5 once Orbit has checked it.": "İndirilen bir .pkg, Orbit kontrol ettikten sonra PS5'ine yüklenir.",
+  "A downloaded .pkg stays in the homebrew folder. Orbit does not install it.": "İndirilen bir .pkg homebrew klasöründe kalır. Orbit onu yüklemez.",
+  "Install packages after download": "İndirmeden sonra paketleri yükle",
+  "Stop installing packages after download": "İndirmeden sonra paketleri yükleme"
 }

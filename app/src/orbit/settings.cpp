@@ -593,6 +593,19 @@ void SettingsScreen::build_storage(Pane &pane) const
                    ui::ButtonKind::secondary, !archives_saving}});
     if (result.setting == Setting::archives && !result.error.empty())
         pane.error(result.error);
+    pane.gap(12.0f);
+    pane.rule();
+    pane.heading(tr("Installing downloaded packages"));
+    pane.body(state.system.install_pkgs
+                  ? tr("A downloaded .pkg is installed on your PS5 once Orbit has checked it.")
+                  : tr("A downloaded .pkg stays in the homebrew folder. Orbit does not install it."));
+    const bool install_saving = result.busy && result.setting == Setting::install_pkgs;
+    pane.buttons({{Kind::install_pkgs_toggle,
+                   state.system.install_pkgs ? tr("Stop installing packages after download")
+                                             : tr("Install packages after download"),
+                   ui::ButtonKind::secondary, !install_saving}});
+    if (result.setting == Setting::install_pkgs && !result.error.empty())
+        pane.error(result.error);
 }
 
 // ---- Pair a device (src/Pairing.tsx, on the console) ----
@@ -1182,6 +1195,10 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
     case Kind::ps4_toggle:
         error_.clear();
         ctx_.store.set_ps4_hidden(!state.system.ps4_hidden);
+        break;
+    case Kind::install_pkgs_toggle:
+        error_.clear();
+        ctx_.store.set_install_pkgs(!state.system.install_pkgs);
         break;
     case Kind::archives_toggle:
         error_.clear();

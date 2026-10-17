@@ -32,6 +32,7 @@ struct System
     std::string preferred_storage;
     bool sounds_off = false; // the TV app's menu sounds are muted
     bool ps4_hidden = false; // the TV app leaves PS4 titles out of the catalogue
+    bool install_pkgs = false; // the service installs a downloaded .pkg once it is verified
     std::string appearance; // the TV app background preset id the service keeps
     std::string keyboard;   // the TV app keyboard letters the service keeps: "", "auto", "qwerty" or "azerty"
     std::string language;   // the TV app language the service keeps: "", "auto" or a catalogue code
