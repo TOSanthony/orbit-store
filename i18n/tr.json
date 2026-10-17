@@ -1251,5 +1251,8 @@
   "Choose the language of the app. Automatic follows the console’s language.": "Uygulamanın dilini seçin. “Otomatik”, konsolun dilini izler.",
   "Keyboard": "Klavye",
   "The on-screen keyboard’s letters. Automatic uses AZERTY when the app is in French.": "Ekran klavyesinin harfleri. “Otomatik”, uygulama Fransızcayken AZERTY kullanır.",
-  "App language": "Uygulama dili"
+  "App language": "Uygulama dili",
+  "All DLC": "Tüm DLC'ler",
+  "All updates": "Tüm güncellemeler",
+  "{count} items": "{count} öğe"
 }

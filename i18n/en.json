@@ -1251,5 +1251,8 @@
   "Choose the language of the app. Automatic follows the console’s language.": "Choose the language of the app. Automatic follows the console’s language.",
   "Keyboard": "Keyboard",
   "The on-screen keyboard’s letters. Automatic uses AZERTY when the app is in French.": "The on-screen keyboard’s letters. Automatic uses AZERTY when the app is in French.",
-  "App language": "App language"
+  "App language": "App language",
+  "All DLC": "All DLC",
+  "All updates": "All updates",
+  "{count} items": "{count} items"
 }

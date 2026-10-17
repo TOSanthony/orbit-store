@@ -223,7 +223,7 @@ void GamePage::open(const std::string &game_id)
     game_id_ = game_id;
     option_ = focus_ = 0;
     sheet_ = Sheet::none;
-    download_again_ = waiting_ = torbox_ = false;
+    download_again_ = waiting_ = torbox_ = all_ = false;
     error_.clear();
     page_scroll_.snap(0);
     sheet_scroll_.snap(0);
@@ -254,6 +254,33 @@ GamePage::Offer GamePage::offer(const Release &release) const
     out.drive = drive();
     if (out.drive != nullptr) out.plan = plan_space(release, *out.drive, state.jobs);
     return out;
+}
+
+Release GamePage::target(const Game &game, const Release &chosen) const
+{
+    if (!all_ || !choosing(game)) return chosen;
+    // Everything not already queued on this drive, added up: that is what the drive must hold.
+    const auto &state = ctx_.store.state();
+    const Drive *to = drive();
+    Release sum = chosen;
+    sum.id.clear();
+    sum.size_bytes = 0;
+    sum.extracted_bytes = 0;
+    sum.version.clear();
+    sum.title_id.clear();
+    sum.browser_available = false;
+    for (const auto &r : game.releases)
+    {
+        bool taken = false;
+        if (to != nullptr)
+            for (const auto &job : state.jobs)
+                if (job.release_id == r.id && job.storage_id == to->id && job.status != "error" && job.status != "cancelled")
+                    taken = true;
+        if (taken) continue;
+        sum.size_bytes += r.size_bytes;
+        sum.extracted_bytes += r.extracted_bytes;
+    }
+    return sum;
 }
 
 bool GamePage::primary_enabled(const Release &release, const Offer &now) const
@@ -296,7 +323,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
     const Game *game = state.game(game_id_);
     if (game == nullptr || game->releases.empty()) return out;
     const int selected = std::clamp(option_, 0, static_cast<int>(game->releases.size()) - 1);
-    const auto &release = game->releases[static_cast<std::size_t>(selected)];
+    const Release release = target(*game, game->releases[static_cast<std::size_t>(selected)]);
     Offer now = offer(release);
     if (fresh_layout_) { now.collection = CollectionState{}; now.show_download = true; }
     const auto paragraph = [&](const std::string &text, float x, float &y, float width,
@@ -416,9 +443,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             paragraph(meta, kLeft, y, width, 22);
         }
         y = std::max(830.0f, y + 60);
-        const std::string label = choosing(*game)
-            ? std::string(game_category(*game)==Category::dlc ? tr("Choose a DLC") : tr("Choose an update"))
-            : primary_label(release, download_again_, waiting_, now.collection, state, torbox_);
+        const std::string label = primary_label(release, download_again_, waiting_, now.collection, state, torbox_);
         const float button_width = std::clamp(type.medium.measure(label, 23) + 76, 460.0f, 800.0f);
         const ui::Rect primary_rect{kLeft,y,button_width,88};
         control(Slot::primary, 0, primary_rect, label, !waiting_, false, false);
@@ -514,6 +539,10 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             }
             ry += 86;
         };
+        if (all_ && choosing(*game))
+            setting(Slot::source,FactIcon::source,tr("Source"),game_category(*game)==Category::dlc ? tr("All DLC") : tr("All updates"),
+                    tr("{count} items",{{"count",std::to_string(game->releases.size())}}) + " \xC2\xB7 " + format_bytes(release.size_bytes));
+        else
         setting(Slot::source,FactIcon::source,tr("Source"),release.provider + " \xC2\xB7 " + format_label(release),
                 release.title_id + (release.version.empty()?"":" \xC2\xB7 v"+release.version) + " \xC2\xB7 " + format_bytes(release.size_bytes));
         if (now.show_download)
@@ -541,7 +570,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             struct Pill { FactIcon icon; std::string text; };
             std::vector<Pill> pills{{release.platform=="ps4"?FactIcon::platform4:FactIcon::platform,release.platform=="ps4"?"PS4":"PS5"}};
             if (!release.version.empty()) pills.push_back({FactIcon::version,"v"+release.version});
-            pills.push_back({size_icon(release),format_bytes(release.size_bytes)});
+            pills.push_back({all_ && choosing(*game) ? FactIcon::disk : size_icon(release),format_bytes(release.size_bytes)});
             // The pills are centred under the cover; those that do not fit are left out.
             const auto pill_width = [&](const Pill &pill) { return 12+26+8+type.medium.measure(pill.text,17)+16; };
             std::size_t shown = 0;
@@ -718,7 +747,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             double total=0;
             for (const auto &r:game->releases) total+=r.size_bytes;
             y+=card(Slot::install_all,0,116,y,1690,tr("Install all ({count})",{{"count",std::to_string(game->releases.size())}}),
-                    format_bytes(total),false,!waiting_)+18;
+                    format_bytes(total),all_,!waiting_)+18;
         }
         for (int i=0;i<static_cast<int>(game->releases.size());++i)
         {
@@ -727,7 +756,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             std::string detail=r.title_id + (r.version.empty()?"":" \xC2\xB7 v"+r.version) + " \xC2\xB7 " + format_bytes(r.size_bytes);
             if (!r.region.empty()) detail += " \xC2\xB7 " + r.region;
             if (presence.label) detail += " \xC2\xB7 " + std::string(presence.label);
-            y+=card(Slot::choice,i,116,y,1690,pack && !r.filename.empty() ? r.filename : r.provider+" \xC2\xB7 "+format_label(r),detail,i==selected,!waiting_)+18;
+            y+=card(Slot::choice,i,116,y,1690,pack && !r.filename.empty() ? r.filename : r.provider+" \xC2\xB7 "+format_label(r),detail,!all_ && i==selected,!waiting_)+18;
         }
     }
     else if (sheet == Sheet::delivery)
@@ -815,6 +844,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
 void GamePage::show_sheet(Sheet sheet, Slot preferred, int index)
 {
     sheet_=sheet;
+    if(sheet==Sheet::none)all_=false;
     sheet_scroll_.snap(0);
     const auto where=compose(nullptr,sheet,false);
     focus_=0;
@@ -829,12 +859,10 @@ bool GamePage::choosing(const Game &game) const
 {
     return is_pack(game) && game.releases.size()>1 && ctx_.store.state().paired;
 }
-void GamePage::back_sheet(bool chosen)
+void GamePage::back_sheet(bool /*chosen*/)
 {
     const auto previous=sheet_;
-    const Game *game=ctx_.store.state().game(game_id_);
-    if(previous==Sheet::source && !chosen && game && choosing(*game))show_sheet(Sheet::none,Slot::primary);
-    else if(previous==Sheet::source)show_sheet(Sheet::downloads,Slot::source);
+    if(previous==Sheet::source)show_sheet(Sheet::downloads,Slot::source);
     else if(previous==Sheet::delivery)show_sheet(Sheet::downloads,Slot::delivery);
     else if(previous==Sheet::storage)show_sheet(Sheet::downloads,Slot::drive);
     else show_sheet(Sheet::none,previous==Sheet::about?Slot::about:Slot::primary);
@@ -869,7 +897,7 @@ Intent GamePage::activate(const Control &control,const Game &game,const Release 
     case Slot::choice:
         if(sheet_==Sheet::source)
         {
-            if(option_!=control.index){option_=control.index;torbox_=false;download_again_=false;}
+            if(all_||option_!=control.index){option_=control.index;all_=false;torbox_=false;download_again_=false;}
         }
         else if(sheet_==Sheet::storage)drive_id_=state.drives[static_cast<std::size_t>(control.index)].id;
         else if(sheet_==Sheet::delivery)
@@ -889,29 +917,28 @@ Intent GamePage::activate(const Control &control,const Game &game,const Release 
         if(now.collection.library)
         {intent.kind=Intent::Kind::show_library;intent.id=now.collection.library->title_id;intent.detail=now.collection.library->source_key;}
         break;
-    case Slot::install_all:
-    {
-        if(!now.drive)break;
-        error_.clear();
-        int queued=0;
-        for(const auto &r:game.releases)
-        {
-            bool taken=false;
-            for(const auto &job:state.jobs)
-                if(job.release_id==r.id && job.storage_id==now.drive->id && job.status!="error" && job.status!="cancelled")taken=true;
-            if(taken)continue;
-            if(!queued){waiting_=true;action_serial_=ctx_.store.action().serial;}
-            ctx_.store.download(r.id,now.drive->id,false);
-            ++queued;
-        }
-        if(!queued)intent.toast=tr("Added to your downloads");
-        break;
-    }
+    case Slot::install_all: all_=true;error_.clear();back_sheet(true);break;
     case Slot::primary:
-        if(sheet_==Sheet::none && choosing(game)){show_sheet(Sheet::source,Slot::install_all);break;}
         if(sheet_==Sheet::none){show_sheet(Sheet::downloads);break;}
         // Opening/reviewing a sheet never executes these actions.
         if(!primary_enabled(release,now))break;
+        if(all_ && choosing(game))
+        {
+            error_.clear();
+            int queued=0;
+            for(const auto &r:game.releases)
+            {
+                bool taken=false;
+                for(const auto &job:state.jobs)
+                    if(job.release_id==r.id && job.storage_id==now.drive->id && job.status!="error" && job.status!="cancelled")taken=true;
+                if(taken)continue;
+                if(!queued){waiting_=true;action_serial_=ctx_.store.action().serial;}
+                ctx_.store.download(r.id,now.drive->id,false);
+                ++queued;
+            }
+            if(!queued)intent.toast=tr("Added to your downloads");
+            break;
+        }
         if(!download_again_ && now.collection.job)
         {intent.kind=Intent::Kind::show_job;intent.id=now.collection.job->id;}
         else if(!download_again_ && now.collection.kind==CollectionState::Kind::library && now.collection.library)
@@ -1036,7 +1063,7 @@ Intent GamePage::update(const InputFrame &input,float dt,Feedback &feedback,bool
     {
         const auto &c=where.controls[static_cast<std::size_t>(focus_)];
         if(!c.enabled)refuse(feedback,input);
-        else intent=activate(c,*game,game->releases[static_cast<std::size_t>(option_)],offer(game->releases[static_cast<std::size_t>(option_)]),feedback);
+        else{const Release chosen=target(*game,game->releases[static_cast<std::size_t>(option_)]);intent=activate(c,*game,chosen,offer(chosen),feedback);}
     }
     return intent;
 }
@@ -1090,7 +1117,7 @@ void GamePage::draw(Frame &frame,bool focused) const
     frame.glass=true;
     ui::glass_modal(list,panel,frame.glass_texture,30);
     list.push_transform(1,0,0,0,kSheetShift);
-    const auto &release=game->releases[static_cast<std::size_t>(std::clamp(option_,0,static_cast<int>(game->releases.size())-1))];
+    const Release release=target(*game,game->releases[static_cast<std::size_t>(std::clamp(option_,0,static_cast<int>(game->releases.size())-1))]);
     const auto now=offer(release);
     const char *title=sheet_==Sheet::downloads?tr("Download options"):sheet_==Sheet::source?tr("Source"):
         sheet_==Sheet::delivery?tr("Download using"):sheet_==Sheet::storage?tr("Save to"):about_title(*game);

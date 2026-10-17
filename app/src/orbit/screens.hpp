@@ -491,6 +491,8 @@ class GamePage final : public Screen
         SpacePlan plan;
     };
     Offer offer(const Release &release) const;
+    // The release the page acts on: the chosen one, or all of them added up when 'Install all' is picked.
+    Release target(const Game &game, const Release &chosen) const;
     bool primary_enabled(const Release &release, const Offer &offer) const;
     Layout compose(hui::gfx::DrawList *list, Sheet sheet, bool focused) const;
     struct Fit { float scale; float shift; };
@@ -507,6 +509,7 @@ class GamePage final : public Screen
     std::string delivery_note(const Release &release) const;
     std::string game_id_;
     int option_ = 0;
+    bool all_ = false; // every DLC or update of the pack is chosen, not just one
     int focus_ = 0;
     Sheet sheet_ = Sheet::none;
     std::string drive_id_;
