@@ -387,11 +387,9 @@ std::vector<LibraryScreen::Control> LibraryScreen::page_controls() const
     ++row;
     if (!state.have_library || !library.ready())
         return out;
-    float y = 216.0f + (library.message.empty() && state.library_error.empty() ? 0.0f : 96.0f);
-    if (library.stale)
-        y += 36.0f;
-    if (library.has_storage_job && library.storage_job.id > 0)
-        y += 70.0f;
+    // The message and the running-job bar float at the bottom of the screen (see draw), so
+    // nothing here moves when they appear.
+    float y = 216.0f;
     if (section_ == 0)
     {
         for (int v = 0; v < kViewCount; ++v)
@@ -988,27 +986,28 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
     if (library.can("rescan"))
         header_action(list, type, rect(Kind::scan, 0), tr("Scan for games"), amount(Kind::scan, 0),
                       true, !library.working());
-    if (library.stale)
+    // The "saved snapshot" note sits at the bottom of each section, so it never pushes the
+    // content down when it appears or disappears.
+    const auto snapshot_note = [&](float note_y)
+    {
+        if (!library.stale)
+            return;
         ui::text(list, type.regular,
                  library.updated_at > 0.0
                      ? tr("Saved snapshot \xC2\xB7 Last refreshed {time}",
                           {{"time", checked_time(library.updated_at)}})
                      : std::string(tr("Saved snapshot \xC2\xB7 Not refreshed yet")),
-                 ui::kGutter, 214.0f, 16.0f, ui::color::text3);
-    float y = 216.0f + (library.stale ? 36.0f : 0.0f);
+                 ui::kGutter, note_y, 16.0f, ui::color::text3);
+    };
+    float y = 216.0f;
     const std::string &message =
         !state.library_error.empty() ? state.library_error : library.message;
-    if (!message.empty())
+    if (!message.empty() && !ready)
     {
-        const ui::Rect box{ui::kGutter, y, 800.0f, ready ? 82.0f : 72.0f};
+        const ui::Rect box{ui::kGutter, y, 800.0f, 72.0f};
         list.rounded_rect(box, 12.0f, ui::Color::rgb(0xffffff, 0.16f));
         ui::text_fit(list, type.semibold, tr(message), box.x + 22.0f, box.y + 32.0f, 17.0f,
                      box.w - 44.0f, ui::Color::rgb(0xd0d0d0));
-        if (ready)
-            ui::text(list, type.regular,
-                     tr("Showing the last successful result. Game and drive status may have "
-                        "changed."),
-                     box.x + 22.0f, box.y + 60.0f, 15.0f, ui::Color::rgb(0xd0d0d0));
         y += 96.0f;
     }
 
@@ -1038,39 +1037,6 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
     const int section_action = 1 - section_;
     header_action(list, type, rect(Kind::section, section_action), tr(kSections[section_action]),
                   amount(Kind::section, section_action), false, true);
-
-    // A running copy, move or measurement, on either section.
-    if (library.has_storage_job && library.storage_job.id > 0)
-    {
-        const StorageJob &job = library.storage_job;
-        const ui::Rect box{ui::kGutter, y, 1720.0f, 54.0f};
-        list.rounded_rect(box, 14.0f, ui::Color::rgb(0xffffff, 0.09f));
-        const float progress = job.state == "completed" ? 1.0f
-                               : job.total > 0.0
-                                   ? static_cast<float>(std::min(1.0, job.processed / job.total))
-                                   : 0.0f;
-        std::string title = job.title_id;
-        for (const LibraryGame &g : library.games)
-        {
-            if (g.title_id == job.title_id)
-                title = g.title;
-        }
-        const std::string what = std::string(job.operation == "copy"   ? tr("Copy")
-                                             : job.operation == "move" ? tr("Move")
-                                                                       : job.operation.c_str()) +
-                                 " \xC2\xB7 " + title;
-        ui::text_fit(list, type.medium, what, box.x + 18.0f, box.y + 23.0f, 16.0f, 360.0f,
-                     ui::color::text);
-        std::string right = i18n::percent(progress * 100.0);
-        if (job.active && job.cancellable && !job.cancel_requested)
-            right += std::string("  \xC2\xB7  \xE2\x96\xA1 ") + tr("Cancel");
-        else if (job.cancel_requested)
-            right += std::string("  \xC2\xB7  ") + tr("Cancelling\xE2\x80\xA6");
-        ui::text(list, type.regular, right, box.x + box.w - 18.0f, box.y + 23.0f, 15.0f,
-                 ui::color::text2, ui::Align::right);
-        ui::progress_bar(list, {box.x + 18.0f, box.y + 36.0f, box.w - 36.0f, 5.0f}, progress,
-                         job.state == "failed" ? ui::color::bad : ui::color::action);
-    }
 
     if (section_ == 0)
     {
@@ -1180,13 +1146,16 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                 ui::text(list, type.regular, text, x, footer_y, 17.0f, ui::color::text2);
                 x += width + 36.0f;
             }
+            snapshot_note(footer_y + 36.0f);
         }
+        else
+            snapshot_note(1028.0f);
     }
     else
     {
         // ---- Storage: .storage-overview ----
         const float top =
-            y + (library.has_storage_job && library.storage_job.id > 0 ? 70.0f : 0.0f);
+            y;
         ui::text(list, type.light, tr("Your drives"), ui::kGutter, top + 40.0f, 33.0f, ui::color::text);
         ui::text(list, type.regular,
                  tr("Capacity as ShadowMount reports it. Select a drive to see its games."),
@@ -1306,9 +1275,74 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                               rect(Kind::storage_game, static_cast<int>(games.size()) - 1).y +
                                   kStorageTileH + 40.0f,
                               15.0f, 1000.0f, 23.0f, ui::color::text3, 2);
+            const std::size_t sizes_lines =
+                std::min<std::size_t>(2, type.regular.font->wrap(
+                                             tr("Sizes are measured on request. Shared source files can appear under "
+                                                "more than one title, so these sizes are not a drive total."),
+                                             15.0f, 1000.0f).size());
+            const float note_y =
+                games.empty()
+                    ? rect(Kind::drive, static_cast<int>(drives.size()) - 1).y + 170.0f + 128.0f
+                    : rect(Kind::storage_game, static_cast<int>(games.size()) - 1).y +
+                          kStorageTileH + 40.0f + 23.0f * static_cast<float>(sizes_lines) + 14.0f;
+            snapshot_note(note_y);
         }
     }
     list.pop_transform();
+
+    // ---- floating status: the last message and a running copy, move or measurement ----
+    // Drawn at fixed screen positions near the bottom, so they never move the content.
+    {
+        const bool has_job = library.has_storage_job && library.storage_job.id > 0;
+        const std::string &note =
+            !state.library_error.empty() ? state.library_error : library.message;
+        float bottom = 996.0f;
+        if (has_job)
+        {
+            const StorageJob &job = library.storage_job;
+            const ui::Rect box{ui::kGutter, bottom - 54.0f, 1380.0f, 54.0f};
+            list.rounded_rect(box, 14.0f, ui::color::night0.with_alpha(0.88f));
+            list.rounded_rect(box, 14.0f, ui::Color::rgb(0xffffff, 0.09f));
+            const float progress = job.state == "completed" ? 1.0f
+                                   : job.total > 0.0
+                                       ? static_cast<float>(std::min(1.0, job.processed / job.total))
+                                       : 0.0f;
+            std::string title = job.title_id;
+            for (const LibraryGame &g : library.games)
+            {
+                if (g.title_id == job.title_id)
+                    title = g.title;
+            }
+            const std::string what = std::string(job.operation == "copy"   ? tr("Copy")
+                                                 : job.operation == "move" ? tr("Move")
+                                                                           : job.operation.c_str()) +
+                                     " \xC2\xB7 " + title;
+            ui::text_fit(list, type.medium, what, box.x + 18.0f, box.y + 23.0f, 16.0f, 360.0f,
+                         ui::color::text);
+            std::string right = i18n::percent(progress * 100.0);
+            if (job.active && job.cancellable && !job.cancel_requested)
+                right += std::string("  \xC2\xB7  \xE2\x96\xA1 ") + tr("Cancel");
+            else if (job.cancel_requested)
+                right += std::string("  \xC2\xB7  ") + tr("Cancelling\xE2\x80\xA6");
+            ui::text(list, type.regular, right, box.x + box.w - 18.0f, box.y + 23.0f, 15.0f,
+                     ui::color::text2, ui::Align::right);
+            ui::progress_bar(list, {box.x + 18.0f, box.y + 36.0f, box.w - 36.0f, 5.0f}, progress,
+                             job.state == "failed" ? ui::color::bad : ui::color::action);
+            bottom -= 54.0f + 12.0f;
+        }
+        if (!note.empty() && ready)
+        {
+            const ui::Rect box{ui::kGutter, bottom - 64.0f, 800.0f, 64.0f};
+            list.rounded_rect(box, 12.0f, ui::color::night0.with_alpha(0.88f));
+            list.rounded_rect(box, 12.0f, ui::Color::rgb(0xffffff, 0.16f));
+            ui::text_fit(list, type.semibold, tr(note), box.x + 22.0f, box.y + 27.0f, 17.0f,
+                         box.w - 44.0f, ui::Color::rgb(0xd0d0d0));
+            ui::text(list, type.regular,
+                     tr("Showing the last successful result. Game and drive status may have "
+                        "changed."),
+                     box.x + 22.0f, box.y + 50.0f, 15.0f, ui::Color::rgb(0xd0d0d0));
+        }
+    }
     list.pop_clip();
 
     // ---- a dropdown's list ----
