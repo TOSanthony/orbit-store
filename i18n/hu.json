@@ -1241,5 +1241,7 @@
     "one": "{count} bejegyzés kimaradt: érvénytelen, ismétlődő vagy nem a NAS címén található.",
     "other": "{count} bejegyzés kimaradt: érvénytelen, ismétlődő vagy nem a NAS címén található."
   },
-  "Game": "Játék"
+  "Game": "Játék",
+  "Automatic": "Automatikus",
+  "Choose the language of the app. Automatic follows the console’s language.": "Válaszd ki az alkalmazás nyelvét. Az „Automatikus” a konzol nyelvét követi."
 }

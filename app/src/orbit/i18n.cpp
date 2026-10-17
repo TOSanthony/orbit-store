@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
 #include <map>
 
 namespace orbit::i18n
@@ -35,6 +36,21 @@ using Forms = std::array<std::string, 4>;
 std::string current = "en";
 std::map<std::string, std::string, std::less<>> strings;
 std::map<std::string, Forms, std::less<>> plurals;
+// Tables of languages left behind stay alive: screens may still hold text taken from them.
+std::deque<std::map<std::string, std::string, std::less<>>> retired_strings;
+std::deque<std::map<std::string, Forms, std::less<>>> retired_plurals;
+
+constexpr std::array<Choice, 11> kChoices = {{{"en", "English"},
+                                              {"de", "Deutsch"},
+                                              {"es", "Espa\xC3\xB1ol"},
+                                              {"fr", "Fran\xC3\xA7" "ais"},
+                                              {"hu", "Magyar"},
+                                              {"it", "Italiano"},
+                                              {"nl", "Nederlands"},
+                                              {"pl", "Polski"},
+                                              {"pt-BR", "Portugu\xC3\xAA" "s (Brasil)"},
+                                              {"ru", "\xD0\xA0\xD1\x83\xD1\x81\xD1\x81\xD0\xBA\xD0\xB8\xD0\xB9"},
+                                              {"tr", "T\xC3\xBCrk\xC3\xA7" "e"}}};
 
 // The integer rules of the shipped languages, as Intl.PluralRules has them.
 // French and Brazilian Portuguese treat 0 as singular; they, Spanish and
@@ -169,8 +185,37 @@ std::string_view from_system(int system_language)
     }
 }
 
+std::size_t choice_count()
+{
+    return kChoices.size();
+}
+
+const Choice &choice(std::size_t index)
+{
+    return kChoices[index < kChoices.size() ? index : 0];
+}
+
+std::string_view resolve(std::string_view saved, int system_language)
+{
+    return supported(saved) ? saved : from_system(system_language);
+}
+
+bool apply(const std::string &dir, std::string_view saved, int system_language)
+{
+    const std::string_view code = resolve(saved, system_language);
+    if (code == current)
+        return false;
+    load(dir, code);
+    return true;
+}
+
 bool load(const std::string &dir, std::string_view code)
 {
+    // Moving a map keeps its entries where they are, so earlier text stays valid.
+    if (!strings.empty())
+        retired_strings.push_back(std::move(strings));
+    if (!plurals.empty())
+        retired_plurals.push_back(std::move(plurals));
     strings.clear();
     plurals.clear();
     current = "en";

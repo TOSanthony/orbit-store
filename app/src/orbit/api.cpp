@@ -552,6 +552,18 @@ Result<std::string> Client::set_appearance(const std::string &id)
     return result;
 }
 
+Result<std::string> Client::set_language(const std::string &code)
+{
+    Result<std::string> result;
+    const http::Response response =
+        send("POST", "/api/v1/settings/language", "{\"language\":\"" + code + "\"}");
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    result.value = json::parse(response.body, &value) ? value.text("language") : code;
+    return result;
+}
+
 Result<CatalogueStatus> Client::catalogue_status()
 {
     Result<CatalogueStatus> result;

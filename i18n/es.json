@@ -1251,5 +1251,7 @@
     "one": "Se omitió {count} entrada: no válida, duplicada o que no está en la dirección de tu NAS.",
     "other": "Se omitieron {count} entradas: no válidas, duplicadas o que no están en la dirección de tu NAS."
   },
-  "Game": "Juego"
+  "Game": "Juego",
+  "Automatic": "Automático",
+  "Choose the language of the app. Automatic follows the console’s language.": "Elige el idioma de la app. «Automático» sigue el idioma de la consola."
 }

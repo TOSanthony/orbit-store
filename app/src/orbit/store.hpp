@@ -128,6 +128,7 @@ enum class Setting : std::uint8_t
     archives,
     download_limit,
     appearance,
+    language,
     sounds,
 };
 
@@ -235,6 +236,9 @@ class Store
     void set_download_limit(int limit) { send_setting(Setting::download_limit, std::to_string(limit)); }
     void set_sounds_off(bool off) { send_setting(Setting::sounds, {}, {}, off); }
     void set_appearance(const std::string &id) { send_setting(Setting::appearance, id); }
+    void set_language(const std::string &code) { send_setting(Setting::language, code); }
+    // The interface language changed: screens that keep translated text build it again.
+    void language_changed();
     void set_delete_archives(bool enabled) { send_setting(Setting::archives, {}, {}, enabled); }
     // Reads the console session again (a fresh pairing code after a restart).
     void refresh_session();

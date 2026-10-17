@@ -1241,5 +1241,7 @@
     "one": "{count} girdi atlandı: geçersiz, yinelenen veya NAS adresinizde değil.",
     "other": "{count} girdi atlandı: geçersiz, yinelenen veya NAS adresinizde değil."
   },
-  "Game": "Oyun"
+  "Game": "Oyun",
+  "Automatic": "Otomatik",
+  "Choose the language of the app. Automatic follows the console’s language.": "Uygulamanın dilini seçin. “Otomatik”, konsolun dilini izler."
 }

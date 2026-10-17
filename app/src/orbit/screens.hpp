@@ -74,6 +74,9 @@ struct Context
     float clock = 0.0f; // seconds since the app opened
     bool sounds_on = true;      // menu sounds; read by the main loop
     std::size_t appearance = 0; // the chosen background (orbit::appearance preset)
+    int system_language = 1;    // the console's language, for the automatic choice
+    std::string language_choice = "auto"; // what the player chose: "auto" or a catalogue code
+    std::string language_dir;   // where the catalogues are
 };
 
 // The tabs, in the browser storefront's order; it opens on Discover.
@@ -523,6 +526,7 @@ class SettingsScreen final : public Screen
     enum class Section : std::uint8_t
     {
         appearance,
+        language,
         sources,
         storage,
         pairing,
@@ -577,6 +581,7 @@ class SettingsScreen final : public Screen
         download_limit_less,
         download_limit_more,
         appearance, // index of a background preset
+        language,   // 0 follows the console, then the catalogue languages in order
         sounds_toggle,
         nas_url, // the My NAS index address field
     };
@@ -596,6 +601,7 @@ class SettingsScreen final : public Screen
     void build_catalogue(Pane &pane) const;
     void build_updates(Pane &pane) const;
     void build_appearance(Pane &pane) const;
+    void build_language(Pane &pane) const;
     void build_more(Pane &pane) const;
     void build_zero(Pane &pane) const;
     std::vector<Control> controls(float *height = nullptr) const;
@@ -716,6 +722,7 @@ class App
     bool warmed_ = false;
     float hold_ = 0.0f;
     float reveal_ = 0.0f; // 0 opening screen ... 1 the app
+    bool language_synced_ = false;   // the service's saved language was read once
     bool appearance_synced_ = false; // the service's saved background was read once
     bool provider_open_ = false;
     bool provider_start_pending_ = false;

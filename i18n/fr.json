@@ -1251,5 +1251,7 @@
     "one": "{count} entrée ignorée : invalide, en double ou absente de l’adresse de votre NAS.",
     "other": "{count} entrées ignorées : invalides, en double ou absentes de l’adresse de votre NAS."
   },
-  "Game": "Jeu"
+  "Game": "Jeu",
+  "Automatic": "Automatique",
+  "Choose the language of the app. Automatic follows the console’s language.": "Choisissez la langue de l’application. « Automatique » suit la langue de la console."
 }

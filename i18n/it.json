@@ -1251,5 +1251,7 @@
     "one": "{count} voce ignorata: non valida, duplicata o non presente all’indirizzo del tuo NAS.",
     "other": "{count} voci ignorate: non valide, duplicate o non presenti all’indirizzo del tuo NAS."
   },
-  "Game": "Gioco"
+  "Game": "Gioco",
+  "Automatic": "Automatico",
+  "Choose the language of the app. Automatic follows the console’s language.": "Scegli la lingua dell’app. «Automatico» segue la lingua della console."
 }

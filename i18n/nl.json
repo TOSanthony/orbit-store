@@ -1241,5 +1241,7 @@
     "one": "{count} item is overgeslagen: ongeldig, dubbel of niet op het adres van je NAS.",
     "other": "{count} items zijn overgeslagen: ongeldig, dubbel of niet op het adres van je NAS."
   },
-  "Game": "Spel"
+  "Game": "Spel",
+  "Automatic": "Automatisch",
+  "Choose the language of the app. Automatic follows the console’s language.": "Kies de taal van de app. ‘Automatisch’ volgt de taal van de console."
 }

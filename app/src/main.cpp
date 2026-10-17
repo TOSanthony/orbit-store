@@ -164,6 +164,8 @@ int main()
     context.mark = mark;
     context.loader_mark = loader_mark;
     context.today = today();
+    context.system_language = system_language;
+    context.language_dir = std::string(kAssets) + "/i18n";
     context.app_version = read_content_version("/app0/sce_sys/param.json");
     context.open_browser = []
     { return sceSystemServiceLaunchWebBrowser(kBrowserUrl, nullptr) == 0; };

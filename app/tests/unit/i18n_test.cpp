@@ -51,6 +51,26 @@ TEST_F(I18nTest, EnglishIsTheKeyAndTheFallback)
     EXPECT_EQ(trn(1200, "{count} game", "{count} games"), "1,200 games");
 }
 
+TEST_F(I18nTest, ChoosingALanguageSwitchesAndAutomaticFollowsTheConsole)
+{
+    std::ofstream(dir_ + "/fr.json", std::ios::binary) << R"({"Back":"Retour"})";
+    std::ofstream(dir_ + "/de.json", std::ios::binary) << R"({"Back":"Zur\u00fcck"})";
+    ASSERT_TRUE(i18n::load(dir_, "en"));
+    EXPECT_EQ(i18n::choice_count(), 11u);
+    EXPECT_EQ(i18n::resolve("fr", 1), "fr");
+    EXPECT_EQ(i18n::resolve("auto", 4), "de"); // the console's German
+    EXPECT_EQ(i18n::resolve("", 2), "fr");
+    EXPECT_EQ(i18n::resolve("xx", 1), "en"); // an unknown saved code follows the console
+
+    EXPECT_TRUE(i18n::apply(dir_, "fr", 1));
+    const char *retour = tr("Back");
+    EXPECT_STREQ(retour, "Retour");
+    EXPECT_FALSE(i18n::apply(dir_, "fr", 1)); // nothing changed
+    EXPECT_TRUE(i18n::apply(dir_, "auto", 4)); // the console speaks German
+    EXPECT_STREQ(tr("Back"), "Zur\xC3\xBC" "ck");
+    EXPECT_STREQ(retour, "Retour"); // text taken earlier is still valid
+}
+
 TEST_F(I18nTest, UnknownOrMissingLanguagesStayInEnglish)
 {
     EXPECT_FALSE(i18n::load(dir_, "ja"));

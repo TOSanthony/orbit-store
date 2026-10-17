@@ -443,6 +443,16 @@ void Store::post_start(Starting starting, std::string detail)
         });
 }
 
+void Store::language_changed()
+{
+    inbox_.post(
+        [this]()
+        {
+            ++state_.catalog_serial; // Discover and Browse rebuild their texts
+            ++state_.serial;
+        });
+}
+
 void Store::post_restart(Restart restart, std::string detail)
 {
     inbox_.post(
@@ -906,6 +916,19 @@ void Store::run_setting(Command &command)
                 [this, id = result.value]()
                 {
                     state_.system.appearance = id;
+                    ++state_.serial;
+                });
+        break;
+    }
+    case Setting::language:
+    {
+        const api::Result<std::string> result = client_.set_language(command.a);
+        error = result.status == 404 ? tr("Update the download service to keep this after a restart.") : result.error;
+        if (result.ok())
+            inbox_.post(
+                [this, code = result.value]()
+                {
+                    state_.system.language = code;
                     ++state_.serial;
                 });
         break;

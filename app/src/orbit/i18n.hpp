@@ -7,6 +7,7 @@
 // the same way.
 #pragma once
 
+#include <cstddef>
 #include <initializer_list>
 #include <string>
 #include <string_view>
@@ -26,6 +27,20 @@ bool supported(std::string_view code);
 // The closest supported language for a PS5 system language setting
 // (SCE_SYSTEM_PARAM_LANG_*); English for the rest.
 std::string_view from_system(int system_language);
+// The languages the player can choose, in the catalogue order, each named in its own language.
+struct Choice
+{
+    std::string_view code;
+    const char *name;
+};
+std::size_t choice_count();
+const Choice &choice(std::size_t index);
+// The language code for a saved choice ("" or "auto" follows the console).
+std::string_view resolve(std::string_view saved, int system_language);
+// Switches the interface to a saved choice; false when the language did not change.
+// Text returned by earlier tr() calls stays valid.
+bool apply(const std::string &dir, std::string_view saved, int system_language);
+
 // Loads <dir>/<code>.json; English needs no file. On failure the interface
 // stays in English and false is returned.
 bool load(const std::string &dir, std::string_view code);

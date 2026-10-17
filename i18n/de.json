@@ -1241,5 +1241,7 @@
     "one": "{count} Eintrag wurde übersprungen: ungültig, doppelt oder nicht unter der Adresse deines NAS.",
     "other": "{count} Einträge wurden übersprungen: ungültig, doppelt oder nicht unter der Adresse deines NAS."
   },
-  "Game": "Spiel"
+  "Game": "Spiel",
+  "Automatic": "Automatisch",
+  "Choose the language of the app. Automatic follows the console’s language.": "Wähle die Sprache der App. „Automatisch“ folgt der Sprache der Konsole."
 }

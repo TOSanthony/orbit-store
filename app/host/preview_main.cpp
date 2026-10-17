@@ -377,6 +377,17 @@ std::vector<Scenario> scenarios()
           pause(0.8f, "settings-appearance"), move(Direction::down), move(Direction::down),
           move(Direction::down), move(Direction::down), move(Direction::down),
           move(Direction::down), tap(Action::confirm), pause(2.0f, "settings-appearance-aurora")}});
+    list.push_back({"language",
+                    Mode::normal,
+                    false,
+                    {pause(1.5f, "language-start"),
+                     run(1.0f, [](orbit::App &app)
+                         { app.open_settings(orbit::SettingsScreen::Section::language, true); }),
+                     pause(0.8f, "settings-language"), move(Direction::down), move(Direction::down),
+                     move(Direction::down), tap(Action::confirm), pause(1.0f, "settings-language-french"),
+                     move(Direction::down), pause(0.6f, "settings-language-next"),
+                     move(Direction::up), move(Direction::up), move(Direction::up), move(Direction::up),
+                     move(Direction::up), tap(Action::confirm), pause(1.0f, "settings-language-auto")}});
     return list;
 }
 
@@ -487,6 +498,7 @@ int main(int argc, char **argv)
         context.mark = mark;
         context.loader_mark = loader_mark;
         context.today = "2026-10-04";
+        context.language_dir = assets + "/../../i18n";
         const char *preview_version = std::getenv("ORBIT_APP_VERSION");
         context.app_version = preview_version != nullptr ? preview_version : "01.000.001";
         context.open_browser = [] { return true; };

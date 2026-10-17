@@ -162,6 +162,7 @@ int state_save_locked(void) {
     cJSON_AddNumberToObject(o, "schema", schema);
     cJSON_AddStringToObject(o, "preferredStorage", orbit.preferred_storage);
     cJSON_AddStringToObject(o, "appearance", orbit.appearance);
+    cJSON_AddStringToObject(o, "language", orbit.language);
     cJSON_AddBoolToObject(o, "soundsOff", orbit.sounds_off);
     cJSON_AddBoolToObject(o, "deleteArchives", orbit.delete_archives);
     cJSON_AddNumberToObject(o, "concurrentDownloads", orbit.concurrent_downloads);
@@ -275,6 +276,7 @@ int state_load(void) {
     copy_text(orbit.preferred_storage, sizeof orbit.preferred_storage,
               json_text(o, "preferredStorage"));
     copy_text(orbit.appearance, sizeof orbit.appearance, json_text(o, "appearance"));
+    copy_text(orbit.language, sizeof orbit.language, json_text(o, "language"));
     const cJSON *sounds_off = cJSON_GetObjectItemCaseSensitive(o, "soundsOff");
     if (cJSON_IsBool(sounds_off)) orbit.sounds_off = cJSON_IsTrue(sounds_off);
     const cJSON *delete_archives = cJSON_GetObjectItemCaseSensitive(o, "deleteArchives");

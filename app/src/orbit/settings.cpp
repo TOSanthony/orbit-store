@@ -34,7 +34,7 @@ constexpr float kViewBottom = 990.0f; // and stops above the hints
 constexpr float kCardRadius = 14.0f;
 constexpr float kKeyboardTop = 560.0f;
 constexpr int kSectionCount = static_cast<int>(SettingsScreen::Section::count);
-constexpr const char *kSections[] = {/* i18n */ "Personalisation", /* i18n */ "Download sources", /* i18n */ "Storage", /* i18n */ "Pair a device",
+constexpr const char *kSections[] = {/* i18n */ "Personalisation", /* i18n */ "Language", /* i18n */ "Download sources", /* i18n */ "Storage", /* i18n */ "Pair a device",
                                      /* i18n */ "Game catalogue",   /* i18n */ "Updates", "Orbit Zero",
                                      /* i18n */ "More settings"};
 constexpr const char *kSavedElf = "/data/orbit-store/orbit_store.elf";
@@ -341,6 +341,9 @@ void SettingsScreen::build(Pane &pane) const
         break;
     case Section::appearance:
         build_appearance(pane);
+        break;
+    case Section::language:
+        build_language(pane);
         break;
     default:
         build_more(pane);
@@ -1009,6 +1012,57 @@ void SettingsScreen::build_appearance(Pane &pane) const
     pane.fine(tr("Saved on this console. Animated backgrounds use a little more graphics power."));
 }
 
+void SettingsScreen::build_language(Pane &pane) const
+{
+    const ui::Type &type = ctx_.type;
+    pane.heading(tr("Language"));
+    pane.body(tr("Choose the language of the app. Automatic follows the console\xE2\x80\x99s language."));
+    pane.gap(10.0f);
+    const std::string_view system = i18n::resolve({}, ctx_.system_language);
+    const bool automatic = ctx_.language_choice.empty() || ctx_.language_choice == "auto" ||
+                           !i18n::supported(ctx_.language_choice);
+    for (std::size_t i = 0; i <= i18n::choice_count(); ++i)
+    {
+        const bool chosen = i == 0 ? automatic : !automatic && ctx_.language_choice == i18n::choice(i - 1).code;
+        const ui::Rect r{pane.x, pane.y, pane.width, 76.0f};
+        if (pane.list != nullptr)
+        {
+            ui::DrawList &list = *pane.list;
+            const float f = pane.amount();
+            ui::state_fill(list, r, kCardRadius, f, chosen);
+            const float mx = r.x + 24.0f + 14.0f;
+            if (chosen)
+            {
+                list.circle(mx, r.cy(), 14.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
+                ui::icon_check(list, mx, r.cy(), 16.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.4f);
+            }
+            else
+                list.ring(mx, r.cy(), 13.5f, 1.0f, f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::color::text3);
+            const float tx = mx + 14.0f + 20.0f;
+            if (i == 0)
+            {
+                std::string now;
+                for (std::size_t k = 0; k < i18n::choice_count(); ++k)
+                    if (i18n::choice(k).code == system)
+                        now = i18n::choice(k).name;
+                ui::text_fit(list, type.medium, tr("Automatic"), tx, r.cy() - 6.0f, 21.0f, 700.0f,
+                             ui::state_ink(f, chosen));
+                ui::text_fit(list, type.regular, now, tx, r.cy() + 20.0f, 16.0f, 700.0f, ui::state_ink_dim(f));
+            }
+            else
+            {
+                ui::text_fit(list, type.medium, i18n::choice(i - 1).name, tx, r.cy() + 7.0f, 21.0f, 700.0f,
+                             ui::state_ink(f, chosen));
+            }
+        }
+        pane.add(Kind::language, static_cast<int>(i), r, true);
+        ++pane.row;
+        pane.y += r.h + 10.0f;
+    }
+    if (ctx_.store.setting_result().setting == Setting::language)
+        pane.error(ctx_.store.setting_result().error);
+}
+
 void SettingsScreen::build_more(Pane &pane) const
 {
     const Snapshot &state = ctx_.store.state();
@@ -1054,6 +1108,18 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
         appearance::save(ctx_.appearance);
         ctx_.store.set_appearance(appearance::preset(ctx_.appearance).id);
         break;
+    case Kind::language:
+    {
+        // Shown at once, kept by the download service (the app itself cannot write to /data).
+        const std::string saved = control.index == 0 ? std::string("auto")
+                                                     : std::string(i18n::choice(static_cast<std::size_t>(control.index) - 1).code);
+        ctx_.language_choice = saved;
+        error_.clear();
+        if (i18n::apply(ctx_.language_dir, saved, ctx_.system_language))
+            ctx_.store.language_changed();
+        ctx_.store.set_language(saved);
+        break;
+    }
     case Kind::zero_toggle:
         error_.clear();ctx_.store.set_zero(!state.system.zero_enabled);break;
     case Kind::download_limit_less:

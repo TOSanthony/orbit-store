@@ -143,6 +143,7 @@ System parse_system(const json::Value &value)
     system.catalogue_revision = value["catalogueRevision"].as_int();
     system.preferred_storage = value.text("preferredStorage");
     system.appearance = value.text("appearance");
+    system.language = value.text("language");
     system.sounds_off = value.flag("soundsOff", false);
     system.delete_archives = value.flag("deleteArchives", true);
     const auto limit = value["concurrentDownloads"].as_int();

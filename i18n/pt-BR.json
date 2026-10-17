@@ -1251,5 +1251,7 @@
     "one": "{count} entrada foi ignorada: inválida, duplicada ou fora do endereço do seu NAS.",
     "other": "{count} entradas foram ignoradas: inválidas, duplicadas ou fora do endereço do seu NAS."
   },
-  "Game": "Jogo"
+  "Game": "Jogo",
+  "Automatic": "Automático",
+  "Choose the language of the app. Automatic follows the console’s language.": "Escolha o idioma do app. “Automático” segue o idioma do console."
 }

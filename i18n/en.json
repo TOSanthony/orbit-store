@@ -1241,5 +1241,7 @@
     "one": "{count} entry was skipped: invalid, duplicated or not on your NAS address.",
     "other": "{count} entries were skipped: invalid, duplicated or not on your NAS address."
   },
-  "Game": "Game"
+  "Game": "Game",
+  "Automatic": "Automatic",
+  "Choose the language of the app. Automatic follows the console’s language.": "Choose the language of the app. Automatic follows the console’s language."
 }

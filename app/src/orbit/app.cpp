@@ -244,6 +244,17 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
     const Snapshot &state = ctx_.store.state();
     ctx_.art.set_token(state.token);
     ctx_.art.tick();
+    // The language the service kept wins once, at start (the app opens in the console's language).
+    if (!language_synced_ && state.have_system)
+    {
+        language_synced_ = true;
+        if (!state.system.language.empty())
+        {
+            ctx_.language_choice = state.system.language;
+            if (i18n::apply(ctx_.language_dir, state.system.language, ctx_.system_language))
+                ctx_.store.language_changed();
+        }
+    }
     // The background the service kept wins once, at start (a newer service; older ones send none).
     if (!appearance_synced_ && state.have_system)
     {

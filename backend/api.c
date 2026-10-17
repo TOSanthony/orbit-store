@@ -294,6 +294,7 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
         cJSON_AddStringToObject(o, "preferredStorage", orbit.preferred_storage);
         cJSON_AddBoolToObject(o, "deleteArchives", orbit.delete_archives);
         cJSON_AddStringToObject(o, "appearance", orbit.appearance);
+        cJSON_AddStringToObject(o, "language", orbit.language);
         cJSON_AddBoolToObject(o, "soundsOff", orbit.sounds_off);
         cJSON_AddNumberToObject(o, "concurrentDownloads", orbit.concurrent_downloads);
         cJSON_AddNumberToObject(o, "httpPort", orbit.port);
@@ -469,6 +470,32 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
             if (rc) orbit.sounds_off = previous;
             cJSON *o = cJSON_CreateObject();
             cJSON_AddBoolToObject(o, "soundsOff", orbit.sounds_off);
+            pthread_mutex_unlock(&orbit.mutex);
+            cJSON_Delete(input);
+            if (rc) {
+                cJSON_Delete(o);
+                return error(c, 503, "Could not save the setting.");
+            }
+            return json_response(c, 200, o);
+        }
+        if ((get || post) && !strcmp(url, "/api/v1/settings/language")) {
+            const cJSON *value = cJSON_GetObjectItemCaseSensitive(input, "language");
+            bool valid = cJSON_IsString(value) && value->valuestring && value->valuestring[0] &&
+                         strlen(value->valuestring) < sizeof orbit.language;
+            for (const char *p = valid ? value->valuestring : ""; *p; p++)
+                if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || *p == '-')) valid = false;
+            if (post && !valid) {
+                cJSON_Delete(input);
+                return error(c, 400, "Expected language.");
+            }
+            pthread_mutex_lock(&orbit.mutex);
+            char previous[sizeof orbit.language];
+            memcpy(previous, orbit.language, sizeof previous);
+            if (post) snprintf(orbit.language, sizeof orbit.language, "%s", value->valuestring);
+            int rc = post ? state_save_locked() : 0;
+            if (rc) memcpy(orbit.language, previous, sizeof previous);
+            cJSON *o = cJSON_CreateObject();
+            cJSON_AddStringToObject(o, "language", orbit.language);
             pthread_mutex_unlock(&orbit.mutex);
             cJSON_Delete(input);
             if (rc) {
