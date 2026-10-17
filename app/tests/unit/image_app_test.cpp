@@ -403,9 +403,50 @@ TEST(App, NativeVikingDelayedStartDoesNotUndoClosingTheProgressPanel)
     EXPECT_EQ(h.store.state().browser.state,"cancelled");
 }
 
+// Saves the enabled sources the way the Sources settings do, and lets the result reach the store.
+static void enable_sources(AppHarness &h, std::vector<std::string> enabled)
+{
+    h.store.save_sources(std::move(enabled), 1);
+    ASSERT_TRUE(h.store.run_next_action());
+    h.settle(3);
+    h.store.poll_once();
+    h.settle();
+}
+
+TEST(App, AppsDlcAndUpdatesTabsNeedMyNas)
+{
+    AppHarness h;
+    h.settle();
+    enable_sources(h, {"archive"});
+    ASSERT_EQ(h.store.state().sources.enabled, (std::vector<std::string>{"archive"}));
+    // Without My NAS: Discover, Games, Library, Downloads.
+    h.press(Action::page_next);
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::browse);
+    h.press(Action::page_next);
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::library);
+    h.press(Action::page_next);
+    h.settle();
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::downloads);
+    h.press(Action::page_prev);
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::library);
+    // A tab that is asked for but hidden falls back to Games.
+    h.app.show_tab(orbit::tab::dlc);
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::browse);
+    // My NAS together with another source brings them back.
+    enable_sources(h, {"archive", "nas"});
+    h.app.show_tab(orbit::tab::dlc);
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::dlc);
+    // Turning My NAS off while on one of them leaves it.
+    enable_sources(h, {"archive"});
+    h.frame(Direction::none);
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::browse);
+}
+
 TEST(App, CircleLeavesTheGamePageAndTabsSwitchWithL1R1)
 {
     AppHarness h;
+    h.settle();
+    enable_sources(h, {"archive", "nas"});
     EXPECT_EQ(h.app.current_tab(), orbit::tab::discover);
     h.app.open_game("tidewater");
     h.settle();

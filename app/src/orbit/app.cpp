@@ -46,13 +46,34 @@ float beta_width(const ui::Type &type)
     return type.semibold.measure(tr("BETA"), 13.0f) + 4.0f + 2.0f * 7.6f;
 }
 
-ui::Rect tab_rect(const ui::Type &type, int index)
+// Apps, DLC and Updates come from My NAS folders only: without that source, their tabs go away.
+bool tab_hidden(const Snapshot &state, int index)
+{
+    if (index != tab::apps && index != tab::dlc && index != tab::updates)
+        return false;
+    if (!state.have_sources || state.sources.enabled.empty())
+        return false;
+    return std::find(state.sources.enabled.begin(), state.sources.enabled.end(), "nas") ==
+           state.sources.enabled.end();
+}
+
+// The next index along the top row in a direction, hopping over hidden tabs. May leave the tabs.
+int step_top(const Snapshot &state, int from, int direction)
+{
+    int next = from + direction;
+    while (next >= 0 && next < kTabCount && tab_hidden(state, next))
+        next += direction;
+    return next;
+}
+
+ui::Rect tab_rect(const ui::Type &type, const Snapshot &state, int index)
 {
     // The nav starts 3 rem after the brand button (whose padding ends 0.9 rem
     // after the label).
     float x = beta_x(type) + beta_width(type) + 18.0f + 60.0f;
     for (int i = 0; i < index; ++i)
-        x += type.regular.measure(tr(kTabs[i]), kTabSize) + 2.0f * kTabPad + kTabGap;
+        if (!tab_hidden(state, i))
+            x += type.regular.measure(tr(kTabs[i]), kTabSize) + 2.0f * kTabPad + kTabGap;
     return {x, kTopY - kTabHeight * 0.5f,
             type.regular.measure(tr(kTabs[index]), kTabSize) + 2.0f * kTabPad, kTabHeight};
 }
@@ -123,6 +144,8 @@ bool App::content_blocked() const
 void App::show_tab(int tab)
 {
     tab_ = std::clamp(tab, 0, kTabCount - 1);
+    if (tab_hidden(ctx_.store.state(), tab_))
+        tab_ = tab::browse;
     game_open_ = false;
     if (settings_open_)
         settings_.close();
@@ -242,6 +265,12 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
     ctx_.clock += dt;
     ctx_.store.tick();
     const Snapshot &state = ctx_.store.state();
+    // The sources can change under us: leave a tab that has just gone away.
+    if (tab_hidden(state, tab_))
+    {
+        tab_ = tab::browse;
+        top_index_ = tab_;
+    }
     ctx_.art.set_token(state.token);
     ctx_.art.tick();
     // The keyboard letters: the player's choice, else AZERTY when the app is in French.
@@ -378,7 +407,7 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
         {
             // After the last tab, R1 goes on to search, then settings; L1 comes back the same way.
             const int here = area_ == Area::top ? top_index_ : tab_;
-            const int next = here + (input.is_pressed(Action::page_next) ? 1 : -1);
+            const int next = step_top(ctx_.store.state(), here, input.is_pressed(Action::page_next) ? 1 : -1);
             if (next >= 0 && next < kTabCount)
             {
                 const bool changed = next != tab_;
@@ -404,7 +433,7 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
         {
             if (input.nav == Direction::left || input.nav == Direction::right)
             {
-                const int next = top_index_ + (input.nav == Direction::right ? 1 : -1);
+                const int next = step_top(ctx_.store.state(), top_index_, input.nav == Direction::right ? 1 : -1);
                 if (next >= 0 && next < kTopItems)
                 {
                     top_index_ = next;
@@ -543,7 +572,9 @@ void App::draw_top_bar(hui::gfx::DrawList &list) const
     const float count_width = std::max(24.0f, type.semibold.measure(count, 14.0f) + 18.0f);
     for (int i = 0; i < kTabCount; ++i)
     {
-        ui::Rect r = tab_rect(type, i);
+        if (tab_hidden(state, i))
+            continue;
+        ui::Rect r = tab_rect(type, state, i);
         const bool counted = i == tab::downloads && active > 0;
         if (counted)
             r.w += 10.0f + count_width;
