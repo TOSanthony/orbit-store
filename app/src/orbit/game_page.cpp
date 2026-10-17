@@ -712,8 +712,8 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         facts.push_back({FactIcon::source,release.provider,tr("Source")});
         if(!release.title_id.empty())facts.push_back({FactIcon::title_id,release.title_id,tr("Title ID")});
         // The cover on the left, the facts in two columns on the right at the cover's height.
-        constexpr float kCover=420,kGap=12,kColumnGap=14,kMaxTile=76;
-        const float grid_x=116+kCover+48;
+        constexpr float kCover=400,kGap=12,kColumnGap=14,kMaxTile=76;
+        const float grid_x=570;
         const float tile_w=(1806-grid_x-kColumnGap)*0.5f;
         const int rows=std::max(1,static_cast<int>((facts.size()+1)/2));
         const float tile_h=std::min(kMaxTile,(kCover-kGap*static_cast<float>(rows-1))/static_cast<float>(rows));
@@ -739,7 +739,8 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         }
         y+=kCover+24;
         paragraph(tr("Saves a file to your console. Installation and launching are separate."),116,y,1690,20,ui::color::text3);
-        out.content=y;
+        // Same height as the download options, so the cover sits at the same place in both.
+        out.content=std::max(y,top+510.0f);
     }
     out.end=y+20;
     return out;
@@ -981,7 +982,7 @@ GamePage::Fit GamePage::fit(Sheet sheet) const
     if(sheet!=Sheet::about && sheet!=Sheet::downloads)return {1.0f,0.0f};
     const auto where=compose(nullptr,sheet,false);
     // The block runs from the game's title (about y 36) to the last line; its middle sits at y 340.
-    constexpr float kTop=36.0f,kMiddle=340.0f,kMaxHeight=556.0f;
+    constexpr float kTop=36.0f,kMiddle=321.0f,kMaxHeight=582.0f;
     const float bottom=std::max(where.content,where.end-20.0f);
     const float height=bottom-kTop;
     if(height<=0.0f)return {1.0f,0.0f};
