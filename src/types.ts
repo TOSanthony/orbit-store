@@ -238,11 +238,12 @@ export interface AutoStart {
   homebrewLauncher?: { installed: boolean; listed: boolean; managed: boolean };
   etaHEN?: { installed: boolean };
 }
-// "7z · exFAT" for a compressed option, otherwise its format.
+// "7z · exFAT" for a compressed disk image, just "ZIP" for an archive of a game folder,
+// otherwise the format.
 export function formatLabel(r: Pick<Release, "format" | "compression">) {
   if (!r.compression) return r.format;
   const kind = r.compression === "7z" ? "7z" : r.compression.toUpperCase();
-  return r.format === "Unknown" ? kind : `${kind} · ${r.format}`;
+  return r.format === "Unknown" || r.format === "Game folder" ? kind : `${kind} · ${r.format}`;
 }
 const tenths = { minimumFractionDigits: 1, maximumFractionDigits: 1 };
 // 49.4 GB in English, 49,4 GB in German, 49,4 ГБ in Russian, 49,4 Go in French.

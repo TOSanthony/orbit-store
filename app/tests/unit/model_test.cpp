@@ -496,6 +496,10 @@ TEST(Model, CompressedOptionsNeedRoomForTheArchiveAndItsFiles)
     EXPECT_EQ(format_label(release), "7z \xC2\xB7 FFPFSC");
     release.compression = "zip";
     EXPECT_EQ(format_label(release), "ZIP \xC2\xB7 FFPFSC");
+    release.format = "Game folder"; // an archive of a game folder is just its archive type
+    EXPECT_EQ(format_label(release), "ZIP");
+    release.compression = "7z";
+    EXPECT_EQ(format_label(release), "7z");
     Drive drive;
     drive.id = "usb0";
     drive.projected_free_bytes = 30e9;
