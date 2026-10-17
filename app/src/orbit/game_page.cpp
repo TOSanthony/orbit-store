@@ -444,7 +444,9 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         const bool side = now.show_download && now.drive != nullptr;
         const float rw = side ? 606.0f : nw;
         constexpr float kRowsHeight = 3 * 76.0f + 2 * 10.0f;
-        float ry = 0;
+        // The game's title sits above the cover; everything else is lowered to match.
+        constexpr float top = 52;
+        float ry = top;
         const auto setting = [&](Slot slot,FactIcon icon,const std::string &label,const std::string &value,const std::string &note)
         {
             const ui::Rect r{nx,ry,rw,76};
@@ -481,10 +483,10 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         if (list)
         {
             // Left column: the cover, the title and a few pills.
-            const ui::Rect cover{116,0,400,400};
+            const ui::Rect cover{116,top,400,400};
             list->shadow({cover.x,cover.y+10,cover.w,cover.h},ui::kArtRadius,28,ui::Color::rgb(0x000000,0.45f));
             draw_cover(ctx_,*list,*game,cover,ui::kArtRadius);
-            ui::text_fit(*list,type.semibold,game->title,116,446,28,400,ui::color::text);
+            ui::text_fit(*list,type.semibold,game->title,116,top-22,28,400,ui::color::text);
             struct Pill { FactIcon icon; std::string text; };
             std::vector<Pill> pills{{release.platform=="ps4"?FactIcon::platform4:FactIcon::platform,release.platform=="ps4"?"PS4":"PS5"}};
             if (!release.version.empty()) pills.push_back({FactIcon::version,"v"+release.version});
@@ -494,16 +496,16 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             {
                 const float w = 12+26+8+type.medium.measure(pill.text,17)+16;
                 if (px+w > 516) break;
-                list->rounded_rect({px,466,w,40},20,ui::Color::rgb(0xffffff,0.16f));
-                fact_icon(*list,type,pill.icon,px+12+13,486,26,ui::color::text);
-                ui::text(*list,type.medium,pill.text,px+12+26+8,493,17,ui::color::text);
+                list->rounded_rect({px,top+420,w,40},20,ui::Color::rgb(0xffffff,0.16f));
+                fact_icon(*list,type,pill.icon,px+12+13,top+440,26,ui::color::text);
+                ui::text(*list,type.medium,pill.text,px+12+26+8,top+447,17,ui::color::text);
                 px += w + 8;
             }
         }
         if (now.show_download && now.drive && list)
         {
             const Drive &drive=*now.drive;
-            const ui::Rect card_rect = side ? ui::Rect{nx+rw+24,0,rw,kRowsHeight} : ui::Rect{nx,ry,nw,140};
+            const ui::Rect card_rect = side ? ui::Rect{nx+rw+24,top,rw,kRowsHeight} : ui::Rect{nx,ry,nw,140};
             ui::surface(*list,card_rect,20,ui::color::field);
             if(drive.total_bytes>0)
             {
@@ -564,13 +566,13 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                 ui::text(*list,type.medium,now.plan.after<0?tr("{size} short",{{"size",format_bytes(-now.plan.after)}}):format_bytes(now.plan.after),card_rect.x+card_rect.w-28,card_rect.cy()+6,24,ui::color::text,ui::Align::right);
             }
         }
-        if (side) ry = kRowsHeight + 30.0f;
+        if (side) ry = top + kRowsHeight + 30.0f;
         else if (now.show_download && now.drive) ry += 140 + 20;
         // A game already in Library: the second-copy button sits on the cover's bottom edge, the
         // sentence above it, and the main button is centred in the space left under the source row.
         const bool anchored = !now.show_download && !download_again_ && !now.collection.job &&
             now.collection.kind == CollectionState::Kind::library && now.collection.library != nullptr;
-        if (anchored) ry = (ry - 12 + 295.0f) * 0.5f - 40.0f;
+        if (anchored) ry = (ry - 12 + top + 295.0f) * 0.5f - 40.0f;
         {
             // The download button with its explanation beside it.
             const std::string label=primary_label(release,download_again_,waiting_,now.collection,state,torbox_);
@@ -588,12 +590,12 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         }
         if (anchored)
         {
-            float py = 295;
+            float py = top + 295;
             paragraph(tr("In your Library on {location}.",{{"location",i18n::place(now.collection.library->location)}}),nx,py,nw);
-            control(Slot::again,0,{nx,342,450,58},tr("Download another copy"));
-            ry = 400 + 22;
+            control(Slot::again,0,{nx,top+342,450,58},tr("Download another copy"));
+            ry = top + 400 + 22;
         }
-        out.content=std::max(510.0f,ry-22);
+        out.content=std::max(top+510.0f,ry-22);
         y=ry;
         const float width_notes=1180;
         const float notes_top=y;
@@ -718,11 +720,15 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         const float tile_w=(1806-grid_x-kColumnGap)*0.5f;
         const int rows=std::max(1,static_cast<int>((facts.size()+1)/2));
         const float tile_h=std::min(kMaxTile,(kCover-kGap*static_cast<float>(rows-1))/static_cast<float>(rows));
+        // The game's title sits above the cover, like on the download options.
+        constexpr float top=52;
+        y=top;
         if(list)
         {
             const ui::Rect cover{116,y,kCover,kCover};
             list->shadow({cover.x,cover.y+10,cover.w,cover.h},ui::kArtRadius,28,ui::Color::rgb(0x000000,0.45f));
             draw_cover(ctx_,*list,*game,cover,ui::kArtRadius);
+            ui::text_fit(*list,type.semibold,game->title,116,top-22,28,kCover,ui::color::text);
             for(std::size_t i=0;i<facts.size();++i)
             {
                 const float x=grid_x+static_cast<float>(i%2)*(tile_w+kColumnGap);
