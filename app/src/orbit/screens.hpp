@@ -428,6 +428,7 @@ class DownloadsScreen final : public Screen
 
     JobView view_ = JobView::active;
     bool on_views_ = true; // the focus is on the view switcher
+    bool on_button_ = false; // the empty state's Browse games button has the focus
     int row_ = 0;
     int button_ = 0;
     std::string pending_job_; // show_job() before the queue arrived

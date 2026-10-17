@@ -195,6 +195,9 @@ Intent DownloadsScreen::update(const InputFrame &input, float dt, Feedback &feed
     row_ = std::clamp(row_, 0, std::max(0, static_cast<int>(jobs.size()) - 1));
     if (jobs.empty())
         on_views_ = true;
+    // The empty state's button exists only in Active, and only while nothing is listed.
+    if (!jobs.empty() || view_ != JobView::active)
+        on_button_ = false;
     const bool busy = ctx_.store.action().busy;
     if (dialog_pending_ && !busy)
     {
@@ -274,7 +277,27 @@ Intent DownloadsScreen::update(const InputFrame &input, float dt, Feedback &feed
     }
     else if (focused)
     {
-        if (on_views_)
+        if (on_views_ && on_button_)
+        {
+            // The empty state's Browse games button: up returns to the views, Cross opens Games.
+            if (input.nav == Direction::up)
+            {
+                on_button_ = false;
+                feedback.play(hui::audio::Cue::focus);
+            }
+            else if (input.nav != Direction::none)
+            {
+                refuse(feedback, input);
+            }
+            if (input.is_pressed(Action::confirm))
+            {
+                feedback.play(hui::audio::Cue::select);
+                intent.kind = Intent::Kind::show_tab;
+                intent.tab = tab::browse;
+                return intent;
+            }
+        }
+        else if (on_views_)
         {
             if (input.nav == Direction::up)
             {
@@ -305,18 +328,15 @@ Intent DownloadsScreen::update(const InputFrame &input, float dt, Feedback &feed
                     button_ = 0;
                     feedback.play(hui::audio::Cue::focus);
                 }
+                else if (view_ == JobView::active)
+                {
+                    on_button_ = true; // down from the views, onto Browse games
+                    feedback.play(hui::audio::Cue::focus);
+                }
                 else
                 {
                     refuse(feedback, input);
                 }
-            }
-            if (input.is_pressed(Action::confirm) && visible().empty())
-            {
-                // The empty state's button.
-                feedback.play(hui::audio::Cue::select);
-                intent.kind = Intent::Kind::show_tab;
-                intent.tab = tab::browse;
-                return intent;
             }
         }
         else if (!jobs.empty())
@@ -452,7 +472,7 @@ void DownloadsScreen::draw(Frame &frame, bool focused) const
         const float width = label_width + 7.0f + type.medium.measure(number, 18.0f) + 2.0f * 18.0f;
         const ui::Rect pill{x, kChipsY, width, kChipHeight};
         const bool current = view == view_;
-        const float chip_focus = focused && on_views_ && current && !dialog_open_ ? 1.0f : 0.0f;
+        const float chip_focus = focused && on_views_ && !on_button_ && current && !dialog_open_ ? 1.0f : 0.0f;
         // Chosen view = active; white only while the cursor is on the chips.
         ui::state_fill(list, pill, pill.h * 0.5f, chip_focus, current);
         const ui::Color ink = ui::state_ink(chip_focus, current);
@@ -484,7 +504,8 @@ void DownloadsScreen::draw(Frame &frame, bool focused) const
         {
             const float width = ui::button_width(type, tr("Browse games"));
             ui::button(list, type, {960.0f - width * 0.5f, 550.0f, width, ui::kButtonHeight},
-                       tr("Browse games"), ui::ButtonKind::primary, 0.0f);
+                       tr("Browse games"), ui::ButtonKind::primary,
+                       focused && on_button_ && !dialog_open_ ? 1.0f : 0.0f);
         }
         return;
     }
@@ -699,6 +720,8 @@ std::vector<hui::ui::Hint> DownloadsScreen::hints() const
 {
     if (dialog_open_ || password_open_)
         return {{hui::ui::Button::cross, tr("Select")}, {hui::ui::Button::circle, tr("Go back")}};
+    if (on_button_)
+        return {{hui::ui::Button::cross, tr("Select")}, {hui::ui::Button::l1, tr("Tabs"), hui::ui::Button::r1}};
     if (on_views_)
         return {{hui::ui::Button::dpad, tr("Switch view")},
                 {hui::ui::Button::l1, tr("Tabs"), hui::ui::Button::r1}};
