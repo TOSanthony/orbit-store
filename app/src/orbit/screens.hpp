@@ -659,6 +659,11 @@ class App
     {
         return tab_;
     }
+    // The top bar item the selector is on (tabs, then search, settings); -1 inside a page.
+    int top_focus() const
+    {
+        return area_ == Area::top ? top_index_ : -1;
+    }
     // The opening screen is still held or fading out (once per launch).
     bool opening() const
     {

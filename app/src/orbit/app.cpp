@@ -356,13 +356,23 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
         if (!screen().modal() &&
             (input.is_pressed(Action::page_prev) || input.is_pressed(Action::page_next)))
         {
-            const int next = tab_ + (input.is_pressed(Action::page_next) ? 1 : -1);
+            // After the last tab, R1 goes on to search, then settings; L1 comes back the same way.
+            const int here = area_ == Area::top ? top_index_ : tab_;
+            const int next = here + (input.is_pressed(Action::page_next) ? 1 : -1);
             if (next >= 0 && next < kTabCount)
             {
+                const bool changed = next != tab_;
                 tab_ = next;
                 top_index_ = tab_;
-                screen().focus();
-                feedback.play(hui::audio::Cue::tab);
+                if (changed)
+                    screen().focus();
+                feedback.play(changed ? hui::audio::Cue::tab : hui::audio::Cue::focus);
+            }
+            else if (next >= kTabCount && next < kTopItems)
+            {
+                area_ = Area::top;
+                top_index_ = next;
+                feedback.play(hui::audio::Cue::focus);
             }
             else
             {

@@ -410,9 +410,23 @@ TEST(App, CircleLeavesTheGamePageAndTabsSwitchWithL1R1)
     h.press(Action::page_next);
     h.settle();
     EXPECT_EQ(h.app.current_tab(), orbit::tab::downloads);
+    // After the last tab R1 goes on to search, then settings, and stops there.
     h.press(Action::page_next);
     EXPECT_EQ(h.app.current_tab(), orbit::tab::downloads);
+    EXPECT_EQ(h.app.top_focus(), orbit::tab::count); // search
+    h.press(Action::page_next);
+    EXPECT_EQ(h.app.top_focus(), orbit::tab::count + 1); // settings
+    h.press(Action::page_next);
+    EXPECT_EQ(h.app.top_focus(), orbit::tab::count + 1);
     EXPECT_FALSE(h.feedback.cues.empty());
+    // L1 comes back through search to Downloads, then to Library: no skipped tab.
+    h.press(Action::page_prev);
+    EXPECT_EQ(h.app.top_focus(), orbit::tab::count);
+    h.press(Action::page_prev);
+    EXPECT_EQ(h.app.top_focus(), orbit::tab::downloads);
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::downloads);
+    h.press(Action::page_prev);
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::library);
 }
 
 TEST(App, AFavouriteFromAGamePageShowsUnderBrowseFavourites)
