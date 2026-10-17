@@ -316,6 +316,7 @@
   "Download views": "Widoki pobierania",
   "Download {id}": "Pobieranie {id}",
   "Downloaded": "Pobrano",
+  "In your Library": "W Twojej bibliotece",
   "Downloaded bytes could not be flushed to disk.": "Nie udało się zapisać pobranych danych na dysku.",
   "Downloaded file size or disk flush failed validation.": "Rozmiar pobranego pliku lub zapis na dysk nie przeszły weryfikacji.",
   "Downloading": "Pobieranie",

@@ -316,6 +316,7 @@
   "Download views": "Downloadweergaven",
   "Download {id}": "Download {id}",
   "Downloaded": "Gedownload",
+  "In your Library": "In je bibliotheek",
   "Downloaded bytes could not be flushed to disk.": "Gedownloade gegevens konden niet naar schijf worden geschreven.",
   "Downloaded file size or disk flush failed validation.": "De grootte van het gedownloade bestand of het wegschrijven naar schijf is niet goedgekeurd.",
   "Downloading": "Downloaden",

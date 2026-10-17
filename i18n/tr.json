@@ -316,6 +316,7 @@
   "Download views": "İndirme görünümleri",
   "Download {id}": "İndirme {id}",
   "Downloaded": "İndirildi",
+  "In your Library": "Kitaplığında",
   "Downloaded bytes could not be flushed to disk.": "İndirilen veriler diske yazılamadı.",
   "Downloaded file size or disk flush failed validation.": "İndirilen dosya boyutu veya diske yazma doğrulamayı geçemedi.",
   "Downloading": "İndiriliyor",

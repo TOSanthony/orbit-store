@@ -316,6 +316,7 @@
   "Download views": "Vistas de descargas",
   "Download {id}": "Descarga {id}",
   "Downloaded": "Descargado",
+  "In your Library": "En tu biblioteca",
   "Downloaded bytes could not be flushed to disk.": "Los datos descargados no se pudieron escribir en el disco.",
   "Downloaded file size or disk flush failed validation.": "El tamaño del archivo descargado o la escritura en disco no superó la validación.",
   "Downloading": "Descargando",

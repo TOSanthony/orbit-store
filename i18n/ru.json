@@ -316,6 +316,7 @@
   "Download views": "Разделы загрузок",
   "Download {id}": "Загрузка {id}",
   "Downloaded": "Загружено",
+  "In your Library": "В вашей библиотеке",
   "Downloaded bytes could not be flushed to disk.": "Не удалось записать загруженные данные на диск.",
   "Downloaded file size or disk flush failed validation.": "Размер загруженного файла или запись на диск не прошли проверку.",
   "Downloading": "Загрузка",

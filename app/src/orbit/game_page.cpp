@@ -447,6 +447,26 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         if (!now.show_download && now.collection.job && now.collection.job->status == "complete")
             for (const auto &d : state.drives)
                 if (d.id == now.collection.job->storage_id) installed_drive = &d;
+        // A game found in Library with no download of ours: the drive it sits on, by its path
+        // (the longest drive path that holds it), else by the place the library reports.
+        bool in_library = false;
+        if (!now.show_download && !now.collection.job &&
+            now.collection.kind == CollectionState::Kind::library && now.collection.library != nullptr)
+        {
+            const auto &found = *now.collection.library;
+            std::size_t best = 0;
+            for (const auto &d : state.drives)
+            {
+                const bool holds = !d.path.empty() && found.path.compare(0, d.path.size(), d.path) == 0 &&
+                    (found.path.size() == d.path.size() || found.path[d.path.size()] == '/');
+                if (holds && d.path.size() >= best) { installed_drive = &d; best = d.path.size(); }
+            }
+            if (installed_drive == nullptr)
+                for (const auto &d : state.drives)
+                    if (!found.location.empty() && i18n::place(d.label) == i18n::place(found.location))
+                        installed_drive = &d;
+            in_library = installed_drive != nullptr;
+        }
         const bool installed = installed_drive != nullptr;
         const bool side = (now.show_download && now.drive != nullptr) || installed;
         // An existing download keeps the Source row at the width it has when downloading.
@@ -489,6 +509,9 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         else if (now.collection.job && now.collection.job->status == "complete")
             // A finished download offers a second copy as a row of its own, under Source.
             setting(Slot::again,FactIcon::download,tr("Downloaded"),tr("Download another copy"),"");
+        else if (in_library)
+            // A game found in Library gets the same row, with the drive it sits on beside it.
+            setting(Slot::again,FactIcon::download,tr("In your Library"),tr("Download another copy"),"");
         ry -= 86;
         ry += 76 + 10;
         if (list)
@@ -595,7 +618,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         else if (!now.show_download && now.collection.job) ry = top + kRowsHeight + 30.0f;
         // A game already in Library: the second-copy button sits on the cover's bottom edge, the
         // sentence above it, and the main button is centred in the space left under the source row.
-        const bool anchored = !now.show_download && !download_again_ && !now.collection.job &&
+        const bool anchored = !in_library && !now.show_download && !download_again_ && !now.collection.job &&
             now.collection.kind == CollectionState::Kind::library && now.collection.library != nullptr;
         if (anchored) ry = (ry - 12 + top + 295.0f) * 0.5f - 40.0f;
         {
@@ -657,7 +680,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             if (now.collection.kind == CollectionState::Kind::related)
             { control(Slot::related,0,{nx,y,450,58},tr("View related copy"));y+=80; }
         }
-        if (!anchored && !download_again_ && now.collection.kind == CollectionState::Kind::library)
+        if (!anchored && !in_library && !download_again_ && now.collection.kind == CollectionState::Kind::library)
         { control(Slot::again,0,{nx,y,450,58},tr("Download another copy"));y+=80; }
         if (now.collection.job && now.collection.job->status == "complete")
         { paragraph(one_per_line(tr("Download history records a completed transfer. Find it in Library to check its current location.")),nx,y,width_notes,20);y+=16; }
