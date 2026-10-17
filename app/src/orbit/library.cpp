@@ -14,6 +14,30 @@
 #include <cmath>
 #include <cstdio>
 
+namespace
+{
+// The usage ring runs from green when the drive is empty to red when it is full.
+hui::gfx::Color usage_colour(float used, bool on_light)
+{
+    struct Stop { float at; unsigned dark; unsigned light; };
+    static const Stop stops[] = {{0.0f, 0x34d27b, 0x15a34a}, {0.5f, 0xf5c542, 0xca9a04},
+                                 {0.75f, 0xf08a24, 0xc2610c}, {1.0f, 0xef4444, 0xdc2626}};
+    used = std::clamp(used, 0.0f, 1.0f);
+    for (int i = 1; i < 4; ++i)
+    {
+        if (used > stops[i].at && i < 3) continue;
+        const Stop &a = stops[i - 1], &b = stops[i];
+        const float t = (used - a.at) / (b.at - a.at);
+        const unsigned ca = on_light ? a.light : a.dark, cb = on_light ? b.light : b.dark;
+        const auto mix = [&](int shift) {
+            const float x = static_cast<float>((ca >> shift) & 255), y = static_cast<float>((cb >> shift) & 255);
+            return static_cast<unsigned>(x + (y - x) * t + 0.5f);
+        };
+        return hui::gfx::Color::rgb((mix(16) << 16) | (mix(8) << 8) | mix(0));
+    }
+    return hui::gfx::Color::rgb(on_light ? 0xdc2626 : 0xef4444);
+}
+}
 namespace orbit
 {
 
@@ -1195,7 +1219,7 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                       lit ? ui::Color::rgb(0x080808, 0.14f) : ui::Color::rgb(0xffffff, 0.27f));
             if (used > 0.0f)
                 list.arc(ring_x, ring_y, 50.0f, 10.0f, 0.0f, used * 6.2831853f,
-                         lit ? ui::Color::rgb(0x080808) : ui::Color::rgb(0xffffff), true);
+                         usage_colour(used, lit), true);
             char percent[16];
             std::snprintf(percent, sizeof percent, "%d%%",
                           static_cast<int>(used * 100.0f + 0.5f));
