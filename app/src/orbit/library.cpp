@@ -447,7 +447,8 @@ std::vector<LibraryScreen::Control> LibraryScreen::page_controls() const
     // Storage: the drives, then the selected drive's games.
     const std::vector<LibraryDrive> &drives = state.library_storage.drives;
     y += 90.0f;
-    const float card_w = 400.0f;
+    // A fixed grid of four slots per row, filled from the left, as wide as the page margins.
+    const float card_w = (1920.0f - 2 * ui::kGutter - 3 * 20.0f) / 4.0f;
     for (int d = 0; d < static_cast<int>(drives.size()); ++d)
         out.push_back({Kind::drive,
                        d,
