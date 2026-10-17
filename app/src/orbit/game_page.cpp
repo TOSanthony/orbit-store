@@ -712,7 +712,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         facts.push_back({FactIcon::source,release.provider,tr("Source")});
         if(!release.title_id.empty())facts.push_back({FactIcon::title_id,release.title_id,tr("Title ID")});
         // The cover on the left, the facts in two columns on the right at the cover's height.
-        constexpr float kCover=400,kGap=12,kColumnGap=14,kMaxTile=76;
+        constexpr float kCover=400,kGap=10,kColumnGap=24,kMaxTile=76;
         const float grid_x=570;
         const float tile_w=(1806-grid_x-kColumnGap)*0.5f;
         const int rows=std::max(1,static_cast<int>((facts.size()+1)/2));
@@ -731,10 +731,12 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                 const float x=grid_x+static_cast<float>(i%2)*(tile_w+kColumnGap);
                 const float ty=y+static_cast<float>(i/2)*(tile_h+kGap);
                 const ui::Rect tile{x,ty,tile_w,tile_h};
-                list->rounded_rect(tile,18,ui::Color::rgb(0xffffff,0.157f));
-                fact_icon(*list,type,facts[i].icon,x+46,tile.cy(),40,ui::color::text);
-                ui::text_fit(*list,type.semibold,facts[i].value,x+82,tile.cy()-3,23,tile_w-106,ui::color::text);
-                ui::text_fit(*list,type.regular,facts[i].label,x+82,tile.cy()+20,16,tile_w-106,ui::color::text2);
+                // The same tile as a row of the download options, without the arrow.
+                ui::state_fill(*list,tile,20,0);
+                list->circle(x+50,tile.cy(),24,ui::Color::rgb(0xffffff,0.14f));
+                fact_icon(*list,type,facts[i].icon,x+50,tile.cy(),30,ui::color::text);
+                ui::text_fit(*list,type.regular,facts[i].label,x+92,tile.cy()-8,17,tile_w-116,ui::state_ink_dim(0));
+                ui::text_fit(*list,type.medium,facts[i].value,x+92,tile.cy()+22,24,tile_w-116,ui::state_ink(0));
             }
         }
         y+=kCover+24;
