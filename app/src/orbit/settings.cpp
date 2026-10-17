@@ -21,15 +21,15 @@ namespace orbit
 namespace
 {
 
-constexpr float kTitleBaseline = 192.0f; // as Downloads
-constexpr float kNavTop = 262.0f;
+constexpr float kTitleBaseline = 176.0f; // as the other page titles
+constexpr float kNavTop = 244.0f;
 constexpr float kNavWidth = 400.0f;
 constexpr float kNavItem = 62.0f;
 constexpr float kNavGap = 6.0f;
 constexpr float kContentX = 600.0f;
-constexpr float kContentTop = 262.0f;
+constexpr float kContentTop = 244.0f;
 constexpr float kContentWidth = 940.0f;
-constexpr float kViewTop = 230.0f;    // content scrolls under the title
+constexpr float kViewTop = 212.0f;    // content scrolls under the title
 constexpr float kViewBottom = 990.0f; // and stops above the hints
 constexpr float kCardRadius = 14.0f;
 constexpr float kKeyboardTop = 560.0f;
@@ -1439,7 +1439,7 @@ void SettingsScreen::draw(Frame &frame, bool focused) const
     const ui::Type &type = ctx_.type;
     const float in = std::clamp(age_ / 0.3f, 0.0f, 1.0f);
     list.push_opacity(in);
-    ui::text(list, type.light, tr("App settings"), ui::kGutter, kTitleBaseline, 56.0f, ui::color::text);
+    ui::text(list, type.semibold, tr("App settings"), ui::kGutter, kTitleBaseline, 60.0f, ui::color::text);
 
     // The sections, as pills: the current one pale, as the tabs are.
     for (int i = 0; i < kSectionCount; ++i)
