@@ -1250,5 +1250,6 @@
     "many": "Se omitieron {count} de entradas: no válidas, duplicadas o que no están en la dirección de tu NAS.",
     "one": "Se omitió {count} entrada: no válida, duplicada o que no está en la dirección de tu NAS.",
     "other": "Se omitieron {count} entradas: no válidas, duplicadas o que no están en la dirección de tu NAS."
-  }
+  },
+  "Game": "Juego"
 }

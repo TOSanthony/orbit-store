@@ -1260,5 +1260,6 @@
     "many": "Pominięto {count} wpisów: nieprawidłowych, zduplikowanych lub spoza adresu Twojego NAS.",
     "one": "Pominięto {count} wpis: nieprawidłowy, zduplikowany lub spoza adresu Twojego NAS.",
     "other": "Pominięto {count} wpisu: nieprawidłowych, zduplikowanych lub spoza adresu Twojego NAS."
-  }
+  },
+  "Game": "Gra"
 }

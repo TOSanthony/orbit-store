@@ -1240,5 +1240,6 @@
   "{count} entries were skipped: invalid, duplicated or not on your NAS address.": {
     "one": "{count} item is overgeslagen: ongeldig, dubbel of niet op het adres van je NAS.",
     "other": "{count} items zijn overgeslagen: ongeldig, dubbel of niet op het adres van je NAS."
-  }
+  },
+  "Game": "Spel"
 }

@@ -1240,5 +1240,6 @@
   "{count} entries were skipped: invalid, duplicated or not on your NAS address.": {
     "one": "{count} entry was skipped: invalid, duplicated or not on your NAS address.",
     "other": "{count} entries were skipped: invalid, duplicated or not on your NAS address."
-  }
+  },
+  "Game": "Game"
 }

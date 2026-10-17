@@ -1250,5 +1250,6 @@
     "many": "{count} d’entrées ignorées : invalides, en double ou absentes de l’adresse de votre NAS.",
     "one": "{count} entrée ignorée : invalide, en double ou absente de l’adresse de votre NAS.",
     "other": "{count} entrées ignorées : invalides, en double ou absentes de l’adresse de votre NAS."
-  }
+  },
+  "Game": "Jeu"
 }

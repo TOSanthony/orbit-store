@@ -999,8 +999,10 @@ std::string format_label(const Release &release)
         return release.format;
     const std::string kind = release.compression == "7z" ? "7z"
                              : release.compression == "zip" ? "ZIP" : "RAR";
-    return release.format == "Unknown" || release.format == "Game folder" ? kind
-                                                                       : kind + " \xC2\xB7 " + release.format;
+    if (release.format == "Unknown")
+        return kind;
+    // An archive of a game folder can only hold one game.
+    return kind + " \xC2\xB7 " + (release.format == "Game folder" ? std::string(tr("Game")) : release.format);
 }
 
 JobView job_view(const Job &job)

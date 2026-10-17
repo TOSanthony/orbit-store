@@ -1,4 +1,4 @@
-import { formatNumber } from "./i18n";
+import { formatNumber, t } from "./i18n";
 export interface Release {
   platform?: "ps4" | "ps5";
   id: string;
@@ -238,12 +238,13 @@ export interface AutoStart {
   homebrewLauncher?: { installed: boolean; listed: boolean; managed: boolean };
   etaHEN?: { installed: boolean };
 }
-// "7z · exFAT" for a compressed disk image, just "ZIP" for an archive of a game folder,
-// otherwise the format.
+// "7z · exFAT" for a compressed disk image, "ZIP · Game" for an archive of a game
+// folder (an archive can only hold one), otherwise the format.
 export function formatLabel(r: Pick<Release, "format" | "compression">) {
   if (!r.compression) return r.format;
   const kind = r.compression === "7z" ? "7z" : r.compression.toUpperCase();
-  return r.format === "Unknown" || r.format === "Game folder" ? kind : `${kind} · ${r.format}`;
+  if (r.format === "Unknown") return kind;
+  return `${kind} · ${r.format === "Game folder" ? t("Game") : r.format}`;
 }
 const tenths = { minimumFractionDigits: 1, maximumFractionDigits: 1 };
 // 49.4 GB in English, 49,4 GB in German, 49,4 ГБ in Russian, 49,4 Go in French.
