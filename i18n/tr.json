@@ -1235,5 +1235,6 @@
   "Menu sounds are off. The app is silent.": "Menü sesleri kapalı. Uygulama sessiz.",
   "Turn off sounds": "Sesleri kapat",
   "Turn on sounds": "Sesleri aç",
-  "Saved address kept. Select to change it.": "Kayıtlı adres korunuyor. Değiştirmek için seçin."
+  "Saved address kept. Select to change it.": "Kayıtlı adres korunuyor. Değiştirmek için seçin.",
+  "The saved Orbit {version} can’t be used. Start {path} from your payload manager.": "Kayıtlı Orbit {version} kullanılamıyor. {path} dosyasını payload yöneticinizden başlatın."
 }

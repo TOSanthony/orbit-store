@@ -1235,5 +1235,6 @@
   "Menu sounds are off. The app is silent.": "Menütöne sind aus. Die App ist stumm.",
   "Turn off sounds": "Töne ausschalten",
   "Turn on sounds": "Töne einschalten",
-  "Saved address kept. Select to change it.": "Gespeicherte Adresse bleibt erhalten. Auswählen zum Ändern."
+  "Saved address kept. Select to change it.": "Gespeicherte Adresse bleibt erhalten. Auswählen zum Ändern.",
+  "The saved Orbit {version} can’t be used. Start {path} from your payload manager.": "Das gespeicherte Orbit {version} ist nicht nutzbar. Starte {path} über deinen Payload-Manager."
 }

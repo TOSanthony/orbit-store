@@ -39,7 +39,7 @@ struct Payload
 };
 
 // The copy to start: a readable x86-64 ELF of at most 64 MiB.
-Payload choose(const Locations &where);
+Payload choose(const Locations &where, std::string *notes = nullptr);
 
 enum class Outcome : std::uint8_t
 {

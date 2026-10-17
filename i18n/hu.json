@@ -1235,5 +1235,6 @@
   "Menu sounds are off. The app is silent.": "A menühangok ki vannak kapcsolva. Az alkalmazás néma.",
   "Turn off sounds": "Hangok kikapcsolása",
   "Turn on sounds": "Hangok bekapcsolása",
-  "Saved address kept. Select to change it.": "A mentett cím megmarad. Válaszd ki a módosításhoz."
+  "Saved address kept. Select to change it.": "A mentett cím megmarad. Válaszd ki a módosításhoz.",
+  "The saved Orbit {version} can’t be used. Start {path} from your payload manager.": "A mentett Orbit {version} nem használható. Indítsd el a(z) {path} fájlt a payload-kezelőből."
 }

@@ -231,6 +231,29 @@ TEST(Starter, LoaderStarterSendsTheChosenCopyAndLogsIt)
     EXPECT_NE(lines[1].find("copy=bundled version=0.4.2 bytes=8192"), std::string::npos);
 }
 
+TEST(Starter, RefusesToSendAnOlderBundleWhenTheAnnouncedSavedCopyIsUnusable)
+{
+    TempDir dir;
+    const starter::Locations where = dir.locations();
+    write(where.bundled_elf, elf_bytes(8192, 'b'));
+    write(where.bundled_version, "0.4.2");
+    write(where.saved_version, "0.5.0"); // announced, but the file is missing
+    std::vector<std::string> lines;
+    starter::LoaderStarter starter(where, closed_port(), // nothing may be sent
+                                   [&](const std::string &line) { lines.push_back(line); });
+    const starter::Result result = starter.start();
+    EXPECT_EQ(result.outcome, Outcome::failed);
+    EXPECT_NE(result.detail.find("0.5.0"), std::string::npos);
+    ASSERT_EQ(lines.size(), 1u);
+    EXPECT_NE(lines[0].find("saved=rejected(missing)"), std::string::npos);
+    EXPECT_NE(lines[0].find("bundled=0.4.2/8192"), std::string::npos);
+
+    std::string notes;
+    write(where.saved_elf, elf_bytes(32, 's'));
+    starter::choose(where, &notes);
+    EXPECT_NE(notes.find("saved=rejected(too small)"), std::string::npos);
+}
+
 // ---- the store's rules for starting Orbit ----
 
 class CountingStarter final : public starter::Starter

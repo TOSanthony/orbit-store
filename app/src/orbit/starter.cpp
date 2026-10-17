@@ -91,11 +91,17 @@ std::string read_small(const std::string &path)
 }
 
 // A regular file that starts like Orbit: ELF64, little-endian, x86-64.
-bool readable_elf(const std::string &path, long long *bytes)
+bool readable_elf(const std::string &path, long long *bytes, const char **why = nullptr)
 {
+    const char *unused = "";
+    if (why == nullptr)
+        why = &unused;
     const int fd = open(path.c_str(), O_RDONLY);
     if (fd < 0)
+    {
+        *why = errno == ENOENT ? "missing" : "unreadable";
         return false;
+    }
     struct stat info
     {
     };
@@ -107,14 +113,31 @@ bool readable_elf(const std::string &path, long long *bytes)
     close(fd);
     if (ok)
         *bytes = static_cast<long long>(info.st_size);
+    else if (!S_ISREG(info.st_mode))
+        *why = "not a regular file";
+    else if (info.st_size < 64)
+        *why = "too small";
+    else if (info.st_size > kMaxPayload)
+        *why = "too large";
+    else
+        *why = "not an x86-64 ELF";
     return ok;
 }
 
-Payload candidate(const std::string &elf, const std::string &version, const char *source)
+Payload candidate(const std::string &elf, const std::string &version, const char *source,
+                  std::string *notes = nullptr)
 {
     Payload payload;
-    if (!readable_elf(elf, &payload.bytes))
+    const char *why = "";
+    if (!readable_elf(elf, &payload.bytes, &why))
+    {
+        if (notes != nullptr)
+            *notes += std::string(" ") + source + "=rejected(" + why + ")";
         return payload;
+    }
+    if (notes != nullptr)
+        *notes += std::string(" ") + source + "=" + read_small(version) + "/" +
+                  std::to_string(payload.bytes);
     payload.path = elf;
     payload.version = read_small(version);
     payload.source = source;
@@ -155,10 +178,10 @@ int compare_versions(std::string_view a, std::string_view b)
     return 0;
 }
 
-Payload choose(const Locations &where)
+Payload choose(const Locations &where, std::string *notes)
 {
-    Payload saved = candidate(where.saved_elf, where.saved_version, "saved");
-    Payload bundled = candidate(where.bundled_elf, where.bundled_version, "bundled");
+    Payload saved = candidate(where.saved_elf, where.saved_version, "saved", notes);
+    Payload bundled = candidate(where.bundled_elf, where.bundled_version, "bundled", notes);
     if (saved.path.empty())
         return bundled;
     if (bundled.path.empty())
@@ -268,7 +291,22 @@ LoaderStarter::LoaderStarter(Locations where, std::uint16_t port,
 Result LoaderStarter::start()
 {
     Result result;
-    const Payload payload = choose(where_);
+    std::string notes;
+    const Payload payload = choose(where_, &notes);
+    // Orbit's updater announces the release it saved in saved-version.txt. If the
+    // copy to send is older, the saved file was refused: say so instead of
+    // starting the old release and reporting a version mismatch afterwards.
+    const std::string announced = read_small(where_.saved_version);
+    if (!payload.path.empty() && !announced.empty() && payload.source[0] == 'b' &&
+        compare_versions(announced, payload.version) > 0)
+    {
+        result.outcome = Outcome::failed;
+        result.detail = tr("The saved Orbit {version} can\xE2\x80\x99t be used. Start {path} from your payload manager.",
+                           {{"version", announced}, {"path", where_.saved_elf}});
+        if (log_)
+            log_("start: refused, saved copy unusable;" + notes + " announced=" + announced);
+        return result;
+    }
     if (payload.path.empty())
     {
         result.outcome = Outcome::no_payload;
@@ -289,10 +327,10 @@ Result LoaderStarter::start()
     if (log_)
     {
         char line[320];
-        std::snprintf(line, sizeof(line), "start: %s copy=%s version=%s bytes=%lld: %s",
+        std::snprintf(line, sizeof(line), "start: %s copy=%s version=%s bytes=%lld [%s ]: %s",
                       outcome_name(result.outcome), payload.source,
                       payload.version.empty() ? "?" : payload.version.c_str(), payload.bytes,
-                      result.detail.c_str());
+                      notes.c_str(), result.detail.c_str());
         log_(line);
     }
     return result;
