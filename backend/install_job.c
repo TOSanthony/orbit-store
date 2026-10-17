@@ -156,7 +156,10 @@ static void run(const Request *q) {
             set(q->id, "failed", 0, "The installation stopped before it finished.", st.error_code);
             break;
         }
-        if (!strcmp(st.state, "playable") || !strcmp(st.state, "completed")) {
+        /* "playable" can come while the console is still copying, so the word alone is not the
+         * end: everything must also have been copied. */
+        bool whole = st.total == 0 || st.downloaded >= st.total;
+        if ((!strcmp(st.state, "playable") || !strcmp(st.state, "completed")) && whole) {
             set(q->id, "installed", 100, "", 0);
             break;
         }
