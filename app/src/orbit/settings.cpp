@@ -44,6 +44,136 @@ constexpr const char *kNotice =
     "applicable law and the provider\xE2\x80\x99s terms. Public links do not prove permission, "
     "and Orbit does not guarantee the files\xE2\x80\x99 safety or authenticity.";
 
+// A small line icon for each section, drawn from shapes, centred on (cx, cy).
+void ellipse_outline(hui::gfx::DrawList &list, float cx, float cy, float rx, float ry, float turn,
+                     float thickness, ui::Color ink)
+{
+    constexpr int kSteps = 40;
+    float last_x = 0.0f, last_y = 0.0f;
+    for (int i = 0; i <= kSteps; ++i)
+    {
+        const float t = static_cast<float>(i) * 6.2831853f / static_cast<float>(kSteps);
+        const float ex = std::cos(t) * rx;
+        const float ey = std::sin(t) * ry;
+        const float x = cx + ex * std::cos(turn) - ey * std::sin(turn);
+        const float y = cy + ex * std::sin(turn) + ey * std::cos(turn);
+        if (i > 0)
+            list.line(last_x, last_y, x, y, thickness, ink);
+        last_x = x;
+        last_y = y;
+    }
+}
+
+void section_icon(hui::gfx::DrawList &list, SettingsScreen::Section section, float cx, float cy,
+                  float size, ui::Color ink)
+{
+    using Section = SettingsScreen::Section;
+    const float t = std::max(2.0f, size * 0.085f);
+    const ui::Color none{0, 0, 0, 0};
+    switch (section)
+    {
+    case Section::appearance:
+    {
+        // A palette: a round tray with three dabs of colour.
+        ellipse_outline(list, cx, cy, size * 0.44f, size * 0.38f, 0.0f, t, ink);
+        list.circle(cx - size * 0.17f, cy - size * 0.08f, size * 0.065f, ink);
+        list.circle(cx + size * 0.02f, cy - size * 0.18f, size * 0.065f, ink);
+        list.circle(cx + size * 0.2f, cy - size * 0.05f, size * 0.065f, ink);
+        break;
+    }
+    case Section::language:
+    {
+        // A globe: the circle, a meridian and two parallels.
+        const float r = size * 0.42f;
+        list.ring(cx, cy, r, t, ink);
+        ellipse_outline(list, cx, cy, r * 0.45f, r, 0.0f, t * 0.85f, ink);
+        list.line(cx - r, cy, cx + r, cy, t * 0.85f, ink);
+        list.line(cx - r * 0.86f, cy - r * 0.5f, cx + r * 0.86f, cy - r * 0.5f, t * 0.85f, ink);
+        list.line(cx - r * 0.86f, cy + r * 0.5f, cx + r * 0.86f, cy + r * 0.5f, t * 0.85f, ink);
+        break;
+    }
+    case Section::sources:
+        ui::icon_layers(list, cx, cy - size * 0.04f, size, ink);
+        break;
+    case Section::storage:
+    {
+        // A drive: a flat box, a divider and a small light.
+        const ui::Rect body{cx - size * 0.44f, cy - size * 0.2f, size * 0.88f, size * 0.4f};
+        list.bordered_rect(body, size * 0.08f, none, t, ink);
+        list.line(body.x, cy + size * 0.02f, body.x + body.w, cy + size * 0.02f, t * 0.85f, ink);
+        list.circle(cx + size * 0.28f, cy + size * 0.12f, size * 0.04f, ink);
+        list.line(cx - size * 0.3f, cy + size * 0.12f, cx - size * 0.1f, cy + size * 0.12f, t, ink);
+        break;
+    }
+    case Section::pairing:
+    {
+        // A controller: the body, a cross on the left, two buttons on the right.
+        const ui::Rect body{cx - size * 0.46f, cy - size * 0.24f, size * 0.92f, size * 0.48f};
+        list.bordered_rect(body, size * 0.22f, none, t, ink);
+        list.line(cx - size * 0.28f, cy - size * 0.02f, cx - size * 0.1f, cy - size * 0.02f, t, ink);
+        list.line(cx - size * 0.19f, cy - size * 0.11f, cx - size * 0.19f, cy + size * 0.07f, t, ink);
+        list.circle(cx + size * 0.14f, cy - size * 0.02f, size * 0.045f, ink);
+        list.circle(cx + size * 0.28f, cy + size * 0.07f, size * 0.045f, ink);
+        break;
+    }
+    case Section::catalogue:
+    {
+        // A grid of four tiles.
+        const float tile = size * 0.34f;
+        const float gap = size * 0.12f;
+        for (int row = 0; row < 2; ++row)
+            for (int col = 0; col < 2; ++col)
+                list.bordered_rect({cx - tile - gap * 0.5f + static_cast<float>(col) * (tile + gap),
+                                    cy - tile - gap * 0.5f + static_cast<float>(row) * (tile + gap),
+                                    tile, tile},
+                                   size * 0.07f, none, t, ink);
+        break;
+    }
+    case Section::updates:
+    {
+        // Two arcs chasing each other, each with an arrow head: a refresh.
+        const float r = size * 0.36f;
+        const float head = size * 0.15f;
+        list.arc(cx, cy, r + t * 0.5f, t, 0.5f, 2.3f, ink, false);
+        list.arc(cx, cy, r + t * 0.5f, t, 3.64f, 2.3f, ink, false);
+        // Heads sit at the clockwise end of each arc.
+        const float a1 = 0.5f + 2.3f;
+        const float a2 = 3.64f + 2.3f;
+        for (const float a : {a1, a2})
+        {
+            const float px = cx + std::sin(a) * r;
+            const float py = cy - std::cos(a) * r;
+            const float tx = std::cos(a);
+            const float ty = std::sin(a);
+            list.line(px, py, px - tx * head - std::sin(a) * head * 0.9f,
+                      py - ty * head + std::cos(a) * head * 0.9f, t, ink);
+            list.line(px, py, px - tx * head + std::sin(a) * head * 0.9f,
+                      py - ty * head - std::cos(a) * head * 0.9f, t, ink);
+        }
+        break;
+    }
+    case Section::zero:
+    {
+        // A planet on its tilted orbit, as Orbit's own mark.
+        list.circle(cx, cy, size * 0.17f, ink);
+        ellipse_outline(list, cx, cy, size * 0.46f, size * 0.17f, -0.45f, t * 0.9f, ink);
+        break;
+    }
+    default:
+    {
+        // Three sliders.
+        for (int i = 0; i < 3; ++i)
+        {
+            const float y = cy + (static_cast<float>(i) - 1.0f) * size * 0.28f;
+            const float knob = cx + (i == 1 ? 0.16f : i == 0 ? -0.14f : 0.02f) * size;
+            list.line(cx - size * 0.42f, y, cx + size * 0.42f, y, t * 0.85f, ink);
+            list.circle(knob, y, size * 0.1f, ink);
+        }
+        break;
+    }
+    }
+}
+
 int seconds_until(double unix_time)
 {
     return std::max(0, static_cast<int>(std::ceil(unix_time - unix_seconds())));
@@ -1602,8 +1732,9 @@ void SettingsScreen::draw(Frame &frame, bool focused) const
         const bool current = i == static_cast<int>(section_);
         const float focus = nav_focus_[i];
         ui::state_fill(list, r, r.h * 0.5f, focus, current, true);
-        ui::text(list, type.medium, tr(kSections[i]), r.x + 30.0f, r.cy() + 7.5f, 21.0f,
-                 ui::state_ink(focus, current, true));
+        const ui::Color ink = ui::state_ink(focus, current, true);
+        section_icon(list, static_cast<Section>(i), r.x + 44.0f, r.cy(), 28.0f, ink);
+        ui::text(list, type.medium, tr(kSections[i]), r.x + 78.0f, r.cy() + 7.5f, 21.0f, ink);
         if (static_cast<Section>(i) == Section::updates && update_available())
             list.circle(r.x + r.w - 32.0f, r.cy(), 7.0f, ui::color::action_hi);
     }
