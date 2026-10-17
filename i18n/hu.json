@@ -1269,5 +1269,7 @@
   "Orbit could not start the installer. Make sure the ELF loader is running.": "Az Orbit nem tudta elindítani a telepítőt. Ellenőrizd, hogy az ELF-betöltő fut-e.",
   "The console would not install this package.": "A konzol nem telepítette ezt a csomagot.",
   "The installation stopped before it finished.": "A telepítés megszakadt, mielőtt befejeződött volna.",
-  "The installation did not make progress.": "A telepítés nem haladt előre."
+  "The installation did not make progress.": "A telepítés nem haladt előre.",
+  "Install the base game before its updates and add-ons.": "Telepítsd az alapjátékot a frissítései és kiegészítői előtt.",
+  "There is not enough free space on the console to install this package.": "Nincs elég szabad hely a konzolon a csomag telepítéséhez."
 }

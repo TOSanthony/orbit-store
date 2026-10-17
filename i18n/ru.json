@@ -1289,5 +1289,7 @@
   "Orbit could not start the installer. Make sure the ELF loader is running.": "Orbit не смог запустить установщик. Убедитесь, что ELF-загрузчик запущен.",
   "The console would not install this package.": "Консоль отказалась устанавливать этот пакет.",
   "The installation stopped before it finished.": "Установка остановилась, не завершившись.",
-  "The installation did not make progress.": "Установка не продвигается."
+  "The installation did not make progress.": "Установка не продвигается.",
+  "Install the base game before its updates and add-ons.": "Сначала установите базовую игру, затем её обновления и дополнения.",
+  "There is not enough free space on the console to install this package.": "На консоли недостаточно свободного места для установки этого пакета."
 }

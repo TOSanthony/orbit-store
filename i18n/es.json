@@ -1279,5 +1279,7 @@
   "Orbit could not start the installer. Make sure the ELF loader is running.": "Orbit no pudo iniciar el instalador. Comprueba que el cargador ELF esté en ejecución.",
   "The console would not install this package.": "La consola no quiso instalar este paquete.",
   "The installation stopped before it finished.": "La instalación se detuvo antes de terminar.",
-  "The installation did not make progress.": "La instalación no avanzó."
+  "The installation did not make progress.": "La instalación no avanzó.",
+  "Install the base game before its updates and add-ons.": "Instala el juego base antes de sus actualizaciones y contenidos adicionales.",
+  "There is not enough free space on the console to install this package.": "No hay espacio libre suficiente en la consola para instalar este paquete."
 }
