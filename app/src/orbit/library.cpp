@@ -908,6 +908,8 @@ Intent LibraryScreen::update(const InputFrame &input, float dt, Feedback &feedba
 
     // Animation and scrolling.
     keyboard_.set_azerty(ctx_.azerty);
+    keyboard_.style.space_label = tr("Space");
+    keyboard_.style.done_label = tr("Done");
     keyboard_.set_active(keyboard_open_);
     keyboard_.update(dt);
     keyboard_in_.target = keyboard_open_ ? 1.0f : 0.0f;

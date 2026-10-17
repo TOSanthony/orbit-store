@@ -1322,6 +1322,8 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
 
     // The My NAS address: the keyboard takes every button while it is open.
     nas_keyboard_.set_azerty(ctx_.azerty);
+    nas_keyboard_.style.space_label = tr("Space");
+    nas_keyboard_.style.done_label = tr("Done");
     nas_keyboard_.set_active(nas_edit_);
     nas_keyboard_.update(dt);
     nas_keyboard_in_.target = nas_edit_ ? 1.0f : 0.0f;
