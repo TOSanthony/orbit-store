@@ -223,7 +223,8 @@ std::vector<Scenario> scenarios()
          move(Direction::down), move(Direction::down), tap(Action::confirm),
          pause(0.8f, "game-drive-menu"), tap(Action::back), move(Direction::up), tap(Action::confirm),
          pause(0.8f, "game-delivery"), tap(Action::back), tap(Action::back),
-         move(Direction::right), move(Direction::right), tap(Action::confirm), pause(0.8f, "game-about")}});
+         move(Direction::right), move(Direction::right), tap(Action::confirm), pause(0.8f, "game-about"),
+         tap(Action::back), pause(0.8f, "game-about-closed")}});
     list.push_back({"game-browser", Mode::normal, false,
         {run(1.5f, [](orbit::App &app) { app.open_game("ironclad-skies"); }),
          pause(1.0f, "game-browser-hub"), tap(Action::confirm), pause(1.0f, "game-browser"),

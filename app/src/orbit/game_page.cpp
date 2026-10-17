@@ -433,9 +433,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         out.end = y;
         return out;
     }
-    // Header/footer controls are fixed; all body content can scroll independently.
-    control(Slot::back,0,{116,350,120,50},tr("Back"),true,true);
-    control(Slot::close,0,{1730,350,66,50},tr("Close"),true,true);
+    // Circle goes back, so the sheets carry no Back or Close buttons; all body content scrolls.
     float y = 0;
     if (sheet == Sheet::downloads)
     {
@@ -895,15 +893,15 @@ Intent GamePage::update(const InputFrame &input,float dt,Feedback &feedback,bool
             return activate({slot, 0, {}, true, false}, *game, release, offer(release), feedback);
         }
     }
-    auto where=compose(nullptr,sheet_,false);
-    if(where.controls.empty())return intent;
-    focus_=std::clamp(focus_,0,static_cast<int>(where.controls.size())-1);
     if(focused && input.is_pressed(Action::back))
     {
         if(sheet_==Sheet::none)intent.kind=Intent::Kind::close;
         else back_sheet();
         feedback.play(hui::audio::Cue::back);return intent;
     }
+    auto where=compose(nullptr,sheet_,false);
+    if(where.controls.empty())return intent;
+    focus_=std::clamp(focus_,0,static_cast<int>(where.controls.size())-1);
     auto &scroll=sheet_==Sheet::none?page_scroll_:sheet_scroll_;
     const float extra=(sheet_==Sheet::about||sheet_==Sheet::downloads)?kTallExtra:0.0f;
     const float visible=sheet_==Sheet::none?980:kBodyBottom+extra-kBodyTop;
@@ -1003,7 +1001,7 @@ void GamePage::draw(Frame &frame,bool focused) const
     const auto now=offer(release);
     const char *title=sheet_==Sheet::downloads?tr("Download options"):sheet_==Sheet::source?tr("Source"):
         sheet_==Sheet::delivery?tr("Download using"):sheet_==Sheet::storage?tr("Save to"):tr("About this game");
-    ui::text_fit(list,type.medium,title,270,386,34,1380,ui::color::text);
+    ui::text_fit(list,type.medium,title,116,386,34,1380,ui::color::text);
     list.push_clip({100,kBodyTop-8,1720,kBodyBottom+extra-kBodyTop+8});
     list.push_transform(1,0,0,0,kBodyTop-sheet_scroll_.value+centre_shift(sheet_));
     const auto where=compose(&list,sheet_,focused);
@@ -1017,14 +1015,6 @@ void GamePage::draw(Frame &frame,bool focused) const
             const std::string label=primary_label(release,download_again_,waiting_,now.collection,state,torbox_);
             const float size=ui::fit_size(type.medium,label,25,18,c.rect.w-45);
             ui::button(list,type,c.rect,label,sheet_==Sheet::downloads?ui::ButtonKind::secondary:ui::ButtonKind::light,focus,c.enabled,size);
-        }
-        else if(c.slot==Slot::back)ui::button(list,type,c.rect,tr("Back"),ui::ButtonKind::secondary,focus,true,22);
-        else
-        {
-            ui::state_fill(list,c.rect,c.rect.h/2,focus);
-            const float x=c.rect.cx(),y=c.rect.cy();
-            const ui::Color ink=ui::state_ink(focus);
-            list.line(x-9,y-9,x+9,y+9,2,ink);list.line(x-9,y+9,x+9,y-9,2,ink);
         }
     }
     list.pop_transform();
