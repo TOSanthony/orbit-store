@@ -213,6 +213,8 @@ int favorite_set_locked(const cJSON *input, char *error, size_t cap);
 int read_regular_file(const char *path, size_t max, unsigned char **data, size_t *length);
 int autoboot_install(const unsigned char *image, size_t length, const char *version);
 void autoboot_saved_version(char *version, size_t cap);
+/* The saved runtime as a malloc'd ELF image (caller frees); -1 when missing or not an ELF. */
+int autoboot_saved_image(unsigned char **data, size_t *length);
 /* -1, 0 or 1 for Orbit release versions; -2 when either is not one. */
 int orbit_version_compare(const char *a, const char *b);
 int updates_start(void);

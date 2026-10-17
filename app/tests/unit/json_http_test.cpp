@@ -113,6 +113,16 @@ TEST(Http, ParsesLengthChunkedAndRetryAfterReplies)
     EXPECT_EQ(response.body, "until close");
 }
 
+TEST(Http, ReadsTheVersionHeaderOfTheSavedCopy)
+{
+    http::Response response;
+    ASSERT_TRUE(http::parse_response(
+        "HTTP/1.1 200 OK\r\nX-Orbit-Version: 1.2.3\r\nContent-Length: 1\r\n\r\nx", &response));
+    EXPECT_EQ(response.orbit_version, "1.2.3");
+    ASSERT_TRUE(http::parse_response("HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nx", &response));
+    EXPECT_TRUE(response.orbit_version.empty());
+}
+
 TEST(Http, RejectsTruncatedOrForeignReplies)
 {
     http::Response response;

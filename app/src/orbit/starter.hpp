@@ -12,6 +12,8 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 
@@ -51,6 +53,8 @@ enum class Outcome : std::uint8_t
 
 // Streams the file to the loader on 127.0.0.1:port.
 Outcome send(const std::string &path, std::uint16_t port, int timeout_ms, std::string *error);
+// The same, for an image already in memory.
+Outcome send_image(const std::string &image, std::uint16_t port, int timeout_ms, std::string *error);
 
 struct Result
 {
@@ -66,6 +70,15 @@ class Starter
     virtual ~Starter() = default;
     // Blocks while the payload is sent; runs on the store's worker.
     virtual Result start() = 0;
+    // What the running service says about its saved copy, before it is stopped: its version and,
+    // when it could hand it over, the copy itself. The app cannot open that file, so this is
+    // how a restart starts the saved release rather than the one bundled in the app. Empty
+    // arguments forget the announcement.
+    virtual void announce(std::string version, std::string image)
+    {
+        (void)version;
+        (void)image;
+    }
 };
 
 class LoaderStarter final : public Starter
@@ -76,9 +89,13 @@ class LoaderStarter final : public Starter
     LoaderStarter(Locations where, std::uint16_t port,
                   std::function<void(const std::string &)> log = {});
     Result start() override;
+    void announce(std::string version, std::string image) override;
 
   private:
     Locations where_;
+    std::mutex mutex_;
+    std::string announced_version_; // guarded by mutex_
+    std::shared_ptr<const std::string> announced_image_; // guarded by mutex_
     std::uint16_t port_;
     std::function<void(const std::string &)> log_;
 };

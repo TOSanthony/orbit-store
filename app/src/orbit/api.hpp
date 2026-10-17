@@ -136,6 +136,8 @@ class Client
     };
     Result<ServiceUpdate> service_update();
     Result<ServiceUpdate> service_action(const UpdateRequest &request);
+    // The copy of Orbit the service saved, for starting it again. An older service answers 404.
+    Result<SavedPayload> saved_payload();
     Result<TvAppStatus> tv_app();
     Result<TvAppStatus> tv_app_action(const UpdateRequest &request);
 

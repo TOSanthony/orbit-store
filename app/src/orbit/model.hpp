@@ -297,6 +297,13 @@ struct CatalogueStatus
 };
 
 // The download service's own updates (GET /api/v1/updates): Orbit, the payload.
+// The service's saved runtime, which it hands to the app when the app cannot open the file.
+struct SavedPayload
+{
+    std::string image;   // an ELF64 x86-64 file
+    std::string version; // what the service says it is
+};
+
 struct ServiceUpdate
 {
     bool available = false; // updating works (Orbit on a console)

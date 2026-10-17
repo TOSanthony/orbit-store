@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "fixture.hpp"
+#include "orbit/api.hpp"
 #include "orbit/screens.hpp"
 #include "orbit/starter.hpp"
 #include "orbit/store.hpp"
@@ -254,6 +255,56 @@ TEST(Starter, RefusesToSendAnOlderBundleWhenTheAnnouncedSavedCopyIsUnusable)
     EXPECT_NE(notes.find("saved=rejected(too small)"), std::string::npos);
 }
 
+TEST(Starter, SendsTheCopyTheServiceHandedOverInsteadOfAnOlderBundle)
+{
+    TempDir dir;
+    const starter::Locations where = dir.locations();
+    write(where.bundled_elf, elf_bytes(8192, 'b'));
+    write(where.bundled_version, "0.4.2");
+    const std::string handed = elf_bytes(9000, 's');
+    std::vector<std::string> lines;
+    Loader loader;
+    starter::LoaderStarter starter(where, loader.port,
+                                   [&](const std::string &line) { lines.push_back(line); });
+    starter.announce("0.5.0", handed);
+    const starter::Result result = starter.start();
+    EXPECT_EQ(result.outcome, Outcome::sent);
+    EXPECT_EQ(result.version, "0.5.0");
+    EXPECT_EQ(loader.take(), handed);
+    ASSERT_FALSE(lines.empty());
+    EXPECT_NE(lines.back().find("copy=service"), std::string::npos);
+}
+
+TEST(Starter, ANewerBundleWinsOverTheServiceCopy)
+{
+    TempDir dir;
+    const starter::Locations where = dir.locations();
+    const std::string bundled = elf_bytes(8192, 'b');
+    write(where.bundled_elf, bundled);
+    write(where.bundled_version, "0.6.0");
+    Loader loader;
+    starter::LoaderStarter starter(where, loader.port, nullptr);
+    starter.announce("0.5.0", elf_bytes(9000, 's'));
+    const starter::Result result = starter.start();
+    EXPECT_EQ(result.outcome, Outcome::sent);
+    EXPECT_EQ(loader.take(), bundled);
+}
+
+TEST(Starter, ANewerAnnouncedVersionWithoutACopyRefusesTheOlderBundle)
+{
+    TempDir dir;
+    const starter::Locations where = dir.locations();
+    write(where.bundled_elf, elf_bytes(8192, 'b'));
+    write(where.bundled_version, "0.4.2");
+    starter::LoaderStarter starter(where, closed_port(), nullptr);
+    starter.announce("0.5.0", {});
+    const starter::Result result = starter.start();
+    EXPECT_EQ(result.outcome, Outcome::failed);
+    EXPECT_NE(result.detail.find("0.5.0"), std::string::npos);
+    starter.announce({}, {}); // forgotten
+    EXPECT_NE(starter.start().outcome, Outcome::failed);
+}
+
 // ---- the store's rules for starting Orbit ----
 
 class CountingStarter final : public starter::Starter
@@ -462,6 +513,112 @@ TEST(StoreRestart, StopsOrbitThenStartsTheSavedCopyAndReportsItsVersion)
     EXPECT_EQ(store.state().restart, Restart::idle);
     store.poll_once();
     EXPECT_EQ(starter.calls, 1);
+}
+
+struct AnnounceSpy final : public starter::Starter
+{
+    std::vector<std::pair<std::string, std::size_t>> announced;
+    starter::Result start() override
+    {
+        starter::Result result;
+        result.outcome = Outcome::sent;
+        return result;
+    }
+    void announce(std::string version, std::string image) override
+    {
+        announced.emplace_back(std::move(version), image.size());
+    }
+};
+
+TEST(StoreRestart, FetchesTheServiceCopyBeforeStoppingItAndHandsItToTheStarter)
+{
+    Console console;
+    console.online = true;
+    console.saved = "0.6.0";
+    const auto base = console.transport.reply;
+    const std::string image = elf_bytes(4096, 'z');
+    bool stopped = false;
+    console.transport.reply = [&](const http::Request &request)
+    {
+        if (request.path == "/api/v1/system/payload")
+        {
+            if (stopped)
+                return test::json_reply(503, R"({"error":"stopping"})");
+            http::Response response;
+            response.status = 200;
+            response.body = image;
+            response.orbit_version = "0.7.0";
+            return response;
+        }
+        if (request.method == "POST" && request.path == "/api/v1/updates" &&
+            request.body.find("\"stop\"") != std::string::npos)
+            stopped = true;
+        return base(request);
+    };
+    AnnounceSpy spy;
+    Store store(console.transport, &spy);
+    store.set_restart_grace(0.0);
+    store.poll_once();
+    store.restart_service();
+    store.run_next_action();
+    ASSERT_EQ(spy.announced.size(), 1u);
+    EXPECT_EQ(spy.announced[0].first, "0.7.0");
+    EXPECT_EQ(spy.announced[0].second, image.size());
+    EXPECT_EQ(console.transport.count("/api/v1/system/payload"), 1);
+}
+
+TEST(StoreRestart, AnOldServiceWithoutTheEndpointStillRestartsWithTheBundledCopy)
+{
+    Console console;
+    console.online = true;
+    console.saved = "0.6.0";
+    const auto base = console.transport.reply;
+    console.transport.reply = [&](const http::Request &request)
+    {
+        if (request.path == "/api/v1/system/payload")
+            return test::json_reply(404, R"({"error":"Not found."})");
+        return base(request);
+    };
+    AnnounceSpy spy;
+    Store store(console.transport, &spy);
+    store.set_restart_grace(0.0);
+    store.poll_once();
+    store.restart_service();
+    store.run_next_action();
+    ASSERT_EQ(spy.announced.size(), 1u);
+    EXPECT_EQ(spy.announced[0].first, "0.6.0"); // the version Stop reported
+    EXPECT_EQ(spy.announced[0].second, 0u);     // no image: the bundle is used
+}
+
+TEST(Api, SavedPayloadAcceptsOnlyAnX86ElfAndKeepsItsVersion)
+{
+    test::ScriptedTransport transport;
+    api::Client client(transport);
+    transport.reply = [](const http::Request &)
+    {
+        http::Response response;
+        response.status = 200;
+        response.body = elf_bytes(128, 'e');
+        response.orbit_version = "1.0.0";
+        return response;
+    };
+    auto good = client.saved_payload();
+    ASSERT_TRUE(good.ok());
+    EXPECT_EQ(good.value.version, "1.0.0");
+    EXPECT_EQ(good.value.image.size(), 128u);
+    transport.reply = [](const http::Request &)
+    {
+        http::Response response;
+        response.status = 200;
+        response.body = "<html>not an ELF at all, just a captive portal page padding padding padding padding</html>";
+        return response;
+    };
+    EXPECT_FALSE(client.saved_payload().ok());
+    transport.reply = [](const http::Request &)
+    {
+        return test::json_reply(404, R"({"error":"Orbit has no saved copy to send."})");
+    };
+    EXPECT_FALSE(client.saved_payload().ok());
 }
 
 TEST(StoreRestart, WithoutALoaderItAsksForAPayloadManagerAndWaits)

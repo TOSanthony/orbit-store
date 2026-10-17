@@ -455,6 +455,9 @@ void Store::language_changed()
 
 void Store::post_restart(Restart restart, std::string detail)
 {
+    // A restart that came back no longer needs the copy held for it.
+    if (restart == Restart::done && starter_ != nullptr)
+        starter_->announce({}, {});
     inbox_.post(
         [this, restart, detail = std::move(detail)]() mutable
         {
@@ -1018,6 +1021,18 @@ void Store::run_setting(Command &command)
     case Setting::service_install:
     case Setting::service_restart:
     {
+        // Before Orbit stops (it refuses everything after), take its saved copy: the app cannot
+        // open that file, and would otherwise start the older release bundled with it.
+        std::string saved_image, saved_image_version;
+        if (command.setting == Setting::service_restart && starter_ != nullptr)
+        {
+            api::Result<SavedPayload> saved = client_.saved_payload();
+            if (saved.ok())
+            {
+                saved_image = std::move(saved.value.image);
+                saved_image_version = std::move(saved.value.version);
+            }
+        }
         api::Client::UpdateRequest request;
         request.action = command.setting == Setting::service_check     ? "check"
                          : command.setting == Setting::service_install ? "install"
@@ -1029,6 +1044,10 @@ void Store::run_setting(Command &command)
         error = result.error;
         if (result.ok() && command.setting == Setting::service_restart)
         {
+            if (starter_ != nullptr)
+                starter_->announce(
+                    !saved_image_version.empty() ? saved_image_version : result.value.saved_version,
+                    std::move(saved_image));
             restart_expected_version_ = result.value.saved_version.empty()
                 ? (result.value.running_version.empty() ? observed_version_ : result.value.running_version)
                 : result.value.saved_version;

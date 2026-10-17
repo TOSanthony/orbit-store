@@ -53,6 +53,24 @@ static enum MHD_Result respond(struct MHD_Connection *c, unsigned code, const ch
     MHD_destroy_response(r);
     return rc;
 }
+/* A large body the response takes over and frees itself, without copying it first. */
+static enum MHD_Result respond_owned(struct MHD_Connection *c, unsigned code, unsigned char *body,
+                                     size_t n, const char *mime, const char *version) {
+    struct MHD_Response *r = MHD_create_response_from_buffer(n, body, MHD_RESPMEM_MUST_FREE);
+    if (!r) {
+        free(body);
+        return MHD_NO;
+    }
+    MHD_add_response_header(r, "Content-Type", mime);
+    if (version && *version)
+        MHD_add_response_header(r, "X-Orbit-Version", version);
+    MHD_add_response_header(r, "X-Content-Type-Options", "nosniff");
+    MHD_add_response_header(r, "Referrer-Policy", "no-referrer");
+    MHD_add_response_header(r, "Cache-Control", "no-store");
+    enum MHD_Result rc = MHD_queue_response(c, code, r);
+    MHD_destroy_response(r);
+    return rc;
+}
 static enum MHD_Result json_response(struct MHD_Connection *c, unsigned code, cJSON *o) {
     char *s = cJSON_PrintUnformatted(o);
     cJSON_Delete(o);
@@ -267,6 +285,19 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
             code = receive_command(action,input,owner,message,sizeof message); cJSON_Delete(input);
         }
         return code >= 400 ? error(c,code,message) : json_response(c,code,receive_status(owner));
+    }
+    if (get && !strcmp(url, "/api/v1/system/payload")) {
+        /* The saved copy, for the TV app to hand to the ELF loader when it restarts Orbit: the
+         * app cannot open /data/orbit-store itself. Served to this console only. */
+        if (!authorized(c)) return error(c, 401, "Pair this device first.");
+        if (!local_peer(c)) return error(c, 403, "The saved copy is only sent to this console.");
+        unsigned char *image = NULL;
+        size_t length = 0;
+        if (!orbit.autoboot || autoboot_saved_image(&image, &length))
+            return error(c, 404, "Orbit has no saved copy to send.");
+        char saved[64] = {0};
+        autoboot_saved_version(saved, sizeof saved);
+        return respond_owned(c, 200, image, length, "application/octet-stream", saved);
     }
     if (get && !strcmp(url, "/api/v1/system")) {
         cJSON *o = cJSON_CreateObject();

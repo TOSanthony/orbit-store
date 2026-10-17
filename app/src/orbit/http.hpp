@@ -30,6 +30,7 @@ struct Response
     std::string body;
     std::string content_type;
     int retry_after = -1; // seconds from Retry-After, -1 when absent
+    std::string orbit_version; // X-Orbit-Version, when the reply carries one
     std::string error;    // transport failure ("connection refused", ...)
 
     bool transported() const

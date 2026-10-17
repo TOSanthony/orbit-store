@@ -629,6 +629,28 @@ Result<ServiceUpdate> Client::service_action(const UpdateRequest &request)
     return result;
 }
 
+Result<SavedPayload> Client::saved_payload()
+{
+    Result<SavedPayload> result;
+    constexpr std::size_t kMaxImage = 64u << 20;
+    http::Response response = send("GET", "/api/v1/system/payload", {}, kMaxImage);
+    if (fail(response, &result))
+        return result;
+    const std::string &body = response.body;
+    // Only an ELF64 little-endian x86-64 file is worth handing to the loader.
+    const bool elf = body.size() >= 64 && body.size() <= kMaxImage &&
+                     body.compare(0, 6, "\177ELF\2\1") == 0 &&
+                     static_cast<unsigned char>(body[18]) == 62 && body[19] == 0;
+    if (!elf)
+    {
+        result.error = tr("Orbit sent a copy of itself that can\xE2\x80\x99t be started.");
+        return result;
+    }
+    result.value.image = std::move(response.body);
+    result.value.version = std::move(response.orbit_version);
+    return result;
+}
+
 Result<TvAppStatus> Client::tv_app()
 {
     Result<TvAppStatus> result;

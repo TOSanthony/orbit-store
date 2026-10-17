@@ -257,6 +257,7 @@ bool parse_response(std::string_view raw, Response *response)
     response->body.clear();
     response->content_type.clear();
     response->retry_after = -1;
+    response->orbit_version.clear();
     const std::size_t head_end = raw.find("\r\n\r\n");
     if (head_end == std::string_view::npos || raw.substr(0, 7) != "HTTP/1.")
     {
@@ -298,6 +299,8 @@ bool parse_response(std::string_view raw, Response *response)
             chunked = iequals(value, "chunked");
         else if (iequals(name, "content-type"))
             response->content_type = std::string(value);
+        else if (iequals(name, "x-orbit-version"))
+            response->orbit_version = std::string(value.substr(0, 64));
         else if (iequals(name, "retry-after"))
         {
             std::size_t seconds = 0;

@@ -209,18 +209,18 @@ Payload choose(const Locations &where, std::string *notes)
     return compare_versions(bundled.version, saved.version) > 0 ? bundled : saved;
 }
 
-Outcome send(const std::string &path, std::uint16_t port, int timeout_ms, std::string *error)
+namespace
 {
-    const int file = open(path.c_str(), O_RDONLY);
-    if (file < 0)
-    {
-        *error = tr("Could not read {path}.", {{"path", path}});
-        return Outcome::no_payload;
-    }
+
+// Reads up to `size` bytes into `buffer`; returns what it read, 0 at the end, -1 on failure.
+using Reader = std::function<ssize_t(char *buffer, std::size_t size)>;
+
+Outcome stream_to_loader(const Reader &read_some, const std::string &what, std::uint16_t port,
+                         int timeout_ms, std::string *error)
+{
     const int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0)
     {
-        close(file);
         *error = tr("Could not open a connection on this console.");
         return Outcome::failed;
     }
@@ -241,7 +241,6 @@ Outcome send(const std::string &path, std::uint16_t port, int timeout_ms, std::s
     {
         const bool refused = errno == ECONNREFUSED;
         close(fd);
-        close(file);
         *error = refused ? tr("No ELF loader is listening on port {port}.",
                               {{"port", std::to_string(port)}})
                          : tr("Could not reach the ELF loader on port {port}.",
@@ -253,12 +252,10 @@ Outcome send(const std::string &path, std::uint16_t port, int timeout_ms, std::s
     Outcome outcome = Outcome::sent;
     for (;;)
     {
-        const ssize_t got = read(file, buffer.data(), buffer.size());
-        if (got < 0 && errno == EINTR)
-            continue;
+        const ssize_t got = read_some(buffer.data(), buffer.size());
         if (got < 0)
         {
-            *error = tr("Could not read {path}.", {{"path", path}});
+            *error = tr("Could not read {path}.", {{"path", what}});
             outcome = Outcome::failed;
             break;
         }
@@ -285,7 +282,6 @@ Outcome send(const std::string &path, std::uint16_t port, int timeout_ms, std::s
         if (outcome != Outcome::sent)
             break;
     }
-    close(file);
     if (outcome == Outcome::sent)
     {
         // The loader starts the payload once it reads the end of the file.
@@ -300,22 +296,85 @@ Outcome send(const std::string &path, std::uint16_t port, int timeout_ms, std::s
     return outcome;
 }
 
+} // namespace
+
+Outcome send(const std::string &path, std::uint16_t port, int timeout_ms, std::string *error)
+{
+    const int file = open(path.c_str(), O_RDONLY);
+    if (file < 0)
+    {
+        *error = tr("Could not read {path}.", {{"path", path}});
+        return Outcome::no_payload;
+    }
+    const Reader reader = [file](char *buffer, std::size_t size)
+    {
+        for (;;)
+        {
+            const ssize_t got = read(file, buffer, size);
+            if (got < 0 && errno == EINTR)
+                continue;
+            return got;
+        }
+    };
+    const Outcome outcome = stream_to_loader(reader, path, port, timeout_ms, error);
+    close(file);
+    return outcome;
+}
+
+Outcome send_image(const std::string &image, std::uint16_t port, int timeout_ms, std::string *error)
+{
+    std::size_t at = 0;
+    const Reader reader = [&image, &at](char *buffer, std::size_t size) -> ssize_t
+    {
+        const std::size_t count = std::min(size, image.size() - at);
+        std::memcpy(buffer, image.data() + at, count);
+        at += count;
+        return static_cast<ssize_t>(count);
+    };
+    return stream_to_loader(reader, "Orbit", port, timeout_ms, error);
+}
+
 LoaderStarter::LoaderStarter(Locations where, std::uint16_t port,
                              std::function<void(const std::string &)> log)
     : where_(std::move(where)), port_(port), log_(std::move(log))
 {
 }
 
+void LoaderStarter::announce(std::string version, std::string image)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    announced_version_ = std::move(version);
+    announced_image_ = image.empty() ? nullptr : std::make_shared<const std::string>(std::move(image));
+}
+
 Result LoaderStarter::start()
 {
     Result result;
     std::string notes;
-    const Payload payload = choose(where_, &notes);
-    // Orbit's updater announces the release it saved in saved-version.txt. If the
-    // copy to send is older, the saved file was refused: say so instead of
-    // starting the old release and reporting a version mismatch afterwards.
-    const std::string announced = read_small(where_.saved_version);
-    if (!payload.path.empty() && !announced.empty() && payload.source[0] == 'b' &&
+    Payload payload = choose(where_, &notes);
+    std::string announced;
+    std::shared_ptr<const std::string> image;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        announced = announced_version_;
+        image = announced_image_;
+    }
+    // The saved file is out of the app's reach, so the service hands over its own copy. It wins
+    // over the one bundled here unless the bundle is a newer release, like a saved file would.
+    const bool from_service = image != nullptr &&
+                              (payload.path.empty() || payload.source[0] != 's') &&
+                              (payload.path.empty() || announced.empty() ||
+                               compare_versions(announced, payload.version) >= 0);
+    if (image != nullptr)
+        notes += std::string(" service=") + (announced.empty() ? "?" : announced) + "/" +
+                 std::to_string(image->size()) + (from_service ? " used" : " not used");
+    // Orbit's updater announces the release it saved (the service says it before it stops, or
+    // saved-version.txt does where the file can be read). If the copy to send is older, the
+    // saved file was refused: say so instead of starting the old release and reporting a
+    // version mismatch afterwards.
+    if (announced.empty())
+        announced = read_small(where_.saved_version);
+    if (!from_service && !payload.path.empty() && !announced.empty() && payload.source[0] == 'b' &&
         compare_versions(announced, payload.version) > 0)
     {
         result.outcome = Outcome::failed;
@@ -325,30 +384,38 @@ Result LoaderStarter::start()
             log_("start: refused, saved copy unusable;" + notes + " announced=" + announced);
         return result;
     }
-    if (payload.path.empty())
+    const char *source = payload.source;
+    std::string version = payload.version;
+    long long bytes = payload.bytes;
+    if (from_service)
+    {
+        source = "service";
+        version = announced;
+        bytes = static_cast<long long>(image->size());
+    }
+    if (!from_service && payload.path.empty())
     {
         result.outcome = Outcome::no_payload;
         result.detail = tr("No copy of Orbit was found to start.");
     }
     else
     {
-        result.version = payload.version;
+        result.version = version;
         std::string error;
-        result.outcome = send(payload.path, port_, 10000, &error);
+        result.outcome = from_service ? send_image(*image, port_, 10000, &error)
+                                      : send(payload.path, port_, 10000, &error);
         result.detail = result.outcome == Outcome::sent
                             ? tr("Sent Orbit {version} to the ELF loader.",
-                                 {{"version", payload.version.empty()
-                                                  ? std::string(tr("(version unknown)"))
-                                                  : payload.version}})
+                                 {{"version", version.empty() ? std::string(tr("(version unknown)"))
+                                                              : version}})
                             : error;
     }
     if (log_)
     {
         char line[640];
         std::snprintf(line, sizeof(line), "start: %s copy=%s version=%s bytes=%lld [%s ]: %s",
-                      outcome_name(result.outcome), payload.source,
-                      payload.version.empty() ? "?" : payload.version.c_str(), payload.bytes,
-                      notes.c_str(), result.detail.c_str());
+                      outcome_name(result.outcome), source, version.empty() ? "?" : version.c_str(),
+                      bytes, notes.c_str(), result.detail.c_str());
         log_(line);
     }
     return result;
