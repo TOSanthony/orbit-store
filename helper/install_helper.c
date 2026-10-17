@@ -167,6 +167,19 @@ int main(void) {
             char id[48];
             copy(id, sizeof id, request.content_id[0] ? request.content_id : info.content_id);
             out.result = sceAppInstUtilGetInstallStatus(id, &status);
+            /* Every word and number the system reports, whenever any of them changes, so a
+             * log shows what each stage of an install is called. */
+            static char last[256];
+            char now[256];
+            snprintf(now, sizeof now, "result=0x%08x status=%s src=%s downloaded=%llu total=%llu promote=%u remain=%u copy=%d copy_only=%d error=%d",
+                     (unsigned)out.result, status.status, status.src_type,
+                     (unsigned long long)status.downloaded_size, (unsigned long long)status.total_size,
+                     status.promote_progress, status.remain_time, status.local_copy_percent,
+                     (int)status.is_copy_only, status.error_info.error_code);
+            if (strcmp(now, last)) {
+                say("status %s\n", now);
+                copy(last, sizeof last, now);
+            }
             copy(out.state, sizeof out.state, status.status);
             out.downloaded = status.downloaded_size;
             out.total = status.total_size;
