@@ -1277,6 +1277,7 @@ finish:
         copy_text(j->status, sizeof j->status, "complete");
         copy_text(j->verification, sizeof j->verification, r->sha256[0] ? "sha256" : "size");
         copy_text(j->error, sizeof j->error, note);
+        install_job_completed_locked(j);
     } else if (j->cancel) {
         copy_text(j->status, sizeof j->status, "cancelled");
         j->error[0] = 0;

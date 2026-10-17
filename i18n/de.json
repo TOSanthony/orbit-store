@@ -1263,5 +1263,11 @@
   "A downloaded .pkg is installed on your PS5 once Orbit has checked it.": "Ein heruntergeladenes .pkg wird auf deiner PS5 installiert, sobald Orbit es geprüft hat.",
   "A downloaded .pkg stays in the homebrew folder. Orbit does not install it.": "Ein heruntergeladenes .pkg bleibt im Homebrew-Ordner. Orbit installiert es nicht.",
   "Install packages after download": "Pakete nach dem Download installieren",
-  "Stop installing packages after download": "Pakete nach dem Download nicht mehr installieren"
+  "Stop installing packages after download": "Pakete nach dem Download nicht mehr installieren",
+  "Installing": "Wird installiert",
+  "Waiting to install": "Wartet auf Installation",
+  "Orbit could not start the installer. Make sure the ELF loader is running.": "Orbit konnte das Installationsprogramm nicht starten. Stelle sicher, dass der ELF-Loader läuft.",
+  "The console would not install this package.": "Die Konsole wollte dieses Paket nicht installieren.",
+  "The installation stopped before it finished.": "Die Installation wurde vor dem Abschluss abgebrochen.",
+  "The installation did not make progress.": "Die Installation kommt nicht voran."
 }

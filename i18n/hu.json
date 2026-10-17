@@ -1263,5 +1263,11 @@
   "A downloaded .pkg is installed on your PS5 once Orbit has checked it.": "A letöltött .pkg fájlt az Orbit ellenőrzése után telepíti a PS5-ödre.",
   "A downloaded .pkg stays in the homebrew folder. Orbit does not install it.": "A letöltött .pkg a homebrew mappában marad. Az Orbit nem telepíti.",
   "Install packages after download": "Csomagok telepítése letöltés után",
-  "Stop installing packages after download": "Ne telepítsen csomagokat letöltés után"
+  "Stop installing packages after download": "Ne telepítsen csomagokat letöltés után",
+  "Installing": "Telepítés",
+  "Waiting to install": "Telepítésre vár",
+  "Orbit could not start the installer. Make sure the ELF loader is running.": "Az Orbit nem tudta elindítani a telepítőt. Ellenőrizd, hogy az ELF-betöltő fut-e.",
+  "The console would not install this package.": "A konzol nem telepítette ezt a csomagot.",
+  "The installation stopped before it finished.": "A telepítés megszakadt, mielőtt befejeződött volna.",
+  "The installation did not make progress.": "A telepítés nem haladt előre."
 }

@@ -508,6 +508,23 @@ TEST(Model, CompressedOptionsNeedRoomForTheArchiveAndItsFiles)
     EXPECT_EQ(format_label(make_release("p", "g", "Game", "", 1)), "FFPFSC");
 }
 
+TEST(Model, ReadsTheInstallOfAFinishedPackage)
+{
+    json::Value value;
+    ASSERT_TRUE(json::parse(R"([{"id":"a","status":"complete","install":{"state":"installing","progress":42,"error":"","code":0}},
+        {"id":"b","status":"complete","install":{"state":"failed","progress":0,"error":"The console would not install this package.","code":-5}},
+        {"id":"c","status":"complete"}])", &value));
+    const auto jobs = parse_jobs(value);
+    ASSERT_EQ(jobs.size(), 3u);
+    EXPECT_EQ(jobs[0].install_state, "installing");
+    EXPECT_DOUBLE_EQ(jobs[0].install_progress, 42.0);
+    EXPECT_EQ(jobs[1].install_error, "The console would not install this package.");
+    EXPECT_EQ(jobs[1].install_code, -5);
+    // A service without the feature sends nothing, and the app shows nothing extra.
+    EXPECT_TRUE(jobs[2].install_state.empty());
+    EXPECT_EQ(jobs[2].install_code, 0);
+}
+
 TEST(Model, ExtractingIsAnActiveDownloadState)
 {
     const Release release = make_release("r", "g", "Game", "", 10);

@@ -295,6 +295,10 @@ std::vector<Job> parse_jobs(const json::Value &value)
         job.status = item.text("status");
         job.error = item.text("error");
         job.verification = item.text("verification");
+        job.install_state = item["install"].text("state");
+        job.install_error = item["install"].text("error");
+        job.install_code = static_cast<int>(item["install"]["code"].as_int());
+        job.install_progress = item["install"].number("progress");
         job.delivery = item.text("delivery");
         job.can_refresh_link = item.flag("canRefreshLink");
         job.can_enter_archive_password = item.flag("canEnterArchivePassword");

@@ -165,6 +165,10 @@ struct Job
     std::string status; // queued downloading paused retrying verifying extracting complete cancelled error
     std::string error;
     std::string verification;
+    // Installing the finished .pkg: empty, waiting, installing, installed or failed.
+    std::string install_state, install_error;
+    int install_code = 0;
+    double install_progress = 0.0; // 0 to 100
     std::string delivery;
     std::string delivery_phase;
     double received = 0.0;

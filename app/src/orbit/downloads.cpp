@@ -582,22 +582,35 @@ void DownloadsScreen::draw(Frame &frame, bool focused) const
         // While extracting, the bar shows the extraction; Orbit Zero sends the
         // files inside an archive, which can total more than the download.
         const bool extracting = job.status == "extracting";
+        const bool installing = job.status == "complete" && job.install_state == "installing";
+        const bool install_failed = job.status == "complete" && job.install_state == "failed";
         const double done = extracting ? job.extracted : job.received;
         const double total = extracting ? job.extract_total : job.send_total > 0.0 ? job.send_total : job.total;
         const float progress =
-            total > 0.0 ? static_cast<float>(std::clamp(done / total, 0.0, 1.0)) : 0.0f;
+            installing ? static_cast<float>(std::clamp(job.install_progress / 100.0, 0.0, 1.0))
+            : total > 0.0 ? static_cast<float>(std::clamp(done / total, 0.0, 1.0)) : 0.0f;
         const ui::Rect bar{tx, row.y + kRowPad + 74.0f, info_width, 6.0f};
         ui::progress_bar(list, bar, progress,
                          job.status == "error"      ? ui::color::bad
+                         : installing               ? ui::color::action
                          : job.status == "complete" ? ui::color::ok
                                                     : ui::color::action);
-        const std::string left = extracting ? std::string(tr("Extracting")) + " \xC2\xB7 " + i18n::percent(progress * 100.0)
+        const std::string left = installing ? std::string(tr("Installing")) + " \xC2\xB7 " + i18n::percent(progress * 100.0)
+                                 : extracting ? std::string(tr("Extracting")) + " \xC2\xB7 " + i18n::percent(progress * 100.0)
                                  : (job.delivery=="zero" ? std::string("To PS5 ") : std::string()) + format_bytes(job.received) + " / " + format_bytes(total) +
                                  " \xC2\xB7 " + i18n::percent(progress * 100.0);
         const float transfer_y = row.y + kRowPad + 104.0f;
         ui::text(list, type.regular, left, tx, transfer_y, 16.0f, ui::color::text3);
         std::string right;
-        if (!job.error.empty())
+        if (install_failed)
+        {
+            std::string message{tr(job.install_error)};
+            if (job.install_code != 0)
+                message += " (" + std::to_string(job.install_code) + ")";
+            ui::text_fit(list, type.regular, message, right_edge, transfer_y, 16.0f, 620.0f,
+                         ui::color::bad, ui::Align::right);
+        }
+        else if (!job.error.empty())
         {
             ui::text_fit(list, type.regular, tr(job.error), right_edge, transfer_y, 16.0f, 620.0f,
                          ui::color::bad, ui::Align::right);
@@ -625,6 +638,10 @@ void DownloadsScreen::draw(Frame &frame, bool focused) const
             else if (job.status == "complete")
             {
                 right = job.verification == "sha256" ? tr("SHA-256 verified") : tr("Size verified");
+                if (job.install_state == "waiting")
+                    right += std::string(" \xC2\xB7 ") + tr("Waiting to install");
+                else if (job.install_state == "installed")
+                    right += std::string(" \xC2\xB7 ") + tr("Installed");
             }
             else
             {

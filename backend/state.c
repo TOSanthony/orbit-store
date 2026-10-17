@@ -97,6 +97,13 @@ static cJSON *job_json(const Job *j, bool private_fields) {
         cJSON_AddBoolToObject(o, "canEnterArchivePassword", j->archive_ready && !job_active(j) &&
             (!strcmp(j->status, "error") || !strcmp(j->status, "paused")));
     }
+    if (j->install_state[0]) {
+        cJSON *install = cJSON_AddObjectToObject(o, "install");
+        cJSON_AddStringToObject(install, "state", j->install_state);
+        cJSON_AddNumberToObject(install, "progress", j->install_progress);
+        cJSON_AddStringToObject(install, "error", j->install_error);
+        cJSON_AddNumberToObject(install, "code", j->install_code);
+    }
     char path[700];
     snprintf(path, sizeof path, "%s/homebrew/%s", j->root, j->output[0] ? j->output : j->filename);
     cJSON_AddStringToObject(o, "path", path);
