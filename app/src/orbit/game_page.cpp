@@ -442,7 +442,13 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         constexpr float nx = 570, nw = 1236;
         // With a drive to save to, the three option rows take the left half of the column and
         // the storage card the right half, as tall as the three rows.
-        const bool side = now.show_download && now.drive != nullptr;
+        // A finished download shows the drive it was saved to, in the same card.
+        const Drive *installed_drive = nullptr;
+        if (!now.show_download && now.collection.job && now.collection.job->status == "complete")
+            for (const auto &d : state.drives)
+                if (d.id == now.collection.job->storage_id) installed_drive = &d;
+        const bool installed = installed_drive != nullptr;
+        const bool side = (now.show_download && now.drive != nullptr) || installed;
         // An existing download keeps the Source row at the width it has when downloading.
         const float rw = (side || (!now.show_download && now.collection.job)) ? 606.0f : nw;
         constexpr float kRowsHeight = 3 * 76.0f + 2 * 10.0f;
@@ -480,6 +486,9 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             setting(Slot::drive,FactIcon::disk,tr("Save to"),now.drive ? i18n::place(now.drive->label) : tr("Select storage"),
                     now.drive ? tr("{size} free",{{"size",format_bytes(now.drive->free_bytes)}}) : "");
         }
+        else if (now.collection.job && now.collection.job->status == "complete")
+            // A finished download offers a second copy as a row of its own, under Source.
+            setting(Slot::again,FactIcon::download,tr("Downloaded"),tr("Download another copy"),"");
         ry -= 86;
         ry += 76 + 10;
         if (list)
@@ -504,9 +513,9 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                 px += w + 8;
             }
         }
-        if (now.show_download && now.drive && list)
+        if (((now.show_download && now.drive) || installed) && list)
         {
-            const Drive &drive=*now.drive;
+            const Drive &drive=installed?*installed_drive:*now.drive;
             const ui::Rect card_rect = side ? ui::Rect{nx+rw+24,top,rw,kRowsHeight} : ui::Rect{nx,ry,nw,140};
             ui::surface(*list,card_rect,20,ui::color::field);
             if(drive.total_bytes>0)
@@ -515,10 +524,12 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                 // (green, red when it does not fit) and what stays free.
                 const double total=drive.total_bytes;
                 const double game_bytes=release.size_bytes+release.extracted_bytes;
-                const double queued=std::max(0.0,total-drive.projected_free_bytes-(now.plan.planned?game_bytes:0.0));
+                const double queued=installed?std::max(0.0,total-drive.free_bytes-game_bytes)
+                    :std::max(0.0,total-drive.projected_free_bytes-(now.plan.planned?game_bytes:0.0));
                 const double room=std::max(0.0,total-queued);
                 const double game_shown=std::min(game_bytes,room);
-                const bool fits=now.plan.after>=0;
+                const bool fits=installed||now.plan.after>=0;
+                const double after=installed?drive.free_bytes:std::abs(now.plan.after);
                 const float used_part=static_cast<float>(std::clamp(queued/total,0.0,1.0));
                 const float game_part=static_cast<float>(std::clamp(game_shown/total,0.0,1.0));
                 constexpr float radius=54,thickness=12,tau=6.2831853f;
@@ -527,7 +538,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                 const struct { std::string label; double bytes; ui::Color dot; } rows[]={
                     {tr("Used and queued"),queued,ui::color::text},
                     {tr("This game"),game_bytes,game_color},
-                    {fits?tr("Free after install"):tr("Short by"),std::abs(now.plan.after),fits?ui::Color::rgb(0xffffff,0.35f):ui::color::short_of}};
+                    {installed?tr("Free now"):fits?tr("Free after install"):tr("Short by"),after,fits?ui::Color::rgb(0xffffff,0.35f):ui::color::short_of}};
                 float values_w=0,labels_w=0;
                 for(const auto &row:rows)
                 {
@@ -547,12 +558,12 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                     ui::text(*list,type.semibold,std::to_string(percent)+"%",cx,cy+4,24,ink,ui::Align::center);
                     ui::text(*list,type.regular,tr("used"),cx,cy+23,13,ui::color::text2,ui::Align::center);
                 }
-                const std::string centre=format_bytes(std::abs(now.plan.after));
+                const std::string centre=format_bytes(after);
                 const float centre_w=side?right-text_x:std::max(60.0f,dot_x-40-text_x);
                 const float size=ui::fit_size(type.semibold,centre,30,18,centre_w);
                 const float head_y=side?card_rect.y+58:cy+2;
                 ui::text(*list,type.semibold,centre,text_x,head_y,size,fits?ui::color::text:ui::color::short_of);
-                ui::text(*list,type.regular,fits?tr("free after install"):tr("short"),text_x,head_y+28,17,ui::color::text2);
+                ui::text(*list,type.regular,installed?tr("Free now"):fits?tr("free after install"):tr("short"),text_x,head_y+28,17,ui::color::text2);
                 for(int i=0;i<3;++i)
                 {
                     const float y=side?card_rect.y+128+static_cast<float>(i)*38:cy-38+static_cast<float>(i)*38;
@@ -636,11 +647,10 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             if (now.collection.kind == CollectionState::Kind::related)
             { control(Slot::related,0,{nx,y,450,58},tr("View related copy"));y+=80; }
         }
-        if (!anchored && !download_again_ && (now.collection.kind == CollectionState::Kind::library ||
-            (now.collection.job && now.collection.job->status == "complete")))
+        if (!anchored && !download_again_ && now.collection.kind == CollectionState::Kind::library)
         { control(Slot::again,0,{nx,y,450,58},tr("Download another copy"));y+=80; }
         if (now.collection.job && now.collection.job->status == "complete")
-        { paragraph(tr("Download history records a completed transfer. Find it in Library to check its current location."),nx,y,width_notes,20);y+=16; }
+        { paragraph(one_per_line(tr("Download history records a completed transfer. Find it in Library to check its current location.")),nx,y,width_notes,20);y+=16; }
         if (now.show_download && (!now.drive || !now.plan.enough))
         {
             paragraph(!now.drive ? tr("Connect a writable drive to your PS5.") :
