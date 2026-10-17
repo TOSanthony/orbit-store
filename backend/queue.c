@@ -305,6 +305,32 @@ static int create_locked(const Release *r, const char *sid, const Storage *pin,
     bool absent = fstatat(dir, j.filename, &st, AT_SYMLINK_NOFOLLOW) < 0 && errno == ENOENT &&
                   fstatat(dir, partial, &st, AT_SYMLINK_NOFOLLOW) < 0 && errno == ENOENT;
     if (!absent) {
+        /* A copy left from an earlier download is replaced, as the person asked: only a plain
+         * file with this exact name, and only when no queued job is using the name. Anything
+         * else (a folder, a link) still stops the download. */
+        bool replace = true, busy = false;
+        const char *names[2] = {j.filename, partial};
+        for (int k = 0; k < 2 && replace; k++) {
+            if (fstatat(dir, names[k], &st, AT_SYMLINK_NOFOLLOW) == 0)
+                replace = S_ISREG(st.st_mode);
+            else
+                replace = errno == ENOENT;
+        }
+        for (size_t i = 0; i < orbit.job_count && replace; i++) {
+            const Job *other = &orbit.jobs[i];
+            if (other->id[0] && !removable(other) && !strcmp(other->root, s->root) &&
+                !strcmp(other->filename, j.filename))
+                busy = true;
+        }
+        if (replace && !busy) {
+            if (!dry_run) {
+                for (int k = 0; k < 2; k++)
+                    if (unlinkat(dir, names[k], 0) && errno != ENOENT) replace = false;
+            }
+            absent = replace;
+        }
+    }
+    if (!absent) {
         close(dir);
         copy_text(err, cap,
                   "A destination or partial file already exists. Orbit will not overwrite it.");
