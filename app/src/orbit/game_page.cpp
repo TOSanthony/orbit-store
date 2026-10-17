@@ -1001,8 +1001,8 @@ Intent GamePage::update(const InputFrame &input,float dt,Feedback &feedback,bool
     return intent;
 }
 
-// The two read-only sheets never scroll: their content is centred in the window, and shrunk
-// a little when a long provider note would not fit.
+// The two read-only sheets never scroll: their content is centred in the window at one fixed
+// size, and shrunk further when a long provider note would not fit.
 GamePage::Fit GamePage::fit(Sheet sheet) const
 {
     if(sheet!=Sheet::about && sheet!=Sheet::downloads)return {1.0f,0.0f};
@@ -1015,7 +1015,11 @@ GamePage::Fit GamePage::fit(Sheet sheet) const
     fresh_layout_=false;
     // The block runs from the game's title (about y 36) to the last line; its middle sits at y 340.
     constexpr float kTop=36.0f,kMiddle=321.0f,kMaxHeight=582.0f;
-    const float bottom=std::max(where.content,where.end-20.0f);
+    // Every game, app and update is laid out like one with a provider's "start here" steps
+    // (the tallest usual content): the cover, title and rows keep one place and one size
+    // whatever a source adds under them. Only a longer note shrinks the block further.
+    constexpr float kStandardHeight=619.2f;
+    const float bottom=std::max({where.content,where.end-20.0f,kTop+kStandardHeight});
     const float height=bottom-kTop;
     if(height<=0.0f)return {1.0f,0.0f};
     const float scale=std::min(1.0f,kMaxHeight/height);
