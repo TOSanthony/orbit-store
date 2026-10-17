@@ -1254,5 +1254,11 @@
   "Turn off sounds": "Wyłącz dźwięki",
   "Turn on sounds": "Włącz dźwięki",
   "Saved address kept. Select to change it.": "Zapisany adres zostanie zachowany. Wybierz, aby go zmienić.",
-  "The saved Orbit {version} can’t be used. Start {path} from your payload manager.": "Zapisany Orbit {version} jest nieużywalny. Uruchom {path} z menedżera payloadów."
+  "The saved Orbit {version} can’t be used. Start {path} from your payload manager.": "Zapisany Orbit {version} jest nieużywalny. Uruchom {path} z menedżera payloadów.",
+  "{count} entries were skipped: invalid, duplicated or not on your NAS address.": {
+    "few": "Pominięto {count} wpisy: nieprawidłowe, zduplikowane lub spoza adresu Twojego NAS.",
+    "many": "Pominięto {count} wpisów: nieprawidłowych, zduplikowanych lub spoza adresu Twojego NAS.",
+    "one": "Pominięto {count} wpis: nieprawidłowy, zduplikowany lub spoza adresu Twojego NAS.",
+    "other": "Pominięto {count} wpisu: nieprawidłowych, zduplikowanych lub spoza adresu Twojego NAS."
+  }
 }

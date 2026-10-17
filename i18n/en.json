@@ -1236,5 +1236,9 @@
   "Turn off sounds": "Turn off sounds",
   "Turn on sounds": "Turn on sounds",
   "Saved address kept. Select to change it.": "Saved address kept. Select to change it.",
-  "The saved Orbit {version} can’t be used. Start {path} from your payload manager.": "The saved Orbit {version} can’t be used. Start {path} from your payload manager."
+  "The saved Orbit {version} can’t be used. Start {path} from your payload manager.": "The saved Orbit {version} can’t be used. Start {path} from your payload manager.",
+  "{count} entries were skipped: invalid, duplicated or not on your NAS address.": {
+    "one": "{count} entry was skipped: invalid, duplicated or not on your NAS address.",
+    "other": "{count} entries were skipped: invalid, duplicated or not on your NAS address."
+  }
 }

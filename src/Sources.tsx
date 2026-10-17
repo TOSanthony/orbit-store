@@ -1,7 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "./components";
 import type { SourceId, SourceSettings } from "./types";
-import { t } from "./i18n";
+import { t, tn } from "./i18n";
+
+// The service words these in English; the count is part of the sentence.
+function nasMessage(error: string): string {
+  const skipped = /^(\d+) entr(?:y was|ies were) skipped: invalid, duplicated or not on your NAS address\.$/.exec(error);
+  if (skipped)
+    return tn(
+      Number(skipped[1]),
+      "{count} entry was skipped: invalid, duplicated or not on your NAS address.",
+      "{count} entries were skipped: invalid, duplicated or not on your NAS address.",
+    );
+  return t(error);
+}
 
 export function Sources({
   settings,
@@ -110,7 +122,7 @@ export function Sources({
           <p className="fine">
             {settings.nasConfigured
               ? settings.nasError
-                ? `${settings.nasHost}: ${settings.nasError}`
+                ? `${settings.nasHost}: ${nasMessage(settings.nasError)}`
                 : t("{host}: {count} games found.")
                     .replace("{host}", settings.nasHost ?? "")
                     .replace("{count}", String(settings.nasCount ?? 0))

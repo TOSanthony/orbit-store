@@ -1245,5 +1245,10 @@
   "Turn off sounds": "Desativar sons",
   "Turn on sounds": "Ativar sons",
   "Saved address kept. Select to change it.": "Endereço salvo mantido. Selecione para alterá-lo.",
-  "The saved Orbit {version} can’t be used. Start {path} from your payload manager.": "O Orbit {version} salvo não pode ser usado. Inicie {path} pelo seu gerenciador de payloads."
+  "The saved Orbit {version} can’t be used. Start {path} from your payload manager.": "O Orbit {version} salvo não pode ser usado. Inicie {path} pelo seu gerenciador de payloads.",
+  "{count} entries were skipped: invalid, duplicated or not on your NAS address.": {
+    "many": "{count} de entradas foram ignoradas: inválidas, duplicadas ou fora do endereço do seu NAS.",
+    "one": "{count} entrada foi ignorada: inválida, duplicada ou fora do endereço do seu NAS.",
+    "other": "{count} entradas foram ignoradas: inválidas, duplicadas ou fora do endereço do seu NAS."
+  }
 }

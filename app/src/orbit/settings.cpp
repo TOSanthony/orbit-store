@@ -49,6 +49,19 @@ int seconds_until(double unix_time)
     return std::max(0, static_cast<int>(std::ceil(unix_time - unix_seconds())));
 }
 
+
+// The service words the NAS notices in English; a skipped-entries count is part of the sentence.
+std::string nas_message(const std::string &error)
+{
+    unsigned long count = 0;
+    if (std::sscanf(error.c_str(), "%lu entr", &count) == 1 &&
+        error.find(" skipped: invalid, duplicated or not on your NAS address.") != std::string::npos)
+        return trn(static_cast<long>(count),
+                   "{count} entry was skipped: invalid, duplicated or not on your NAS address.",
+                   "{count} entries were skipped: invalid, duplicated or not on your NAS address.");
+    return std::string(tr(std::string_view(error)));
+}
+
 } // namespace
 
 // ---- the pane: one pass over a section ----
@@ -420,7 +433,7 @@ void SettingsScreen::build_sources(Pane &pane) const
         if (state.sources.nas_configured)
         {
             if (!state.sources.nas_error.empty())
-                pane.fine(state.sources.nas_host + ": " + state.sources.nas_error);
+                pane.fine(state.sources.nas_host + ": " + nas_message(state.sources.nas_error));
             else
                 pane.fine(tr("{host}: {count} games found.",
                              {{"host", state.sources.nas_host},

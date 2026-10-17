@@ -1245,5 +1245,10 @@
   "Turn off sounds": "Desactivar sonidos",
   "Turn on sounds": "Activar sonidos",
   "Saved address kept. Select to change it.": "Se conserva la dirección guardada. Selecciona para cambiarla.",
-  "The saved Orbit {version} can’t be used. Start {path} from your payload manager.": "El Orbit {version} guardado no se puede usar. Inicia {path} desde tu gestor de payloads."
+  "The saved Orbit {version} can’t be used. Start {path} from your payload manager.": "El Orbit {version} guardado no se puede usar. Inicia {path} desde tu gestor de payloads.",
+  "{count} entries were skipped: invalid, duplicated or not on your NAS address.": {
+    "many": "Se omitieron {count} de entradas: no válidas, duplicadas o que no están en la dirección de tu NAS.",
+    "one": "Se omitió {count} entrada: no válida, duplicada o que no está en la dirección de tu NAS.",
+    "other": "Se omitieron {count} entradas: no válidas, duplicadas o que no están en la dirección de tu NAS."
+  }
 }

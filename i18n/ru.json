@@ -1254,5 +1254,11 @@
   "Turn off sounds": "Выключить звуки",
   "Turn on sounds": "Включить звуки",
   "Saved address kept. Select to change it.": "Сохранённый адрес сохраняется. Выберите, чтобы изменить.",
-  "The saved Orbit {version} can’t be used. Start {path} from your payload manager.": "Сохранённый Orbit {version} непригоден. Запустите {path} через менеджер пейлоадов."
+  "The saved Orbit {version} can’t be used. Start {path} from your payload manager.": "Сохранённый Orbit {version} непригоден. Запустите {path} через менеджер пейлоадов.",
+  "{count} entries were skipped: invalid, duplicated or not on your NAS address.": {
+    "few": "Пропущено {count} записи: недопустимые, дублирующиеся или не по адресу вашего NAS.",
+    "many": "Пропущено {count} записей: недопустимые, дублирующиеся или не по адресу вашего NAS.",
+    "one": "Пропущена {count} запись: недопустимая, дублирующаяся или не по адресу вашего NAS.",
+    "other": "Пропущено {count} записей: недопустимые, дублирующиеся или не по адресу вашего NAS."
+  }
 }
