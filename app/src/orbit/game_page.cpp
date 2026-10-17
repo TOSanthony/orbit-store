@@ -13,7 +13,7 @@ namespace
 {
 constexpr float kBodyTop = 430.0f;
 constexpr float kBodyBottom = 978.0f;
-// About and Download options use a slightly taller panel.
+// Every sheet uses the same slightly taller panel.
 constexpr float kTallExtra = 70.0f;
 constexpr float kLeft = 70.0f;
 // Each sentence on its own line ("A. B." becomes "A.\nB.").
@@ -911,7 +911,7 @@ Intent GamePage::update(const InputFrame &input,float dt,Feedback &feedback,bool
     if(where.controls.empty())return intent;
     focus_=std::clamp(focus_,0,static_cast<int>(where.controls.size())-1);
     auto &scroll=sheet_==Sheet::none?page_scroll_:sheet_scroll_;
-    const float extra=(sheet_==Sheet::about||sheet_==Sheet::downloads)?kTallExtra:0.0f;
+    const float extra=sheet_!=Sheet::none?kTallExtra:0.0f;
     const float visible=sheet_==Sheet::none?980:kBodyBottom+extra-kBodyTop;
     bool moved=false;
     bool read_scroll=false;
@@ -999,7 +999,7 @@ void GamePage::draw(Frame &frame,bool focused) const
     auto &list=frame.overlay;
     list.rounded_rect({0,0,1920,1080},0,ui::Color::rgb(0x000000,0.35f));
     // The sheet is laid out for a panel at y 320; it is drawn centred on the screen.
-    const float extra=(sheet_==Sheet::about||sheet_==Sheet::downloads)?kTallExtra:0.0f;
+    const float extra=sheet_!=Sheet::none?kTallExtra:0.0f;
     const float kSheetShift=(1080.0f-(710.0f+extra))*0.5f-320.0f;
     const ui::Rect panel{70,320+kSheetShift,1780,710+extra};
     frame.glass=true;
