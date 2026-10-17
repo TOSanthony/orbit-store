@@ -91,15 +91,33 @@ std::string read_small(const std::string &path)
 }
 
 // A regular file that starts like Orbit: ELF64, little-endian, x86-64.
-bool readable_elf(const std::string &path, long long *bytes, const char **why = nullptr)
+bool readable_elf(const std::string &path, long long *bytes, std::string *why = nullptr)
 {
-    const char *unused = "";
+    std::string unused;
     if (why == nullptr)
         why = &unused;
     const int fd = open(path.c_str(), O_RDONLY);
     if (fd < 0)
     {
-        *why = errno == ENOENT ? "missing" : "unreadable";
+        const int error = errno;
+        if (error == ENOENT)
+        {
+            *why = "missing";
+            return false;
+        }
+        // Say what the console refused: the app's own view of the file.
+        *why = std::string("unreadable: ") + std::strerror(error) + " (" + std::to_string(error) + ")";
+        struct stat found
+        {
+        };
+        if (stat(path.c_str(), &found) == 0)
+        {
+            char mode[48];
+            std::snprintf(mode, sizeof(mode), ", mode %04o uid %d gid %d",
+                          static_cast<unsigned>(found.st_mode & 07777), static_cast<int>(found.st_uid),
+                          static_cast<int>(found.st_gid));
+            *why += mode;
+        }
         return false;
     }
     struct stat info
@@ -128,7 +146,7 @@ Payload candidate(const std::string &elf, const std::string &version, const char
                   std::string *notes = nullptr)
 {
     Payload payload;
-    const char *why = "";
+    std::string why;
     if (!readable_elf(elf, &payload.bytes, &why))
     {
         if (notes != nullptr)
@@ -326,7 +344,7 @@ Result LoaderStarter::start()
     }
     if (log_)
     {
-        char line[320];
+        char line[640];
         std::snprintf(line, sizeof(line), "start: %s copy=%s version=%s bytes=%lld [%s ]: %s",
                       outcome_name(result.outcome), payload.source,
                       payload.version.empty() ? "?" : payload.version.c_str(), payload.bytes,
