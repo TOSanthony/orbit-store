@@ -165,6 +165,7 @@ int state_save_locked(void) {
     cJSON_AddStringToObject(o, "language", orbit.language);
     cJSON_AddStringToObject(o, "keyboard", orbit.keyboard);
     cJSON_AddBoolToObject(o, "soundsOff", orbit.sounds_off);
+    cJSON_AddBoolToObject(o, "ps4Hidden", orbit.ps4_hidden);
     cJSON_AddBoolToObject(o, "deleteArchives", orbit.delete_archives);
     cJSON_AddNumberToObject(o, "concurrentDownloads", orbit.concurrent_downloads);
     cJSON_AddNumberToObject(o, "debridNextCreate", (double)orbit.debrid_next_create);
@@ -281,6 +282,8 @@ int state_load(void) {
     copy_text(orbit.keyboard, sizeof orbit.keyboard, json_text(o, "keyboard"));
     const cJSON *sounds_off = cJSON_GetObjectItemCaseSensitive(o, "soundsOff");
     if (cJSON_IsBool(sounds_off)) orbit.sounds_off = cJSON_IsTrue(sounds_off);
+    const cJSON *ps4_hidden = cJSON_GetObjectItemCaseSensitive(o, "ps4Hidden");
+    if (cJSON_IsBool(ps4_hidden)) orbit.ps4_hidden = cJSON_IsTrue(ps4_hidden);
     const cJSON *delete_archives = cJSON_GetObjectItemCaseSensitive(o, "deleteArchives");
     if (cJSON_IsBool(delete_archives)) orbit.delete_archives = cJSON_IsTrue(delete_archives);
     const cJSON *limit = cJSON_GetObjectItemCaseSensitive(o, "concurrentDownloads");

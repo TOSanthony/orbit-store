@@ -1264,5 +1264,9 @@
   "App language": "Idioma de la app",
   "All DLC": "Todos los DLC",
   "All updates": "Todas las actualizaciones",
-  "{count} items": "{count} elementos"
+  "{count} items": "{count} elementos",
+  "PS4 games are hidden. A game that also comes in a PS5 version stays, with its PS5 options.": "Los juegos de PS4 están ocultos. Un juego que también tiene versión de PS5 se mantiene, con sus opciones de PS5.",
+  "PS4 games are shown next to PS5 games.": "Los juegos de PS4 se muestran junto a los de PS5.",
+  "Show PS4 games": "Mostrar juegos de PS4",
+  "Hide PS4 games": "Ocultar juegos de PS4"
 }

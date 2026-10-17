@@ -1274,5 +1274,9 @@
   "App language": "Язык приложения",
   "All DLC": "Все DLC",
   "All updates": "Все обновления",
-  "{count} items": "Элементов: {count}"
+  "{count} items": "Элементов: {count}",
+  "PS4 games are hidden. A game that also comes in a PS5 version stays, with its PS5 options.": "Игры для PS4 скрыты. Игра, которая есть и в версии для PS5, остаётся с вариантами для PS5.",
+  "PS4 games are shown next to PS5 games.": "Игры для PS4 показываются вместе с играми для PS5.",
+  "Show PS4 games": "Показать игры для PS4",
+  "Hide PS4 games": "Скрыть игры для PS4"
 }

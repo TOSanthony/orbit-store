@@ -561,7 +561,8 @@ http::Response Fixture::send(const http::Request &request)
             ",\"platform\":\"fixture\",\"paired\":" + (authorised ? "true" : "false") +
             ",\"localSessionAvailable\":true,\"stateHealthy\":true,\"catalogueRevision\":7,"
             "\"preferredStorage\":" +
-            json::quote(preferred_) + ",\"httpPort\":34177}";
+            json::quote(preferred_) + ",\"ps4Hidden\":" + (ps4_hidden_ ? "true" : "false") +
+            ",\"httpPort\":34177}";
         return response;
     }
     if (get && path == "/api/v1/sources")
@@ -703,6 +704,12 @@ http::Response Fixture::send(const http::Request &request)
         if (!input.text("nasUrl").empty())
             nas_saved_ = true;
         response.body = sources_json();
+        return response;
+    }
+    if (!get && path == "/api/v1/settings/ps4")
+    {
+        ps4_hidden_ = input.flag("ps4Hidden", false);
+        response.body = std::string("{\"ps4Hidden\":") + (ps4_hidden_ ? "true" : "false") + "}";
         return response;
     }
     if (!get && path == "/api/v1/storage/preferred")

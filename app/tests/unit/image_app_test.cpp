@@ -790,6 +790,31 @@ TEST(App, SavingSourcesNeedsTheNoticeAccepted)
     EXPECT_FALSE(h.store.setting_result().busy);
 }
 
+TEST(App, HidingPs4GamesDropsThemFromTheCatalogueAndShowingBringsThemBack)
+{
+    AppHarness h;
+    h.settle();
+    ASSERT_NE(h.store.state().game("copper-circuit-ps4"), nullptr);
+    const std::size_t all = h.store.state().games.size();
+    h.store.set_ps4_hidden(true);
+    ASSERT_TRUE(h.store.run_next_action());
+    h.settle(3);
+    h.store.poll_once();
+    h.settle();
+    EXPECT_TRUE(h.store.state().system.ps4_hidden);
+    EXPECT_EQ(h.store.state().game("copper-circuit-ps4"), nullptr);
+    EXPECT_EQ(h.store.state().games.size(), all - 1);
+    // A PS5 title is untouched.
+    EXPECT_NE(h.store.state().game("ember-hollow"), nullptr);
+    h.store.set_ps4_hidden(false);
+    ASSERT_TRUE(h.store.run_next_action());
+    h.settle(3);
+    h.store.poll_once();
+    h.settle();
+    EXPECT_NE(h.store.state().game("copper-circuit-ps4"), nullptr);
+    EXPECT_EQ(h.store.state().games.size(), all);
+}
+
 TEST(App, SettingsChoosesTheDefaultDrive)
 {
     AppHarness h;

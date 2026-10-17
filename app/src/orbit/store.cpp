@@ -36,6 +36,7 @@ std::string catalog_key(const System &system, const Sources &sources)
     key += system.zero_enabled ? "|zero:" + system.zero_address : "|console";
     key += '|';
     key += std::to_string(system.catalogue_revision);
+    key += system.ps4_hidden ? "|no-ps4" : "|ps4";
     key += '|';
     key += sources.acknowledged ? '1' : '0';
     key += '|';
@@ -708,6 +709,14 @@ void Store::poll_once()
                     return !sources.value.acknowledged || !contains(sources.value.enabled,r.source_id);
                 }),rows.end());
             }
+            // PS4 options go when the player turns them off; a game that also has a PS5 option stays.
+            if (system.value.ps4_hidden)
+            {
+                auto &rows = catalog.value;
+                rows.erase(std::remove_if(rows.begin(), rows.end(),
+                                          [](const Release &r) { return r.platform == "ps4"; }),
+                           rows.end());
+            }
             games = group_games(catalog.value);
             have_games = true;
             catalog_key_ = key;
@@ -895,6 +904,19 @@ void Store::run_setting(Command &command)
             state_.system.concurrent_downloads = limit;
             ++state_.serial;
         });
+        break;
+    }
+    case Setting::ps4:
+    {
+        const api::Result<bool> result = client_.set_ps4_hidden(command.flag);
+        error = result.status == 404 ? tr("Update the download service to change this here.") : result.error;
+        if (result.ok())
+            inbox_.post(
+                [this, hidden = result.value]()
+                {
+                    state_.system.ps4_hidden = hidden;
+                    ++state_.serial;
+                });
         break;
     }
     case Setting::sounds:

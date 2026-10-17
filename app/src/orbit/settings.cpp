@@ -693,6 +693,15 @@ void SettingsScreen::build_catalogue(Pane &pane) const
     if (state.have_catalogue_status && !catalogue.available)
         pane.fine(tr("Refreshing works with Orbit running on your PS5. This copy uses its bundled "
                   "catalogue."));
+    pane.gap(14.0f);
+    pane.body(state.system.ps4_hidden
+                  ? tr("PS4 games are hidden. A game that also comes in a PS5 version stays, with its PS5 options.")
+                  : tr("PS4 games are shown next to PS5 games."));
+    const bool ps4_saving = result.busy && result.setting == Setting::ps4;
+    pane.buttons({{Kind::ps4_toggle, state.system.ps4_hidden ? tr("Show PS4 games") : tr("Hide PS4 games"),
+                   ui::ButtonKind::secondary, !ps4_saving}});
+    if (result.setting == Setting::ps4 && !result.error.empty())
+        pane.error(result.error);
     if (error_setting_ == Setting::catalogue && !error_.empty())
         pane.notice({}, tr(error_));
     else if (!catalogue.error.empty())
@@ -1169,6 +1178,10 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
             const int limit = state.system.concurrent_downloads + (control.kind == Kind::download_limit_more ? 1 : -1);
             if (limit >= 1 && limit <= 8) ctx_.store.set_download_limit(limit);
         }
+        break;
+    case Kind::ps4_toggle:
+        error_.clear();
+        ctx_.store.set_ps4_hidden(!state.system.ps4_hidden);
         break;
     case Kind::archives_toggle:
         error_.clear();

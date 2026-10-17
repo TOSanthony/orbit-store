@@ -1254,5 +1254,9 @@
   "App language": "Taal van de app",
   "All DLC": "Alle DLC",
   "All updates": "Alle updates",
-  "{count} items": "{count} items"
+  "{count} items": "{count} items",
+  "PS4 games are hidden. A game that also comes in a PS5 version stays, with its PS5 options.": "PS4-games zijn verborgen. Een game die ook in een PS5-versie bestaat, blijft zichtbaar met zijn PS5-opties.",
+  "PS4 games are shown next to PS5 games.": "PS4-games worden naast PS5-games getoond.",
+  "Show PS4 games": "PS4-games tonen",
+  "Hide PS4 games": "PS4-games verbergen"
 }

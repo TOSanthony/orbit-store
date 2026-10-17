@@ -528,6 +528,18 @@ Result<bool> Client::set_delete_archives(bool enabled)
     return result;
 }
 
+Result<bool> Client::set_ps4_hidden(bool hidden)
+{
+    Result<bool> result;
+    const http::Response response = send("POST", "/api/v1/settings/ps4",
+                                         hidden ? "{\"ps4Hidden\":true}" : "{\"ps4Hidden\":false}");
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    result.value = json::parse(response.body, &value) ? value.flag("ps4Hidden", hidden) : hidden;
+    return result;
+}
+
 Result<bool> Client::set_sounds_off(bool off)
 {
     Result<bool> result;

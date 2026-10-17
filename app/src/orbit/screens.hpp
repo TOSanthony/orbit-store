@@ -592,6 +592,7 @@ class SettingsScreen final : public Screen
         keyboard,   // 0 follows the language, 1 QWERTY, 2 AZERTY
         language,   // 0 follows the console, then the catalogue languages in order
         sounds_toggle,
+        ps4_toggle,
         nas_url, // the My NAS index address field
     };
     struct Control
