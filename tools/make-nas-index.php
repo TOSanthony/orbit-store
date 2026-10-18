@@ -877,6 +877,7 @@ ul.files li:has(form.inl){grid-template-columns:auto 1fr auto}
 .field{padding:.55rem .9rem;border-radius:.7rem;border:1px solid var(--line);background:var(--panel);outline:none;min-width:0}
 .field:focus{border-color:var(--accent);box-shadow:0 0 0 3px #4fb3ff33}
 #q{width:min(15rem,30vw);flex:none}
+#plat{width:auto;flex:none}
 .btn{padding:.55rem 1rem;border-radius:.7rem;border:1px solid var(--line);background:var(--panel2);cursor:pointer;white-space:nowrap}
 .btn:hover{border-color:var(--accent)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#04101f;font-weight:600}
@@ -972,6 +973,7 @@ summary{cursor:pointer;font-weight:600}
   <div class="brand"><svg viewBox="0 0 64 64" aria-hidden="true"><g fill="none" stroke="#eaf0ff" stroke-width="4"><circle cx="32" cy="32" r="18"/><ellipse cx="32" cy="32" rx="30" ry="10" transform="rotate(-34 32 32)"/></g></svg><span><?= h($SITE_NAME) ?></span></div>
   <nav class="tabs" id="tabs" aria-label="Catégories"></nav>
   <input id="q" class="field" type="search" placeholder="Rechercher…" aria-label="Rechercher">
+  <select id="plat" class="field" aria-label="Plateformes affichées" title="Plateformes affichées"><option value="">PS5 + PS4</option><option value="ps5">PS5 seulement</option><option value="ps4">PS4 seulement</option></select>
   <button class="btn gear" id="gear" type="button" aria-label="Réglages" title="Réglages"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M9.78 4.73 L10.40 1.93 L13.60 1.93 L14.22 4.73 L15.57 5.29 L18.00 3.75 L20.25 6.00 L18.71 8.43 L19.27 9.78 L22.07 10.40 L22.07 13.60 L19.27 14.22 L18.71 15.57 L20.25 18.00 L18.00 20.25 L15.57 18.71 L14.22 19.27 L13.60 22.07 L10.40 22.07 L9.78 19.27 L8.43 18.71 L6.00 20.25 L3.75 18.00 L5.29 15.57 L4.73 14.22 L1.93 13.60 L1.93 10.40 L4.73 9.78 L5.29 8.43 L3.75 6.00 L6.00 3.75 L8.43 5.29Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
 </header>
 <?php if ($running): ?>
@@ -1105,8 +1107,13 @@ summary{cursor:pointer;font-weight:600}
     g.search = (g.title + ' ' + g.titleId + ' ' + g.files.map((f) => f.filename).join(' ')).toLowerCase();
   });
   const sortTitle = (a, b) => a.title.localeCompare(b.title, 'fr', { sensitivity: 'base' });
-  const pool = (tab) => tab === 'discover' ? all.filter((g) => g.cat === 'game' || g.cat === 'apps')
-    : all.filter((g) => g.cat === ({ games: 'game', apps: 'apps', dlc: 'dlc', updates: 'updates' })[tab]);
+  // Plateformes affichées : les deux, PS5 seulement ou PS4 seulement (retenu dans ce navigateur).
+  let platform = '';
+  try { platform = localStorage.getItem('orbit.nas.platform') || ''; } catch (e) { /* stockage indisponible */ }
+  if (platform !== 'ps5' && platform !== 'ps4') platform = '';
+  const onPlatform = (g) => !platform || (platform === 'ps4' ? g.platform === 'ps4' : g.platform !== 'ps4');
+  const pool = (tab) => (tab === 'discover' ? all.filter((g) => g.cat === 'game' || g.cat === 'apps')
+    : all.filter((g) => g.cat === ({ games: 'game', apps: 'apps', dlc: 'dlc', updates: 'updates' })[tab])).filter(onPlatform);
 
   // ---- Petits utilitaires ----
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -1265,7 +1272,7 @@ summary{cursor:pointer;font-weight:600}
 
   // ---- Recherche : tous les types à la fois ----
   function results(term) {
-    const found = all.filter((g) => g.search.includes(term)).sort(sortTitle);
+    const found = all.filter((g) => onPlatform(g) && g.search.includes(term)).sort(sortTitle);
     const head = el('div', 'page-head');
     head.append(el('h1', null, 'Résultats'), el('span', 'note', plural(found.length, 'élément', 'éléments') + ' pour « ' + q.value.trim() + ' »'));
     return [head, found.length ? pagedGrid(found, true) : el('div', 'empty', 'Aucun résultat.')];
@@ -1478,6 +1485,13 @@ summary{cursor:pointer;font-weight:600}
   });
   if ($('running')) $('gear').classList.add('busy');
   tab = fromHash();
+  const platEl = $('plat');
+  platEl.value = platform;
+  platEl.addEventListener('input', () => {
+    platform = platEl.value;
+    try { localStorage.setItem('orbit.nas.platform', platform); } catch (e) { /* stockage indisponible */ }
+    page = 0; render();
+  });
   render();
   if ($('running')) {
     const tick = async () => {
