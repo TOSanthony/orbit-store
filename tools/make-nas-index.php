@@ -310,6 +310,26 @@ function patch_link_ok(string $link): bool
 {
     return (bool)preg_match('~^https?://[A-Za-z0-9.-]+/[A-Za-z0-9/._-]{1,400}$~', $link) && strpos($link, '..') === false;
 }
+/**
+ * Publie, à côté d'index.json, game-patches.json : pour chaque jeu dont tu as enregistré une version
+ * ET un lien CRC, cette version et ce lien. Orbit le lit pour proposer la mise à jour dans l'onglet
+ * « Updates » (même chemin secret que l'index ; rien d'autre n'y figure).
+ */
+function patch_public_sync(): void
+{
+    global $GAMES_DIR;
+    $out = [];
+    foreach (patch_saved_load() as $id => $v) {
+        if ($v['version'] !== '' && $v['link'] !== '' && preg_match('/^\d{2}\.\d{3}\.\d{3}$/', $v['version']) && patch_link_ok($v['link'])) {
+            $out[$id] = ['version' => $v['version'], 'link' => $v['link']];
+        }
+    }
+    $file = rtrim((string)$GAMES_DIR, '/') . '/game-patches.json';
+    $json = json_encode((object)$out, JSON_UNESCAPED_SLASHES);
+    if ($json === false || (is_file($file) && @file_get_contents($file) === $json)) return;
+    $tmp = $file . '.tmp';
+    if (@file_put_contents($tmp, $json, LOCK_EX) !== false) @rename($tmp, $file);
+}
 /** @return string message d'erreur, vide si enregistré */
 function patch_saved_set(string $id, string $version, string $link): string
 {
@@ -332,6 +352,7 @@ function patch_saved_set(string $id, string $version, string $link): string
     fflush($fh);
     flock($fh, LOCK_UN);
     fclose($fh);
+    patch_public_sync();
     return '';
 }
 /** @return string message d'erreur, vide si lancé */
@@ -809,6 +830,7 @@ $job = job_state(true);                          // une actualisation terminée 
 if ($job['state'] === 'done') $flash = ['ok' => $job['ok'], 'log' => $job['log'] !== '' ? $job['log'] : '(aucune sortie)', 'at' => $job['at']];
 $running = $job['state'] === 'running';
 $links = $ALLOW_LINKS ? link_list((string)$GAMES_DIR) : [];
+patch_public_sync();
 $data = json_encode(['games' => $games, 'indexTime' => $indexTime, 'today' => date('Y-m-d'), 'csrf' => $csrf, 'consoleFw' => (string)$CONSOLE_FW, 'patches' => is_file((string)$FETCH_SCRIPT), 'saved' => (object)patch_saved_load()], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 
 header('Content-Type: text/html; charset=utf-8');
