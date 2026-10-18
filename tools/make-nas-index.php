@@ -40,6 +40,9 @@ $UPDATE_REPO   = 'TOSanthony/orbit-store';              // dépôt GitHub dont o
 $UPDATE_BRANCH = 'updates';                             // branche qui porte payloads.json et tv-app.json
 $ALLOW_LINKS   = true;                                  // Réglages : choisir un dossier et créer un lien symbolique vers lui
 $LINK_ROOTS    = ['/volume*'];                          // où le sélecteur de dossier a le droit de naviguer (volumes du Synology)
+$FETCH_SCRIPT  = __DIR__ . '/fetch-patch.py';           // téléchargeur de patchs PS5 (serveurs Sony)
+$PATCH_TIMEOUT = 21600;                                 // secondes max pour un téléchargement de patch (6 h)
+$CONSOLE_FW    = '';                                    // firmware de ta PS5 (ex. '10.20') : sert à repérer les patchs compatibles
 // ---------------------------------------------------------------------------
 
 $extra = __DIR__ . '/nas-admin.config.php';
@@ -47,7 +50,7 @@ if (is_file($extra)) {
     $cfg = require $extra;
     if (is_array($cfg)) {
         foreach ($cfg as $k => $v) {
-            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_MAX','AI_LANG','UPDATE_REPO','UPDATE_BRANCH','ALLOW_LINKS','LINK_ROOTS'], true)) {
+            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_MAX','AI_LANG','UPDATE_REPO','UPDATE_BRANCH','ALLOW_LINKS','LINK_ROOTS','FETCH_SCRIPT','PATCH_TIMEOUT','CONSOLE_FW'], true)) {
                 $$k = $v;
             }
         }
@@ -170,6 +173,202 @@ function start_background_refresh(bool $sha256, bool $refreshCovers, bool $param
         . '$T ' . $line . ' > ' . escapeshellarg("$b.log") . ' 2>&1; echo $? > ' . escapeshellarg("$b.code");
     $launch = 'nohup sh -c ' . escapeshellarg($inner) . ' >/dev/null 2>&1 &';
     $proc = proc_open($launch, [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes, null, $env);
+    if (!is_resource($proc)) { @unlink("$b.start"); return 'Impossible de lancer Python.'; }
+    proc_close($proc);
+    return '';
+}
+
+// ---- Patchs PS5 (liste prosperopatches.com, téléchargement depuis les serveurs Sony) ----
+function fw_major_minor(string $v): ?array
+{
+    return preg_match('/^(\d{1,2})\.(\d{1,2})(?:\.\d{1,2}){0,2}$/', trim($v), $m) ? [(int)$m[1], (int)$m[2]] : null;
+}
+/** true si le firmware demandé par le patch est <= à celui de la console (compare majeur.mineur) ; null si inconnu */
+function fw_compatible(string $required, string $console): ?bool
+{
+    $r = fw_major_minor($required);
+    $c = fw_major_minor($console);
+    if ($r === null || $c === null) return null;
+    return $r <= $c;
+}
+/** firmware de la console : valeur saisie dans la fiche si valide, sinon réglage CONSOLE_FW */
+function console_fw(): string
+{
+    global $CONSOLE_FW;
+    $v = trim((string)($_POST['fw'] ?? $_GET['fw'] ?? ''));
+    return fw_major_minor($v) !== null ? $v : (string)$CONSOLE_FW;
+}
+function http_request(string $url, ?string $post = null, int $max = 2097152): ?string
+{
+    if (!function_exists('curl_init') || strncmp($url, 'https://prosperopatches.com/', 28) !== 0) return null;
+    $c = curl_init($url);
+    $opt = [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_CONNECTTIMEOUT => 6, CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_PROTOCOLS => CURLPROTO_HTTPS, CURLOPT_MAXFILESIZE => $max, CURLOPT_USERAGENT => 'Mozilla/5.0 (compatible; orbit-nas-admin)'];
+    if ($post !== null) {
+        $opt[CURLOPT_POST] = true;
+        $opt[CURLOPT_POSTFIELDS] = $post;
+        $opt[CURLOPT_HTTPHEADER] = ['Content-Type: application/x-www-form-urlencoded; charset=UTF-8'];
+    }
+    curl_setopt_array($c, $opt);
+    $body = curl_exec($c);
+    $code = (int)curl_getinfo($c, CURLINFO_RESPONSE_CODE);
+    curl_close($c);
+    return is_string($body) && $code === 200 ? $body : null;
+}
+/** @return array{error:string,patches:array} */
+function patch_list(string $id, string $consoleFw): array
+{
+    $out = ['error' => '', 'patches' => []];
+    if (!preg_match('/^PPSA\d{5}$/', $id)) { $out['error'] = 'Identifiant invalide.'; return $out; }
+    $cache = sys_get_temp_dir() . '/orbit-nas-patches-' . $id . '.json';
+    $raw = null;
+    if (is_file($cache) && time() - (int)@filemtime($cache) < 600) $raw = (string)@file_get_contents($cache);
+    if ($raw === null || $raw === '') {
+        $page = http_request("https://prosperopatches.com/$id");
+        if ($page === null || !preg_match('/data-key="([0-9a-f]{16,128})"/', $page, $m)) {
+            $out['error'] = 'La liste des patchs est inaccessible depuis le NAS (site indisponible ou bloqué). Saisis la version à la main.';
+            return $out;
+        }
+        $raw = http_request('https://prosperopatches.com/api/internal/loadpatches', json_encode(['titleid' => $id, 'key' => $m[1]]));
+        if ($raw === null) { $out['error'] = 'Le site n\'a pas répondu. Saisis la version à la main.'; return $out; }
+        @file_put_contents($cache, $raw, LOCK_EX);
+    }
+    $j = json_decode($raw, true);
+    if (!is_array($j) || empty($j['success']) || !is_array($j['patches'] ?? null)) {
+        $out['error'] = 'Réponse du site inattendue. Saisis la version à la main.';
+        return $out;
+    }
+    foreach (array_slice($j['patches'], 0, 60) as $p) {
+        $ver = (string)($p['content_ver'] ?? '');
+        if (!preg_match('/^\d{2}\.\d{3}\.\d{3}$/', $ver)) continue;
+        $fw = (string)($p['required_firmware'] ?? '');
+        $out['patches'][] = ['version' => $ver, 'size' => substr((string)($p['filesize'] ?? ''), 0, 20), 'fw' => substr($fw, 0, 16),
+            'date' => substr((string)($p['import_date'] ?? ''), 0, 10), 'latest' => !empty($p['is_latest']), 'ok' => fw_compatible($fw, $consoleFw)];
+    }
+    return $out;
+}
+
+function patch_base(): string { return job_base() . '-patch'; }
+/** @return array{state:string,elapsed:int,ok:bool,id:string,version:string,done:int,total:int,speed:int,piece:int,pieces:int,msg:string} */
+function patch_state(bool $consume = false): array
+{
+    global $PATCH_TIMEOUT;
+    $b = patch_base();
+    $o = ['state' => 'idle', 'elapsed' => 0, 'ok' => false, 'id' => '', 'version' => '', 'done' => 0, 'total' => 0, 'speed' => 0, 'piece' => 0, 'pieces' => 0, 'msg' => ''];
+    if (!is_file("$b.start")) return $o;
+    $meta = json_decode((string)@file_get_contents("$b.start"), true);
+    if (is_array($meta)) { $o['id'] = (string)($meta['id'] ?? ''); $o['version'] = (string)($meta['version'] ?? ''); }
+    $o['elapsed'] = max(0, time() - (int)@filemtime("$b.start"));
+    if (is_file("$b.code")) {
+        $o['state'] = 'done';
+        $o['ok'] = trim((string)@file_get_contents("$b.code")) === '0';
+    } elseif ($o['elapsed'] > (int)$PATCH_TIMEOUT + 120) {
+        $o['state'] = 'done';
+        $o['msg'] = 'Téléchargement interrompu (délai dépassé).';
+    } else {
+        $o['state'] = 'running';
+    }
+    $log = '';
+    if (is_file("$b.log")) {
+        $size = (int)@filesize("$b.log");
+        $log = (string)@file_get_contents("$b.log", false, null, max(0, $size - 4000));
+    }
+    $last = '';
+    foreach (preg_split('/\r?\n/', trim($log)) as $line) {
+        if (preg_match('/^progress: (\d+) (\d+) (\d+) (\d+) (\d+)/', $line, $m)) {
+            [$o['done'], $o['total'], $o['piece'], $o['pieces'], $o['speed']] = [(int)$m[1], (int)$m[2], (int)$m[3], (int)$m[4], (int)$m[5]];
+        } elseif ($line !== '') {
+            $last = $line;
+        }
+    }
+    if ($o['msg'] === '') $o['msg'] = substr($last, 0, 300);
+    if ($o['state'] === 'done' && $consume) {
+        foreach (['start', 'code', 'log', 'cancel'] as $ext) @unlink("$b.$ext");
+    }
+    return $o;
+}
+/** Version et lien CRC mémorisés par jeu (fichier caché du dossier des jeux, bloqué par nas.htaccess). */
+function patch_saved_file(): string
+{
+    global $GAMES_DIR;
+    return rtrim((string)$GAMES_DIR, '/') . '/.nas-admin-patches.json';
+}
+function patch_saved_load(): array
+{
+    $j = json_decode((string)@file_get_contents(patch_saved_file()), true);
+    $out = [];
+    if (is_array($j)) {
+        foreach ($j as $id => $v) {
+            if (is_string($id) && preg_match('/^PPSA\d{5}$/', $id) && is_array($v)) {
+                $out[$id] = ['version' => (string)($v['version'] ?? ''), 'link' => (string)($v['link'] ?? '')];
+            }
+        }
+    }
+    return $out;
+}
+function patch_link_ok(string $link): bool
+{
+    return (bool)preg_match('~^https?://[A-Za-z0-9.-]+/[A-Za-z0-9/._-]{1,400}$~', $link) && strpos($link, '..') === false;
+}
+/** @return string message d'erreur, vide si enregistré */
+function patch_saved_set(string $id, string $version, string $link): string
+{
+    if (!preg_match('/^PPSA\d{5}$/', $id)) return 'Identifiant du jeu invalide.';
+    $version = trim($version);
+    $link = trim($link);
+    if ($version !== '' && !preg_match('/^\d{2}\.\d{3}\.\d{3}$/', $version)) return 'Version invalide.';
+    if ($link !== '' && !patch_link_ok($link)) return 'Lien invalide.';
+    $fh = @fopen(patch_saved_file(), 'c+');
+    if (!$fh) return 'Enregistrement impossible (dossier non modifiable).';
+    flock($fh, LOCK_EX);
+    $all = json_decode((string)stream_get_contents($fh), true);
+    $all = is_array($all) ? $all : [];
+    if ($version === '' && $link === '') unset($all[$id]);
+    else $all[$id] = ['version' => $version, 'link' => $link];
+    if (count($all) > 500) $all = array_slice($all, -500, null, true);
+    ftruncate($fh, 0);
+    rewind($fh);
+    fwrite($fh, json_encode($all, JSON_UNESCAPED_SLASHES));
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
+    return '';
+}
+/** @return string message d'erreur, vide si lancé */
+function patch_start(string $id, string $version, string $link, bool $force): string
+{
+    global $PYTHON, $FETCH_SCRIPT, $GAMES_DIR, $PATCH_TIMEOUT;
+    $CONSOLE_FW = console_fw();
+    if (!preg_match('/^PPSA\d{5}$/', $id)) return 'Identifiant du jeu invalide.';
+    if (!preg_match('/^\d{2}\.\d{3}\.\d{3}$/', $version)) return 'Version invalide (attendu : 06.005.000).';
+    $link = trim($link);
+    if (!preg_match('~^https?://[A-Za-z0-9.-]+/[A-Za-z0-9/._-]{1,400}$~', $link) || strpos($link, '..') !== false) return 'Lien CRC invalide.';
+    if (!is_file($FETCH_SCRIPT)) return 'fetch-patch.py est introuvable à côté de cette page.';
+    if (patch_state()['state'] === 'running') return 'Un téléchargement est déjà en cours.';
+    $py = (string)$PYTHON;
+    if ($py === '' || !is_file($py)) return 'Python introuvable (réglage PYTHON).';
+    $required = '';
+    $list = patch_list($id, $CONSOLE_FW);
+    foreach ($list['patches'] as $p) if ($p['version'] === $version) $required = $p['fw'];
+    if ($required !== '' && fw_compatible($required, $CONSOLE_FW) === false && !$force) {
+        return "Ce patch demande le firmware $required, supérieur à celui de ta console ($CONSOLE_FW). Coche « Forcer » pour le télécharger quand même.";
+    }
+    $b = patch_base();
+    foreach (['code', 'log', 'cancel', 'start'] as $ext) @unlink("$b.$ext");
+    $mark = @fopen("$b.start", 'x');
+    if (!$mark) return 'Un téléchargement est déjà en cours.';
+    patch_saved_set($id, $version, $link);
+    fwrite($mark, json_encode(['id' => $id, 'version' => $version]));
+    fclose($mark);
+    $cmd = [$py, '-u', (string)$FETCH_SCRIPT, (string)$GAMES_DIR, $id, $version, $link, '--cancel-file', "$b.cancel"];
+    if ($required !== '') { $cmd[] = '--required-fw'; $cmd[] = $required; }
+    if ($CONSOLE_FW !== '') { $cmd[] = '--console-fw'; $cmd[] = $CONSOLE_FW; }
+    if ($force) $cmd[] = '--force';
+    $line = implode(' ', array_map('escapeshellarg', $cmd));
+    $inner = 'T=""; command -v timeout >/dev/null 2>&1 && T="timeout -k 10 ' . (int)$PATCH_TIMEOUT . '"; '
+        . '$T ' . $line . ' > ' . escapeshellarg("$b.log") . ' 2>&1; echo $? > ' . escapeshellarg("$b.code");
+    $launch = 'nohup sh -c ' . escapeshellarg($inner) . ' >/dev/null 2>&1 &';
+    $proc = proc_open($launch, [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);
     if (!is_resource($proc)) { @unlink("$b.start"); return 'Impossible de lancer Python.'; }
     proc_close($proc);
     return '';
@@ -321,6 +520,21 @@ if (isset($_GET['job'])) {
     $j = job_state();
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['state' => $j['state'], 'elapsed' => $j['elapsed']]);
+    exit;
+}
+
+// ---- Patchs PS5 : liste et avancement (JSON, réservé aux connectés) ----------------
+if (isset($_GET['patches'])) {
+    session_write_close();
+    header('Content-Type: application/json; charset=utf-8');
+    $l = patch_list((string)$_GET['patches'], console_fw());
+    echo json_encode($l + ['consoleFw' => console_fw()], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+if (isset($_GET['patchjob'])) {
+    session_write_close();
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(patch_state(), JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -501,6 +715,24 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         header('Location: ' . strtok((string)($_SERVER['REQUEST_URI'] ?? ''), '?'));
         exit;
     }
+    if ($action === 'patch_dl' || $action === 'patch_cancel' || $action === 'patch_ack' || $action === 'patch_save') {
+        header('Content-Type: application/json; charset=utf-8');
+        if ($action === 'patch_dl') {
+            $err = patch_start((string)($_POST['id'] ?? ''), (string)($_POST['version'] ?? ''), (string)($_POST['link'] ?? ''), !empty($_POST['force']));
+            echo json_encode(['ok' => $err === '', 'error' => $err], JSON_UNESCAPED_UNICODE);
+        } elseif ($action === 'patch_save') {
+            $err = patch_saved_set((string)($_POST['id'] ?? ''), (string)($_POST['version'] ?? ''), (string)($_POST['link'] ?? ''));
+            echo json_encode(['ok' => $err === '', 'error' => $err], JSON_UNESCAPED_UNICODE);
+        } elseif ($action === 'patch_cancel') {
+            $st = patch_state();
+            if ($st['state'] === 'running') @file_put_contents(patch_base() . '.cancel', '1');
+            echo json_encode(['ok' => true, 'error' => '']);
+        } else {
+            patch_state(true);                         // efface un résultat déjà affiché
+            echo json_encode(['ok' => true, 'error' => '']);
+        }
+        exit;
+    }
     if ($action === 'link_create' || $action === 'link_delete') {
         $name = (string)($_POST['name'] ?? '');
         if (!$ALLOW_LINKS) {
@@ -577,7 +809,7 @@ $job = job_state(true);                          // une actualisation terminée 
 if ($job['state'] === 'done') $flash = ['ok' => $job['ok'], 'log' => $job['log'] !== '' ? $job['log'] : '(aucune sortie)', 'at' => $job['at']];
 $running = $job['state'] === 'running';
 $links = $ALLOW_LINKS ? link_list((string)$GAMES_DIR) : [];
-$data = json_encode(['games' => $games, 'indexTime' => $indexTime, 'today' => date('Y-m-d')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+$data = json_encode(['games' => $games, 'indexTime' => $indexTime, 'today' => date('Y-m-d'), 'csrf' => $csrf, 'consoleFw' => (string)$CONSOLE_FW, 'patches' => is_file((string)$FETCH_SCRIPT), 'saved' => (object)patch_saved_load()], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 
 header('Content-Type: text/html; charset=utf-8');
 ?><!doctype html>
@@ -663,6 +895,7 @@ main{padding:0 0 3rem}
 .art{aspect-ratio:1;border-radius:.75rem;overflow:hidden;background:linear-gradient(135deg,var(--panel2),var(--panel));display:grid;place-items:center;position:relative}
 .art img{width:100%;height:100%;object-fit:cover;display:block}
 .art svg{width:38%;opacity:.35}
+.plat{position:absolute;left:.4rem;top:.4rem;font-size:.7rem;font-weight:700;padding:.12rem .5rem;border-radius:999px;background:#1f5fe0;color:#fff;letter-spacing:.04em;box-shadow:0 1px 4px #0006}
 .badge{position:absolute;left:.4rem;bottom:.4rem;font-size:.7rem;padding:.12rem .45rem;border-radius:999px;background:#000a;color:#fff;letter-spacing:.02em}
 .name{margin-top:.55rem;font-weight:600;font-size:.95rem;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .sub{color:var(--dim);font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -682,6 +915,19 @@ h3{margin:1.2rem 1.4rem .5rem;font-size:.85rem;color:var(--dim);text-transform:u
 ul.files{list-style:none;margin:0 1.4rem;padding:0;display:grid;gap:.4rem}
 ul.files li{display:grid;grid-template-columns:auto 1fr auto;gap:.2rem .8rem;align-items:baseline;padding:.55rem .8rem;border-radius:.7rem;background:#ffffff0a;font-size:.88rem}
 ul.files .fmt{font-weight:600;color:var(--accent);white-space:nowrap}
+.pbox{margin:0 1.4rem;display:grid;gap:.6rem}
+.pbox label{display:grid;gap:.25rem;font-size:.85rem;color:var(--dim)}
+.pbox .row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end}
+.pbox a{color:var(--accent)}
+.prow{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;width:100%;text-align:left;padding:.45rem .7rem;border-radius:.6rem;border:1px solid var(--line);background:var(--panel2);cursor:pointer;color:inherit;font:inherit}
+.prow[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 2px #4fb3ff33}
+.prow b{font-variant-numeric:tabular-nums}.prow .m{color:var(--dim);font-size:.82rem}
+.prow .t{margin-left:auto;font-size:.75rem;font-weight:700;padding:.1rem .5rem;border-radius:999px}
+.t.ok{background:#14532d;color:#bbf7d0}.t.no{background:#7f1d1d;color:#fecaca}.t.unk{background:#334155;color:#cbd5e1}
+#pRows{display:grid;gap:.35rem;max-height:13rem;overflow:auto}
+.pbar{height:.7rem;border-radius:999px;background:var(--panel2);border:1px solid var(--line);overflow:hidden}
+.pbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .6s linear}
+.pbox .chk{display:flex;gap:.5rem;align-items:center}
 ul.files .fn{word-break:break-all}
 ul.files .sz{color:var(--dim);white-space:nowrap}
 dl{display:grid;grid-template-columns:max-content 1fr;gap:.35rem 1rem;margin:0 1.4rem;font-size:.9rem}
@@ -768,12 +1014,30 @@ summary{cursor:pointer;font-weight:600}
   <ul class="files" id="dFiles"></ul>
   <h3>Informations</h3>
   <dl id="dList"></dl>
+  <div id="dPatch" hidden>
+    <h3>Patchs (PS5)</h3>
+    <div class="pbox">
+      <div class="row">
+        <label>Firmware de ta console<input class="field" id="pFw" size="7" maxlength="11" placeholder="10.20" autocomplete="off"></label>
+        <button class="btn small" id="pList" type="button">Chercher les patchs</button>
+        <a id="pSite" href="#" target="_blank" rel="noopener noreferrer">Page du jeu ↗</a>
+      </div>
+      <div id="pRows"></div>
+      <label>Version<input class="field" id="pVer" maxlength="10" placeholder="06.005.000" autocomplete="off"></label>
+      <label>Lien CRC du patch<input class="field" id="pLink" maxlength="500" placeholder="https://sgst.prod.dl.playstation.net/…/….crc" autocomplete="off"></label>
+      <p class="note">Sur la page du jeu, ouvre le patch, fais un clic droit sur « CRC » → copier l'adresse du lien, puis colle-la ici. Le fichier est téléchargé depuis les serveurs Sony dans <code>packages/ps5/updates/</code>.</p>
+      <label class="chk"><input type="checkbox" id="pForce"> Forcer même si le firmware de la console est trop ancien</label>
+      <div class="row"><button class="btn primary" id="pGo" type="button">Télécharger le patch</button><button class="btn" id="pStop" type="button" hidden>Annuler</button></div>
+      <div class="pbar" id="pBar" hidden><i id="pFill"></i></div>
+      <p class="note" id="pMsg" role="status"></p>
+    </div>
+  </div>
   <div class="actions"><button class="btn" id="dOk">Fermer</button></div>
 </dialog>
 <script type="application/json" id="data"><?= $data ?></script>
 <script nonce="<?= h($nonce) ?>">
 (() => {
-  const { games: releases, indexTime, today } = JSON.parse(document.getElementById('data').textContent);
+  const { games: releases, indexTime, today, csrf: CSRF, consoleFw: CFG_FW, patches: PATCHES_ON, saved: SAVED } = JSON.parse(document.getElementById('data').textContent);
   const $ = (id) => document.getElementById(id);
   const main = $('main'), tabsEl = $('tabs'), q = $('q');
   const SVG = 'http://www.w3.org/2000/svg';
@@ -841,6 +1105,7 @@ summary{cursor:pointer;font-weight:600}
     const box = el('div', 'art');
     if (g.cover) { const i = new Image(); i.alt = ''; i.loading = 'lazy'; i.decoding = 'async'; i.src = g.cover; i.onerror = () => { i.remove(); box.prepend(mark()); }; box.append(i); }
     else box.append(mark());
+    if (g.platform === 'ps4') { const p = el('span', 'plat', 'PS4'); p.title = 'Jeu PS4'; box.append(p); }
     if (badge) box.append(el('span', 'badge', g.files.length > 1 ? plural(g.files.length, 'fichier', 'fichiers') : g.formats.join(' · ')));
     return box;
   };
@@ -1012,7 +1277,106 @@ summary{cursor:pointer;font-weight:600}
       ['Icône', g.coverReal ? 'oui' : 'manquante'], ['Fond', g.heroReal ? 'oui' : 'manquant']].filter(Boolean);
     $('dList').replaceChildren(...rows.flatMap(([k, v]) => [el('dt', null, k), el('dd', null, v)]));
     dlg.showModal();
+    setupPatch(g);
   }
+  // ---- Patchs PS5 ----
+  const pbox = $('dPatch');
+  let patchGame = '', patchTimer = 0;
+  const lsGet = (k) => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* stockage indisponible */ } };
+  const fwOk = () => /^\d{1,2}\.\d{1,2}(\.\d{1,2}){0,2}$/.test($('pFw').value.trim());
+  const pPost = async (data) => {
+    const r = await fetch(location.pathname, { method: 'POST', credentials: 'same-origin', body: new URLSearchParams({ csrf: CSRF, ...data }) });
+    return r.json();
+  };
+  const hms = (s) => { const m = Math.floor(s / 60); return m + ' min ' + String(s % 60).padStart(2, '0') + ' s'; };
+  function showPatchState(st) {
+    const run = st.state === 'running';
+    $('pStop').hidden = !run;
+    $('pGo').disabled = run;
+    $('pBar').hidden = !(run || (st.state === 'done' && st.ok));
+    const pct = st.total ? Math.min(100, Math.floor(st.done * 100 / st.total)) : 0;
+    $('pFill').style.width = (st.state === 'done' && st.ok ? 100 : pct) + '%';
+    if (run) {
+      $('pMsg').textContent = st.id + ' v' + st.version + ' : ' + (st.total ? pct + ' % · ' + bytes(st.done) + ' / ' + bytes(st.total) + ' · morceau ' + Math.min(st.piece + 1, st.pieces) + '/' + st.pieces + (st.speed ? ' · ' + bytes(st.speed) + '/s' : '') : 'préparation…') + ' · ' + hms(st.elapsed);
+    } else if (st.state === 'done') {
+      $('pMsg').textContent = st.ok ? 'Terminé : ' + st.id + ' v' + st.version + '. Ferme cette fiche et clique sur « Actualiser » pour l\'ajouter à la liste.' : 'Échec : ' + (st.msg || 'erreur inconnue') + (st.msg && /cancel|annul/i.test(st.msg) ? ' (la reprise est possible : relance le téléchargement)' : '');
+    }
+  }
+  async function pollPatch() {
+    clearTimeout(patchTimer);
+    if (!dlg.open) return;
+    try {
+      const st = await (await fetch('?patchjob=1', { cache: 'no-store', credentials: 'same-origin' })).json();
+      if (st.state !== 'idle') showPatchState(st);
+      if (st.state === 'running') { patchTimer = setTimeout(pollPatch, 2000); return; }
+      if (st.state === 'done') pPost({ action: 'patch_ack' }).catch(() => {});
+      else { $('pGo').disabled = false; $('pStop').hidden = true; }
+    } catch (e) { patchTimer = setTimeout(pollPatch, 4000); }
+  }
+  function setupPatch(g) {
+    const on = PATCHES_ON && g.platform === 'ps5' && g.cat === 'game' && /^PPSA\d{5}$/.test(g.titleId || '');
+    pbox.hidden = !on;
+    clearTimeout(patchTimer);
+    if (!on) return;
+    patchGame = g.titleId;
+    $('pFw').value = lsGet('orbitFw') || CFG_FW || '';
+    $('pSite').href = 'https://prosperopatches.com/' + g.titleId;
+    $('pRows').replaceChildren(); $('pVer').value = (SAVED[g.titleId] || {}).version || ''; $('pLink').value = (SAVED[g.titleId] || {}).link || ''; $('pForce').checked = false;
+    $('pMsg').textContent = ''; $('pBar').hidden = true; $('pStop').hidden = true; $('pGo').disabled = false;
+    pollPatch();
+  }
+  let saveTimer = 0;
+  function saveFields() {
+    const id = patchGame, version = $('pVer').value.trim(), link = $('pLink').value.trim();
+    if (!id) return;
+    if (!/^(\d{2}\.\d{3}\.\d{3})?$/.test(version) || !(link === '' || /^https?:\/\/\S+$/.test(link))) return;
+    SAVED[id] = { version, link };
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => pPost({ action: 'patch_save', id, version, link }).catch(() => {}), 400);
+  }
+  $('pVer').addEventListener('input', saveFields);
+  $('pLink').addEventListener('input', saveFields);
+  $('pFw').addEventListener('change', () => { if (fwOk()) lsSet('orbitFw', $('pFw').value.trim()); });
+  $('pList').addEventListener('click', async () => {
+    const id = patchGame; if (!id) return;
+    $('pMsg').textContent = 'Recherche des patchs…'; $('pRows').replaceChildren();
+    try {
+      const r = await fetch('?patches=' + encodeURIComponent(id) + (fwOk() ? '&fw=' + encodeURIComponent($('pFw').value.trim()) : ''), { cache: 'no-store', credentials: 'same-origin' });
+      const j = await r.json();
+      if (id !== patchGame) return;
+      $('pMsg').textContent = j.error || (j.patches.length ? '' : 'Aucun patch listé.');
+      const rows = j.patches.map((p) => {
+        const b = el('button', 'prow'); b.type = 'button'; b.setAttribute('aria-pressed', 'false');
+        const tag = p.ok === true ? ['ok', 'compatible'] : p.ok === false ? ['no', 'firmware trop récent'] : ['unk', 'firmware ?'];
+        b.append(el('b', null, 'v' + p.version), el('span', 'm', [p.latest && 'dernier', p.size, p.date, p.fw && 'FW ' + p.fw].filter(Boolean).join(' · ')), el('span', 't ' + tag[0], tag[1]));
+        b.onclick = () => { $('pVer').value = p.version; saveFields(); for (const x of $('pRows').children) x.setAttribute('aria-pressed', String(x === b)); };
+        return b;
+      });
+      $('pRows').replaceChildren(...rows);
+      const keep = j.patches.findIndex((p) => p.version === $('pVer').value.trim());
+      if (rows.length) rows[keep >= 0 ? keep : 0].click();
+    } catch (e) { $('pMsg').textContent = 'Impossible de contacter le serveur.'; }
+  });
+  $('pGo').addEventListener('click', async () => {
+    const version = $('pVer').value.trim(), link = $('pLink').value.trim();
+    if (!/^\d{2}\.\d{3}\.\d{3}$/.test(version)) { $('pMsg').textContent = 'Version attendue au format 06.005.000.'; return; }
+    if (!/^https?:\/\/\S+\.(crc|json)$/i.test(link)) { $('pMsg').textContent = 'Colle le lien CRC (qui finit par .crc).'; return; }
+    $('pGo').disabled = true; $('pMsg').textContent = 'Lancement…';
+    try {
+      const j = await pPost({ action: 'patch_dl', id: patchGame, version, link, force: $('pForce').checked ? '1' : '', fw: fwOk() ? $('pFw').value.trim() : '' });
+      if (!j.ok) { $('pMsg').textContent = j.error || 'Échec du lancement.'; $('pGo').disabled = false; return; }
+      showPatchState({ state: 'running', id: patchGame, version, elapsed: 0, done: 0, total: 0, piece: 0, pieces: 0, speed: 0 });
+      patchTimer = setTimeout(pollPatch, 1500);
+    } catch (e) { $('pMsg').textContent = 'Impossible de contacter le serveur.'; $('pGo').disabled = false; }
+  });
+  $('pStop').addEventListener('click', async () => {
+    $('pStop').disabled = true;
+    try { await pPost({ action: 'patch_cancel' }); $('pMsg').textContent = 'Annulation…'; } catch (e) { /* on réessaiera */ }
+    setTimeout(() => { $('pStop').disabled = false; }, 3000);
+  });
+  dlg.addEventListener('close', () => clearTimeout(patchTimer));
+
   $('dClose').onclick = $('dOk').onclick = () => dlg.close();
   dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
 
