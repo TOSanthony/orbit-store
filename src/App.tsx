@@ -255,6 +255,12 @@ export default function App() {
   const active = orbit.jobs.filter((j) =>
     ["queued", "downloading", "retrying", "verifying", "inspecting", "extracting"].includes(j.status),
   ).length;
+  // DLC never has a tab. Updates shows only while an installed game has an update waiting, with the
+  // number beside its name, and goes away once they are all done.
+  const gameUpdates = orbit.gameUpdates;
+  useEffect(() => {
+    if (tab === "DLC" || (tab === "Updates" && gameUpdates <= 0)) setTab("Browse");
+  }, [tab, gameUpdates]);
   // Start with the first rail so the hero and highlighted tile agree.
   const focused =
     storeGames.find((g) => g.id === focusedId) ||
@@ -393,12 +399,13 @@ export default function App() {
                   "Discover",
                   "Browse",
                   "Apps",
-                  "DLC",
                   "Updates",
                   "Library",
                   "Downloads",
                 ] as const
-              ).map(
+              )
+                .filter((name) => name !== "Updates" || gameUpdates > 0)
+                .map(
                 (name) => (
                   <button
                     key={name}
@@ -409,6 +416,9 @@ export default function App() {
                     {tabLabels[name]}
                     {name === "Downloads" && active > 0 && (
                       <span className="queue-count">{active}</span>
+                    )}
+                    {name === "Updates" && gameUpdates > 0 && (
+                      <span className="queue-count">{gameUpdates}</span>
                     )}
                   </button>
                 ),

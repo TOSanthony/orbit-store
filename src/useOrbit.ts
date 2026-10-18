@@ -180,7 +180,11 @@ export function useOrbit() {
     catalogKey.current = "";
     await refresh();
   };
+  // Installed games with an update waiting: decides whether the Updates tab shows. Stays 0 until the
+  // console's game-update check fills it.
+  const gameUpdates = 0;
   return {
+    gameUpdates,
     games,
     browser,
     ready,

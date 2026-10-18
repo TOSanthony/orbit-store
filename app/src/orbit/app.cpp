@@ -46,15 +46,29 @@ float beta_width(const ui::Type &type)
     return type.semibold.measure(tr("BETA"), 13.0f) + 4.0f + 2.0f * 7.6f;
 }
 
-// Apps, DLC and Updates come from My NAS folders only: without that source, their tabs go away.
+// Apps come from My NAS folders only: without that source their tab goes away. DLC and Updates no
+// longer list what the NAS hosts. The DLC tab stays hidden, and Updates shows only while an
+// installed game has an update waiting, then goes away again once they are all done.
 bool tab_hidden(const Snapshot &state, int index)
 {
-    if (index != tab::apps && index != tab::dlc && index != tab::updates)
+    if (index == tab::dlc)
+        return true;
+    if (index == tab::updates)
+        return state.game_updates <= 0;
+    if (index != tab::apps)
         return false;
     if (!state.have_sources || state.sources.enabled.empty())
         return false;
     return std::find(state.sources.enabled.begin(), state.sources.enabled.end(), "nas") ==
            state.sources.enabled.end();
+}
+
+// The number badge on a tab (Downloads, Updates): its pill is at least 24 wide and grows with the digits.
+float badge_width(const ui::Type &type, int number)
+{
+    char text[16];
+    std::snprintf(text, sizeof(text), "%d", number);
+    return std::max(24.0f, type.semibold.measure(text, 14.0f) + 18.0f);
 }
 
 // The next index along the top row in a direction, hopping over hidden tabs. May leave the tabs.
@@ -73,9 +87,12 @@ ui::Rect tab_rect(const ui::Type &type, const Snapshot &state, int index)
     float x = beta_x(type) + beta_width(type) + 18.0f + 60.0f;
     for (int i = 0; i < index; ++i)
         if (!tab_hidden(state, i))
-            x += type.regular.measure(tr(kTabs[i]), kTabSize) + 2.0f * kTabPad + kTabGap;
+            x += type.regular.measure(tr(kTabs[i]), kTabSize) + 2.0f * kTabPad + kTabGap +
+                 (i == tab::updates ? 10.0f + badge_width(type, state.game_updates) : 0.0f);
     return {x, kTopY - kTabHeight * 0.5f,
-            type.regular.measure(tr(kTabs[index]), kTabSize) + 2.0f * kTabPad, kTabHeight};
+            type.regular.measure(tr(kTabs[index]), kTabSize) + 2.0f * kTabPad +
+                (index == tab::updates ? 10.0f + badge_width(type, state.game_updates) : 0.0f),
+            kTabHeight};
 }
 
 bool starting_now(const Snapshot &state)
@@ -583,17 +600,19 @@ void App::draw_top_bar(hui::gfx::DrawList &list) const
 
     // Tabs: text buttons, the current one in a pale pill.
     const int active = active_jobs(state);
-    char count[16];
-    std::snprintf(count, sizeof(count), "%d", active);
-    // .queue-count sits inside the Downloads tab, which widens for it.
-    const float count_width = std::max(24.0f, type.semibold.measure(count, 14.0f) + 18.0f);
     for (int i = 0; i < kTabCount; ++i)
     {
         if (tab_hidden(state, i))
             continue;
         ui::Rect r = tab_rect(type, state, i);
-        const bool counted = i == tab::downloads && active > 0;
-        if (counted)
+        // Downloads counts its running jobs, Updates the installed games with an update waiting.
+        const int number = i == tab::downloads ? active : i == tab::updates ? state.game_updates : 0;
+        const bool counted = number > 0;
+        const float count_width = badge_width(type, number);
+        char count[16];
+        std::snprintf(count, sizeof(count), "%d", number);
+        // .queue-count sits inside the tab, which widens for it (tab_rect already did so for Updates).
+        if (counted && i == tab::downloads)
             r.w += 10.0f + count_width;
         const bool current = i == tab_;
         const float focus = top_focus_[static_cast<std::size_t>(i)].value;

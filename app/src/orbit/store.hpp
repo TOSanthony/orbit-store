@@ -79,6 +79,9 @@ struct Snapshot
     bool have_queue = false;
     std::vector<Job> jobs;
     std::vector<Drive> drives;
+    // Installed games that have an update waiting. It decides whether the Updates tab shows and the
+    // number beside its name. Stays 0 until the console's game-update check fills it.
+    int game_updates = 0;
 
     bool have_favourites = false;
     std::vector<std::string> favourites; // game IDs, shared with paired clients
