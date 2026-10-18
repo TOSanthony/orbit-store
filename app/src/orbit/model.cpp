@@ -477,6 +477,7 @@ GameUpdateStatus parse_game_update_status(const json::Value &value)
     status.failed = static_cast<int>(value["failed"].as_int());
     status.checked_at = value.number("checked");
     status.error = value.text("error");
+    status.detail = value.text("detail");
     return status;
 }
 

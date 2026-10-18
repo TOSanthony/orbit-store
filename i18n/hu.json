@@ -319,6 +319,7 @@
   "Download views": "Letöltési nézetek",
   "Download {id}": "{id} letöltése",
   "Downloaded": "Letöltve",
+  "First failure: {detail}": "Első hiba: {detail}",
   "Game updates": "Játékfrissítések",
   "Games that could not be checked: {count}": "Nem ellenőrizhető játékok: {count}",
   "In your Library": "A könyvtáradban",

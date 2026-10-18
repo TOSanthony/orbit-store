@@ -319,6 +319,7 @@
   "Download views": "Разделы загрузок",
   "Download {id}": "Загрузка {id}",
   "Downloaded": "Загружено",
+  "First failure: {detail}": "Первая ошибка: {detail}",
   "Game updates": "Обновления игр",
   "Games that could not be checked: {count}": "Игры, которые не удалось проверить: {count}",
   "In your Library": "В вашей библиотеке",

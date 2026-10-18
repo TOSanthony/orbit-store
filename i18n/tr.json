@@ -319,6 +319,7 @@
   "Download views": "İndirme görünümleri",
   "Download {id}": "İndirme {id}",
   "Downloaded": "İndirildi",
+  "First failure: {detail}": "İlk hata: {detail}",
   "Game updates": "Oyun güncellemeleri",
   "Games that could not be checked: {count}": "Kontrol edilemeyen oyunlar: {count}",
   "In your Library": "Kitaplığında",

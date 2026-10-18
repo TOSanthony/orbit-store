@@ -58,6 +58,7 @@ static struct {
     bool started, stop, busy, refresh;
     time_t checked;
     char error[200];
+    char detail[200]; /* why the first game of the last check failed */
     Entry *entries;
     size_t count;
     size_t failed;
@@ -107,7 +108,7 @@ static void sony_ca(struct curl_blob *blob, char **storage) {
     blob->flags = CURL_BLOB_COPY;
 }
 /* Downloads one version.xml. Redirects are not followed: Sony serves it directly. */
-static bool fetch_xml(const char *url, Body *body) {
+static bool fetch_xml(const char *url, Body *body, char *why, size_t why_cap) {
     const char *address = url;
     char test_url[900];
 #ifdef ORBIT_TEST
@@ -120,8 +121,10 @@ static bool fetch_xml(const char *url, Body *body) {
 #endif
     {
         (void)test_url;
-        if (!patchfeed_url_allowed(url))
+        if (!patchfeed_url_allowed(url)) {
+            copy_text(why, why_cap, "address not on Sony's download servers");
             return false;
+        }
     }
     CURL *curl = curl_easy_init();
     if (!curl)
@@ -131,6 +134,7 @@ static bool fetch_xml(const char *url, Body *body) {
     sony_ca(&ca, &storage);
     if (!ca.data) {
         curl_easy_cleanup(curl);
+        copy_text(why, why_cap, "not enough memory");
         return false;
     }
     body->data = NULL;
@@ -155,6 +159,10 @@ static bool fetch_xml(const char *url, Body *body) {
     curl_easy_cleanup(curl);
     free(storage);
     if (result != CURLE_OK || status != 200) {
+        if (result != CURLE_OK)
+            snprintf(why, why_cap, "%s", curl_easy_strerror(result));
+        else
+            snprintf(why, why_cap, "HTTP %ld", status);
         free(body->data);
         body->data = NULL;
         return false;
@@ -200,6 +208,7 @@ static void run_check(void) {
         return;
     }
     size_t total = 0, count = 0, failed = 0;
+    char first_failure[200] = "";
     if (appdb_read(path, games, MAX_GAMES, &total, error, sizeof error) < 0) {
         char text[200];
         snprintf(text, sizeof text, "Could not read the installed games: %s", error);
@@ -216,7 +225,10 @@ static void run_check(void) {
         char installed[16];
         installed_version(game->title_id, game->content_version, installed, sizeof installed);
         Body body = {0};
-        if (!fetch_xml(game->version_file_uri, &body)) {
+        char why[120] = "";
+        if (!fetch_xml(game->version_file_uri, &body, why, sizeof why)) {
+            if (!failed)
+                snprintf(first_failure, sizeof first_failure, "%s: %s", game->title_id, why);
             failed++;
             continue;
         }
@@ -224,6 +236,8 @@ static void run_check(void) {
         int n = patchfeed_parse(body.data, body.size, list, PATCHFEED_MAX);
         free(body.data);
         if (n < 0) {
+            if (!failed)
+                snprintf(first_failure, sizeof first_failure, "%s: not a Sony update list", game->title_id);
             failed++;
             continue;
         }
@@ -251,6 +265,7 @@ static void run_check(void) {
     gu.entries = found;
     gu.count = count;
     gu.failed = failed;
+    copy_text(gu.detail, sizeof gu.detail, first_failure);
     gu.checked = time(NULL);
     gu.error[0] = 0;
     if (failed && total && failed == total)
@@ -363,6 +378,7 @@ cJSON *gameupdates_status(void) {
     cJSON_AddNumberToObject(o, "checked", (double)gu.checked);
     cJSON_AddNumberToObject(o, "failed", (double)gu.failed);
     cJSON_AddStringToObject(o, "error", gu.error);
+    cJSON_AddStringToObject(o, "detail", gu.detail);
     pthread_mutex_unlock(&gu.mutex);
     cJSON_AddNumberToObject(o, "count", available);
     cJSON_AddItemToObject(o, "games", games);

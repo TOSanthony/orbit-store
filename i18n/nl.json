@@ -319,6 +319,7 @@
   "Download views": "Downloadweergaven",
   "Download {id}": "Download {id}",
   "Downloaded": "Gedownload",
+  "First failure: {detail}": "Eerste fout: {detail}",
   "Game updates": "Spelupdates",
   "Games that could not be checked: {count}": "Spellen die niet konden worden gecontroleerd: {count}",
   "In your Library": "In je bibliotheek",

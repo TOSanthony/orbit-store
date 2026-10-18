@@ -312,6 +312,7 @@ struct GameUpdateStatus
     int failed = 0; // games whose update list could not be read
     double checked_at = 0.0; // Unix seconds, 0 before the first check
     std::string error;
+    std::string detail; // why the first failed game failed (technical, English)
 };
 
 // The download service's own updates (GET /api/v1/updates): Orbit, the payload.

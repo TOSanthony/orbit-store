@@ -1043,8 +1043,12 @@ void SettingsScreen::build_updates(Pane &pane) const
                                  : std::string(tr("Not checked yet")),
                              tr("Updates found: {count}", {{"count", std::to_string(games.count)}}));
             if (games.failed > 0)
+            {
                 pane.fine(tr("Games that could not be checked: {count}",
                              {{"count", std::to_string(games.failed)}}));
+                if (!games.detail.empty())
+                    pane.fine(tr("First failure: {detail}", {{"detail", games.detail}}));
+            }
             if (!games.error.empty())
                 pane.notice({}, tr(games.error));
         }

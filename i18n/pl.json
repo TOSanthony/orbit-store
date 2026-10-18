@@ -319,6 +319,7 @@
   "Download views": "Widoki pobierania",
   "Download {id}": "Pobieranie {id}",
   "Downloaded": "Pobrano",
+  "First failure: {detail}": "Pierwszy błąd: {detail}",
   "Game updates": "Aktualizacje gier",
   "Games that could not be checked: {count}": "Gry, których nie udało się sprawdzić: {count}",
   "In your Library": "W Twojej bibliotece",
