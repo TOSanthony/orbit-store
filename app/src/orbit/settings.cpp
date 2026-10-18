@@ -48,7 +48,7 @@ constexpr const char *kNotice =
 void ellipse_outline(hui::gfx::DrawList &list, float cx, float cy, float rx, float ry, float turn,
                      float thickness, ui::Color ink)
 {
-    constexpr int kSteps = 40;
+    constexpr int kSteps = 72;
     float last_x = 0.0f, last_y = 0.0f;
     for (int i = 0; i <= kSteps; ++i)
     {
@@ -74,22 +74,59 @@ void section_icon(hui::gfx::DrawList &list, SettingsScreen::Section section, flo
     {
     case Section::appearance:
     {
-        // A palette: a round tray with three dabs of colour.
-        ellipse_outline(list, cx, cy, size * 0.44f, size * 0.38f, 0.0f, t, ink);
-        list.circle(cx - size * 0.17f, cy - size * 0.08f, size * 0.065f, ink);
-        list.circle(cx + size * 0.02f, cy - size * 0.18f, size * 0.065f, ink);
-        list.circle(cx + size * 0.2f, cy - size * 0.05f, size * 0.065f, ink);
+        // An artist's palette: a rounded board with a bite out of one side, a thumb hole and
+        // dabs of colour.
+        constexpr int kSteps = 56;
+        float last_x = 0.0f, last_y = 0.0f;
+        for (int i = 0; i <= kSteps; ++i)
+        {
+            const float a = static_cast<float>(i) * 6.2831853f / static_cast<float>(kSteps);
+            // The bite sits at the lower right (a = 2.4 rad, clockwise from the right).
+            float d = a - 0.95f;
+            d = std::atan2(std::sin(d), std::cos(d));
+            const float bite = 0.2f * std::exp(-d * d / 0.09f);
+            const float x = cx + std::cos(a) * size * (0.46f - bite);
+            const float y = cy + std::sin(a) * size * (0.38f - bite * 0.8f);
+            if (i > 0)
+                list.line(last_x, last_y, x, y, t, ink);
+            last_x = x;
+            last_y = y;
+        }
+        list.ring(cx - size * 0.2f, cy + size * 0.1f, size * 0.07f, t * 0.9f, ink);
+        list.circle(cx - size * 0.22f, cy - size * 0.1f, size * 0.06f, ink);
+        list.circle(cx - size * 0.02f, cy - size * 0.2f, size * 0.06f, ink);
+        list.circle(cx + size * 0.2f, cy - size * 0.1f, size * 0.06f, ink);
         break;
     }
     case Section::language:
     {
-        // A globe: the circle, a meridian and two parallels.
-        const float r = size * 0.42f;
+        // A globe: the circle, a lens-shaped meridian and two parallels. Inner strokes are a
+        // little finer than the rim so the joins stay clean at this size.
+        const float r = size * 0.45f;
+        const float g = t * 0.85f;
         list.ring(cx, cy, r, t, ink);
-        ellipse_outline(list, cx, cy, r * 0.45f, r, 0.0f, t * 0.85f, ink);
-        list.line(cx - r, cy, cx + r, cy, t * 0.85f, ink);
-        list.line(cx - r * 0.86f, cy - r * 0.5f, cx + r * 0.86f, cy - r * 0.5f, t * 0.85f, ink);
-        list.line(cx - r * 0.86f, cy + r * 0.5f, cx + r * 0.86f, cy + r * 0.5f, t * 0.85f, ink);
+        // The meridians stop short of the poles so the rim stays perfectly round there.
+        for (const float side : {-1.0f, 1.0f})
+        {
+            constexpr int kSeg = 24;
+            constexpr float kEnd = 0.45f; // radians away from the pole
+            float lx = 0.0f, ly = 0.0f;
+            for (int n = 0; n <= kSeg; ++n)
+            {
+                const float a = -1.5707963f + kEnd +
+                                (3.1415927f - 2.0f * kEnd) * static_cast<float>(n) / kSeg;
+                const float ex = cx + side * r * 0.36f * std::cos(a);
+                const float ey = cy + r * std::sin(a);
+                if (n > 0)
+                    list.line(lx, ly, ex, ey, g, ink);
+                lx = ex;
+                ly = ey;
+            }
+        }
+        const float py = r * 0.30f;
+        const float px = std::sqrt(r * r - py * py) - t * 0.3f;
+        list.line(cx - px, cy - py, cx + px, cy - py, g, ink);
+        list.line(cx - px, cy + py, cx + px, cy + py, g, ink);
         break;
     }
     case Section::sources:
@@ -97,23 +134,37 @@ void section_icon(hui::gfx::DrawList &list, SettingsScreen::Section section, flo
         break;
     case Section::storage:
     {
-        // A drive: a flat box, a divider and a small light.
-        const ui::Rect body{cx - size * 0.44f, cy - size * 0.2f, size * 0.88f, size * 0.4f};
-        list.bordered_rect(body, size * 0.08f, none, t, ink);
-        list.line(body.x, cy + size * 0.02f, body.x + body.w, cy + size * 0.02f, t * 0.85f, ink);
-        list.circle(cx + size * 0.28f, cy + size * 0.12f, size * 0.04f, ink);
-        list.line(cx - size * 0.3f, cy + size * 0.12f, cx - size * 0.1f, cy + size * 0.12f, t, ink);
+        // The storage icon of the game pages: a database cylinder (a full ellipse on top,
+        // two half ellipses below, joined by the sides).
+        const float k = size / 40.0f;
+        const float tt = std::max(2.0f, 2.4f * k);
+        const float rx = 12.0f * k, ry = 4.5f * k;
+        ellipse_outline(list, cx, cy - 8.0f * k, rx, ry, 0.0f, tt, ink);
+        list.line(cx - rx, cy - 8.0f * k, cx - rx, cy + 8.0f * k, tt, ink);
+        list.line(cx + rx, cy - 8.0f * k, cx + rx, cy + 8.0f * k, tt, ink);
+        for (const float dy : {8.0f, 0.0f})
+        {
+            constexpr int kHalf = 20;
+            float last_x = cx + rx, last_y = cy + dy * k;
+            for (int n = 1; n <= kHalf; ++n)
+            {
+                const float a = 3.1415927f * static_cast<float>(n) / static_cast<float>(kHalf);
+                const float x = cx + rx * std::cos(a);
+                const float y = cy + dy * k + ry * std::sin(a);
+                list.line(last_x, last_y, x, y, tt, ink);
+                last_x = x;
+                last_y = y;
+            }
+        }
         break;
     }
     case Section::pairing:
     {
-        // A controller: the body, a cross on the left, two buttons on the right.
-        const ui::Rect body{cx - size * 0.46f, cy - size * 0.24f, size * 0.92f, size * 0.48f};
-        list.bordered_rect(body, size * 0.22f, none, t, ink);
-        list.line(cx - size * 0.28f, cy - size * 0.02f, cx - size * 0.1f, cy - size * 0.02f, t, ink);
-        list.line(cx - size * 0.19f, cy - size * 0.11f, cx - size * 0.19f, cy + size * 0.07f, t, ink);
-        list.circle(cx + size * 0.14f, cy - size * 0.02f, size * 0.045f, ink);
-        list.circle(cx + size * 0.28f, cy + size * 0.07f, size * 0.045f, ink);
+        // A computer: the screen on a short stand and a base.
+        const ui::Rect screen{cx - size * 0.44f, cy - size * 0.36f, size * 0.88f, size * 0.58f};
+        list.bordered_rect(screen, size * 0.07f, none, t, ink);
+        list.line(cx, cy + size * 0.22f, cx, cy + size * 0.36f, t, ink);
+        list.line(cx - size * 0.24f, cy + size * 0.38f, cx + size * 0.24f, cy + size * 0.38f, t, ink);
         break;
     }
     case Section::catalogue:
@@ -145,25 +196,19 @@ void section_icon(hui::gfx::DrawList &list, SettingsScreen::Section section, flo
     }
     case Section::updates:
     {
-        // Two arcs chasing each other, each with an arrow head: a refresh.
-        const float r = size * 0.36f;
-        const float head = size * 0.15f;
-        list.arc(cx, cy, r + t * 0.5f, t, 0.5f, 2.3f, ink, false);
-        list.arc(cx, cy, r + t * 0.5f, t, 3.64f, 2.3f, ink, false);
-        // Heads sit at the clockwise end of each arc.
-        const float a1 = 0.5f + 2.3f;
-        const float a2 = 3.64f + 2.3f;
-        for (const float a : {a1, a2})
-        {
-            const float px = cx + std::sin(a) * r;
-            const float py = cy - std::cos(a) * r;
-            const float tx = std::cos(a);
-            const float ty = std::sin(a);
-            list.line(px, py, px - tx * head - std::sin(a) * head * 0.9f,
-                      py - ty * head + std::cos(a) * head * 0.9f, t, ink);
-            list.line(px, py, px - tx * head + std::sin(a) * head * 0.9f,
-                      py - ty * head - std::cos(a) * head * 0.9f, t, ink);
-        }
+        // Two half-circle arrows chasing each other: solid triangular heads whose flat base
+        // sits on the vertical axis, one pointing left at the top, one right at the bottom.
+        const float g = t * 1.25f;
+        const float R = size * 0.34f; // centre line of the stroke
+        const float hw = g * 1.8f; // half height of a head
+        const float hl = g * 1.7f; // length of a head
+        constexpr float kSweep = 2.35f;
+        list.arc(cx, cy, R + g * 0.5f, g, 0.0f, kSweep, ink, false);
+        list.arc(cx, cy, R + g * 0.5f, g, 3.1415927f, kSweep, ink, false);
+        const float top[6] = {cx, cy - R - hw, cx, cy - R + hw, cx - hl, cy - R};
+        const float bottom[6] = {cx, cy + R - hw, cx, cy + R + hw, cx + hl, cy + R};
+        list.polygon(top, 3, ink);
+        list.polygon(bottom, 3, ink);
         break;
     }
     case Section::zero:
@@ -1758,7 +1803,11 @@ void SettingsScreen::draw(Frame &frame, bool focused) const
         const float focus = nav_focus_[i];
         ui::state_fill(list, r, r.h * 0.5f, focus, current, true);
         const ui::Color ink = ui::state_ink(focus, current, true);
-        section_icon(list, static_cast<Section>(i), r.x + 44.0f, r.cy(), 28.0f, ink);
+        if (static_cast<Section>(i) == Section::zero && ctx_.mark != 0)
+            // Orbit Zero is Orbit itself: the store's own mark, in the text colour.
+            list.image(ctx_.mark, {r.x + 44.0f - 20.0f, r.cy() - 20.0f, 40.0f, 40.0f}, hui::gfx::kFullUv, ink);
+        else
+            section_icon(list, static_cast<Section>(i), r.x + 44.0f, r.cy(), 28.0f, ink);
         ui::text(list, type.medium, tr(kSections[i]), r.x + 78.0f, r.cy() + 7.5f, 21.0f, ink);
         if (static_cast<Section>(i) == Section::updates && update_available())
             list.circle(r.x + r.w - 32.0f, r.cy(), 7.0f, ui::color::action_hi);
