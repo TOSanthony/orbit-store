@@ -70,6 +70,16 @@ export interface SourceSettings {
     downloadReady: boolean;
   }[];
 }
+// An installed game with a newer patch on Sony's servers (GET /api/v1/game-updates).
+export interface GameUpdate {
+  titleId: string;
+  name: string;
+  installed: string;
+  version: string;
+  state: "available" | "needs-firmware";
+  firmware?: string;
+}
+
 export interface Storage {
   id: string;
   label: string;

@@ -6,6 +6,7 @@ import { useSnapshot } from "./useSnapshot";
 import type {
   BrowserSession,
   Game,
+  GameUpdate,
   Release,
   Job,
   SourceId,
@@ -19,7 +20,7 @@ export function useOrbit() {
     [jobs, setJobs] = useSnapshot<Job[]>([]),
     [storage, setStorage] = useSnapshot<Storage[]>([]);
   const [ready, setReady] = useState(false);
-  const [gameUpdates, setGameUpdates] = useState(0);
+  const [gameUpdateList, setGameUpdateList] = useState<GameUpdate[]>([]);
   const [browser, setBrowser] = useSnapshot<BrowserSession | null>(null);
   const [system, setSystem] = useSnapshot<System | null>(null),
     [sources, setSources] = useSnapshot<SourceSettings | null>(null),
@@ -75,21 +76,24 @@ export function useOrbit() {
               api<string[]>("/favorites"),
               api<BrowserSession>("/browser"),
               // An older service has no update check: 0 keeps the Updates tab hidden.
-              api<{ count: number }>("/game-updates").catch(() => ({ count: 0 })),
+              api<{ count: number; games: GameUpdate[] }>("/game-updates").catch(() => ({
+                count: 0,
+                games: [] as GameUpdate[],
+              })),
             ]);
           if (alive.current) {
             setJobs(queue);
             setStorage(drives);
             setFavorites(savedFavorites);
             setBrowser(providerBrowser);
-            setGameUpdates(patches.count);
+            setGameUpdateList(patches.games ?? []);
           }
         } else {
           setJobs([]);
           setStorage([]);
           setFavorites([]);
           setBrowser(null);
-          setGameUpdates(0);
+          setGameUpdateList([]);
         }
         if (!alive.current) return;
         setSystem(sys);
@@ -186,8 +190,10 @@ export function useOrbit() {
     await refresh();
   };
   // Installed games with an update waiting: decides whether the Updates tab shows.
+  const gameUpdates = gameUpdateList.filter((g) => g.state === "available").length;
   return {
     gameUpdates,
+    gameUpdateList,
     games,
     browser,
     ready,

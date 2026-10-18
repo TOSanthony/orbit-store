@@ -5,6 +5,7 @@ import { Backdrop, GameTile, Icon, Modal, StorageRows } from "./components";
 import { GameRail, type RailMemory } from "./GameRail";
 import { Details } from "./Details";
 import { Downloads } from "./Downloads";
+import { GameUpdates } from "./GameUpdates";
 import { Library } from "./Library";
 import { useLibrary } from "./useLibrary";
 import { StorageOverview } from "./LibraryActions";
@@ -716,7 +717,9 @@ export default function App() {
               )}
             </div>
           )
-        ) : tab === "Browse" || tab === "Apps" || tab === "DLC" || tab === "Updates" ? (
+        ) : tab === "Updates" ? (
+          <GameUpdates games={orbit.gameUpdateList} />
+        ) : tab === "Browse" || tab === "Apps" || tab === "DLC" ? (
           <section className="page browse">
             <div className="page-heading">
               <h1>{tabLabels[tab]}</h1>
@@ -991,7 +994,7 @@ export default function App() {
             <b>×</b>
             {!game && tab !== "Downloads" ? t("Open game") : t("Select")}
           </span>
-          {!game && (tab === "Browse" || tab === "Apps" || tab === "DLC" || tab === "Updates") && (
+          {!game && (tab === "Browse" || tab === "Apps" || tab === "DLC") && (
             <button onClick={showSearch}>
               <b>△</b>
               {t("Search")}

@@ -702,6 +702,38 @@ html:not(.pointer) .search-field input:focus {
   padding: 0;
   overflow: visible;
 }
+.game-updates {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 70rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.game-updates li {
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.game-updates li > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.game-updates strong {
+  font-size: 1.15rem;
+  font-weight: 500;
+}
+.game-updates span,
+.game-updates .muted {
+  color: var(--text-3);
+  font-size: 0.9rem;
+}
+.game-updates p {
+  margin: 0.35rem 0 0;
+  color: var(--text-2);
+}
 .empty {
   display: flex;
   flex-direction: column;

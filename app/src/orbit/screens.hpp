@@ -447,6 +447,19 @@ class DownloadsScreen final : public Screen
     ui::Ease dialog_in_;
 };
 
+// Installed games that have a newer patch on Sony's servers (Updates tab).
+class GameUpdatesScreen final : public Screen
+{
+  public:
+    explicit GameUpdatesScreen(Context &context);
+    void focus() override;
+    Intent update(const InputFrame &input, float dt, Feedback &feedback, bool focused) override;
+    void draw(Frame &frame, bool focused) const override;
+
+  private:
+    int row_ = 0;
+};
+
 class GamePage final : public Screen
 {
   public:
@@ -718,7 +731,7 @@ class App
     BrowseScreen browse_;
     BrowseScreen apps_;
     BrowseScreen dlc_;
-    BrowseScreen updates_;
+    GameUpdatesScreen updates_;
     LibraryScreen library_;
     DownloadsScreen downloads_;
     GamePage game_;

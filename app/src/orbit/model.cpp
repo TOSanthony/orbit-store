@@ -478,6 +478,18 @@ GameUpdateStatus parse_game_update_status(const json::Value &value)
     status.checked_at = value.number("checked");
     status.error = value.text("error");
     status.detail = value.text("detail");
+    for (const json::Value &entry : value["games"].items())
+    {
+        GameUpdateItem item;
+        item.title_id = entry.text("titleId");
+        item.name = entry.text("name");
+        item.installed = entry.text("installed");
+        item.version = entry.text("version");
+        item.blocked = entry.text("state") == "needs-firmware";
+        item.firmware = entry.text("firmware");
+        if (!item.title_id.empty())
+            status.games.push_back(std::move(item));
+    }
     return status;
 }
 

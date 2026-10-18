@@ -1,9 +1,11 @@
 {
   "(version unknown)": "(version unknown)",
   "Apps": "Apps",
+  "Available {version}": "Available {version}",
   "Choose a DLC": "Choose a DLC",
   "Choose an update": "Choose an update",
   "DLC": "DLC",
+  "Downloading game updates is not available yet.": "Downloading game updates is not available yet.",
   "First failure: {detail}": "First failure: {detail}",
   "free after": "free after",
   "free after install": "free after install",
@@ -11,6 +13,10 @@
   "Game updates": "Game updates",
   "Games that could not be checked: {count}": "Games that could not be checked: {count}",
   "Install all ({count})": "Install all ({count})",
+  "Installed games with a newer patch on Sony’s servers appear here.": "Installed games with a newer patch on Sony’s servers appear here.",
+  "Installed {version}": "Installed {version}",
+  "Needs firmware {firmware} or later": "Needs firmware {firmware} or later",
+  "No game updates": "No game updates",
   "{count} active": {
     "one": "{count} active",
     "other": "{count} active"

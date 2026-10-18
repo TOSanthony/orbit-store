@@ -303,6 +303,17 @@ struct CatalogueStatus
     std::string error;
 };
 
+// One installed game with a newer patch on Sony's servers.
+struct GameUpdateItem
+{
+    std::string title_id;  // PPSA01552
+    std::string name;
+    std::string installed; // 05.000.000
+    std::string version;   // 06.005.000
+    bool blocked = false;  // the patch needs a newer firmware than this console has
+    std::string firmware;  // "11.00" when blocked
+};
+
 // Installed games with a newer patch on Sony's servers (GET /api/v1/game-updates).
 struct GameUpdateStatus
 {
@@ -313,6 +324,7 @@ struct GameUpdateStatus
     double checked_at = 0.0; // Unix seconds, 0 before the first check
     std::string error;
     std::string detail; // why the first failed game failed (technical, English)
+    std::vector<GameUpdateItem> games;
 };
 
 // The download service's own updates (GET /api/v1/updates): Orbit, the payload.

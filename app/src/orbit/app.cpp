@@ -115,7 +115,7 @@ int active_jobs(const Snapshot &state)
 
 App::App(Context &context)
     : ctx_(context), discover_(context), browse_(context), apps_(context, Category::apps), dlc_(context, Category::dlc),
-      updates_(context, Category::updates), library_(context), downloads_(context),
+      updates_(context), library_(context), downloads_(context),
       game_(context), settings_(context)
 {
     ctx_.appearance = appearance::load();
@@ -152,7 +152,7 @@ const Screen &App::screen() const
 bool App::content_blocked() const
 {
     // Library and Downloads don't depend on the download sources or the catalogue.
-    if (tab_ == tab::downloads || tab_ == tab::library)
+    if (tab_ == tab::downloads || tab_ == tab::library || tab_ == tab::updates)
         return false;
     const Snapshot &state = ctx_.store.state();
     return state.setup_needed() || (state.have_catalog && state.games.empty());
@@ -241,8 +241,6 @@ void App::handle_intent(const Intent &intent, Feedback &feedback)
             apps_.return_to(game_.game_id());
         else if (tab_ == tab::dlc)
             dlc_.return_to(game_.game_id());
-        else if (tab_ == tab::updates)
-            updates_.return_to(game_.game_id());
         break;
     case Intent::Kind::show_job:
         game_open_ = false;
