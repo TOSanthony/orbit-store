@@ -73,13 +73,15 @@ int nas_game_patches(char **data, size_t *size) {
 }
 
 /* An update file listed in the NAS index, described by the test: "PPSA00004:03.000.000:2048:<sha256>". */
-bool nas_best_update(const char *title_id, const char *newer_than, char *id, size_t id_cap, char *version,
-                     size_t version_cap, int64_t *size) {
+bool nas_best_update(const char *title_id, const char *newer_than, const char *same_ok, char *id, size_t id_cap,
+                     char *version, size_t version_cap, int64_t *size) {
     const char *spec = getenv("ORBIT_TEST_NAS_UPDATE");
-    char game[16] = "", ver[16] = "";
+    char game[16] = "", ver[16] = "", hash[80] = "";
     long long bytes = 0;
-    if (!spec || sscanf(spec, "%15[^:]:%15[^:]:%lld", game, ver, &bytes) != 3 || strcmp(game, title_id) ||
-        (*newer_than && strcmp(ver, newer_than) <= 0))
+    if (!spec || sscanf(spec, "%15[^:]:%15[^:]:%lld:%79s", game, ver, &bytes, hash) < 3 || strcmp(game, title_id))
+        return false;
+    bool same = *same_ok && !strcmp(ver, same_ok) && strlen(hash) == 64;
+    if (*newer_than && strcmp(ver, newer_than) <= 0 && !same)
         return false;
     snprintf(id, id_cap, "nas-test");
     snprintf(version, version_cap, "%s", ver);

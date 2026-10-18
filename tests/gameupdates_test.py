@@ -125,6 +125,13 @@ with tempfile.TemporaryDirectory() as root:
     check("the count includes the NAS-saved updates", s["count"] == 3)
     s = run(root, "11000000")
     check("on firmware 11.00 both patches are installable", s["count"] == 2)
+    # ---- the same version on the NAS and from Sony ----
+    s = run(root, "10200000", nas="PPSA00001:06.005.000:777:" + "a" * 64)
+    check("the same version on the NAS (with a SHA-256) is taken from the NAS instead of Sony",
+          {g["titleId"]: g for g in s["games"]}["PPSA00001"].get("size") == 777)
+    s = run(root, "10200000", nas="PPSA00001:06.005.000:777")
+    check("the same version on the NAS without a SHA-256 stays on Sony",
+          {g["titleId"]: g for g in s["games"]}["PPSA00001"].get("size") == 4096)
 with tempfile.TemporaryDirectory() as root:
     s = run(root, "10200000")
     check("a missing app.db gives a readable error", s["error"].startswith("Could not read the installed games"))

@@ -171,7 +171,7 @@ static void run_check(void) {
         char nas_id[24], nas_version[16];
         int64_t nas_size = 0;
         const char *floor = e && !e->blocked ? e->available : (patchfeed_version_valid(installed) ? installed : "");
-        if (nas_best_update(game->title_id, floor, nas_id, sizeof nas_id, nas_version, sizeof nas_version, &nas_size)) {
+        if (nas_best_update(game->title_id, floor, e && !e->blocked ? e->available : "", nas_id, sizeof nas_id, nas_version, sizeof nas_version, &nas_size)) {
             if (!e) {
                 e = &found[count++];
                 copy_text(e->title_id, sizeof e->title_id, game->title_id);

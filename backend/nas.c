@@ -389,10 +389,11 @@ static int fetch(const char *url, Body *body, char *error, size_t cap) {
  * the folder of index.json. Returns 1 with a NUL-terminated body (free it), 0 when My NAS is off or
  * has no such file, -1 when it could not be read. Called without orbit.mutex. */
 /* The newest plain .pkg listed in the NAS index as an update (packages/ps5/updates/) for this game,
- * when its version is strictly newer than `newer_than` (a NN.NNN.NNN version, or empty). Versions
+ * when its version is strictly newer than `newer_than` (a NN.NNN.NNN version, or empty), or equal to
+ * `same_ok` (the version already on offer) and listed with a SHA-256. Versions
  * the index gives in another shape are not compared. Returns false when there is none. */
-bool nas_best_update(const char *title_id, const char *newer_than, char *id, size_t id_cap, char *version,
-                     size_t version_cap, int64_t *size) {
+bool nas_best_update(const char *title_id, const char *newer_than, const char *same_ok, char *id, size_t id_cap,
+                     char *version, size_t version_cap, int64_t *size) {
     bool found = false;
     char best[16] = "";
     pthread_mutex_lock(&orbit.mutex);
@@ -407,7 +408,10 @@ bool nas_best_update(const char *title_id, const char *newer_than, char *id, siz
             if (!patchfeed_version_valid(v) || r->compression[0] || r->size <= 0 || name < 5 ||
                 strcasecmp(r->filename + name - 4, ".pkg"))
                 continue;
-            if (*newer_than && strcmp(v, newer_than) <= 0)
+            /* The same version Sony offers is taken from the NAS too when the index gives its checksum,
+             * so the file is verified like a Sony download. */
+            bool same = *same_ok && !strcmp(v, same_ok) && strlen(r->sha256) == 64;
+            if (*newer_than && strcmp(v, newer_than) <= 0 && !same)
                 continue;
             if (found && strcmp(v, best) <= 0)
                 continue;
