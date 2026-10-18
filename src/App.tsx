@@ -718,7 +718,11 @@ export default function App() {
             </div>
           )
         ) : tab === "Updates" ? (
-          <GameUpdates games={orbit.gameUpdateList} />
+          <GameUpdates
+            games={orbit.gameUpdateList}
+            checking={orbit.gameChecking}
+            check={orbit.checkGameUpdates}
+          />
         ) : tab === "Browse" || tab === "Apps" || tab === "DLC" ? (
           <section className="page browse">
             <div className="page-heading">

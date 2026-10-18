@@ -667,6 +667,19 @@ Result<GameUpdateStatus> Client::game_updates()
     return result;
 }
 
+Result<GameUpdateStatus> Client::refresh_game_updates()
+{
+    Result<GameUpdateStatus> result;
+    const http::Response response =
+        send("POST", "/api/v1/game-updates", "{\"action\":\"refresh\"}");
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    if (json::parse(response.body, &value) && value.is_object())
+        result.value = parse_game_update_status(value);
+    return result;
+}
+
 Result<ServiceUpdate> Client::service_action(const UpdateRequest &request)
 {
     Result<ServiceUpdate> result;

@@ -339,6 +339,7 @@ int gameupdates_action(const cJSON *input, char *error, size_t cap) {
     bool running = gu.started;
     if (running && !gu.busy) {
         gu.refresh = true;
+        gu.busy = true; /* shown at once; the worker confirms it */
         pthread_cond_broadcast(&gu.changed);
     }
     pthread_mutex_unlock(&gu.mutex);
@@ -357,8 +358,11 @@ cJSON *gameupdates_status(void) {
     }
     pthread_mutex_lock(&gu.mutex);
     int available = 0;
-    for (size_t i = 0; i < gu.count; i++) {
-        const Entry *e = &gu.entries[i];
+    /* Patches this console can install first, then those that need a newer firmware. */
+    for (size_t n = 0; n < gu.count * 2; n++) {
+        const Entry *e = &gu.entries[n % gu.count];
+        if (e->blocked != (n >= gu.count))
+            continue;
         cJSON *g = cJSON_CreateObject();
         if (!g)
             continue;

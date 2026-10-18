@@ -140,6 +140,8 @@ class Client
     Result<ServiceUpdate> service_update();
     // How many installed games have a patch waiting. An older service answers 404.
     Result<GameUpdateStatus> game_updates();
+    // Asks the console to look for game updates now (it otherwise checks every six hours).
+    Result<GameUpdateStatus> refresh_game_updates();
     Result<ServiceUpdate> service_action(const UpdateRequest &request);
     // The copy of Orbit the service saved, for starting it again. An older service answers 404.
     Result<SavedPayload> saved_payload();

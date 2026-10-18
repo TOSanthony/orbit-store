@@ -587,6 +587,7 @@ class SettingsScreen final : public Screen
         save_sources,
         drive, // 0 chooses automatically; then one per drive
         refresh_catalogue,
+        game_updates_check,
         tv_check,
         tv_install,
         tv_replace, // install over a copy the owner placed, after confirming

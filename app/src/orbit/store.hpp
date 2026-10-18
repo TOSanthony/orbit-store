@@ -140,6 +140,7 @@ enum class Setting : std::uint8_t
     ps4,
     install_pkgs,
     delete_pkgs,
+    game_updates,
 };
 
 struct SettingResult
@@ -241,6 +242,7 @@ class Store
     // Stops Orbit, which pauses its downloads, then starts it again.
     void restart_service();
     void check_tv_app();
+    void check_game_updates();
     void install_tv_app(const std::string &version, const std::string &checksum, bool replace);
     // While Settings is open the catalogue and update statuses are read on
     // every poll; otherwise about once a minute, for the update badge.

@@ -335,6 +335,11 @@ void Store::refresh_catalogue()
     send_setting(Setting::catalogue);
 }
 
+void Store::check_game_updates()
+{
+    send_setting(Setting::game_updates);
+}
+
 void Store::check_service_update()
 {
     send_setting(Setting::service_check);
@@ -862,7 +867,8 @@ void Store::poll_settings()
     api::Result<TvAppStatus> tv = client_.tv_app();
     api::Result<GameUpdateStatus> game_updates = client_.game_updates();
     settings_busy_ = (catalogue.ok() && catalogue.value.busy) ||
-                     (service.ok() && service.value.busy) || (tv.ok() && tv.value.busy);
+                     (service.ok() && service.value.busy) || (tv.ok() && tv.value.busy) ||
+                     (game_updates.ok() && game_updates.value.checking);
     inbox_.post(
         [this, catalogue = std::move(catalogue), service = std::move(service),
          tv = std::move(tv), game_updates = std::move(game_updates)]() mutable
@@ -1071,6 +1077,12 @@ void Store::run_setting(Command &command)
     {
         api::Result<CatalogueStatus> result = client_.refresh_catalogue();
         error = result.error;
+        break;
+    }
+    case Setting::game_updates:
+    {
+        api::Result<GameUpdateStatus> result = client_.refresh_game_updates();
+        error = result.status == 404 ? tr("Update the download service to check game updates.") : result.error;
         break;
     }
     case Setting::service_check:

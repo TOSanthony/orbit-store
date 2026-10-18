@@ -3,13 +3,24 @@ import { t } from "./i18n";
 import type { GameUpdate } from "./types";
 
 // Installed games that have a newer patch on Sony's servers. The console decides what is listed.
-export function GameUpdates({ games }: { games: GameUpdate[] }) {
+export function GameUpdates({
+  games,
+  checking,
+  check,
+}: {
+  games: GameUpdate[];
+  checking: boolean;
+  check: () => Promise<void>;
+}) {
   const ready = games.filter((game) => game.state === "available").length;
   return (
     <section className="page">
       <div className="page-heading">
         <h1>{t("Game updates")}</h1>
         <span>{t("Updates found: {count}", { count: ready })}</span>
+        <button disabled={checking} onClick={() => void check().catch(() => {})}>
+          {checking ? t("Checking…") : t("Check for game updates")}
+        </button>
       </div>
       {games.length === 0 ? (
         <div className="empty">

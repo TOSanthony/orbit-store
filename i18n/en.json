@@ -2,6 +2,7 @@
   "(version unknown)": "(version unknown)",
   "Apps": "Apps",
   "Available {version}": "Available {version}",
+  "Check for game updates": "Check for game updates",
   "Choose a DLC": "Choose a DLC",
   "Choose an update": "Choose an update",
   "DLC": "DLC",
@@ -17,6 +18,7 @@
   "Installed {version}": "Installed {version}",
   "Needs firmware {firmware} or later": "Needs firmware {firmware} or later",
   "No game updates": "No game updates",
+  "Update the download service to check game updates.": "Update the download service to check game updates.",
   "{count} active": {
     "one": "{count} active",
     "other": "{count} active"

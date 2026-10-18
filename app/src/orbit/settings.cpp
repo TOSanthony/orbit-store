@@ -1051,6 +1051,12 @@ void SettingsScreen::build_updates(Pane &pane) const
             }
             if (!games.error.empty())
                 pane.notice({}, tr(games.error));
+            const bool looking = games.checking || (result.busy && result.setting == Setting::game_updates);
+            pane.buttons({{Kind::game_updates_check,
+                           looking ? tr("Checking\xE2\x80\xA6") : tr("Check for game updates"),
+                           ui::ButtonKind::secondary, !looking}});
+            if (error_setting_ == Setting::game_updates && !error_.empty())
+                pane.notice({}, tr(error_));
         }
     }
     pane.end_card();
@@ -1573,6 +1579,10 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
     case Kind::refresh_catalogue:
         error_.clear();
         ctx_.store.refresh_catalogue();
+        break;
+    case Kind::game_updates_check:
+        error_.clear();
+        ctx_.store.check_game_updates();
         break;
     case Kind::tv_check:
         error_.clear();
