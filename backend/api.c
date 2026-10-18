@@ -812,6 +812,15 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
             return code == 202 ? json_response(c, 202, catalog_status())
                                : error(c, (unsigned)code, *e ? e : "Expected refresh action.");
         }
+        if (get && !strcmp(url, "/api/v1/game-updates"))
+            return json_response(c, 200, gameupdates_status());
+        if (post && !strcmp(url, "/api/v1/game-updates")) {
+            char e[256] = {0};
+            int code = gameupdates_action(input, e, sizeof e);
+            cJSON_Delete(input);
+            return code == 202 ? json_response(c, 202, gameupdates_status())
+                               : error(c, (unsigned)code, e);
+        }
         if (get && !strcmp(url, "/api/v1/updates"))
             return json_response(c, 200, updates_status());
         if (post && !strcmp(url, "/api/v1/updates")) {

@@ -317,6 +317,9 @@ int main(int argc, char **argv) {
     diagnostics_stage("updates", startup_result ? "error" : "ok", startup_result);
     if (startup_result)
         puts("Orbit update worker could not start; the server remains available.");
+    startup_result = gameupdates_start();
+    if (startup_result)
+        puts("Game update check could not start; the Updates tab stays hidden.");
     diagnostics_stage("browser", "started", 0);
     startup_result = browser_start();
     diagnostics_stage("browser", startup_result ? "error" : "ok", startup_result);
@@ -369,6 +372,7 @@ int main(int argc, char **argv) {
     tvapp_stop();
     browser_stop();
     library_stop();
+    gameupdates_stop();
     updates_stop();
     nas_stop();
     catalog_stop();

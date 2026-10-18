@@ -138,6 +138,8 @@ class Client
         bool replace = false;   // install over a copy the owner placed (TV app only)
     };
     Result<ServiceUpdate> service_update();
+    // How many installed games have a patch waiting. An older service answers 404.
+    Result<int> game_updates();
     Result<ServiceUpdate> service_action(const UpdateRequest &request);
     // The copy of Orbit the service saved, for starting it again. An older service answers 404.
     Result<SavedPayload> saved_payload();

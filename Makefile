@@ -215,3 +215,10 @@ test-browser-capture: build/orbit-test build/orbit-browser-capture-test
 .PHONY: test-concurrency
 test-concurrency: build/orbit-test
 	python3 tests/concurrency_integration.py
+
+.PHONY: test-gameupdates
+build/orbit-gameupdates-test: backend/gameupdates.c backend/appdb.c backend/patchfeed.c backend/orbit.h tests/gameupdates_driver.c .deps/cjson/cJSON.c Makefile
+	@mkdir -p build
+	$(HOST_CC) -Itests/stubs $(CPPFLAGS) $(CFLAGS) -DORBIT_TEST backend/gameupdates.c backend/appdb.c backend/patchfeed.c tests/gameupdates_driver.c .deps/cjson/cJSON.c -o $@ -lcurl -lpthread -lm
+test-gameupdates: build/orbit-gameupdates-test
+	python3 tests/gameupdates_test.py ./build/orbit-gameupdates-test

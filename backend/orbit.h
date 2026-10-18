@@ -228,6 +228,11 @@ void autoboot_saved_version(char *version, size_t cap);
 int autoboot_saved_image(unsigned char **data, size_t *length);
 /* -1, 0 or 1 for Orbit release versions; -2 when either is not one. */
 int orbit_version_compare(const char *a, const char *b);
+/* Installed games with a newer Sony patch (gameupdates.c). */
+int gameupdates_start(void);
+void gameupdates_stop(void);
+cJSON *gameupdates_status(void);
+int gameupdates_action(const cJSON *input, char *error, size_t cap);
 int updates_start(void);
 void updates_stop(void);
 cJSON *updates_status(void);

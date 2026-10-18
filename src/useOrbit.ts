@@ -19,6 +19,7 @@ export function useOrbit() {
     [jobs, setJobs] = useSnapshot<Job[]>([]),
     [storage, setStorage] = useSnapshot<Storage[]>([]);
   const [ready, setReady] = useState(false);
+  const [gameUpdates, setGameUpdates] = useState(0);
   const [browser, setBrowser] = useSnapshot<BrowserSession | null>(null);
   const [system, setSystem] = useSnapshot<System | null>(null),
     [sources, setSources] = useSnapshot<SourceSettings | null>(null),
@@ -67,24 +68,28 @@ export function useOrbit() {
           sys.paired = true;
         }
         if (sys.paired) {
-          const [queue, drives, savedFavorites, providerBrowser] =
+          const [queue, drives, savedFavorites, providerBrowser, patches] =
             await Promise.all([
               api<Job[]>("/downloads"),
               api<Storage[]>("/storage"),
               api<string[]>("/favorites"),
               api<BrowserSession>("/browser"),
+              // An older service has no update check: 0 keeps the Updates tab hidden.
+              api<{ count: number }>("/game-updates").catch(() => ({ count: 0 })),
             ]);
           if (alive.current) {
             setJobs(queue);
             setStorage(drives);
             setFavorites(savedFavorites);
             setBrowser(providerBrowser);
+            setGameUpdates(patches.count);
           }
         } else {
           setJobs([]);
           setStorage([]);
           setFavorites([]);
           setBrowser(null);
+          setGameUpdates(0);
         }
         if (!alive.current) return;
         setSystem(sys);
@@ -180,9 +185,7 @@ export function useOrbit() {
     catalogKey.current = "";
     await refresh();
   };
-  // Installed games with an update waiting: decides whether the Updates tab shows. Stays 0 until the
-  // console's game-update check fills it.
-  const gameUpdates = 0;
+  // Installed games with an update waiting: decides whether the Updates tab shows.
   return {
     gameUpdates,
     games,

@@ -80,7 +80,7 @@ struct Snapshot
     std::vector<Job> jobs;
     std::vector<Drive> drives;
     // Installed games that have an update waiting. It decides whether the Updates tab shows and the
-    // number beside its name. Stays 0 until the console's game-update check fills it.
+    // number beside its name. Filled from the console's game-update check; 0 when it has none.
     int game_updates = 0;
 
     bool have_favourites = false;
