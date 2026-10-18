@@ -131,6 +131,18 @@ static bool resolve(const char *url, char *out, size_t cap, bool *local, char *w
     snprintf(out, cap, "%s", url);
     return true;
 }
+/* "host: libcurl's own words" so a failed check says which server and why (for instance which certificate). */
+static void explain(char *why, size_t cap, const char *address, CURLcode result, const char *detail) {
+    char host[96] = "";
+    const char *start = strstr(address, "://");
+    start = start ? start + 3 : address;
+    size_t n = strcspn(start, "/:");
+    if (n >= sizeof host)
+        n = sizeof host - 1;
+    memcpy(host, start, n);
+    host[n] = 0;
+    snprintf(why, cap, "%s: %s", host, *detail ? detail : curl_easy_strerror(result));
+}
 static void common(CURL *curl, struct curl_blob *ca, bool local, Progress *p) {
     curl_easy_setopt(curl, CURLOPT_CAINFO_BLOB, ca);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
@@ -171,6 +183,8 @@ bool sony_get(const char *url, size_t max, SonyBody *body, sony_stop_fn stop, ch
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, collect);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &collected);
+    char detail[CURL_ERROR_SIZE] = "";
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, detail);
     CURLcode result = curl_easy_perform(curl);
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
@@ -178,7 +192,7 @@ bool sony_get(const char *url, size_t max, SonyBody *body, sony_stop_fn stop, ch
     free(storage);
     if (result != CURLE_OK || status != 200) {
         if (result != CURLE_OK)
-            snprintf(why, why_cap, "%s", curl_easy_strerror(result));
+            explain(why, why_cap, address, result, detail);
         else
             snprintf(why, why_cap, "HTTP %ld", status);
         free(body->data);
@@ -223,6 +237,8 @@ sony_range_result sony_range(const char *url, int64_t start, int64_t end, int fd
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 45L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, store);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &w);
+    char detail[CURL_ERROR_SIZE] = "";
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, detail);
     CURLcode result = curl_easy_perform(curl);
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
@@ -246,7 +262,7 @@ sony_range_result sony_range(const char *url, int64_t start, int64_t end, int fd
     }
     if (result != CURLE_OK || (status != 200 && status != 206)) {
         if (result != CURLE_OK)
-            snprintf(why, why_cap, "%s", curl_easy_strerror(result));
+            explain(why, why_cap, address, result, detail);
         else
             snprintf(why, why_cap, "HTTP %ld", status);
         return SONY_RANGE_FAILED;

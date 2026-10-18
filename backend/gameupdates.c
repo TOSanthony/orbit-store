@@ -101,7 +101,7 @@ static void run_check(void) {
         char installed[16];
         installed_version(game->title_id, game->content_version, installed, sizeof installed);
         SonyBody body = {0};
-        char why[120] = "";
+        char why[160] = "";
         if (!sony_get(game->version_file_uri, MAX_XML, &body, stopping, why, sizeof why)) {
             if (!failed)
                 snprintf(first_failure, sizeof first_failure, "%s: %s", game->title_id, why);
