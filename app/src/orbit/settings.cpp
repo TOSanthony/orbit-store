@@ -35,7 +35,7 @@ constexpr float kCardRadius = 14.0f;
 constexpr float kKeyboardTop = 560.0f;
 constexpr int kSectionCount = static_cast<int>(SettingsScreen::Section::count);
 constexpr const char *kSections[] = {/* i18n */ "Personalisation", /* i18n */ "Language", /* i18n */ "Download sources", /* i18n */ "Storage", /* i18n */ "Pair a device",
-                                     /* i18n */ "Game catalogue",   /* i18n */ "Console", /* i18n */ "Updates", "Orbit Zero",
+                                     /* i18n */ "Game catalogue",   /* i18n */ "Updates", "Orbit Zero",
                                      /* i18n */ "More settings"};
 constexpr const char *kSavedElf = "/data/orbit-store/orbit_store.elf";
 constexpr const char *kNotice =
@@ -168,19 +168,6 @@ void section_icon(hui::gfx::DrawList &list, SettingsScreen::Section section, flo
         break;
     }
     case Section::catalogue:
-    {
-        // A grid of four tiles.
-        const float tile = size * 0.34f;
-        const float gap = size * 0.12f;
-        for (int row = 0; row < 2; ++row)
-            for (int col = 0; col < 2; ++col)
-                list.bordered_rect({cx - tile - gap * 0.5f + static_cast<float>(col) * (tile + gap),
-                                    cy - tile - gap * 0.5f + static_cast<float>(row) * (tile + gap),
-                                    tile, tile},
-                                   size * 0.07f, none, t, ink);
-        break;
-    }
-    case Section::console:
     {
         // The four PlayStation shapes: triangle, circle, square and cross.
         const float k = size / 36.0f;
@@ -522,9 +509,6 @@ void SettingsScreen::build(Pane &pane) const
     case Section::catalogue:
         build_catalogue(pane);
         break;
-    case Section::console:
-        build_console(pane);
-        break;
     case Section::updates:
         build_updates(pane);
         break;
@@ -763,21 +747,38 @@ void SettingsScreen::build_storage(Pane &pane) const
         pane.error(error_);
     pane.fine(tr("Downloads save inside the drive\xE2\x80\x99s homebrew folder."));
     pane.gap(12.0f);
+    pane.begin_card(tr("Downloads"),
+                    tr("How many games download at once, and what happens to ZIP, 7z and RAR files."));
+    // A small title for each of the two settings the card holds.
+    const auto part = [&](std::string_view title)
+    {
+        if (pane.list != nullptr)
+            ui::text(*pane.list, type.medium, title, pane.x, pane.y + 22.0f, 22.0f, ui::color::text);
+        pane.y += 36.0f;
+    };
+    part(tr("Simultaneous downloads"));
+    pane.body(tr("Choose 1–8 games. One by default. Lowering the limit lets current downloads finish."), 19.0f);
+    {
+        // A dropdown of 1 to 8; Cross opens its list.
+        const ui::Rect field{pane.x, pane.y + 6.0f, 180.0f, ui::kButtonHeight};
+        const bool free_to_change = !result.busy;
+        if (pane.list != nullptr)
+            ui::select_field(*pane.list, type, field, std::to_string(state.system.concurrent_downloads),
+                             pane.amount(), picker_.open, free_to_change);
+        pane.add(Kind::download_limit_select, 0, field, free_to_change);
+        ++pane.row;
+        pane.y = field.y + field.h + 14.0f;
+    }
+    if (result.setting == Setting::download_limit)
+        pane.error(result.error);
+    pane.gap(6.0f);
     pane.rule();
-    pane.heading(tr("Simultaneous downloads"));
-    pane.body(tr("Choose 1–8 games. One by default. Lowering the limit lets current downloads finish."));
-    pane.version_row(tr("Simultaneous downloads"), std::to_string(state.system.concurrent_downloads));
-    pane.buttons({{Kind::download_limit_less, tr("Decrease download limit"), ui::ButtonKind::secondary,
-                   !result.busy && state.system.concurrent_downloads > 1},
-                  {Kind::download_limit_more, tr("Increase download limit"), ui::ButtonKind::secondary,
-                   !result.busy && state.system.concurrent_downloads < 8}});
-    if (result.setting == Setting::download_limit) pane.error(result.error);
-    pane.gap(12.0f);
-    pane.rule();
-    pane.heading(tr("Compressed downloads"));
+    pane.gap(6.0f);
+    part(tr("Compressed downloads"));
     pane.body(state.system.delete_archives
                   ? tr("ZIP, 7z and RAR downloads are extracted on the drive. The archive is deleted once its files are in place.")
-                  : tr("ZIP, 7z and RAR downloads are extracted on the drive. The archive is kept next to its files."));
+                  : tr("ZIP, 7z and RAR downloads are extracted on the drive. The archive is kept next to its files."),
+              19.0f);
     const bool archives_saving = result.busy && result.setting == Setting::archives;
     pane.buttons({{Kind::archives_toggle,
                    state.system.delete_archives ? tr("Keep archives after extracting")
@@ -785,12 +786,27 @@ void SettingsScreen::build_storage(Pane &pane) const
                    ui::ButtonKind::secondary, !archives_saving}});
     if (result.setting == Setting::archives && !result.error.empty())
         pane.error(result.error);
+    pane.end_card();
     pane.gap(12.0f);
+    pane.begin_card(tr("Packages"),
+                    tr("Install a downloaded .pkg on your PS5, and choose what happens to the file afterwards."));
+    pane.body(state.system.install_pkgs
+                  ? tr("A downloaded .pkg is installed on your PS5 once Orbit has checked it.")
+                  : tr("A downloaded .pkg stays in the homebrew folder. Orbit does not install it."),
+              19.0f);
+    const bool install_saving = result.busy && result.setting == Setting::install_pkgs;
+    pane.buttons({{Kind::install_pkgs_toggle,
+                   state.system.install_pkgs ? tr("Stop installing packages after download")
+                                             : tr("Install packages after download"),
+                   ui::ButtonKind::secondary, !install_saving}});
+    if (result.setting == Setting::install_pkgs && !result.error.empty())
+        pane.error(result.error);
+    pane.gap(10.0f);
     pane.rule();
-    pane.heading(tr("Installed packages"));
     pane.body(state.system.delete_pkgs
                   ? tr("A .pkg is deleted once your PS5 has installed it. This only applies to packages Orbit installs.")
-                  : tr("A .pkg is kept in the homebrew folder after your PS5 has installed it."));
+                  : tr("A .pkg is kept in the homebrew folder after your PS5 has installed it."),
+              19.0f);
     const bool pkgs_saving = result.busy && result.setting == Setting::delete_pkgs;
     pane.buttons({{Kind::delete_pkgs_toggle,
                    state.system.delete_pkgs ? tr("Keep packages after installing")
@@ -798,6 +814,7 @@ void SettingsScreen::build_storage(Pane &pane) const
                    ui::ButtonKind::secondary, !pkgs_saving}});
     if (result.setting == Setting::delete_pkgs && !result.error.empty())
         pane.error(result.error);
+    pane.end_card();
 }
 
 // ---- Pair a device (src/Pairing.tsx, on the console) ----
@@ -865,11 +882,27 @@ void SettingsScreen::build_catalogue(Pane &pane) const
     const CatalogueStatus &catalogue = state.catalogue;
     const SettingResult &result = ctx_.store.setting_result();
     const bool sending = result.busy && result.setting == Setting::catalogue;
+    // Hiding the PS4 games is a choice about what the catalogue lists, so it lives here.
+    const auto ps4_block = [&]
+    {
+        pane.gap(12.0f);
+        pane.rule();
+        pane.heading(tr("PS4 games"));
+        pane.body(state.system.ps4_hidden
+                      ? tr("PS4 games are hidden. A game that also comes in a PS5 version stays, with its PS5 options.")
+                      : tr("PS4 games are shown next to PS5 games."));
+        const bool ps4_saving = result.busy && result.setting == Setting::ps4;
+        pane.buttons({{Kind::ps4_toggle, state.system.ps4_hidden ? tr("Show PS4 games") : tr("Hide PS4 games"),
+                       ui::ButtonKind::secondary, !ps4_saving}});
+        if (result.setting == Setting::ps4 && !result.error.empty())
+            pane.error(result.error);
+    };
     pane.heading(tr("Game catalogue"));
     if(state.system.zero_enabled) {
         pane.body("Orbit Zero supplies the catalogue and artwork from your computer. Refresh the catalogue in the desktop app to get new games.");
         pane.version_row("Games",std::to_string(state.games.size()));
         pane.error(state.system.zero_error);
+        ps4_block();
         return;
     }
     pane.body(tr("New games arrive without reinstalling Orbit. Your PS5 checks when Orbit starts "
@@ -902,36 +935,7 @@ void SettingsScreen::build_catalogue(Pane &pane) const
         pane.notice({}, tr(error_));
     else if (!catalogue.error.empty())
         pane.notice({}, tr(catalogue.error));
-}
-
-// ---- Console: what depends on the PlayStation the games are for ----
-
-void SettingsScreen::build_console(Pane &pane) const
-{
-    const Snapshot &state = ctx_.store.state();
-    const SettingResult &result = ctx_.store.setting_result();
-    pane.heading(tr("Console"));
-    pane.body(state.system.ps4_hidden
-                  ? tr("PS4 games are hidden. A game that also comes in a PS5 version stays, with its PS5 options.")
-                  : tr("PS4 games are shown next to PS5 games."));
-    const bool ps4_saving = result.busy && result.setting == Setting::ps4;
-    pane.buttons({{Kind::ps4_toggle, state.system.ps4_hidden ? tr("Show PS4 games") : tr("Hide PS4 games"),
-                   ui::ButtonKind::secondary, !ps4_saving}});
-    if (result.setting == Setting::ps4 && !result.error.empty())
-        pane.error(result.error);
-    pane.gap(12.0f);
-    pane.rule();
-    pane.heading(tr("Installing downloaded packages"));
-    pane.body(state.system.install_pkgs
-                  ? tr("A downloaded .pkg is installed on your PS5 once Orbit has checked it.")
-                  : tr("A downloaded .pkg stays in the homebrew folder. Orbit does not install it."));
-    const bool install_saving = result.busy && result.setting == Setting::install_pkgs;
-    pane.buttons({{Kind::install_pkgs_toggle,
-                   state.system.install_pkgs ? tr("Stop installing packages after download")
-                                             : tr("Install packages after download"),
-                   ui::ButtonKind::secondary, !install_saving}});
-    if (result.setting == Setting::install_pkgs && !result.error.empty())
-        pane.error(result.error);
+    ps4_block();
 }
 
 // ---- Updates: this app (src/TvApp.tsx) and the download service (src/Updates.tsx) ----
@@ -1398,12 +1402,9 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
     }
     case Kind::zero_toggle:
         error_.clear();ctx_.store.set_zero(!state.system.zero_enabled);break;
-    case Kind::download_limit_less:
-    case Kind::download_limit_more:
-        if (!ctx_.store.setting_result().busy) {
-            const int limit = state.system.concurrent_downloads + (control.kind == Kind::download_limit_more ? 1 : -1);
-            if (limit >= 1 && limit <= 8) ctx_.store.set_download_limit(limit);
-        }
+    case Kind::download_limit_select:
+        picker_.show(state.system.concurrent_downloads - 1);
+        feedback.play(hui::audio::Cue::modal_open);
         break;
     case Kind::ps4_toggle:
         error_.clear();
@@ -1565,6 +1566,16 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
                 break;
             }
         }
+    }
+
+    // The list of the simultaneous-downloads dropdown takes every button while it is open.
+    picker_.animate(dt);
+    if (focused && picker_.open)
+    {
+        const int chosen = picker_.update(input, 8, feedback);
+        if (chosen >= 0 && !ctx_.store.setting_result().busy)
+            ctx_.store.set_download_limit(chosen + 1);
+        return intent;
     }
 
     // The My NAS address: the keyboard takes every button while it is open.
@@ -1843,6 +1854,25 @@ void SettingsScreen::draw(Frame &frame, bool focused) const
     list.pop_transform();
     list.pop_opacity();
 
+    // ---- the simultaneous-downloads list ----
+    if (picker_.in.value > 0.01f)
+    {
+        for (const Control &control : layout.controls)
+        {
+            if (control.kind != Kind::download_limit_select)
+                continue;
+            ui::Rect trigger = control.rect;
+            trigger.y -= scroll_.value;
+            std::vector<std::string> options;
+            for (int n = 1; n <= 8; ++n)
+                options.push_back(std::to_string(n));
+            frame.glass = true;
+            ui::select_menu(frame.overlay, type, trigger, options,
+                            ctx_.store.state().system.concurrent_downloads - 1, picker_.active,
+                            picker_.in.value, frame.glass_texture);
+        }
+    }
+
     // ---- the My NAS address keyboard ----
     if (nas_keyboard_in_.value > 0.01f)
     {
@@ -1870,6 +1900,8 @@ void SettingsScreen::draw(Frame &frame, bool focused) const
 
 std::vector<hui::ui::Hint> SettingsScreen::hints() const
 {
+    if (picker_.open)
+        return {{hui::ui::Button::cross, tr("Choose")}, {hui::ui::Button::circle, tr("Close")}};
     if (nas_edit_)
         return {{hui::ui::Button::square, tr("Delete")},
                 {hui::ui::Button::triangle, tr("Space")},

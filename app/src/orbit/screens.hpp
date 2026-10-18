@@ -540,7 +540,6 @@ class SettingsScreen final : public Screen
         storage,
         pairing,
         catalogue,
-        console,
         updates,
         zero,
         more,
@@ -559,7 +558,7 @@ class SettingsScreen final : public Screen
     std::vector<hui::ui::Hint> hints() const override;
     bool modal() const override
     {
-        return nas_edit_;
+        return nas_edit_ || picker_.open;
     }
     // Previews and tests.
     void confirm_restart()
@@ -590,8 +589,7 @@ class SettingsScreen final : public Screen
         archives_toggle,
         install_pkgs_toggle,
         delete_pkgs_toggle,
-        download_limit_less,
-        download_limit_more,
+        download_limit_select,
         appearance, // index of a background preset
         keyboard,   // 0 follows the language, 1 QWERTY, 2 AZERTY
         language,   // 0 follows the console, then the catalogue languages in order
@@ -613,7 +611,6 @@ class SettingsScreen final : public Screen
     void build_storage(Pane &pane) const;
     void build_pairing(Pane &pane) const;
     void build_catalogue(Pane &pane) const;
-    void build_console(Pane &pane) const;
     void build_updates(Pane &pane) const;
     void build_appearance(Pane &pane) const;
     void build_language(Pane &pane) const;
@@ -638,6 +635,7 @@ class SettingsScreen final : public Screen
     // My NAS address being typed (empty: keep the saved one) and its keyboard.
     std::string nas_url_;
     bool nas_edit_ = false;
+    Picker picker_; // the simultaneous-downloads dropdown
     hui::ui::Keyboard nas_keyboard_;
     ui::Ease nas_keyboard_in_;
     // Updates: the confirmation steps.
