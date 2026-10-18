@@ -340,6 +340,11 @@ void Store::check_game_updates()
     send_setting(Setting::game_updates);
 }
 
+void Store::game_update_job(const std::string &action, const std::string &title_id)
+{
+    send_setting(Setting::game_update_job, action, title_id);
+}
+
 void Store::check_service_update()
 {
     send_setting(Setting::service_check);
@@ -868,7 +873,7 @@ void Store::poll_settings()
     api::Result<GameUpdateStatus> game_updates = client_.game_updates();
     settings_busy_ = (catalogue.ok() && catalogue.value.busy) ||
                      (service.ok() && service.value.busy) || (tv.ok() && tv.value.busy) ||
-                     (game_updates.ok() && game_updates.value.checking);
+                     (game_updates.ok() && (game_updates.value.checking || game_updates.value.job.active));
     inbox_.post(
         [this, catalogue = std::move(catalogue), service = std::move(service),
          tv = std::move(tv), game_updates = std::move(game_updates)]() mutable
@@ -1083,6 +1088,21 @@ void Store::run_setting(Command &command)
     {
         api::Result<GameUpdateStatus> result = client_.refresh_game_updates();
         error = result.status == 404 ? tr("Update the download service to check game updates.") : result.error;
+        break;
+    }
+    case Setting::game_update_job:
+    {
+        api::Result<GameUpdateStatus> result = client_.game_update_job(command.a, command.b);
+        error = result.error;
+        if (result.ok())
+            inbox_.post(
+                [this, status = std::move(result.value)]() mutable
+                {
+                    state_.game_updates = status.count;
+                    state_.game_update_status = std::move(status);
+                    state_.have_game_updates = true;
+                    ++state_.serial;
+                });
         break;
     }
     case Setting::service_check:

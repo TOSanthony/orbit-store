@@ -142,6 +142,8 @@ class Client
     Result<GameUpdateStatus> game_updates();
     // Asks the console to look for game updates now (it otherwise checks every six hours).
     Result<GameUpdateStatus> refresh_game_updates();
+    // action: "download" (with the title ID) or "cancel".
+    Result<GameUpdateStatus> game_update_job(const std::string &action, const std::string &title_id);
     Result<ServiceUpdate> service_action(const UpdateRequest &request);
     // The copy of Orbit the service saved, for starting it again. An older service answers 404.
     Result<SavedPayload> saved_payload();

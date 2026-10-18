@@ -7,6 +7,7 @@ import type {
   BrowserSession,
   Game,
   GameUpdate,
+  GameUpdateJob,
   Release,
   Job,
   SourceId,
@@ -22,6 +23,7 @@ export function useOrbit() {
   const [ready, setReady] = useState(false);
   const [gameUpdateList, setGameUpdateList] = useState<GameUpdate[]>([]);
   const [gameChecking, setGameChecking] = useState(false);
+  const [gameJob, setGameJob] = useState<GameUpdateJob | null>(null);
   const [browser, setBrowser] = useSnapshot<BrowserSession | null>(null);
   const [system, setSystem] = useSnapshot<System | null>(null),
     [sources, setSources] = useSnapshot<SourceSettings | null>(null),
@@ -77,10 +79,11 @@ export function useOrbit() {
               api<string[]>("/favorites"),
               api<BrowserSession>("/browser"),
               // An older service has no update check: 0 keeps the Updates tab hidden.
-              api<{ count: number; checking?: boolean; games: GameUpdate[] }>("/game-updates").catch(() => ({
+              api<{ count: number; checking?: boolean; games: GameUpdate[]; job?: GameUpdateJob }>("/game-updates").catch(() => ({
                 count: 0,
                 checking: false,
                 games: [] as GameUpdate[],
+                job: undefined as GameUpdateJob | undefined,
               })),
             ]);
           if (alive.current) {
@@ -90,6 +93,7 @@ export function useOrbit() {
             setBrowser(providerBrowser);
             setGameUpdateList(patches.games ?? []);
             setGameChecking(!!patches.checking);
+            setGameJob(patches.job ?? null);
           }
         } else {
           setJobs([]);
@@ -98,6 +102,7 @@ export function useOrbit() {
           setBrowser(null);
           setGameUpdateList([]);
           setGameChecking(false);
+          setGameJob(null);
         }
         if (!alive.current) return;
         setSystem(sys);
@@ -199,6 +204,14 @@ export function useOrbit() {
     gameUpdates,
     gameUpdateList,
     gameChecking,
+    gameJob,
+    gameUpdateAction: async (action: "download" | "cancel", titleId: string) => {
+      try {
+        await api("/game-updates", { action, titleId });
+      } finally {
+        void refresh();
+      }
+    },
     checkGameUpdates: async () => {
       setGameChecking(true);
       try {

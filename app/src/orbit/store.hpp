@@ -141,6 +141,7 @@ enum class Setting : std::uint8_t
     install_pkgs,
     delete_pkgs,
     game_updates,
+    game_update_job,
 };
 
 struct SettingResult
@@ -243,6 +244,8 @@ class Store
     void restart_service();
     void check_tv_app();
     void check_game_updates();
+    // action "download" or "cancel"; the title ID names the game.
+    void game_update_job(const std::string &action, const std::string &title_id);
     void install_tv_app(const std::string &version, const std::string &checksum, bool replace);
     // While Settings is open the catalogue and update statuses are read on
     // every poll; otherwise about once a minute, for the update badge.

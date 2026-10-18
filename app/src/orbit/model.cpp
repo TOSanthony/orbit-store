@@ -490,6 +490,20 @@ GameUpdateStatus parse_game_update_status(const json::Value &value)
         if (!item.title_id.empty())
             status.games.push_back(std::move(item));
     }
+    if (value["job"].is_object())
+    {
+        const json::Value &job = value["job"];
+        status.job.present = true;
+        status.job.active = job.flag("active");
+        status.job.title_id = job.text("titleId");
+        status.job.phase = job.text("phase");
+        status.job.done = job.number("done");
+        status.job.total = job.number("total");
+        status.job.speed = job.number("speed");
+        status.job.install_percent = static_cast<int>(job.number("installPercent"));
+        status.job.error = job.text("error");
+        status.job.detail = job.text("detail");
+    }
     return status;
 }
 

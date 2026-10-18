@@ -297,3 +297,75 @@ int install_job_retry_locked(Job *j, char *err, size_t cap) {
     }
     return 200;
 }
+
+/* ---- Installing a package that is not part of a queue job (a game update) ---- */
+
+bool install_has_space(int64_t package_bytes) {
+    char root[560];
+    snprintf(root, sizeof root, "%s/data", orbit.system_root);
+    struct statvfs fs;
+    if (statvfs(root, &fs) != 0) return true;
+    uint64_t free_bytes = (uint64_t)fs.f_bavail * fs.f_frsize;
+    return free_bytes >= (uint64_t)(package_bytes > 0 ? package_bytes : 0) + (1ULL << 30);
+}
+
+int install_package_blocking(const char *path, const char *name, install_progress_fn progress, void *context,
+                             bool (*stop)(void), char *error, size_t cap) {
+    pthread_mutex_lock(&one_install);
+    install_session session = INSTALL_SESSION_INIT;
+    int code = install_session_open(&session);
+    if (code != 0) {
+        copy_text(error, cap, "Orbit could not start the installer. Make sure the ELF loader is running.");
+        install_session_close(&session);
+        pthread_mutex_unlock(&one_install);
+        return code ? code : -1;
+    }
+    code = install_session_install(&session, path, name);
+    if (code != 0) {
+        copy_text(error, cap, "The console would not install this package.");
+        install_session_close(&session);
+        pthread_mutex_unlock(&one_install);
+        return code;
+    }
+    time_t began = time(NULL), moved = began;
+    uint64_t last = 0;
+    int result = -1;
+    copy_text(error, cap, "The installation stopped before it finished.");
+    for (;;) {
+        sleep(POLL_SECONDS);
+        if ((stop && stop()) || orbit_is_stopping()) {
+            copy_text(error, cap, "The installation was interrupted.");
+            break;
+        }
+        install_status st;
+        int r = install_session_status(&session, &st);
+        time_t now = time(NULL);
+        if (r != 0 || st.result != 0 || st.error_code != 0 || !strcmp(st.state, "error")) {
+            result = r ? r : st.result ? st.result : st.error_code ? st.error_code : -1;
+            break;
+        }
+        bool whole = st.total == 0 || st.downloaded >= st.total;
+        if ((!strcmp(st.state, "playable") || !strcmp(st.state, "completed")) && whole) {
+            if (progress) progress(100, context);
+            error[0] = 0;
+            result = 0;
+            break;
+        }
+        if (!strcmp(st.state, "none") && now - began < NO_STATUS_SECONDS) continue;
+        if (!strcmp(st.state, "none")) break;
+        unsigned percent = st.total ? (unsigned)(st.downloaded * 100 / st.total) : st.progress;
+        if (percent > 100) percent = 100;
+        uint64_t mark = st.downloaded + st.progress;
+        if (mark != last) {
+            last = mark;
+            moved = now;
+        } else if (now - moved > STALL_SECONDS) {
+            copy_text(error, cap, "The installation did not make progress.");
+            break;
+        }
+        if (progress) progress(percent, context);
+    }
+    install_session_close(&session);
+    pthread_mutex_unlock(&one_install);
+    return result;
+}

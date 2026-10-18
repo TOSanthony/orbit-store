@@ -1,17 +1,54 @@
 import { Icon } from "./components";
 import { t } from "./i18n";
-import type { GameUpdate } from "./types";
+import { useState } from "react";
+import type { GameUpdate, GameUpdateJob } from "./types";
+
+function statusLine(job: GameUpdateJob): string {
+  const percent = job.total > 0 ? Math.floor((job.done * 100) / job.total) : 0;
+  switch (job.phase) {
+    case "preparing":
+      return t("Preparing the download…");
+    case "downloading":
+      return t("Downloading {percent}% · {speed}", {
+        percent,
+        speed: `${(job.speed / 1048576).toFixed(1)} MB/s`,
+      });
+    case "verifying":
+      return t("Checking the downloaded files…");
+    case "installing":
+      return t("Installing {percent}%", { percent: job.installPercent });
+    case "installed":
+      return t("Installed");
+    case "downloaded":
+      return job.error ? t(job.error) : t("Downloaded");
+    case "cancelled":
+      return t("Cancelled");
+    default: {
+      const why = t(job.error) + (job.detail ? ` (${job.detail})` : "");
+      return t("Update failed: {error}", { error: why });
+    }
+  }
+}
 
 // Installed games that have a newer patch on Sony's servers. The console decides what is listed.
 export function GameUpdates({
   games,
   checking,
   check,
+  job,
+  act,
 }: {
   games: GameUpdate[];
   checking: boolean;
   check: () => Promise<void>;
+  job: GameUpdateJob | null;
+  act: (action: "download" | "cancel", titleId: string) => Promise<void>;
 }) {
+  const [message, setMessage] = useState("");
+  const run = (action: "download" | "cancel", id: string) => {
+    setMessage("");
+    act(action, id).catch((e: unknown) => setMessage(e instanceof Error ? e.message : ""));
+  };
   const ready = games.filter((game) => game.state === "available").length;
   return (
     <section className="page">
@@ -22,6 +59,7 @@ export function GameUpdates({
           {checking ? t("Checking…") : t("Check for game updates")}
         </button>
       </div>
+      {message && <p className="muted">{message}</p>}
       {games.length === 0 ? (
         <div className="empty">
           <Icon name="download" />
@@ -43,6 +81,22 @@ export function GameUpdates({
                 {" → "}
                 {t("Available {version}", { version: game.version })}
               </p>
+              {job && job.titleId === game.titleId && (
+                <>
+                  <p>{statusLine(job)}</p>
+                  {job.active && job.total > 0 && (
+                    <progress value={job.done} max={job.total} />
+                  )}
+                </>
+              )}
+              {game.state === "available" &&
+                (job?.active && job.titleId === game.titleId ? (
+                  <button onClick={() => run("cancel", game.titleId)}>{t("Cancel")}</button>
+                ) : (
+                  <button disabled={!!job?.active} onClick={() => run("download", game.titleId)}>
+                    {t("Download and install")}
+                  </button>
+                ))}
               {game.state === "needs-firmware" && (
                 <p className="muted">
                   {t("Needs firmware {firmware} or later", {

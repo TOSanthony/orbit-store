@@ -314,6 +314,21 @@ struct GameUpdateItem
     std::string firmware;  // "11.00" when blocked
 };
 
+// The game update being downloaded or installed (the console handles one at a time).
+struct GameUpdateJob
+{
+    bool present = false;
+    bool active = false;
+    std::string title_id;
+    std::string phase; // preparing, downloading, verifying, installing, installed, downloaded, failed, cancelled
+    double done = 0.0;
+    double total = 0.0;
+    double speed = 0.0; // bytes per second
+    int install_percent = 0;
+    std::string error;
+    std::string detail;
+};
+
 // Installed games with a newer patch on Sony's servers (GET /api/v1/game-updates).
 struct GameUpdateStatus
 {
@@ -325,6 +340,7 @@ struct GameUpdateStatus
     std::string error;
     std::string detail; // why the first failed game failed (technical, English)
     std::vector<GameUpdateItem> games;
+    GameUpdateJob job;
 };
 
 // The download service's own updates (GET /api/v1/updates): Orbit, the payload.

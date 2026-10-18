@@ -458,6 +458,7 @@ class GameUpdatesScreen final : public Screen
 
   private:
     int row_ = 0;
+    std::uint64_t result_serial_ = 0;
 };
 
 class GamePage final : public Screen

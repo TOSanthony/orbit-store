@@ -70,6 +70,28 @@ export interface SourceSettings {
     downloadReady: boolean;
   }[];
 }
+// The one game update being downloaded and installed (the `job` of GET /api/v1/game-updates).
+export interface GameUpdateJob {
+  titleId: string;
+  name: string;
+  version: string;
+  phase:
+    | "preparing"
+    | "downloading"
+    | "verifying"
+    | "installing"
+    | "installed"
+    | "downloaded"
+    | "failed"
+    | "cancelled";
+  active: boolean;
+  done: number;
+  total: number;
+  speed: number;
+  installPercent: number;
+  error: string;
+  detail: string;
+}
 // An installed game with a newer patch on Sony's servers (GET /api/v1/game-updates).
 export interface GameUpdate {
   titleId: string;

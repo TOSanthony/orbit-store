@@ -372,6 +372,7 @@ int main(int argc, char **argv) {
     tvapp_stop();
     browser_stop();
     library_stop();
+    patchdl_stop();
     gameupdates_stop();
     updates_stop();
     nas_stop();

@@ -722,6 +722,8 @@ export default function App() {
             games={orbit.gameUpdateList}
             checking={orbit.gameChecking}
             check={orbit.checkGameUpdates}
+            job={orbit.gameJob}
+            act={orbit.gameUpdateAction}
           />
         ) : tab === "Browse" || tab === "Apps" || tab === "DLC" ? (
           <section className="page browse">

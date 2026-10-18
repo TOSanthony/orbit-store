@@ -217,8 +217,15 @@ test-concurrency: build/orbit-test
 	python3 tests/concurrency_integration.py
 
 .PHONY: test-gameupdates
-build/orbit-gameupdates-test: backend/gameupdates.c backend/appdb.c backend/patchfeed.c backend/orbit.h tests/gameupdates_driver.c .deps/cjson/cJSON.c Makefile
+build/orbit-gameupdates-test: backend/gameupdates.c backend/sonynet.c backend/patchdl.c backend/patchmanifest.c backend/appdb.c backend/patchfeed.c backend/orbit.h backend/sonynet.h tests/gameupdates_driver.c .deps/cjson/cJSON.c Makefile
 	@mkdir -p build
-	$(HOST_CC) -Itests/stubs $(CPPFLAGS) $(CFLAGS) -DORBIT_TEST backend/gameupdates.c backend/appdb.c backend/patchfeed.c tests/gameupdates_driver.c .deps/cjson/cJSON.c -o $@ -lcurl -lpthread -lm
+	$(HOST_CC) -Itests/stubs $(CPPFLAGS) $(CFLAGS) -DORBIT_TEST backend/gameupdates.c backend/sonynet.c backend/patchdl.c backend/patchmanifest.c backend/appdb.c backend/patchfeed.c tests/gameupdates_driver.c .deps/cjson/cJSON.c -o $@ -lcurl -lcrypto -lpthread -lm
 test-gameupdates: build/orbit-gameupdates-test
 	python3 tests/gameupdates_test.py ./build/orbit-gameupdates-test
+
+.PHONY: test-patchmanifest
+build/orbit-patchmanifest-test: backend/patchmanifest.c backend/patchmanifest.h backend/patchfeed.c tests/patchmanifest_test.c .deps/cjson/cJSON.c Makefile
+	@mkdir -p build
+	$(HOST_CC) $(CPPFLAGS) $(CFLAGS) -fsanitize=undefined -fsanitize-undefined-trap-on-error backend/patchmanifest.c backend/patchfeed.c tests/patchmanifest_test.c .deps/cjson/cJSON.c -o $@ -lm
+test-patchmanifest: build/orbit-patchmanifest-test
+	./build/orbit-patchmanifest-test

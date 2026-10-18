@@ -1,13 +1,15 @@
 // Orbit Store TV app - Updates: installed games that have a newer patch on Sony's servers.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The console's own check (GET /api/v1/game-updates) decides what is listed; this screen only
-// shows it. Downloading and installing a patch is the next step and is not wired here yet.
+// The console's own check (GET /api/v1/game-updates) decides what is listed. Choosing a row
+// asks the console to download the patch from Sony and install it; choosing it again while it
+// runs cancels. The console does the work and keeps going if this app is closed.
 
 #include "orbit/i18n.hpp"
 #include "orbit/screens.hpp"
 
 #include <algorithm>
+#include <cstdio>
 
 namespace orbit
 {
@@ -22,6 +24,15 @@ constexpr float kRowWidth = 1400.0f;
 constexpr float kRowPad = 22.0f;
 constexpr float kCover = 106.0f;
 constexpr float kListBottom = 1010.0f;
+
+// The console's message in the person's language, then its technical detail if it has one.
+std::string explained(const GameUpdateJob &job)
+{
+    std::string text(tr(job.error));
+    if (!job.detail.empty())
+        text += " (" + job.detail + ")";
+    return text;
+}
 } // namespace
 
 GameUpdatesScreen::GameUpdatesScreen(Context &context) : Screen(context)
@@ -38,8 +49,17 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
     Intent intent;
     if (!focused)
         return intent;
-    const std::vector<GameUpdateItem> &games = ctx_.store.state().game_update_status.games;
+    const GameUpdateStatus &status = ctx_.store.state().game_update_status;
+    const std::vector<GameUpdateItem> &games = status.games;
     const int count = static_cast<int>(games.size());
+    // A refused request (another update running, nothing to install) is told once.
+    const SettingResult &result = ctx_.store.setting_result();
+    if (result.serial != result_serial_ && !result.busy)
+    {
+        result_serial_ = result.serial;
+        if (result.setting == Setting::game_update_job && !result.error.empty())
+            intent.toast = tr(result.error);
+    }
     row_ = std::clamp(row_, 0, std::max(0, count - 1));
     if (input.nav == Direction::up)
     {
@@ -65,8 +85,28 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
     }
     else if (input.is_pressed(Action::confirm) && count > 0)
     {
-        feedback.play(hui::audio::Cue::select);
-        intent.toast = tr("Downloading game updates is not available yet.");
+        const GameUpdateItem &game = games[static_cast<std::size_t>(row_)];
+        const bool this_job = status.job.present && status.job.title_id == game.title_id;
+        if (this_job && status.job.active)
+        {
+            feedback.play(hui::audio::Cue::select);
+            ctx_.store.game_update_job("cancel", game.title_id);
+        }
+        else if (game.blocked)
+        {
+            refuse(feedback, input);
+            intent.toast = tr("This update needs a newer firmware than this console has.");
+        }
+        else if (status.job.active)
+        {
+            refuse(feedback, input);
+            intent.toast = tr("Another game update is already in progress.");
+        }
+        else if (!ctx_.store.setting_result().busy)
+        {
+            feedback.play(hui::audio::Cue::select);
+            ctx_.store.game_update_job("download", game.title_id);
+        }
     }
     return intent;
 }
@@ -76,7 +116,8 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
     hui::gfx::DrawList &list = frame.scene;
     const Snapshot &state = ctx_.store.state();
     const ui::Type &type = ctx_.type;
-    const std::vector<GameUpdateItem> &games = state.game_update_status.games;
+    const GameUpdateStatus &status = state.game_update_status;
+    const std::vector<GameUpdateItem> &games = status.games;
 
     const float title =
         ui::text(list, type.semibold, tr("Game updates"), ui::kGutter, kTitleBaseline, 60.0f, ui::color::text);
@@ -120,10 +161,46 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
             tr("Installed {version}", {{"version", game.installed.empty() ? std::string("?") : game.installed}}) +
             "  \xE2\x86\x92  " + tr("Available {version}", {{"version", game.version}});
         ui::text(list, type.regular, versions, tx, row.y + 92.0f, 20.0f, ui::color::text2);
-        if (game.blocked)
+        const GameUpdateJob &job = status.job;
+        const bool this_job = job.present && job.title_id == game.title_id;
+        if (this_job && !job.phase.empty())
+        {
+            const double fraction = job.total > 0.0 ? std::clamp(job.done / job.total, 0.0, 1.0) : 0.0;
+            char percent[16];
+            std::snprintf(percent, sizeof(percent), "%d", static_cast<int>(fraction * 100.0));
+            std::string line;
+            if (job.phase == "preparing")
+                line = tr("Preparing the download\xE2\x80\xA6");
+            else if (job.phase == "downloading")
+                line = tr("Downloading {percent}% \xC2\xB7 {speed}",
+                          {{"percent", percent}, {"speed", format_bytes(job.speed) + "/s"}});
+            else if (job.phase == "verifying")
+                line = tr("Checking the downloaded files\xE2\x80\xA6");
+            else if (job.phase == "installing")
+                line = tr("Installing {percent}%", {{"percent", std::to_string(job.install_percent)}});
+            else if (job.phase == "installed")
+                line = tr("Installed");
+            else if (job.phase == "downloaded")
+                line = job.error.empty() ? std::string(tr("Downloaded")) : explained(job);
+            else if (job.phase == "cancelled")
+                line = tr("Cancelled");
+            else
+                line = tr("Update failed: {error}", {{"error", explained(job)}});
+            ui::text(list, type.regular, line, tx, row.y + 122.0f, 18.0f, ui::color::text2);
+            if (job.phase == "downloading" || job.phase == "verifying")
+                ui::progress_bar(list, {tx, row.y + row.h - 22.0f, right_edge - tx - 360.0f, 6.0f},
+                                 static_cast<float>(fraction), ui::color::text);
+            else if (job.phase == "installing")
+                ui::progress_bar(list, {tx, row.y + row.h - 22.0f, right_edge - tx - 360.0f, 6.0f},
+                                 static_cast<float>(job.install_percent) / 100.0f, ui::color::text);
+        }
+        else if (game.blocked)
             ui::text(list, type.regular,
                      tr("Needs firmware {firmware} or later", {{"firmware", game.firmware}}), tx,
                      row.y + 122.0f, 18.0f, ui::color::text3);
+        if (focused && i == row_ && !game.blocked)
+            ui::text(list, type.regular, this_job && job.active ? tr("Cancel") : tr("Download and install"),
+                     right_edge, row.y + 122.0f, 18.0f, ui::color::text3, ui::Align::right);
     }
     list.pop_clip();
 }

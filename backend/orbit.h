@@ -233,6 +233,15 @@ int gameupdates_start(void);
 void gameupdates_stop(void);
 cJSON *gameupdates_status(void);
 int gameupdates_action(const cJSON *input, char *error, size_t cap);
+/* The patch this console can install for an installed game, if any. */
+bool gameupdates_offer(const char *title_id, char *name, size_t name_cap, char *version, size_t version_cap,
+                       char *manifest, size_t manifest_cap);
+void gameupdates_request_refresh(void);
+/* Downloading and installing a game update (patchdl.c): one at a time. */
+int patchdl_start(const char *title_id, char *error, size_t cap);
+void patchdl_cancel(void);
+void patchdl_stop(void);
+cJSON *patchdl_status(void);
 int updates_start(void);
 void updates_stop(void);
 cJSON *updates_status(void);

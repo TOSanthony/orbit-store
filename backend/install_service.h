@@ -25,6 +25,15 @@ typedef struct {
     char description[256];
 } install_status;
 
+/* Installs a finished package that is not a queue job (a game update) and waits until the
+ * console reports it installed. 0 on success; otherwise a non-zero code with a reason in `error`.
+ * Shares the one-install-at-a-time rule with the download queue. */
+typedef void (*install_progress_fn)(unsigned percent, void *context);
+int install_package_blocking(const char *path, const char *name, install_progress_fn progress, void *context,
+                             bool (*stop)(void), char *error, size_t cap);
+/* True when the console's own drive has room to install a package of this size. */
+bool install_has_space(int64_t package_bytes);
+
 /* False off the console, or when this build carries no helper. */
 bool install_service_available(void);
 /* Starts a helper and waits for it to be ready. 0, or a negative ORBIT_INST_E_* / system code. */
