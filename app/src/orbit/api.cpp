@@ -653,9 +653,9 @@ Result<ServiceUpdate> Client::service_update()
     return result;
 }
 
-Result<int> Client::game_updates()
+Result<GameUpdateStatus> Client::game_updates()
 {
-    Result<int> result;
+    Result<GameUpdateStatus> result;
     const http::Response response = send("GET", "/api/v1/game-updates");
     if (fail(response, &result))
         return result;
@@ -663,7 +663,7 @@ Result<int> Client::game_updates()
     if (!json::parse(response.body, &value) || !value.is_object())
         result.error = tr("Orbit sent an unreadable update status.");
     else
-        result.value = static_cast<int>(value.number("count", 0.0));
+        result.value = parse_game_update_status(value);
     return result;
 }
 

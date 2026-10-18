@@ -82,6 +82,8 @@ struct Snapshot
     // Installed games that have an update waiting. It decides whether the Updates tab shows and the
     // number beside its name. Filled from the console's game-update check; 0 when it has none.
     int game_updates = 0;
+    bool have_game_updates = false;
+    GameUpdateStatus game_update_status;
 
     bool have_favourites = false;
     std::vector<std::string> favourites; // game IDs, shared with paired clients

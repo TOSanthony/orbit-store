@@ -303,6 +303,17 @@ struct CatalogueStatus
     std::string error;
 };
 
+// Installed games with a newer patch on Sony's servers (GET /api/v1/game-updates).
+struct GameUpdateStatus
+{
+    bool supported = false; // the check runs on this console
+    bool checking = false;
+    int count = 0;  // patches this console can install
+    int failed = 0; // games whose update list could not be read
+    double checked_at = 0.0; // Unix seconds, 0 before the first check
+    std::string error;
+};
+
 // The download service's own updates (GET /api/v1/updates): Orbit, the payload.
 // The service's saved runtime, which it hands to the app when the app cannot open the file.
 struct SavedPayload
@@ -375,6 +386,7 @@ LibraryStorage parse_library_storage(const json::Value &value);
 Session parse_session(const json::Value &value);
 CatalogueStatus parse_catalogue_status(const json::Value &value);
 ServiceUpdate parse_service_update(const json::Value &value);
+GameUpdateStatus parse_game_update_status(const json::Value &value);
 TvAppStatus parse_tv_app(const json::Value &value);
 
 // ---- storefront rules ----

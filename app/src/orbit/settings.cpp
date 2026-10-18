@@ -1024,6 +1024,34 @@ void SettingsScreen::build_updates(Pane &pane) const
               "that keeps running after you close it."));
     pane.gap(10.0f);
 
+    // ---- installed games with a patch on Sony's servers ----
+    pane.begin_card(tr("Game updates"),
+                    tr("Your installed games are checked against Sony\xE2\x80\x99s servers when Orbit "
+                       "starts and every six hours."));
+    if (!state.have_game_updates)
+        pane.fine(tr("Loading\xE2\x80\xA6"));
+    else
+    {
+        const GameUpdateStatus &games = state.game_update_status;
+        if (!games.supported)
+            pane.fine(tr("The game update check is not running on this console."));
+        else
+        {
+            pane.version_row(games.checking ? std::string(tr("Checking\xE2\x80\xA6"))
+                             : games.checked_at > 0.0
+                                 ? tr("Checked {time}", {{"time", format_age(games.checked_at, now)}})
+                                 : std::string(tr("Not checked yet")),
+                             tr("Updates found: {count}", {{"count", std::to_string(games.count)}}));
+            if (games.failed > 0)
+                pane.fine(tr("Games that could not be checked: {count}",
+                             {{"count", std::to_string(games.failed)}}));
+            if (!games.error.empty())
+                pane.notice({}, tr(games.error));
+        }
+    }
+    pane.end_card();
+    pane.gap(10.0f);
+
     // ---- the TV app ----
     const TvAppStatus &tv = state.tv_app;
     const std::string running = app_release_version(ctx_.app_version);

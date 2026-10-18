@@ -860,7 +860,7 @@ void Store::poll_settings()
     api::Result<CatalogueStatus> catalogue = client_.catalogue_status();
     api::Result<ServiceUpdate> service = client_.service_update();
     api::Result<TvAppStatus> tv = client_.tv_app();
-    api::Result<int> game_updates = client_.game_updates();
+    api::Result<GameUpdateStatus> game_updates = client_.game_updates();
     settings_busy_ = (catalogue.ok() && catalogue.value.busy) ||
                      (service.ok() && service.value.busy) || (tv.ok() && tv.value.busy);
     inbox_.post(
@@ -868,8 +868,12 @@ void Store::poll_settings()
          tv = std::move(tv), game_updates = std::move(game_updates)]() mutable
         {
             // A service without the check answers 404: the count stays 0 and the tab hidden.
-            if (game_updates.ok() && state_.game_updates != game_updates.value)
-                state_.game_updates = game_updates.value;
+            if (game_updates.ok())
+            {
+                state_.game_updates = game_updates.value.count;
+                state_.game_update_status = std::move(game_updates.value);
+                state_.have_game_updates = true;
+            }
             if (catalogue.ok())
             {
                 state_.catalogue = std::move(catalogue.value);

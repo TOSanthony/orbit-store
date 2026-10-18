@@ -139,7 +139,7 @@ class Client
     };
     Result<ServiceUpdate> service_update();
     // How many installed games have a patch waiting. An older service answers 404.
-    Result<int> game_updates();
+    Result<GameUpdateStatus> game_updates();
     Result<ServiceUpdate> service_action(const UpdateRequest &request);
     // The copy of Orbit the service saved, for starting it again. An older service answers 404.
     Result<SavedPayload> saved_payload();

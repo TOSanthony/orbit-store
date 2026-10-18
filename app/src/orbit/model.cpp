@@ -468,6 +468,18 @@ CatalogueStatus parse_catalogue_status(const json::Value &value)
     return status;
 }
 
+GameUpdateStatus parse_game_update_status(const json::Value &value)
+{
+    GameUpdateStatus status;
+    status.supported = value.flag("supported");
+    status.checking = value.flag("checking");
+    status.count = static_cast<int>(value["count"].as_int());
+    status.failed = static_cast<int>(value["failed"].as_int());
+    status.checked_at = value.number("checked");
+    status.error = value.text("error");
+    return status;
+}
+
 ServiceUpdate parse_service_update(const json::Value &value)
 {
     ServiceUpdate update;
