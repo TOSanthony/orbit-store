@@ -22,6 +22,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -744,6 +745,7 @@ class App
     int provider_focus_ = 1; // Back first, so returning cannot cancel by accident
     std::string provider_seen_;
     bool update_told_ = false; // the update toast shows once per launch
+    std::map<std::string, std::string> install_seen_; // each job's last install state, to tell when one ends
     void show_toast(std::string text, float seconds = 2.8f, bool update = false);
     std::string toast_;
     float toast_time_ = 0.0f;

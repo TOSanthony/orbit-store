@@ -139,6 +139,8 @@ std::vector<DownloadsScreen::RowAction> DownloadsScreen::actions_for(const Job &
         if(job.status=="complete")return {{"Clear computer cache","clear-cache"}};
         if(job.status=="cancelled")return {{"View in Orbit Zero","view-zero"}};
     }
+    if (job.status == "complete" && job.install_state == "failed")
+        return {{tr("Retry installation"), "install"}, {tr("Remove from history"), "remove"}};
     if (job.status == "complete")
         return {{tr("Remove from history"), "remove"}};
     if (job.status == "cancelled")
@@ -638,7 +640,9 @@ void DownloadsScreen::draw(Frame &frame, bool focused) const
             else if (job.status == "complete")
             {
                 right = job.verification == "sha256" ? tr("SHA-256 verified") : tr("Size verified");
-                if (job.install_state == "waiting")
+                if (job.install_state == "base")
+                    right += std::string(" \xC2\xB7 ") + tr("Waiting for the base game");
+                else if (job.install_state == "waiting")
                     right += std::string(" \xC2\xB7 ") + tr("Waiting to install");
                 else if (job.install_state == "installed")
                     right += std::string(" \xC2\xB7 ") + tr("Installed");

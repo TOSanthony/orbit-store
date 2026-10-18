@@ -146,6 +146,7 @@ static inline int64_t range_boundary(int64_t size, unsigned count, unsigned inde
 void copy_text(char *to, size_t cap, const char *s);
 /* Called with orbit.mutex held when a job has just completed; starts the install if it applies. */
 void install_job_completed_locked(Job *j);
+int install_job_retry_locked(Job *j, char *err, size_t cap); /* 200, or the HTTP status of the refusal */
 const char *json_text(const cJSON *o, const char *key);
 int64_t json_int(const cJSON *o, const char *key);
 void random_hex(char *out, size_t bytes);

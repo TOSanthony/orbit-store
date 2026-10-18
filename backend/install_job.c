@@ -210,6 +210,10 @@ static void *worker(void *arg) {
         }
         if (verdict == VERDICT_NEEDS_BASE)
             set_locked(q->id, "failed", 0, "Install the base game before its updates and add-ons.", 0);
+        else if (verdict == VERDICT_WAIT && strcmp(j->install_state, "base"))
+            set_locked(q->id, "base", 0, "", 0); /* waiting for the base game, not for a free slot */
+        else if (verdict == VERDICT_GO && !strcmp(j->install_state, "base"))
+            set_locked(q->id, "waiting", 0, "", 0);
         pthread_mutex_unlock(&orbit.mutex);
         if (verdict == VERDICT_NEEDS_BASE) {
             free(q);
@@ -235,6 +239,31 @@ static void *worker(void *arg) {
     return NULL;
 }
 
+/* Hands a finished package to a worker. Returns false when no thread could be started. */
+static bool start_locked(Job *j, const char *file) {
+    Request *q = calloc(1, sizeof *q);
+    if (!q) return false;
+    copy_text(q->id, sizeof q->id, j->id);
+    snprintf(q->path, sizeof q->path, "%s/homebrew/%s", j->root, file);
+    copy_text(q->name, sizeof q->name, j->release.title[0] ? j->release.title : file);
+    copy_text(j->install_state, sizeof j->install_state, "waiting");
+    j->install_error[0] = 0;
+    j->install_code = 0;
+    j->install_progress = 0;
+    pthread_attr_t attr;
+    pthread_t thread;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 256 * 1024);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    bool started = pthread_create(&thread, &attr, worker, q) == 0;
+    pthread_attr_destroy(&attr);
+    if (!started) {
+        j->install_state[0] = 0;
+        free(q);
+    }
+    return started;
+}
+
 void install_job_completed_locked(Job *j) {
     j->install_state[0] = 0;
     j->install_error[0] = 0;
@@ -242,20 +271,29 @@ void install_job_completed_locked(Job *j) {
     j->install_progress = 0;
     const char *file = j->output[0] ? j->output : j->filename;
     if (!orbit.install_pkgs || !install_service_available() || !is_pkg(file)) return;
-    Request *q = calloc(1, sizeof *q);
-    if (!q) return;
-    copy_text(q->id, sizeof q->id, j->id);
-    snprintf(q->path, sizeof q->path, "%s/homebrew/%s", j->root, file);
-    copy_text(q->name, sizeof q->name, j->release.title[0] ? j->release.title : file);
-    copy_text(j->install_state, sizeof j->install_state, "waiting");
-    pthread_attr_t attr;
-    pthread_t thread;
-    pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr, 256 * 1024);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    if (pthread_create(&thread, &attr, worker, q) != 0) {
-        j->install_state[0] = 0;
-        free(q);
+    start_locked(j, file);
+}
+
+/* "Retry installation": runs the install again on the package that is already on the drive. */
+int install_job_retry_locked(Job *j, char *err, size_t cap) {
+    const char *file = j->output[0] ? j->output : j->filename;
+    if (strcmp(j->status, "complete") || strcmp(j->install_state, "failed") || !is_pkg(file)) {
+        copy_text(err, cap, "Only a package whose installation failed can be installed again.");
+        return 409;
     }
-    pthread_attr_destroy(&attr);
+    if (!install_service_available()) {
+        copy_text(err, cap, "This build of Orbit cannot install packages.");
+        return 409;
+    }
+    char path[700];
+    snprintf(path, sizeof path, "%s/homebrew/%s", j->root, file);
+    if (access(path, R_OK) != 0) {
+        copy_text(err, cap, "The package is no longer on the drive. Download it again.");
+        return 409;
+    }
+    if (!start_locked(j, file)) {
+        copy_text(err, cap, "Orbit could not start the installation.");
+        return 503;
+    }
+    return 200;
 }

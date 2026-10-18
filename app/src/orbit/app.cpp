@@ -370,6 +370,23 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
         show_toast(tr("An update is available in App settings"), 4.5f, true);
     }
 
+    // A package whose installation ends, wherever the player is. The first sight of a job only
+    // records its state, so what finished before the app opened is not announced.
+    for (const Job &job : state.jobs)
+    {
+        const auto seen = install_seen_.find(job.id);
+        const bool ended = job.install_state == "installed" || job.install_state == "failed";
+        if (seen != install_seen_.end() && seen->second != job.install_state && ended)
+        {
+            const std::string name = job.title.empty() ? job.filename : job.title;
+            show_toast(job.install_state == "installed"
+                           ? tr("{name} is installed", {{"name", name}})
+                           : tr("The installation of {name} failed", {{"name", name}}),
+                       5.0f);
+        }
+        install_seen_[job.id] = job.install_state;
+    }
+
     // Recover active verification after reopening the native app. Historical
     // terminal results never reopen themselves or undo a dismissal.
     if (state.have_browser && state.browser.active && state.browser.id != provider_seen_)

@@ -451,6 +451,7 @@ int job_action_locked(Job *j, const char *action, bool remove, char *err, size_t
         copy_text(err, cap, "Orbit is stopping. Reconnect after restarting it.");
         return 503;
     }
+    if (!strcmp(action, "install")) return install_job_retry_locked(j, err, cap);
     bool active = job_active(j);
     if (!strcmp(action, "delete") || !strcmp(action, "forget")) {
         if (strcmp(j->status, "cancelled")) {
