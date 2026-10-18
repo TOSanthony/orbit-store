@@ -486,6 +486,45 @@ def read_param(zip_path: Path):
     return {"title": title, "titleId": title_id, "version": version}
 
 
+def read_ps4_version(path: Path) -> str:
+    """APP_VER (else VERSION) from the param.sfo inside a PS4 .pkg, read from its first bytes only. "" if unreadable."""
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(0x20)
+            if len(head) < 0x20 or head[:4] != b"\x7fCNT":
+                return ""
+            count, table = struct.unpack(">I", head[0x10:0x14])[0], struct.unpack(">I", head[0x18:0x1C])[0]
+            if not 0 < count <= 4096 or table > 1 << 24:
+                return ""
+            handle.seek(table)
+            entries = handle.read(count * 32)
+            for i in range(len(entries) // 32):
+                ident, _, _, _, offset, size = struct.unpack(">6I", entries[i * 32:i * 32 + 24])
+                if ident != 0x1000:
+                    continue
+                if not 16 <= size <= 1 << 20:
+                    return ""
+                handle.seek(offset)
+                sfo = handle.read(size)
+                if len(sfo) < size or sfo[:4] != b"\x00PSF":
+                    return ""
+                keys_at, data_at, n = struct.unpack("<3I", sfo[8:20])
+                found = {}
+                for k in range(min(n, 512)):
+                    key_off, fmt, length, _, data_off = struct.unpack("<HHIII", sfo[20 + 16 * k:36 + 16 * k])
+                    end = sfo.find(b"\x00", keys_at + key_off)
+                    name = sfo[keys_at + key_off:end].decode("ascii", "replace")
+                    if name in ("APP_VER", "VERSION") and fmt in (0x0004, 0x0204):
+                        found[name] = sfo[data_at + data_off:data_at + data_off + length].split(b"\x00")[0].decode("ascii", "replace")
+                for name in ("APP_VER", "VERSION"):
+                    if re.fullmatch(r"\d{1,3}\.\d{1,3}", found.get(name, "")):
+                        return found[name]
+                return ""
+    except (OSError, struct.error, ValueError):
+        pass
+    return ""
+
+
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
 
@@ -886,6 +925,10 @@ def main() -> int:
         found = VERSION.search(path.name)
         if found:
             row["version"] = found.group(1)
+        if suffix == ".pkg" and platform == "ps4":
+            header_version = read_ps4_version(path)       # the file's own version beats the one in its name
+            if header_version:
+                row["version"] = header_version
         if param:
             from_param += 1
             if param["version"]:
