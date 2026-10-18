@@ -35,11 +35,13 @@ path relative to the folder:
 import argparse
 import hashlib
 import html as htmllib
+import http.client
 import json
 import os
 import math
 import re
 import shutil
+import signal
 import struct
 import subprocess
 import sys
@@ -281,6 +283,11 @@ def http_get(url: str, limit: int, accept: str = "*/*"):
     try:
         with urllib.request.urlopen(request, timeout=25) as reply:
             data = reply.read(limit + 1)
+            expected = reply.headers.get("Content-Length", "")
+        if expected.isdigit() and len(data) <= limit and len(data) != int(expected):
+            # The connection dropped mid-way: Python hands back what it got without complaint.
+            other, _ = curl_get(url, limit, accept)
+            return (other, "") if other is not None else (None, "incomplete download")
     except urllib.error.HTTPError as problem:
         reason = f"HTTP {problem.code}"
         if problem.code in (403, 429, 503):
@@ -288,7 +295,7 @@ def http_get(url: str, limit: int, accept: str = "*/*"):
             if data is not None:
                 return data, ""
         return None, reason
-    except (urllib.error.URLError, OSError, ValueError) as problem:
+    except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as problem:
         return None, type(problem).__name__
     return (data, "") if len(data) <= limit else (None, "too large")
 
@@ -337,7 +344,7 @@ def prospero_parse(page: str, title_id: str, cdn: str):
         art.setdefault(found.group(1), found.group(0))
     # Values can carry the text of a link beside them ("Switch US", "Sony ... [View]"): keep the real word.
     region = next((PROSPERO_REGIONS[w] for w in re.findall(r"[A-Za-z]+", fields.get("region", "").upper()) if w in PROSPERO_REGIONS), "")
-    publisher = re.sub(r"\s*\[?\s*(view|switch)\s*\]?\s*$", "", fields.get("publisher", ""), flags=re.I).strip()
+    publisher = re.sub(r"\s*\[\s*(view|switch)\s*\]\s*$", "", fields.get("publisher", ""), flags=re.I).strip()   # only a bracketed link label, never part of a name
     icon = art.get("icon0", "")
     hero, hero_alt = art.get("pic0") or art.get("pic1", ""), ""
     if not hero and icon:
@@ -353,8 +360,8 @@ def prospero_parse(page: str, title_id: str, cdn: str):
     else:
         page_title = ""
     return {
-        "name": clean_text(_text(head.group(1)).strip() if head else "", 60) or clean_text(logo_title(raw, title_id), 60) or clean_text(page_title, 60),
-        "publisher": clean_text(publisher, 60),
+        "name": clean_text(_text(head.group(1)).strip() if head else "", 200) or clean_text(logo_title(raw, title_id), 200) or clean_text(page_title, 200),
+        "publisher": clean_text(publisher, 120),
         "region": region,
         "icon": icon,
         "hero": hero,
@@ -370,6 +377,17 @@ def image_ext(data: bytes):
     if data.startswith(b"\xff\xd8\xff"):
         return ".jpg"
     return None
+
+
+def image_complete(data: bytes, ext: str) -> bool:
+    """False for a picture that was cut short (no imaging library needed): the end of the file must be there."""
+    if ext == ".webp":
+        return len(data) >= 12 and len(data) >= int.from_bytes(data[4:8], "little") + 8
+    if ext == ".png":
+        return data.rstrip(b"\x00").endswith(b"IEND\xaeB`\x82")
+    if ext == ".jpg":
+        return b"\xff\xd9" in data[-64:]
+    return False
 
 
 def sha256_of(path: Path) -> str:
@@ -471,7 +489,7 @@ def read_param(zip_path: Path):
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
 
-AI_FIELDS = ("region", "description", "publisher", "genre", "tagline", "releaseDate")
+AI_FIELDS = ("description", "genre", "tagline", "releaseDate")   # never the title, publisher or region: those come from the sites
 REGIONS = ("USA", "EUR", "JPN", "ASIA")
 GENRES = "Action, Adventure, Role Playing Games, Horror, Driving/Racing, Shooter, Strategy, Fighting, Sport, Simulation, Puzzle, Platformer, Family, Music/Rhythm, Arcade, Casual, Unique"
 
@@ -584,13 +602,27 @@ def main() -> int:
     parser.add_argument("--sha256", action="store_true", help="also record each file's SHA-256 (slow on large files)")
     args = parser.parse_args()
 
+    try:
+        sys.stdout.reconfigure(line_buffering=True)    # the admin page reads the log while the scan runs
+    except (AttributeError, ValueError):
+        pass
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))   # `timeout` / stop: let the caches be saved first
+
     root = args.folder.resolve()
     if not root.is_dir():
         print(f"{root} is not a folder", file=sys.stderr)
         return 2
     output = args.output or root / "index.json"
     titles_path = args.titles or root / "titles.json"
-    overrides = json.loads(titles_path.read_text("utf-8")) if titles_path.is_file() else {}
+    overrides = {}
+    if titles_path.is_file():
+        try:
+            overrides = json.loads(titles_path.read_text("utf-8-sig"))
+        except (OSError, ValueError) as problem:
+            print(f"  note: cannot read {titles_path} ({problem}), titles.json ignored", file=sys.stderr)
+        if not isinstance(overrides, dict):
+            overrides = {}
+        overrides = {k: v for k, v in overrides.items() if isinstance(v, dict)}
 
     db_path = args.db or (root / "games-db.json")
     game_db, db_hits = {}, 0
@@ -696,22 +728,43 @@ def main() -> int:
         entry = pr_cache.get(title_id, {})
         if not url or not url.startswith(pr_hosts(title_id)[1] + "/"):
             return 0
-        if custom_art(root, images, title_id, kind) and not (args.refresh_covers and kind in entry.get("files", [])):
-            return 0                                   # your own jpg / webp wins, and is never overwritten
-        data, why = None, "HTTP 404"
+        ours = kind in entry.get("files", [])           # downloaded from the site by an earlier run
+        if custom_art(root, images, title_id, kind):
+            if not ours:
+                return 0                               # your own jpg / webp wins, and is never overwritten
+            if not args.refresh_covers:
+                for ext in (".webp", ".png", ".jpg"):  # ours: kept unless it is cut short or missing
+                    have = images.get(f"{title_id}_{kind}{ext}".lower())
+                    if have:
+                        try:
+                            if image_complete((root / have).read_bytes(), ext):
+                                return 0
+                        except OSError:
+                            pass
+        data, why, ext = None, "HTTP 404", None
         for candidate in (url, alt):
             if not candidate or not candidate.startswith(pr_hosts(title_id)[1] + "/"):
                 continue
-            data, why = http_get(candidate, 12 << 20, "image/*")
-            if data is not None or why != "HTTP 404":
+            for attempt in range(2):                   # a second try for a dropped connection or a cut-short picture
+                data, why = http_get(candidate, 12 << 20, "image/*")
+                ext = image_ext(data) if data is not None else None
+                if data is not None and ext and not image_complete(data, ext):
+                    other, _ = curl_get(candidate, 12 << 20, "image/*")
+                    data = other if other is not None else data
+                    ext = image_ext(data)
+                    if not image_complete(data, ext or ""):
+                        data, why, ext = None, "incomplete image", None
+                if data is not None or why == "HTTP 404":
+                    break
+                time.sleep(1.0)
+            if data is not None or why not in ("HTTP 404",):
                 break                                  # got it, or a real problem: stop here
         if data is None:
             if why != "HTTP 404":                      # a missing background is normal, not an error
-                pr_errors.append("image " + why)
+                pr_errors.append(f"image {kind} of {title_id}: {why}")
             return 0
-        ext = image_ext(data)
         if ext is None:
-            pr_errors.append("image not recognised")
+            pr_errors.append(f"image {kind} of {title_id}: not recognised")
             return 0
         target = root / args.covers / f"{title_id}_{kind}{ext}"
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -728,9 +781,41 @@ def main() -> int:
             pr_dirty = True
         time.sleep(0.3)
         return 1
+    def save_caches():
+        """Write .ai-cache.json / .prospero-cache.json when they changed (also on a stop or a crash)."""
+        nonlocal cache_dirty, pr_dirty
+        for name, data, target, dirty in ((".ai-cache.json", cache, cache_path, cache_dirty),
+                                          (".prospero-cache.json", pr_cache, pr_path, pr_dirty)):
+            if not dirty:
+                continue
+            try:
+                temporary = target.with_name(target.name + ".part")
+                temporary.write_text(json.dumps(data, ensure_ascii=False, indent=1), "utf-8")
+                temporary.replace(target)
+            except OSError:
+                if f"could not save {name} (folder not writable?)" not in notes:
+                    notes.append(f"could not save {name} (folder not writable?)")
+                continue
+            if target is cache_path:
+                cache_dirty = False
+            else:
+                pr_dirty = False
+
+    _ON_EXIT.append(save_caches)
+    last_save = time.time()
     from_param = 0
     pack_rows = 0
+    candidates = [p for p in sorted(walk_files(root)) if p.suffix.lower() in IMAGE_FORMATS or p.suffix.lower() in ARCHIVES]
+    print(f"scan: {len(candidates)} candidate file(s) in {root}")
+    seen_count = 0
     for path in sorted(walk_files(root)):
+        if path.suffix.lower() in IMAGE_FORMATS or path.suffix.lower() in ARCHIVES:
+            seen_count += 1
+            if seen_count == 1 or seen_count % 10 == 0:
+                print(f"  scan: {seen_count}/{len(candidates)} {path.name}")
+            if (cache_dirty or pr_dirty) and time.time() - last_save > 60:
+                save_caches()                          # a long run keeps what it already learned
+                last_save = time.time()
         relative = path.relative_to(root)
         if not path.is_file() or path == output or path == titles_path:
             continue
@@ -755,7 +840,11 @@ def main() -> int:
         folder_hint = next((part.lower() for part in relative.parts[:-1] if part.lower() in ("ps4", "ps5")), "")
         if folder_hint and folder_hint != platform:
             notes.append(f"{key}: in a {folder_hint.upper()} folder but {title_id} is a {platform.upper()} title; {platform.upper()} used")
-        size = path.stat().st_size
+        try:
+            size = path.stat().st_size
+        except OSError as problem:
+            skipped.append((key, f"cannot read it ({problem.strerror or type(problem).__name__})"))
+            continue
         if size < 1:
             skipped.append((key, "empty file"))
             continue
@@ -787,7 +876,13 @@ def main() -> int:
                 row["format"], row["archiveContents"] = "Unknown", "unverified"
         else:
             row["format"] = extra.get("format") or IMAGE_FORMATS[suffix]
-        row["sha256"] = sha256_of(path) if args.sha256 else ""
+        row["sha256"] = ""
+        if args.sha256:
+            try:
+                row["sha256"] = sha256_of(path)
+            except OSError as problem:
+                skipped.append((key, f"cannot read it to compute its SHA-256 ({problem.strerror or type(problem).__name__})"))
+                continue
         found = VERSION.search(path.name)
         if found:
             row["version"] = found.group(1)
@@ -802,7 +897,7 @@ def main() -> int:
                 pr_fields = {f for f in ("publisher", "region") if got.get(f) and not extra.get(f)}
                 for f in pr_fields:
                     row[f] = got[f]
-                if got.get("name") and not extra.get("title") and not pack:
+                if got.get("name") and not extra.get("title"):      # apps, DLC and updates too: the site's name, as written
                     row["title"], pr_title = got["name"], True
                 for kind, source in (("icon0", "icon"), ("pic1", "hero")):
                     pr_images += prospero_art(title_id, kind, got.get(source, ""), got.get("heroAlt", "") if kind == "pic1" else "")
@@ -814,7 +909,7 @@ def main() -> int:
                 if entry.get(field) and not extra.get(field) and field not in pr_fields and not (pack and field == "tagline"):
                     row[field] = entry[field]
                     db_fields.add(field)
-            if entry.get("title") and not pack and not extra.get("title") and not (param or {}).get("title") and not pr_title:
+            if entry.get("title") and not extra.get("title") and not (param or {}).get("title") and not pr_title:
                 row["title"], pr_title = entry["title"], True
             db_hits += 1
         if suffix == ".zip" and not args.no_extract:
@@ -856,14 +951,14 @@ def main() -> int:
                     cache_dirty = True
             if info:
                 ai_done += 1
-                for field, source in (("region", "region"), ("description", "description"), ("publisher", "author"),
-                                      ("genre", "genre"), ("tagline", "tagline"), ("releaseDate", "releaseDate")):
-                    if field in wanted and info.get(source):
-                        row[field] = info[source]
-                # The AI only renames games whose title came from the file name.
-                if info.get("name") and not extra.get("title") and not (param or {}).get("title") and not pr_title:
-                    row["title"] = info["name"]
-        row.setdefault("addedAt", datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).replace(microsecond=0).isoformat())
+                for field in AI_FIELDS:
+                    if field in wanted and info.get(field):
+                        row[field] = info[field]
+        try:
+            modified = path.stat().st_mtime
+        except OSError:
+            modified = time.time()
+        row.setdefault("addedAt", datetime.fromtimestamp(modified, timezone.utc).replace(microsecond=0).isoformat())
         for field in ("version", "description", "publisher", "genre", "tagline", "region", "releaseDate", "addedAt",
                       "cover", "hero", "coverFallback", "heroFallback", "gameId"):
             if extra.get(field) and not (pack and field == "tagline"):
@@ -913,20 +1008,7 @@ def main() -> int:
     partial.write_text(json.dumps({"schemaVersion": 1, "releases": rows}, indent=2, ensure_ascii=False) + "\n", "utf-8")
     partial.replace(output)
     print(f"{len(rows)} file(s) listed in {output}" + (f" ({pack_rows} DLC / update / app file(s))" if pack_rows else ""))
-    if cache_dirty:
-        try:
-            temporary = cache_path.with_name(cache_path.name + ".part")
-            temporary.write_text(json.dumps(cache, ensure_ascii=False, indent=1), "utf-8")
-            temporary.replace(cache_path)
-        except OSError:
-            notes.append("could not save .ai-cache.json (folder not writable?)")
-    if pr_dirty:
-        try:
-            temporary = pr_path.with_name(pr_path.name + ".part")
-            temporary.write_text(json.dumps(pr_cache, ensure_ascii=False, indent=1), "utf-8")
-            temporary.replace(pr_path)
-        except OSError:
-            notes.append("could not save .prospero-cache.json (folder not writable?)")
+    save_caches()
     if made_assets:
         print(f"  default images created in assets/: {', '.join(made_assets)}")
     if from_param:
@@ -935,7 +1017,7 @@ def main() -> int:
         print(f"  game database: {db_hits} game(s) found among {len(game_db)} entries")
     if args.prospero:
         print(f"  prosperopatches.com / orbispatches.com: {pr_done} game(s) completed, {pr_images} image(s) downloaded, {pr_calls} page(s) fetched this run"
-              + (f" (last problem: {pr_errors[-1]})" if pr_errors else ""))
+              + (f" (problems: {'; '.join(list(dict.fromkeys(pr_errors))[-3:])})" if pr_errors else ""))
         if pr_left:
             notes.append(f"{len(pr_left)} game(s) not looked up yet (limit of {args.prospero_max} pages per run); run the refresh again to continue")
         if pr_fail >= 3:
@@ -958,5 +1040,12 @@ def main() -> int:
     return 0
 
 
+_ON_EXIT = []      # functions run when the script ends, however it ends (caches are saved)
+
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        code = main()
+    finally:
+        for finish in _ON_EXIT:
+            finish()
+    sys.exit(code)
