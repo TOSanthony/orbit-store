@@ -70,6 +70,8 @@ typedef struct {
     int64_t *written;        /* bytes of each piece already on disk */
     bool *done;
     char manifest_url[768];
+    bool nas;                /* one file on the person's NAS rather than Sony's pieces */
+    char nas_url[2048];
     time_t last_save;
 } PatchJob;
 
@@ -152,6 +154,8 @@ static void load_state(PatchJob *job, int64_t part_size) {
 
 /* ---- checking a piece ---- */
 static bool digest_matches(PatchJob *job, const patchmanifest_piece *piece) {
+    if (!piece->hash[0])
+        return true; /* a NAS file listed without a checksum: only its size is checked */
     const EVP_MD *kind = strlen(piece->hash) == 40 ? EVP_sha1() : EVP_sha256();
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
     unsigned char *buffer = malloc(BLOCK);
@@ -225,7 +229,8 @@ static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, c
         int64_t start = job->written[i];
         int64_t end = start + 8LL * 1024 * 1024 < piece->size ? start + 8LL * 1024 * 1024 : piece->size;
         volatile int64_t position = start;
-        r = sony_range(piece->url, start, end, job->fd, piece->offset, &position, stopped, why, why_cap);
+        r = job->nas ? nas_range(job->nas_url, start, end, job->fd, piece->offset, &position, stopped, why, why_cap)
+                     : sony_range(piece->url, start, end, job->fd, piece->offset, &position, stopped, why, why_cap);
         job->written[i] = r == SONY_RANGE_IGNORED ? 0 : position;
         if (r != SONY_RANGE_OK)
             return r;
@@ -327,20 +332,40 @@ static bool choose_drive(int64_t total, Storage *chosen) {
 static void run(const char *manifest_url) {
     char why[160] = "", detail[200] = "";
     phase("preparing", "");
-    SonyBody body = {0};
-    if (!sony_get(manifest_url, MANIFEST_MAX, &body, stopped, why, sizeof why)) {
-        if (stopped())
-            return finish("cancelled", "");
-        return finish_d("failed", "Could not read Sony's update list.", why);
-    }
     PatchJob job;
     memset(&job, 0, sizeof job);
     job.dir = job.fd = -1;
     copy_text(job.manifest_url, sizeof job.manifest_url, manifest_url);
-    int parsed = patchmanifest_parse(body.data, body.size, &job.manifest, why, sizeof why);
-    free(body.data);
-    if (parsed < 0) {
-        return finish_d("failed", "Sony's update list could not be used.", why);
+    if (!strncmp(manifest_url, "nas:", 4)) {
+        /* An update file listed in the NAS index: one piece, checked by its SHA-256 when the index has it. */
+        Release release;
+        if (!nas_release_copy(manifest_url + 4, &release) || release.size <= 0) {
+            return finish("failed", "This game has no update this console can install.");
+        }
+        job.nas = true;
+        copy_text(job.nas_url, sizeof job.nas_url, release.url);
+        job.manifest.pieces = calloc(1, sizeof *job.manifest.pieces);
+        if (!job.manifest.pieces)
+            return finish("failed", "Not enough memory.");
+        job.manifest.count = 1;
+        job.manifest.total = release.size;
+        job.manifest.pieces[0].offset = 0;
+        job.manifest.pieces[0].size = release.size;
+        copy_text(job.manifest.pieces[0].url, sizeof job.manifest.pieces[0].url, "nas");
+        if (strlen(release.sha256) == 64)
+            copy_text(job.manifest.pieces[0].hash, sizeof job.manifest.pieces[0].hash, release.sha256);
+    } else {
+        SonyBody body = {0};
+        if (!sony_get(manifest_url, MANIFEST_MAX, &body, stopped, why, sizeof why)) {
+            if (stopped())
+                return finish("cancelled", "");
+            return finish_d("failed", "Could not read Sony's update list.", why);
+        }
+        int parsed = patchmanifest_parse(body.data, body.size, &job.manifest, why, sizeof why);
+        free(body.data);
+        if (parsed < 0) {
+            return finish_d("failed", "Sony's update list could not be used.", why);
+        }
     }
     Storage drive;
     if (!choose_drive(job.manifest.total, &drive)) {
@@ -456,7 +481,7 @@ int patchdl_start(const char *title_id, char *error, size_t cap) {
     }
     char name[96], version[16], manifest[768];
     if (!gameupdates_offer(title_id, name, sizeof name, version, sizeof version, manifest, sizeof manifest) ||
-        !patchfeed_url_allowed(manifest)) {
+        (strncmp(manifest, "nas:", 4) && !patchfeed_url_allowed(manifest))) {
         copy_text(error, cap, "This game has no update this console can install.");
         return 404;
     }

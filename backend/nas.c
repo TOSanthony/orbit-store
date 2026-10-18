@@ -7,6 +7,7 @@
  * addresses. The list lives beside, never inside, the signed catalogue. */
 #include "orbit.h"
 #include "ca.h"
+#include "patchfeed.h"
 #include "provider_network.h"
 #include <ctype.h>
 #include <curl/curl.h>
@@ -387,6 +388,55 @@ static int fetch(const char *url, Body *body, char *error, size_t cap) {
 /* game-patches.json, the patch versions and Sony links saved on the person's NAS page, read from
  * the folder of index.json. Returns 1 with a NUL-terminated body (free it), 0 when My NAS is off or
  * has no such file, -1 when it could not be read. Called without orbit.mutex. */
+/* The newest plain .pkg listed in the NAS index as an update (packages/ps5/updates/) for this game,
+ * when its version is strictly newer than `newer_than` (a NN.NNN.NNN version, or empty). Versions
+ * the index gives in another shape are not compared. Returns false when there is none. */
+bool nas_best_update(const char *title_id, const char *newer_than, char *id, size_t id_cap, char *version,
+                     size_t version_cap, int64_t *size) {
+    bool found = false;
+    char best[16] = "";
+    pthread_mutex_lock(&orbit.mutex);
+    if (active_locked() && orbit.nas_catalog) {
+        for (size_t i = 0; i < orbit.nas_count; i++) {
+            const Release *r = &orbit.nas_releases[i];
+            const cJSON *view = cJSON_GetArrayItem(orbit.nas_catalog, (int)i);
+            if (!view || strcasecmp(r->title_id, title_id) || strcmp(json_text(view, "tagline"), "UPDATES"))
+                continue;
+            const char *v = json_text(view, "version");
+            size_t name = strlen(r->filename);
+            if (!patchfeed_version_valid(v) || r->compression[0] || r->size <= 0 || name < 5 ||
+                strcasecmp(r->filename + name - 4, ".pkg"))
+                continue;
+            if (*newer_than && strcmp(v, newer_than) <= 0)
+                continue;
+            if (found && strcmp(v, best) <= 0)
+                continue;
+            found = true;
+            copy_text(best, sizeof best, v);
+            copy_text(id, id_cap, r->id);
+            *size = r->size;
+        }
+    }
+    pthread_mutex_unlock(&orbit.mutex);
+    if (found)
+        copy_text(version, version_cap, best);
+    return found;
+}
+
+/* A copy of the NAS release with this id (its address and checksum), for downloading it. */
+bool nas_release_copy(const char *id, Release *out) {
+    bool found = false;
+    pthread_mutex_lock(&orbit.mutex);
+    for (size_t i = 0; i < orbit.nas_count && !found; i++) {
+        if (!strcmp(orbit.nas_releases[i].id, id)) {
+            *out = orbit.nas_releases[i];
+            found = true;
+        }
+    }
+    pthread_mutex_unlock(&orbit.mutex);
+    return found;
+}
+
 int nas_game_patches(char **data, size_t *size) {
     *data = NULL;
     *size = 0;

@@ -4,6 +4,7 @@
 #include "ca.h"
 #include "orbit.h"
 #include "patchfeed.h"
+#include "provider_network.h"
 #include <curl/curl.h>
 #include <errno.h>
 #include <stdio.h>
@@ -150,7 +151,7 @@ static void route_free(Route *route) {
     curl_slist_free_all(route->connect_to);
 }
 /* The address to contact: Sony's own, or (tests only) a local fake that serves the same file names. */
-static bool resolve(const char *url, char *out, size_t cap, bool *local, char *why, size_t why_cap) {
+static bool resolve(const char *url, char *out, size_t cap, bool *local, bool nas, char *why, size_t why_cap) {
     *local = false;
 #ifdef ORBIT_TEST
     const char *base = getenv("ORBIT_TEST_GAMEUPDATES_BASE");
@@ -161,6 +162,14 @@ static bool resolve(const char *url, char *out, size_t cap, bool *local, char *w
         return true;
     }
 #endif
+    if (nas) {
+        if (strncmp(url, "https://", 8) || !nas_url_allowed(url) || strlen(url) >= cap) {
+            snprintf(why, why_cap, "address not on your NAS");
+            return false;
+        }
+        snprintf(out, cap, "%s", url);
+        return true;
+    }
     if (!patchfeed_url_allowed(url)) {
         snprintf(why, why_cap, "address not on Sony's download servers");
         return false;
@@ -199,7 +208,7 @@ bool sony_get(const char *url, size_t max, SonyBody *body, sony_stop_fn stop, ch
     bool local;
     body->data = NULL;
     body->size = 0;
-    if (!resolve(url, address, sizeof address, &local, why, why_cap))
+    if (!resolve(url, address, sizeof address, &local, false, why, why_cap))
         return false;
     CURL *curl = curl_easy_init();
     if (!curl) {
@@ -243,15 +252,15 @@ bool sony_get(const char *url, size_t max, SonyBody *body, sony_stop_fn stop, ch
     return true;
 }
 
-sony_range_result sony_range(const char *url, int64_t start, int64_t end, int fd, int64_t file_offset,
-                             volatile int64_t *received, sony_stop_fn stop, char *why, size_t why_cap) {
-    char address[900];
+static sony_range_result range(const char *url, int64_t start, int64_t end, int fd, int64_t file_offset,
+                               volatile int64_t *received, sony_stop_fn stop, bool nas, char *why, size_t why_cap) {
+    char address[2100];
     bool local;
     if (start < 0 || end <= start) {
         snprintf(why, why_cap, "empty range");
         return SONY_RANGE_FAILED;
     }
-    if (!resolve(url, address, sizeof address, &local, why, why_cap))
+    if (!resolve(url, address, sizeof address, &local, nas, why, why_cap))
         return SONY_RANGE_REFUSED;
     CURL *curl = curl_easy_init();
     if (!curl) {
@@ -268,13 +277,17 @@ sony_range_result sony_range(const char *url, int64_t start, int64_t end, int fd
     Write w = {.fd = fd, .position = start, .file_offset = file_offset, .limit = end - start,
                .received = received, .base = 0, .stop = stop};
     Progress watch = {stop};
-    char range[64];
-    snprintf(range, sizeof range, "%lld-%lld", (long long)start, (long long)(end - 1));
+    char range_text[64];
+    snprintf(range_text, sizeof range_text, "%lld-%lld", (long long)start, (long long)(end - 1));
     Route route;
     route_apply(curl, address, sizeof address, &route);
     curl_easy_setopt(curl, CURLOPT_URL, address);
     common(curl, &ca, local, &watch);
-    curl_easy_setopt(curl, CURLOPT_RANGE, range);
+    if (nas && !local) {
+        curl_easy_setopt(curl, CURLOPT_PROXY, "");
+        curl_easy_setopt(curl, CURLOPT_OPENSOCKETFUNCTION, provider_open_socket);
+    }
+    curl_easy_setopt(curl, CURLOPT_RANGE, range_text);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 45L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, store);
@@ -311,4 +324,13 @@ sony_range_result sony_range(const char *url, int64_t start, int64_t end, int fd
         return SONY_RANGE_FAILED;
     }
     return w.position == end ? SONY_RANGE_OK : SONY_RANGE_FAILED;
+}
+
+sony_range_result sony_range(const char *url, int64_t start, int64_t end, int fd, int64_t file_offset,
+                             volatile int64_t *received, sony_stop_fn stop, char *why, size_t why_cap) {
+    return range(url, start, end, fd, file_offset, received, stop, false, why, why_cap);
+}
+sony_range_result nas_range(const char *url, int64_t start, int64_t end, int fd, int64_t file_offset,
+                            volatile int64_t *received, sony_stop_fn stop, char *why, size_t why_cap) {
+    return range(url, start, end, fd, file_offset, received, stop, true, why, why_cap);
 }

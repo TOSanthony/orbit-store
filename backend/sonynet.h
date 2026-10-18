@@ -33,4 +33,8 @@ typedef enum {
  * *received is the position reached inside the piece (it starts at `start`), updated as data arrives. */
 sony_range_result sony_range(const char *url, int64_t start, int64_t end, int fd, int64_t file_offset,
                              volatile int64_t *received, sony_stop_fn stop, char *why, size_t why_cap);
+/* The same, from a file on the person's own NAS (its address must be on the NAS origin saved in Sources,
+ * over HTTPS; private addresses are refused). Used for updates listed in the NAS index. */
+sony_range_result nas_range(const char *url, int64_t start, int64_t end, int fd, int64_t file_offset,
+                            volatile int64_t *received, sony_stop_fn stop, char *why, size_t why_cap);
 #endif

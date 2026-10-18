@@ -166,7 +166,25 @@ static void run_check(void) {
             e->blocked = false;
             e->needs[0] = 0;
         }
-        if (e && !e->blocked) {
+        /* A plain .pkg listed as an update in the NAS index (packages/ps5/updates/) counts as an update
+         * too, when it is newer than the installed version and than what Sony or the saved link offer. */
+        char nas_id[24], nas_version[16];
+        int64_t nas_size = 0;
+        const char *floor = e && !e->blocked ? e->available : (patchfeed_version_valid(installed) ? installed : "");
+        if (nas_best_update(game->title_id, floor, nas_id, sizeof nas_id, nas_version, sizeof nas_version, &nas_size)) {
+            if (!e) {
+                e = &found[count++];
+                copy_text(e->title_id, sizeof e->title_id, game->title_id);
+                copy_text(e->name, sizeof e->name, game->title_name);
+                copy_text(e->installed, sizeof e->installed, installed);
+            }
+            copy_text(e->available, sizeof e->available, nas_version);
+            snprintf(e->manifest, sizeof e->manifest, "nas:%s", nas_id);
+            e->blocked = false;
+            e->needs[0] = 0;
+            e->size = nas_size;
+        }
+        if (e && !e->blocked && strncmp(e->manifest, "nas:", 4)) {
             /* The size is only in the manifest; a failure here just leaves the size out. */
             SonyBody list_body = {0};
             char ignore[160] = "", reason[100] = "";

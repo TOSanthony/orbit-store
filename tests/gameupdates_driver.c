@@ -4,6 +4,7 @@
  * in ORBIT_TEST_GAMEUPDATES_BASE. Prints the status JSON once the first check has finished. */
 #include "install_service.h"
 #include "orbit.h"
+#include <curl/curl.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <stdio.h>
@@ -69,6 +70,43 @@ int nas_game_patches(char **data, size_t *size) {
     fclose(f);
     *data = buffer;
     return 1;
+}
+
+/* An update file listed in the NAS index, described by the test: "PPSA00004:03.000.000:2048:<sha256>". */
+bool nas_best_update(const char *title_id, const char *newer_than, char *id, size_t id_cap, char *version,
+                     size_t version_cap, int64_t *size) {
+    const char *spec = getenv("ORBIT_TEST_NAS_UPDATE");
+    char game[16] = "", ver[16] = "";
+    long long bytes = 0;
+    if (!spec || sscanf(spec, "%15[^:]:%15[^:]:%lld", game, ver, &bytes) != 3 || strcmp(game, title_id) ||
+        (*newer_than && strcmp(ver, newer_than) <= 0))
+        return false;
+    snprintf(id, id_cap, "nas-test");
+    snprintf(version, version_cap, "%s", ver);
+    *size = bytes;
+    return true;
+}
+bool nas_release_copy(const char *id, Release *out) {
+    const char *spec = getenv("ORBIT_TEST_NAS_UPDATE");
+    char game[16] = "", ver[16] = "", hash[80] = "";
+    long long bytes = 0;
+    if (strcmp(id, "nas-test") || !spec ||
+        sscanf(spec, "%15[^:]:%15[^:]:%lld:%79s", game, ver, &bytes, hash) < 3)
+        return false;
+    memset(out, 0, sizeof *out);
+    snprintf(out->id, sizeof out->id, "nas-test");
+    snprintf(out->url, sizeof out->url, "https://nas.example/updates/nas-update.pkg");
+    snprintf(out->sha256, sizeof out->sha256, "%s", hash);
+    out->size = bytes;
+    return true;
+}
+bool nas_url_allowed(const char *url) {
+    (void)url;
+    return true;
+}
+curl_socket_t provider_open_socket(void *context, curlsocktype purpose, struct curl_sockaddr *address) {
+    (void)context; (void)purpose; (void)address;
+    return CURL_SOCKET_BAD;
 }
 
 bool orbit_is_stopping(void) {

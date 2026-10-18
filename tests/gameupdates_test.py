@@ -65,10 +65,11 @@ def build(root, rows, params):
         os.makedirs(d)
         json.dump({"contentVersion": ver}, open(d + "/param.json", "w"))
 
-def run(root, firmware, download=None, storage=None, patches=None):
+def run(root, firmware, download=None, storage=None, patches=None, nas=None):
     env = dict(os.environ, ORBIT_TEST_GAMEUPDATES_BASE="http://127.0.0.1:%d" % server.server_port)
     if storage: env["ORBIT_TEST_STORAGE"] = storage
     if patches: env["ORBIT_TEST_GAME_PATCHES"] = patches
+    if nas: env["ORBIT_TEST_NAS_UPDATE"] = nas
     args = [driver, root, firmware] + ([download] if download else [])
     out = subprocess.run(args, env=env, capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, (out.returncode, out.stderr)
@@ -128,6 +129,28 @@ with tempfile.TemporaryDirectory() as root:
     s = run(root, "10200000")
     check("a missing app.db gives a readable error", s["error"].startswith("Could not read the installed games"))
     check("and no update is shown", s["count"] == 0)
+
+# ---- an update file listed on the person's NAS ----
+with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as drive:
+    build(root, [(5, "01.000.000"), (1, "05.000.000")], {})
+    nas_file = bytes((j * 7) % 253 for j in range(70000))
+    BIN["nas-update.pkg"] = nas_file
+    spec = "PPSA00005:03.000.000:%d:%s" % (len(nas_file), hashlib.sha256(nas_file).hexdigest())
+    s = run(root, "10200000", nas=spec)
+    games = {g["titleId"]: g for g in s["games"]}
+    check("an update .pkg on the NAS is listed as an update (newer than installed)",
+          games.get("PPSA00005", {}).get("version") == "03.000.000" and games["PPSA00005"]["state"] == "available"
+          and games["PPSA00005"].get("size") == len(nas_file))
+    check("a NAS update that is not newer than the installed version is not listed",
+          "PPSA00005" not in {g["titleId"]: g for g in run(root, "10200000", nas="PPSA00005:01.000.000:10:" + "0" * 64)["games"]})
+    s = run(root, "10200000", "PPSA00005", drive, nas=spec)
+    final = drive + "/homebrew/PPSA00005-v03.000.000.pkg"
+    check("the NAS file downloads, is checked and saved like a Sony patch",
+          s.get("phase") == "downloaded" and os.path.exists(final) and open(final, "rb").read() == nas_file)
+    os.remove(final)
+    bad = "PPSA00005:03.000.000:%d:%s" % (len(nas_file), "f" * 64)
+    s = run(root, "10200000", "PPSA00005", drive, nas=bad)
+    check("a NAS file with the wrong SHA-256 fails and leaves no .pkg", s.get("phase") == "failed" and not os.path.exists(final))
 
 # ---- downloading a patch ----
 def make_patch(id_, sizes):
