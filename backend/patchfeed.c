@@ -16,6 +16,11 @@ bool patchfeed_version_valid(const char *v) {
     return true;
 }
 
+bool patchfeed_app_version_valid(const char *v) {
+    return v && strlen(v) == 5 && isdigit((unsigned char)v[0]) && isdigit((unsigned char)v[1]) && v[2] == '.' &&
+           isdigit((unsigned char)v[3]) && isdigit((unsigned char)v[4]);
+}
+
 int patchfeed_version_compare(const char *a, const char *b) {
     bool va = patchfeed_version_valid(a), vb = patchfeed_version_valid(b);
     if (!va || !vb) return va == vb ? 0 : va ? 1 : -1;

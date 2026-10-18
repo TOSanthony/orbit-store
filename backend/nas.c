@@ -405,7 +405,8 @@ bool nas_best_update(const char *title_id, const char *newer_than, const char *s
                 continue;
             const char *v = json_text(view, "version");
             size_t name = strlen(r->filename);
-            if (!patchfeed_version_valid(v) || r->compression[0] || r->size <= 0 || name < 5 ||
+            bool ps4 = !strncmp(r->title_id, "CUSA", 4);
+            if (!(ps4 ? patchfeed_app_version_valid(v) : patchfeed_version_valid(v)) || r->compression[0] || r->size <= 0 || name < 5 ||
                 strcasecmp(r->filename + name - 4, ".pkg"))
                 continue;
             /* The same version Sony offers is taken from the NAS too when the index gives its checksum,

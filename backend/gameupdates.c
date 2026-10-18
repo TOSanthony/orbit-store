@@ -109,68 +109,73 @@ static void run_check(void) {
     }
     for (size_t i = 0; i < total && !stopping(); i++) {
         const appdb_game *game = &games[i];
-        /* Only PS5 titles: their version.xml is the format patchfeed reads. */
-        if (strncmp(game->title_id, "PPSA", 4) || !*game->version_file_uri)
+        /* PS5 titles: Sony's version.xml is the format patchfeed reads. PS4 titles have no such list
+         * here; only an update .pkg on the person's NAS can offer them an update. */
+        bool ps4 = !strncmp(game->title_id, "CUSA", 4);
+        if (ps4 ? !patchfeed_app_version_valid(game->content_version)
+                : strncmp(game->title_id, "PPSA", 4) || !*game->version_file_uri)
             continue;
         char installed[16];
         installed_version(game->title_id, game->content_version, installed, sizeof installed);
-        SonyBody body = {0};
-        char why[160] = "";
-        if (!sony_get(game->version_file_uri, MAX_XML, &body, stopping, why, sizeof why)) {
-            if (!failed)
-                snprintf(first_failure, sizeof first_failure, "%s: %s", game->title_id, why);
-            failed++;
-            continue;
-        }
-        patchfeed_package list[PATCHFEED_MAX];
-        int n = patchfeed_parse(body.data, body.size, list, PATCHFEED_MAX);
-        free(body.data);
-        if (n < 0) {
-            if (!failed)
-                snprintf(first_failure, sizeof first_failure, "%s: not a Sony update list", game->title_id);
-            failed++;
-            continue;
-        }
-        patchfeed_choice choice = patchfeed_choose(list, (size_t)n,
-                                                   patchfeed_version_valid(installed) ? installed : "",
-                                                   orbit.firmware);
         Entry *e = NULL;
-        if (choice.state != PATCHFEED_UP_TO_DATE && choice.offer) {
-            e = &found[count++];
-            copy_text(e->title_id, sizeof e->title_id, game->title_id);
-            copy_text(e->name, sizeof e->name, game->title_name);
-            copy_text(e->installed, sizeof e->installed, installed);
-            copy_text(e->available, sizeof e->available, choice.offer->version);
-            copy_text(e->manifest, sizeof e->manifest, choice.offer->manifest_url);
-            e->blocked = choice.state == PATCHFEED_NEEDS_NEWER_FW;
-            if (e->blocked)
-                patchfeed_firmware_text(choice.offer->system_ver, e->needs, sizeof e->needs);
-        }
-        /* A version and Sony link saved on the person's NAS page wins when it is newer than what
-         * is installed and than anything Sony offers this console. */
-        const cJSON *saved_game = saved ? cJSON_GetObjectItemCaseSensitive(saved, game->title_id) : NULL;
-        const char *saved_version = saved_game ? json_text(saved_game, "version") : "";
-        const char *saved_link = saved_game ? json_text(saved_game, "link") : "";
-        char saved_manifest[768];
-        if (patchfeed_version_valid(saved_version) && patchfeed_manifest_from_link(saved_link, saved_manifest, sizeof saved_manifest) &&
-            (!patchfeed_version_valid(installed) || strcmp(saved_version, installed) > 0) &&
-            (!e || e->blocked || strcmp(saved_version, e->available) > 0)) {
-            if (!e) {
+        if (!ps4) {
+            SonyBody body = {0};
+            char why[160] = "";
+            if (!sony_get(game->version_file_uri, MAX_XML, &body, stopping, why, sizeof why)) {
+                if (!failed)
+                    snprintf(first_failure, sizeof first_failure, "%s: %s", game->title_id, why);
+                failed++;
+                continue;
+            }
+            patchfeed_package list[PATCHFEED_MAX];
+            int n = patchfeed_parse(body.data, body.size, list, PATCHFEED_MAX);
+            free(body.data);
+            if (n < 0) {
+                if (!failed)
+                    snprintf(first_failure, sizeof first_failure, "%s: not a Sony update list", game->title_id);
+                failed++;
+                continue;
+            }
+            patchfeed_choice choice = patchfeed_choose(list, (size_t)n,
+                                                       patchfeed_version_valid(installed) ? installed : "",
+                                                       orbit.firmware);
+            if (choice.state != PATCHFEED_UP_TO_DATE && choice.offer) {
                 e = &found[count++];
                 copy_text(e->title_id, sizeof e->title_id, game->title_id);
                 copy_text(e->name, sizeof e->name, game->title_name);
                 copy_text(e->installed, sizeof e->installed, installed);
+                copy_text(e->available, sizeof e->available, choice.offer->version);
+                copy_text(e->manifest, sizeof e->manifest, choice.offer->manifest_url);
+                e->blocked = choice.state == PATCHFEED_NEEDS_NEWER_FW;
+                if (e->blocked)
+                    patchfeed_firmware_text(choice.offer->system_ver, e->needs, sizeof e->needs);
             }
-            copy_text(e->available, sizeof e->available, saved_version);
-            copy_text(e->manifest, sizeof e->manifest, saved_manifest);
-            e->blocked = false;
-            e->needs[0] = 0;
+            /* A version and Sony link saved on the person's NAS page wins when it is newer than what
+             * is installed and than anything Sony offers this console. */
+            const cJSON *saved_game = saved ? cJSON_GetObjectItemCaseSensitive(saved, game->title_id) : NULL;
+            const char *saved_version = saved_game ? json_text(saved_game, "version") : "";
+            const char *saved_link = saved_game ? json_text(saved_game, "link") : "";
+            char saved_manifest[768];
+            if (patchfeed_version_valid(saved_version) && patchfeed_manifest_from_link(saved_link, saved_manifest, sizeof saved_manifest) &&
+                (!patchfeed_version_valid(installed) || strcmp(saved_version, installed) > 0) &&
+                (!e || e->blocked || strcmp(saved_version, e->available) > 0)) {
+                if (!e) {
+                    e = &found[count++];
+                    copy_text(e->title_id, sizeof e->title_id, game->title_id);
+                    copy_text(e->name, sizeof e->name, game->title_name);
+                    copy_text(e->installed, sizeof e->installed, installed);
+                }
+                copy_text(e->available, sizeof e->available, saved_version);
+                copy_text(e->manifest, sizeof e->manifest, saved_manifest);
+                e->blocked = false;
+                e->needs[0] = 0;
+            }
         }
         /* A plain .pkg listed as an update in the NAS index (packages/ps5/updates/) counts as an update
          * too, when it is newer than the installed version and than what Sony or the saved link offer. */
         char nas_id[24], nas_version[16];
         int64_t nas_size = 0;
-        const char *floor = e && !e->blocked ? e->available : (patchfeed_version_valid(installed) ? installed : "");
+        const char *floor = e && !e->blocked ? e->available : (patchfeed_version_valid(installed) || patchfeed_app_version_valid(installed) ? installed : "");
         if (nas_best_update(game->title_id, floor, e && !e->blocked ? e->available : "", nas_id, sizeof nas_id, nas_version, sizeof nas_version, &nas_size)) {
             if (!e) {
                 e = &found[count++];

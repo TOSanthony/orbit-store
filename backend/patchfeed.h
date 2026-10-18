@@ -43,6 +43,8 @@ int patchfeed_version_compare(const char *a, const char *b);
 
 /* "NN.NNN.NNN" with digits only. */
 bool patchfeed_version_valid(const char *version);
+/* A PS4 app version: "NN.NN", as in app.db's APP_VER and a PS4 .pkg's param.sfo. */
+bool patchfeed_app_version_valid(const char *version);
 
 /* 0x10200006 -> "10.20" (major.minor, what the console's firmware screen shows). */
 void patchfeed_firmware_text(uint32_t packed, char *out, size_t cap);

@@ -159,6 +159,25 @@ with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as dri
     s = run(root, "10200000", "PPSA00005", drive, nas=bad)
     check("a NAS file with the wrong SHA-256 fails and leaves no .pkg", s.get("phase") == "failed" and not os.path.exists(final))
 
+# ---- a PS4 game updated from an update .pkg on the NAS ----
+with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as drive:
+    build(root, [(5, "01.000.000")], {})
+    nas_file = bytes((j * 5) % 251 for j in range(50000))
+    BIN["nas-update.pkg"] = nas_file
+    spec = "CUSA16194:01.50:%d:%s" % (len(nas_file), hashlib.sha256(nas_file).hexdigest())
+    s = run(root, "10200000", nas=spec)
+    games = {g["titleId"]: g for g in s["games"]}
+    check("a PS4 game gets the newer update .pkg found on the NAS",
+          games.get("CUSA16194", {}).get("version") == "01.50" and games["CUSA16194"]["installed"] == "01.05"
+          and games["CUSA16194"]["state"] == "available" and games["CUSA16194"].get("size") == len(nas_file))
+    check("a PS4 NAS update that is not newer is not listed",
+          "CUSA16194" not in {g["titleId"]: g for g in run(root, "10200000", nas="CUSA16194:01.05:10:" + "0" * 64)["games"]})
+    check("a PS4 game with no NAS update is still left alone", "CUSA16194" not in {g["titleId"]: g for g in run(root, "10200000")["games"]})
+    s = run(root, "10200000", "CUSA16194", drive, nas=spec)
+    final = drive + "/homebrew/CUSA16194-v01.50.pkg"
+    check("the PS4 update downloads from the NAS and is checked",
+          s.get("phase") == "downloaded" and os.path.exists(final) and open(final, "rb").read() == nas_file)
+
 # ---- downloading a patch ----
 def make_patch(id_, sizes):
     pieces, payload, offset = [], b"", 0
