@@ -141,11 +141,13 @@ void fact_icon(hui::gfx::DrawList &list, const ui::Type &type, FactIcon icon, fl
         arc(0, 0, 12, 4.5f, 0.0f, kPi);
         break;
     case FactIcon::globe:
+        // The globe of the Language setting: the rim, two meridians that stop short of the
+        // poles and two parallels, with finer inner strokes.
         list.ring(cx, cy, 15 * k, t, ink);
-        arc(0, 0, 6.5f, 15, 0.0f, 2.0f * kPi);
-        line(-15, 0, 15, 0, 2.0f);
-        line(-12, -8, 12, -8, 2.0f);
-        line(-12, 8, 12, 8, 2.0f);
+        arc(0, 0, 5.4f, 15, -0.5f * kPi + 0.45f, 0.5f * kPi - 0.45f);
+        arc(0, 0, 5.4f, 15, 0.5f * kPi + 0.45f, 1.5f * kPi - 0.45f);
+        line(-13.6f, -4.5f, 13.6f, -4.5f, 2.0f);
+        line(-13.6f, 4.5f, 13.6f, 4.5f, 2.0f);
         break;
     case FactIcon::version:
         line(-14, -3, -3, -14);
