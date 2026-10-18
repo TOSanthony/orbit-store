@@ -39,6 +39,7 @@ The native TV app is a separate program with its own build (`app/README.md`). It
 | libc++, libc++abi and libunwind | LLVM 18.1.8, built by PS5 SDK v0.42 | Apache-2.0 with LLVM exceptions and retained legacy notices | `licenses/libcxx-LLVM.txt`, `licenses/libcxxabi-LLVM.txt`, `licenses/libunwind-LLVM.txt` | Matching LLVM source archives and CMake modules in the source bundle |
 | compiler-rt builtins (x86-64) | LLVM 18.1.3, Ubuntu package `18.1.3-1ubuntu1` | Apache-2.0 with LLVM exceptions | `licenses/compiler-rt-LLVM.txt` | `compiler-rt-18.1.3.src.tar.xz` in the source bundle; pinned binary package in `app/Dockerfile` |
 | stb_image, stb_vorbis | stb commit `2c980bb59875b0d32144a71867fbdebb2f77cd20` | Public domain or MIT | `app/src/third_party/stb/LICENSE` | [nothings/stb](https://github.com/nothings/stb) |
+| QR Code generator library (C) | commit `3c6d0b3cefb4e049dc337e82237c9644399716a8` | MIT | `app/src/third_party/qrcodegen/LICENSE` | [nayuki/QR-Code-generator](https://github.com/nayuki/QR-Code-generator) |
 | Inter typeface | 4.1 | SIL Open Font License 1.1 | `app/third_party/fonts/Inter-LICENSE.txt` | [rsms/inter](https://github.com/rsms/inter/releases/tag/v4.1) |
 | Interface sound effects (glass set) | from the kit above | GPL-3.0-or-later (BlackBearReloaded) | [licenses/GPL-3.0.txt](licenses/GPL-3.0.txt) | In this repository |
 

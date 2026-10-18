@@ -347,6 +347,8 @@
   "Enter the https address of the index.json on your NAS.": "Gib die https-Adresse der index.json auf deinem NAS ein.",
   "Enter the six-digit code shown in Orbit on your PS5.": "Gib den sechsstelligen Code ein, der in Orbit auf deiner PS5 angezeigt wird.",
   "Enter this code": "Gib diesen Code ein",
+  "Or scan this code with your phone’s camera": "Oder scanne diesen Code mit der Kamera deines Handys",
+  "Your phone must be on the same Wi-Fi network as this PS5.": "Dein Handy muss im selben WLAN sein wie diese PS5.",
   "Estimates include paused and failed downloads. Other apps can change free space.": "Die Schätzungen berücksichtigen pausierte und fehlgeschlagene Downloads. Andere Apps können den freien Speicher verändern.",
   "Expected a JSON object.": "JSON-Objekt erwartet.",
   "Expected a game and favourite choice.": "Spiel und Favoritenauswahl erwartet.",

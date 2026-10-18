@@ -347,6 +347,8 @@
   "Enter the https address of the index.json on your NAS.": "Voer het https-adres van de index.json op je NAS in.",
   "Enter the six-digit code shown in Orbit on your PS5.": "Voer de zescijferige code in die Orbit op je PS5 toont.",
   "Enter this code": "Voer deze code in",
+  "Or scan this code with your phone’s camera": "Of scan deze code met de camera van je telefoon",
+  "Your phone must be on the same Wi-Fi network as this PS5.": "Je telefoon moet op hetzelfde wifi-netwerk zitten als deze PS5.",
   "Estimates include paused and failed downloads. Other apps can change free space.": "Schattingen houden rekening met gepauzeerde en mislukte downloads. Andere apps kunnen de vrije ruimte veranderen.",
   "Expected a JSON object.": "Een JSON-object verwacht.",
   "Expected a game and favourite choice.": "Een game en favorietkeuze verwacht.",

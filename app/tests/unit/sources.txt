@@ -14,6 +14,7 @@ src/gfx/draw_list.cpp
 src/gfx/font.cpp
 src/gfx/triangulate.cpp
 src/orbit/*.cpp
+src/third_party/qrcodegen/qrcodegen.c
 src/third_party/stb/image.c
 src/ui/components/*.cpp
 src/ui/glyphs.cpp

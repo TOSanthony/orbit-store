@@ -400,6 +400,8 @@
   "Enter the https address of the index.json on your NAS.": "Enter the https address of the index.json on your NAS.",
   "Enter the six-digit code shown in Orbit on your PS5.": "Enter the six-digit code shown in Orbit on your PS5.",
   "Enter this code": "Enter this code",
+  "Or scan this code with your phone’s camera": "Or scan this code with your phone’s camera",
+  "Your phone must be on the same Wi-Fi network as this PS5.": "Your phone must be on the same Wi-Fi network as this PS5.",
   "Estimates include paused and failed downloads. Other apps can change free space.": "Estimates include paused and failed downloads. Other apps can change free space.",
   "Expected a game and favourite choice.": "Expected a game and favourite choice.",
   "Expected a JSON object.": "Expected a JSON object.",

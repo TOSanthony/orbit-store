@@ -347,6 +347,8 @@
   "Enter the https address of the index.json on your NAS.": "Add meg a NAS-on lévő index.json https-címét.",
   "Enter the six-digit code shown in Orbit on your PS5.": "Add meg az Orbitban a PS5-ön megjelenő hatjegyű kódot.",
   "Enter this code": "Add meg ezt a kódot",
+  "Or scan this code with your phone’s camera": "Vagy olvasd be ezt a kódot a telefonod kamerájával",
+  "Your phone must be on the same Wi-Fi network as this PS5.": "A telefonodnak ugyanazon a Wi-Fi hálózaton kell lennie, mint ennek a PS5-nek.",
   "Estimates include paused and failed downloads. Other apps can change free space.": "A becslések a szüneteltetett és sikertelen letöltéseket is tartalmazzák. Más alkalmazások módosíthatják a szabad helyet.",
   "Expected a JSON object.": "JSON-objektumot vártunk.",
   "Expected a game and favourite choice.": "Játékot és kedvencválasztást vártunk.",

@@ -11,6 +11,8 @@
 #include "orbit/i18n.hpp"
 
 #include <algorithm>
+#include "third_party/qrcodegen/qrcodegen.h"
+
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -62,6 +64,59 @@ void ellipse_outline(hui::gfx::DrawList &list, float cx, float cy, float rx, flo
         last_x = x;
         last_y = y;
     }
+}
+
+// A QR code of `text` on a white square no wider than max_side, at whole pixels per module so
+// the edges stay sharp. Returns the side it takes (0 when the text cannot be encoded).
+// A null list only measures.
+float draw_qr(hui::gfx::DrawList *list, const std::string &text, float x, float y, float max_side)
+{
+    constexpr int kMaxVersion = 10;
+    constexpr int kQuiet = 3; // modules of white all round
+    static std::string cached_text;
+    static std::vector<std::uint8_t> cached;
+    static bool cached_ok = false;
+    if (cached.empty() || text != cached_text)
+    {
+        cached_text = text;
+        cached.assign(qrcodegen_BUFFER_LEN_FOR_VERSION(kMaxVersion), 0);
+        std::vector<std::uint8_t> scratch(qrcodegen_BUFFER_LEN_FOR_VERSION(kMaxVersion), 0);
+        cached_ok = qrcodegen_encodeText(text.c_str(), scratch.data(), cached.data(), qrcodegen_Ecc_MEDIUM,
+                                         qrcodegen_VERSION_MIN, kMaxVersion, qrcodegen_Mask_AUTO, true);
+    }
+    if (!cached_ok)
+        return 0.0f;
+    const int n = qrcodegen_getSize(cached.data());
+    const float px = std::floor(max_side / static_cast<float>(n + 2 * kQuiet));
+    if (px < 2.0f)
+        return 0.0f;
+    const float side = px * static_cast<float>(n + 2 * kQuiet);
+    if (list != nullptr)
+    {
+        list->rounded_rect({x, y, side, side}, 14.0f, ui::Color::rgb(0xffffff));
+        const ui::Color dark = ui::Color::rgb(0x0a0a0a);
+        for (int row = 0; row < n; ++row)
+        {
+            for (int col = 0; col < n;)
+            {
+                if (!qrcodegen_getModule(cached.data(), col, row))
+                {
+                    ++col;
+                    continue;
+                }
+                int run = 1;
+                while (col + run < n && qrcodegen_getModule(cached.data(), col + run, row))
+                    ++run;
+                // A little overlap keeps a scrolled, fractional position from leaving seams.
+                list->rounded_rect({x + static_cast<float>(kQuiet + col) * px,
+                                    y + static_cast<float>(kQuiet + row) * px,
+                                    static_cast<float>(run) * px, px + 0.5f},
+                                   0.0f, dark);
+                col += run;
+            }
+        }
+    }
+    return side;
 }
 
 void section_icon(hui::gfx::DrawList &list, SettingsScreen::Section section, float cx, float cy,
@@ -852,6 +907,25 @@ void SettingsScreen::build_pairing(Pane &pane) const
         ui::text_fit(*pane.list, type.medium, address, pane.x + 60.0f, pane.y + 36.0f,
                      state.address.empty() ? 28.0f : 40.0f, pane.width - 60.0f, ui::color::text);
     pane.y += 58.0f;
+    if (!state.address.empty())
+    {
+        // The same address as a QR code: scanning it opens Orbit on a phone.
+        const float side = draw_qr(pane.list, address, pane.x + 60.0f, pane.y + 4.0f, 232.0f);
+        if (side > 0.0f)
+        {
+            if (pane.list != nullptr)
+            {
+                const float tx = pane.x + 60.0f + side + 32.0f;
+                const float tw = pane.width - 60.0f - side - 32.0f;
+                ui::text(*pane.list, type.medium, tr("Or scan this code with your phone\xE2\x80\x99s camera"), tx,
+                         pane.y + 52.0f, 23.0f, ui::color::text);
+                ui::paragraph(*pane.list, type.regular,
+                              tr("Your phone must be on the same Wi-Fi network as this PS5."), tx,
+                              pane.y + 92.0f, 18.0f, tw, 27.0f, ui::color::text3, 3);
+            }
+            pane.y += side + 12.0f;
+        }
+    }
     if (state.address.empty())
     {
         pane.x += 60.0f;
