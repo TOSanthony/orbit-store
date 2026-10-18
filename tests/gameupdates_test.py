@@ -65,9 +65,10 @@ def build(root, rows, params):
         os.makedirs(d)
         json.dump({"contentVersion": ver}, open(d + "/param.json", "w"))
 
-def run(root, firmware, download=None, storage=None):
+def run(root, firmware, download=None, storage=None, patches=None):
     env = dict(os.environ, ORBIT_TEST_GAMEUPDATES_BASE="http://127.0.0.1:%d" % server.server_port)
     if storage: env["ORBIT_TEST_STORAGE"] = storage
+    if patches: env["ORBIT_TEST_GAME_PATCHES"] = patches
     args = [driver, root, firmware] + ([download] if download else [])
     out = subprocess.run(args, env=env, capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, (out.returncode, out.stderr)
@@ -99,6 +100,28 @@ with tempfile.TemporaryDirectory() as root:
     check("an installed version equal to Sony's is up to date", "PPSA00005" not in games)
     check("the PS4 row is ignored", all(not k.startswith("CUSA") for k in games))
     check("the check recorded its time and no error", s["checked"] > 0 and s["error"] == "")
+    # ---- versions saved on the NAS page ----
+    for g, v in (("PPSA00003", "02.000.000"), ("PPSA00005", "02.000.000")):
+        BIN["UP4001-%s_00-N.json" % g] = json.dumps({"originalFileSize": 2048, "pieces": [
+            {"url": "https://gs2.ww.prod.dl.playstation.net/x/n.pkg", "fileOffset": 0, "fileSize": 2048,
+             "hashValue": "0" * 64}]}).encode()
+    saved = root + "/game-patches.json"
+    json.dump({
+        "PPSA00003": {"version": "02.000.000", "link": "https://sgst.prod.dl.playstation.net/sgst/prod/00/PPSA00003_00/app/info/9/f_ab/UP4001-PPSA00003_00-N.crc"},
+        "PPSA00005": {"version": "02.000.000", "link": "https://sgst.prod.dl.playstation.net/sgst/prod/00/PPSA00005_00/app/info/9/f_ab/UP4001-PPSA00005_00-N.crc"},
+        "PPSA00001": {"version": "05.500.000", "link": "https://sgst.prod.dl.playstation.net/sgst/prod/00/PPSA00001_00/app/info/9/f_ab/UP4001-PPSA00001_00-N.crc"},
+        "PPSA00006": {"version": "02.000.000", "link": "https://evil.example.com/x/UP4001-PPSA00006_00-N.crc"},
+    }, open(saved, "w"))
+    s = run(root, "10200000", patches=saved)
+    games = {g["titleId"]: g for g in s["games"]}
+    check("a NAS-saved version replaces a patch the firmware blocks",
+          games.get("PPSA00003", {}).get("state") == "available" and games["PPSA00003"]["version"] == "02.000.000"
+          and games["PPSA00003"].get("size") == 2048)
+    check("a NAS-saved version is offered for a game Sony reports up to date",
+          games.get("PPSA00005", {}).get("version") == "02.000.000" and games["PPSA00005"]["installed"] == "01.000.000")
+    check("a NAS-saved version older than Sony's offer is ignored", games["PPSA00001"]["version"] == "06.005.000")
+    check("a NAS-saved link outside Sony's servers is ignored", "PPSA00006" not in games)
+    check("the count includes the NAS-saved updates", s["count"] == 3)
     s = run(root, "11000000")
     check("on firmware 11.00 both patches are installable", s["count"] == 2)
 with tempfile.TemporaryDirectory() as root:

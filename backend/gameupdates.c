@@ -95,6 +95,18 @@ static void run_check(void) {
         free(found);
         return;
     }
+    cJSON *saved = NULL;
+    {
+        char *saved_text = NULL;
+        size_t saved_size = 0;
+        if (nas_game_patches(&saved_text, &saved_size) == 1)
+            saved = cJSON_ParseWithLength(saved_text, saved_size);
+        free(saved_text);
+        if (saved && !cJSON_IsObject(saved)) {
+            cJSON_Delete(saved);
+            saved = NULL;
+        }
+    }
     for (size_t i = 0; i < total && !stopping(); i++) {
         const appdb_game *game = &games[i];
         /* Only PS5 titles: their version.xml is the format patchfeed reads. */
@@ -122,18 +134,39 @@ static void run_check(void) {
         patchfeed_choice choice = patchfeed_choose(list, (size_t)n,
                                                    patchfeed_version_valid(installed) ? installed : "",
                                                    orbit.firmware);
-        if (choice.state == PATCHFEED_UP_TO_DATE || !choice.offer)
-            continue;
-        Entry *e = &found[count++];
-        copy_text(e->title_id, sizeof e->title_id, game->title_id);
-        copy_text(e->name, sizeof e->name, game->title_name);
-        copy_text(e->installed, sizeof e->installed, installed);
-        copy_text(e->available, sizeof e->available, choice.offer->version);
-        copy_text(e->manifest, sizeof e->manifest, choice.offer->manifest_url);
-        e->blocked = choice.state == PATCHFEED_NEEDS_NEWER_FW;
-        if (e->blocked)
-            patchfeed_firmware_text(choice.offer->system_ver, e->needs, sizeof e->needs);
-        else {
+        Entry *e = NULL;
+        if (choice.state != PATCHFEED_UP_TO_DATE && choice.offer) {
+            e = &found[count++];
+            copy_text(e->title_id, sizeof e->title_id, game->title_id);
+            copy_text(e->name, sizeof e->name, game->title_name);
+            copy_text(e->installed, sizeof e->installed, installed);
+            copy_text(e->available, sizeof e->available, choice.offer->version);
+            copy_text(e->manifest, sizeof e->manifest, choice.offer->manifest_url);
+            e->blocked = choice.state == PATCHFEED_NEEDS_NEWER_FW;
+            if (e->blocked)
+                patchfeed_firmware_text(choice.offer->system_ver, e->needs, sizeof e->needs);
+        }
+        /* A version and Sony link saved on the person's NAS page wins when it is newer than what
+         * is installed and than anything Sony offers this console. */
+        const cJSON *saved_game = saved ? cJSON_GetObjectItemCaseSensitive(saved, game->title_id) : NULL;
+        const char *saved_version = saved_game ? json_text(saved_game, "version") : "";
+        const char *saved_link = saved_game ? json_text(saved_game, "link") : "";
+        char saved_manifest[768];
+        if (patchfeed_version_valid(saved_version) && patchfeed_manifest_from_link(saved_link, saved_manifest, sizeof saved_manifest) &&
+            (!patchfeed_version_valid(installed) || strcmp(saved_version, installed) > 0) &&
+            (!e || e->blocked || strcmp(saved_version, e->available) > 0)) {
+            if (!e) {
+                e = &found[count++];
+                copy_text(e->title_id, sizeof e->title_id, game->title_id);
+                copy_text(e->name, sizeof e->name, game->title_name);
+                copy_text(e->installed, sizeof e->installed, installed);
+            }
+            copy_text(e->available, sizeof e->available, saved_version);
+            copy_text(e->manifest, sizeof e->manifest, saved_manifest);
+            e->blocked = false;
+            e->needs[0] = 0;
+        }
+        if (e && !e->blocked) {
             /* The size is only in the manifest; a failure here just leaves the size out. */
             SonyBody list_body = {0};
             char ignore[160] = "", reason[100] = "";
@@ -147,6 +180,7 @@ static void run_check(void) {
             }
         }
     }
+    cJSON_Delete(saved);
     free(games);
     if (stopping()) {
         free(found);

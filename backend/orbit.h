@@ -176,6 +176,7 @@ bool nas_refresh_locked(void);
 bool nas_busy_locked(void);
 void nas_status_locked(cJSON *out);
 size_t nas_count_locked(void);
+int nas_game_patches(char **data, size_t *size);
 int nas_start(void);
 void nas_stop(void);
 int browser_start(void);

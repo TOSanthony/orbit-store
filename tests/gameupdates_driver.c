@@ -57,6 +57,20 @@ int storage_open(const Job *j) {
     mkdir(path, 0755);
     return open(path, O_RDONLY | O_DIRECTORY);
 }
+/* The patches saved on the person's NAS page: a file named by the test, or none. */
+int nas_game_patches(char **data, size_t *size) {
+    *data = NULL;
+    *size = 0;
+    const char *path = getenv("ORBIT_TEST_GAME_PATCHES");
+    FILE *f = path ? fopen(path, "rb") : NULL;
+    if (!f) return 0;
+    char *buffer = calloc(1, 65536);
+    *size = fread(buffer, 1, 65535, f);
+    fclose(f);
+    *data = buffer;
+    return 1;
+}
+
 bool orbit_is_stopping(void) {
     return false;
 }

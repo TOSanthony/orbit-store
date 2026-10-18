@@ -384,6 +384,33 @@ static int fetch(const char *url, Body *body, char *error, size_t cap) {
     return -1;
 }
 
+/* game-patches.json, the patch versions and Sony links saved on the person's NAS page, read from
+ * the folder of index.json. Returns 1 with a NUL-terminated body (free it), 0 when My NAS is off or
+ * has no such file, -1 when it could not be read. Called without orbit.mutex. */
+int nas_game_patches(char **data, size_t *size) {
+    *data = NULL;
+    *size = 0;
+    char url[ORBIT_NAS_URL_MAX + 32];
+    pthread_mutex_lock(&orbit.mutex);
+    bool on = active_locked();
+    copy_text(url, sizeof url, orbit.sources.nas_url);
+    pthread_mutex_unlock(&orbit.mutex);
+    if (!on) return 0;
+    char *slash = strrchr(url, '/');
+    if (!slash || strlen(url) + sizeof "game-patches.json" >= sizeof url) return -1;
+    strcpy(slash + 1, "game-patches.json");
+    if (!nas_url_allowed(url)) return -1;
+    Body body = {0};
+    char error[192] = "";
+    if (fetch(url, &body, error, sizeof error)) {
+        free(body.data);
+        return strstr(error, "HTTP 404") ? 0 : -1;
+    }
+    *data = body.data;
+    *size = body.size;
+    return 1;
+}
+
 static void *run(void *unused) {
     (void)unused;
     pthread_mutex_lock(&orbit.mutex);
