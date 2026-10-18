@@ -394,10 +394,13 @@ static int art_local(const char *title_id, bool hero, unsigned char **data, size
             copy_text(why, why_cap, "not an installed game's icon");
         return 404;
     }
-    const char *suffix[] = {"", "_00"};
-    for (int i = 0; i < 2; i++) {
-        char path[1100];
-        snprintf(path, sizeof path, "%s/user/appmeta/%s%s/icon0.png", orbit.system_root, title_id, suffix[i]);
+    /* The installed game's own folder first, then the console's metadata copy. */
+    const char *where[] = {"/user/app/%s/sce_sys/icon0.png", "/user/app/%s/icon0.png", "/user/appmeta/%s/icon0.png",
+                           "/user/appmeta/%s_00/icon0.png"};
+    for (size_t i = 0; i < sizeof where / sizeof *where; i++) {
+        char pattern[96], path[1100];
+        snprintf(pattern, sizeof pattern, "%%s%s", where[i]);
+        snprintf(path, sizeof path, pattern, orbit.system_root, title_id);
         unsigned char *bytes = NULL;
         size_t length = 0;
         if (read_regular_file(path, 4u * 1024 * 1024, &bytes, &length))
