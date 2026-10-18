@@ -69,6 +69,13 @@ test-updates: build/orbit-host build/orbit-test
 test-backend: build/orbit-host build/orbit-test
 	python3 tests/backend_integration.py
 
+.PHONY: test-patchfeed
+build/orbit-patchfeed-test: backend/patchfeed.c backend/patchfeed.h tests/patchfeed_test.c Makefile
+	@mkdir -p build
+	$(HOST_CC) $(CPPFLAGS) $(CFLAGS) -fsanitize=undefined -fsanitize-undefined-trap-on-error backend/patchfeed.c tests/patchfeed_test.c -o $@
+test-patchfeed: build/orbit-patchfeed-test
+	./build/orbit-patchfeed-test tests/fixtures/dirt5-version.xml
+
 .PHONY: test-storage
 build/orbit-storage-test: backend/storage.c backend/orbit.h tests/storage_driver.c .deps/cjson/cJSON.c Makefile
 	$(HOST_CC) $(CPPFLAGS) $(CFLAGS) -DORBIT_DESKTOP -fsanitize=undefined -fsanitize-undefined-trap-on-error backend/storage.c tests/storage_driver.c .deps/cjson/cJSON.c -Wl,--wrap=lstat64 -Wl,--wrap=stat64 -Wl,--wrap=statvfs64 -Wl,--wrap=access -Wl,--wrap=open64 -Wl,--wrap=openat64 -Wl,--wrap=mkdirat -Wl,--wrap=fstat64 -Wl,--wrap=fstatat64 -Wl,--wrap=unlinkat -Wl,--wrap=write -Wl,--wrap=close -o $@ -lpthread -lm
