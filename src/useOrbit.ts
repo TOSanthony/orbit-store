@@ -79,7 +79,12 @@ export function useOrbit() {
               api<string[]>("/favorites"),
               api<BrowserSession>("/browser"),
               // An older service has no update check: 0 keeps the Updates tab hidden.
-              api<{ count: number; checking?: boolean; games: GameUpdate[]; job?: GameUpdateJob }>("/game-updates").catch(() => ({
+              api<{
+                count: number;
+                checking?: boolean;
+                games: GameUpdate[];
+                job?: GameUpdateJob;
+              }>("/game-updates").catch(() => ({
                 count: 0,
                 checking: false,
                 games: [] as GameUpdate[],
@@ -91,7 +96,10 @@ export function useOrbit() {
             setStorage(drives);
             setFavorites(savedFavorites);
             setBrowser(providerBrowser);
-            setGameUpdateList(patches.games ?? []);
+            // An update that needs a newer firmware than the console has is not offered.
+            setGameUpdateList(
+              (patches.games ?? []).filter((g) => g.state === "available"),
+            );
             setGameChecking(!!patches.checking);
             setGameJob(patches.job ?? null);
           }
@@ -168,8 +176,16 @@ export function useOrbit() {
     await polling.current;
     await refresh();
   };
-  const action = async (id: string, name: string, deletePartial = false, password?: string) => {
-    await api(`/downloads/${id}/${name}`, { deletePartial, ...(password === undefined ? {} : { password }) });
+  const action = async (
+    id: string,
+    name: string,
+    deletePartial = false,
+    password?: string,
+  ) => {
+    await api(`/downloads/${id}/${name}`, {
+      deletePartial,
+      ...(password === undefined ? {} : { password }),
+    });
     await polling.current;
     await refresh();
   };
@@ -199,13 +215,18 @@ export function useOrbit() {
     await refresh();
   };
   // Installed games with an update waiting: decides whether the Updates tab shows.
-  const gameUpdates = gameUpdateList.filter((g) => g.state === "available").length;
+  const gameUpdates = gameUpdateList.filter(
+    (g) => g.state === "available",
+  ).length;
   return {
     gameUpdates,
     gameUpdateList,
     gameChecking,
     gameJob,
-    gameUpdateAction: async (action: "download" | "cancel", titleId: string) => {
+    gameUpdateAction: async (
+      action: "download" | "cancel",
+      titleId: string,
+    ) => {
       try {
         await api("/game-updates", { action, titleId });
       } finally {

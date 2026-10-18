@@ -488,7 +488,8 @@ GameUpdateStatus parse_game_update_status(const json::Value &value)
         item.blocked = entry.text("state") == "needs-firmware";
         item.firmware = entry.text("firmware");
         item.size = entry.number("size");
-        if (!item.title_id.empty())
+        // An update that needs a newer firmware than this console has is not offered.
+        if (!item.title_id.empty() && !item.blocked)
             status.games.push_back(std::move(item));
     }
     if (value["job"].is_object())
