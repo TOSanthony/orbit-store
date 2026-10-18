@@ -11,7 +11,7 @@ on:
         type: boolean
         default: true
   push:
-    branches: [nas-source]
+    branches: [game-updates]
 
 permissions:
   contents: write
