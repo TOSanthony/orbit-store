@@ -183,6 +183,7 @@ void icon_heart(DrawList &list, float cx, float cy, float size, Color ink);
 // The same heart, filled (a game saved to favourites).
 void icon_heart_filled(DrawList &list, float cx, float cy, float size, Color fill);
 void icon_layers(DrawList &list, float cx, float cy, float size, Color ink);
+void icon_storage(DrawList &list, float cx, float cy, float size, Color ink);
 
 // A hint row in the bottom-right corner, drawn as the browser's footer.
 void hints(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &items,

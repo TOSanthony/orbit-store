@@ -174,9 +174,14 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         const std::string versions =
             tr("Installed {version}", {{"version", game.installed.empty() ? std::string("?") : game.installed}}) +
             "  \xE2\x86\x92  " + tr("Available {version}", {{"version", game.version}});
-        const std::string versions_and_size =
-            game.size > 0.0 ? versions + "  \xC2\xB7  " + format_bytes(game.size) : versions;
-        ui::text(list, type.regular, versions_and_size, tx, row.y + 92.0f, 20.0f, ui::color::text2);
+        ui::text(list, type.regular, versions, tx, row.y + 92.0f, 20.0f, ui::color::text2);
+        if (game.size > 0.0)
+        {
+            // The size sits under the title ID, at the right edge, after a drive icon.
+            const float width = ui::text(list, type.regular, format_bytes(game.size), right_edge, row.y + 92.0f,
+                                         20.0f, ui::color::text2, ui::Align::right);
+            ui::icon_storage(list, right_edge - width - 22.0f, row.y + 85.0f, 24.0f, ui::color::text2);
+        }
         const GameUpdateJob &job = status.job;
         const bool this_job = job.present && job.title_id == game.title_id;
         if (this_job && !job.phase.empty())

@@ -476,6 +476,16 @@ void glyph(DrawList &list, Glyph which, float cx, float cy, float size, Color in
     }
 }
 
+// A drive: a rounded body, a divider and a small light.
+void icon_storage(DrawList &list, float cx, float cy, float size, Color ink)
+{
+    const float thickness = std::max(2.0f, size * 0.09f);
+    list.bordered_rect({cx - size * 0.42f, cy - size * 0.3f, size * 0.84f, size * 0.6f}, size * 0.12f,
+                       Color{0, 0, 0, 0}, thickness, ink);
+    list.line(cx - size * 0.42f, cy + size * 0.04f, cx + size * 0.42f, cy + size * 0.04f, thickness, ink);
+    list.rounded_rect({cx + size * 0.2f, cy + size * 0.13f, size * 0.1f, size * 0.1f}, size * 0.05f, ink);
+}
+
 void icon_download(DrawList &list, float cx, float cy, float size, Color ink)
 {
     const float thickness = std::max(2.0f, size * 0.09f);
