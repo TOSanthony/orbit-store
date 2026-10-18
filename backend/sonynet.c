@@ -112,6 +112,31 @@ static char *join_ca(struct curl_blob *blob) {
     blob->flags = CURL_BLOB_COPY;
     return all;
 }
+/* gst.prod.dl.playstation.net answers with Akamai's shared certificate, which names a248.e.akamai.net and
+ * never gst.*: the console does not check names, Orbit does. Orbit keeps checking: it connects to gst's
+ * address, asks for a248.e.akamai.net (the name the certificate really carries) and names gst in the
+ * Host header so Akamai serves the right files. The chain must still end at a trusted root. */
+typedef struct {
+    struct curl_slist *headers;
+    struct curl_slist *connect_to;
+} Route;
+static void route_apply(CURL *curl, char *address, size_t cap, Route *route) {
+    static const char gst[] = "https://gst.prod.dl.playstation.net/";
+    route->headers = route->connect_to = NULL;
+    if (strncmp(address, gst, sizeof gst - 1))
+        return;
+    char rest[900];
+    snprintf(rest, sizeof rest, "%s", address + sizeof gst - 1);
+    snprintf(address, cap, "https://a248.e.akamai.net/%s", rest);
+    route->headers = curl_slist_append(NULL, "Host: gst.prod.dl.playstation.net");
+    route->connect_to = curl_slist_append(NULL, "a248.e.akamai.net:443:gst.prod.dl.playstation.net:443");
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, route->headers);
+    curl_easy_setopt(curl, CURLOPT_CONNECT_TO, route->connect_to);
+}
+static void route_free(Route *route) {
+    curl_slist_free_all(route->headers);
+    curl_slist_free_all(route->connect_to);
+}
 /* The address to contact: Sony's own, or (tests only) a local fake that serves the same file names. */
 static bool resolve(const char *url, char *out, size_t cap, bool *local, char *why, size_t why_cap) {
     *local = false;
@@ -178,6 +203,8 @@ bool sony_get(const char *url, size_t max, SonyBody *body, sony_stop_fn stop, ch
     }
     Collect collected = {body, max, stop};
     Progress watch = {stop};
+    Route route;
+    route_apply(curl, address, sizeof address, &route);
     curl_easy_setopt(curl, CURLOPT_URL, address);
     common(curl, &ca, local, &watch);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
@@ -189,6 +216,7 @@ bool sony_get(const char *url, size_t max, SonyBody *body, sony_stop_fn stop, ch
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
     curl_easy_cleanup(curl);
+    route_free(&route);
     free(storage);
     if (result != CURLE_OK || status != 200) {
         if (result != CURLE_OK)
@@ -230,6 +258,8 @@ sony_range_result sony_range(const char *url, int64_t start, int64_t end, int fd
     Progress watch = {stop};
     char range[64];
     snprintf(range, sizeof range, "%lld-%lld", (long long)start, (long long)(end - 1));
+    Route route;
+    route_apply(curl, address, sizeof address, &route);
     curl_easy_setopt(curl, CURLOPT_URL, address);
     common(curl, &ca, local, &watch);
     curl_easy_setopt(curl, CURLOPT_RANGE, range);
@@ -243,6 +273,7 @@ sony_range_result sony_range(const char *url, int64_t start, int64_t end, int fd
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
     curl_easy_cleanup(curl);
+    route_free(&route);
     free(storage);
     if (received)
         *received = w.position;
