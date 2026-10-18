@@ -394,25 +394,34 @@ static int art_local(const char *title_id, bool hero, unsigned char **data, size
             copy_text(why, why_cap, "not an installed game's icon");
         return 404;
     }
-    /* The installed game's own folder first, then the console's metadata copy. */
-    const char *where[] = {"/user/app/%s/sce_sys/icon0.png", "/user/app/%s/icon0.png", "/user/appmeta/%s/icon0.png",
-                           "/user/appmeta/%s_00/icon0.png"};
-    for (size_t i = 0; i < sizeof where / sizeof *where; i++) {
-        char pattern[96], path[1100];
-        snprintf(pattern, sizeof pattern, "%%s%s", where[i]);
-        snprintf(path, sizeof path, pattern, orbit.system_root, title_id);
-        unsigned char *bytes = NULL;
-        size_t length = 0;
-        if (read_regular_file(path, 4u * 1024 * 1024, &bytes, &length))
-            continue;
-        if (length < 8 || memcmp(bytes, "\x89PNG\r\n\x1a\n", 8)) {
-            free(bytes);
-            continue;
+    /* Where the game's folder can be: the console's own app folder, homebrew on the internal drive or
+     * on a USB drive (with or without a homebrew folder), then the console's metadata copy. */
+    static const char *const folders[] = {"/user/app/%s", "/data/homebrew/%s", "/mnt/usb%d/%s", "/mnt/usb%d/homebrew/%s",
+                                          "/user/appmeta/%s", "/user/appmeta/%s_00"};
+    static const char *const files[] = {"/sce_sys/icon0.png", "/icon0.png"};
+    for (size_t i = 0; i < 2 + 2 * 8 + 2; i++) {
+        size_t f = i < 2 ? i : i < 18 ? 2 + (i - 2) / 8 : i - 18 + 4;
+        int usb = i >= 2 && i < 18 ? (int)((i - 2) % 8) : 0;
+        bool by_usb = f == 2 || f == 3;
+        for (size_t k = 0; k < 2; k++) {
+            if (f >= 4 && k == 1) continue; /* the metadata folders only hold icon0.png itself */
+            char folder[160], path[1100];
+            if (by_usb) snprintf(folder, sizeof folder, folders[f], usb, title_id);
+            else snprintf(folder, sizeof folder, folders[f], title_id);
+            snprintf(path, sizeof path, "%s%s%s", orbit.system_root, folder, files[f >= 4 ? 1 : k]);
+            unsigned char *bytes = NULL;
+            size_t length = 0;
+            if (read_regular_file(path, 4u * 1024 * 1024, &bytes, &length))
+                continue;
+            if (length < 8 || memcmp(bytes, "\x89PNG\r\n\x1a\n", 8)) {
+                free(bytes);
+                continue;
+            }
+            *data = bytes;
+            *size = length;
+            copy_text(mime, mime_cap, "image/png");
+            return 200;
         }
-        *data = bytes;
-        *size = length;
-        copy_text(mime, mime_cap, "image/png");
-        return 200;
     }
     if (why_cap)
         copy_text(why, why_cap, "the console has no icon for this game");
