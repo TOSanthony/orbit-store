@@ -76,6 +76,14 @@ build/orbit-patchfeed-test: backend/patchfeed.c backend/patchfeed.h tests/patchf
 test-patchfeed: build/orbit-patchfeed-test
 	./build/orbit-patchfeed-test tests/fixtures/dirt5-version.xml
 
+.PHONY: test-appdb
+build/orbit-appdb-test: backend/appdb.c backend/appdb.h tests/appdb_test.c Makefile
+	@mkdir -p build
+	$(HOST_CC) $(CPPFLAGS) $(CFLAGS) -fsanitize=undefined -fsanitize-undefined-trap-on-error backend/appdb.c tests/appdb_test.c -o $@
+test-appdb: build/orbit-appdb-test
+	python3 tests/appdb_make.py build/appdb-test
+	./build/orbit-appdb-test build/appdb-test
+
 .PHONY: test-storage
 build/orbit-storage-test: backend/storage.c backend/orbit.h tests/storage_driver.c .deps/cjson/cJSON.c Makefile
 	$(HOST_CC) $(CPPFLAGS) $(CFLAGS) -DORBIT_DESKTOP -fsanitize=undefined -fsanitize-undefined-trap-on-error backend/storage.c tests/storage_driver.c .deps/cjson/cJSON.c -Wl,--wrap=lstat64 -Wl,--wrap=stat64 -Wl,--wrap=statvfs64 -Wl,--wrap=access -Wl,--wrap=open64 -Wl,--wrap=openat64 -Wl,--wrap=mkdirat -Wl,--wrap=fstat64 -Wl,--wrap=fstatat64 -Wl,--wrap=unlinkat -Wl,--wrap=write -Wl,--wrap=close -o $@ -lpthread -lm
