@@ -133,6 +133,18 @@ static void route_apply(CURL *curl, char *address, size_t cap, Route *route) {
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, route->headers);
     curl_easy_setopt(curl, CURLOPT_CONNECT_TO, route->connect_to);
 }
+/* Sony's older servers (sgst.*) chain to a root from 2003 whose signatures use SHA-1, which OpenSSL
+ * refuses at its default security level ("CA signature digest algorithm too weak"). Only after that
+ * exact refusal is the request repeated with that one rule relaxed: the chain must still end at Sony's
+ * root, and the name and certificate are still checked. */
+static CURLcode perform(CURL *curl, const char *detail) {
+    CURLcode result = curl_easy_perform(curl);
+    if (result == CURLE_PEER_FAILED_VERIFICATION && strstr(detail, "too weak")) {
+        curl_easy_setopt(curl, CURLOPT_SSL_CIPHER_LIST, "DEFAULT:@SECLEVEL=0");
+        result = curl_easy_perform(curl);
+    }
+    return result;
+}
 static void route_free(Route *route) {
     curl_slist_free_all(route->headers);
     curl_slist_free_all(route->connect_to);
@@ -212,7 +224,7 @@ bool sony_get(const char *url, size_t max, SonyBody *body, sony_stop_fn stop, ch
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &collected);
     char detail[CURL_ERROR_SIZE] = "";
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, detail);
-    CURLcode result = curl_easy_perform(curl);
+    CURLcode result = perform(curl, detail);
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
     curl_easy_cleanup(curl);
@@ -269,7 +281,7 @@ sony_range_result sony_range(const char *url, int64_t start, int64_t end, int fd
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &w);
     char detail[CURL_ERROR_SIZE] = "";
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, detail);
-    CURLcode result = curl_easy_perform(curl);
+    CURLcode result = perform(curl, detail);
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
     curl_easy_cleanup(curl);
