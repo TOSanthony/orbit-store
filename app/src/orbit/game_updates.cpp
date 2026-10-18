@@ -180,7 +180,7 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
             // The size sits under the title ID, at the right edge, after a drive icon.
             const float width = ui::text(list, type.regular, format_bytes(game.size), right_edge, row.y + 92.0f,
                                          20.0f, ui::color::text2, ui::Align::right);
-            ui::icon_storage(list, right_edge - width - 22.0f, row.y + 85.0f, 24.0f, ui::color::text2);
+            ui::icon_storage(list, right_edge - width - 26.0f, row.y + 85.0f, 40.0f, ui::color::text2);
         }
         const GameUpdateJob &job = status.job;
         const bool this_job = job.present && job.title_id == game.title_id;

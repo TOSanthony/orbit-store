@@ -134,11 +134,7 @@ void fact_icon(hui::gfx::DrawList &list, const ui::Type &type, FactIcon icon, fl
         line(14, 13, 14, 4, 2.6f);
         break;
     case FactIcon::disk:
-        arc(0, -8, 12, 4.5f, 0.0f, 2.0f * kPi);
-        line(-12, -8, -12, 8);
-        line(12, -8, 12, 8);
-        arc(0, 8, 12, 4.5f, 0.0f, kPi);
-        arc(0, 0, 12, 4.5f, 0.0f, kPi);
+        ui::icon_storage(list, cx, cy, size, ink);
         break;
     case FactIcon::globe:
         // The globe of the Language setting: the rim, two meridians that stop short of the

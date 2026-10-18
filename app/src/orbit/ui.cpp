@@ -476,14 +476,33 @@ void glyph(DrawList &list, Glyph which, float cx, float cy, float size, Color in
     }
 }
 
-// A drive: a rounded body, a divider and a small light.
+// The disk used for sizes: a cylinder, as in the "Size on disk" fact of About this game.
 void icon_storage(DrawList &list, float cx, float cy, float size, Color ink)
 {
-    const float thickness = std::max(2.0f, size * 0.09f);
-    list.bordered_rect({cx - size * 0.42f, cy - size * 0.3f, size * 0.84f, size * 0.6f}, size * 0.12f,
-                       Color{0, 0, 0, 0}, thickness, ink);
-    list.line(cx - size * 0.42f, cy + size * 0.04f, cx + size * 0.42f, cy + size * 0.04f, thickness, ink);
-    list.rounded_rect({cx + size * 0.2f, cy + size * 0.13f, size * 0.1f, size * 0.1f}, size * 0.05f, ink);
+    const float k = size / 40.0f;
+    const float t = 2.4f * k;
+    const auto line = [&](float x1, float y1, float x2, float y2)
+    { list.line(cx + x1 * k, cy + y1 * k, cx + x2 * k, cy + y2 * k, t, ink); };
+    // An elliptical arc as a polyline, angles in radians from the right, clockwise.
+    const auto arc = [&](float y, float from, float to)
+    {
+        constexpr int kSteps = 20;
+        float px = 12.0f * std::cos(from), py = y + 4.5f * std::sin(from);
+        for (int i = 1; i <= kSteps; ++i)
+        {
+            const float a = from + (to - from) * static_cast<float>(i) / kSteps;
+            const float nx = 12.0f * std::cos(a), ny = y + 4.5f * std::sin(a);
+            line(px, py, nx, ny);
+            px = nx;
+            py = ny;
+        }
+    };
+    constexpr float kPi = 3.14159265f;
+    arc(-8, 0.0f, 2.0f * kPi);
+    line(-12, -8, -12, 8);
+    line(12, -8, 12, 8);
+    arc(8, 0.0f, kPi);
+    arc(0, 0.0f, kPi);
 }
 
 void icon_download(DrawList &list, float cx, float cy, float size, Color ink)
