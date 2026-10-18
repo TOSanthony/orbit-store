@@ -252,6 +252,15 @@ bool sony_get(const char *url, size_t max, SonyBody *body, sony_stop_fn stop, ch
     return true;
 }
 
+/* The connection kept between the slices of one download: opening a new one for each slice costs a
+ * TCP and TLS handshake and restarts the transfer's slow start. Only the download thread uses it. */
+static CURL *held;
+void sony_range_close(void) {
+    if (held) {
+        curl_easy_cleanup(held);
+        held = NULL;
+    }
+}
 static sony_range_result range(const char *url, int64_t start, int64_t end, int fd, int64_t file_offset,
                                volatile int64_t *received, sony_stop_fn stop, bool nas, char *why, size_t why_cap) {
     char address[2100];
@@ -262,15 +271,20 @@ static sony_range_result range(const char *url, int64_t start, int64_t end, int 
     }
     if (!resolve(url, address, sizeof address, &local, nas, why, why_cap))
         return SONY_RANGE_REFUSED;
-    CURL *curl = curl_easy_init();
+    CURL *curl = held;
+    if (curl)
+        curl_easy_reset(curl); /* keeps the open connection, forgets the options */
+    else
+        curl = curl_easy_init();
     if (!curl) {
         snprintf(why, why_cap, "not enough memory");
         return SONY_RANGE_FAILED;
     }
+    held = curl;
     struct curl_blob ca;
     char *storage = join_ca(&ca);
     if (!storage) {
-        curl_easy_cleanup(curl);
+        sony_range_close();
         snprintf(why, why_cap, "not enough memory");
         return SONY_RANGE_FAILED;
     }
@@ -297,7 +311,8 @@ static sony_range_result range(const char *url, int64_t start, int64_t end, int 
     CURLcode result = perform(curl, detail);
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
-    curl_easy_cleanup(curl);
+    if (result != CURLE_OK)
+        sony_range_close(); /* never reuse a connection that just failed */
     route_free(&route);
     free(storage);
     if (received)

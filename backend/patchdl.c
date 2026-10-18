@@ -415,6 +415,7 @@ static void run(const char *manifest_url) {
         phase("downloading", "");
         for (size_t i = 0; !*outcome && i < job.manifest.count; i++)
             outcome = fetch_piece(&job, i, detail, sizeof detail);
+        sony_range_close();
         if (!*outcome && fsync(job.fd) != 0)
             outcome = "The drive could not save the file.";
         if (!strcmp(outcome, "cancelled"))
