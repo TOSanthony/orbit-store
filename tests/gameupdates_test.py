@@ -82,12 +82,16 @@ def check(name, ok):
 with tempfile.TemporaryDirectory() as root:
     build(root, [(1, "05.000.000"), (2, "05.000.000"), (3, "01.000.000"), (4, "01.000.000"),
                  (5, "01.000.000"), (6, "01.000.000")], {2: "06.005.000"})
+    BIN["UP4001-PPSA00001_00-X.json"] = json.dumps({"originalFileSize": 4096, "pieces": [
+        {"url": "https://gs2.ww.prod.dl.playstation.net/x/a.pkg", "fileOffset": 0, "fileSize": 4096,
+         "hashValue": "0" * 64}]}).encode()
     s = run(root, "10200000")
     games = {g["titleId"]: g for g in s["games"]}
     check("one game with an update is counted", s["count"] == 1)
     check("PPSA00001 offers 06.005.000 over 05.000.000",
           games.get("PPSA00001", {}).get("version") == "06.005.000" and games["PPSA00001"]["installed"] == "05.000.000"
           and games["PPSA00001"]["state"] == "available")
+    check("the patch size comes from Sony's list", games["PPSA00001"].get("size") == 4096 and "size" not in games.get("PPSA00003", {}))
     check("param.json wins over app.db (PPSA00002 is up to date)", "PPSA00002" not in games)
     check("a patch that needs firmware 11.00 is listed but not counted",
           games.get("PPSA00003", {}).get("state") == "needs-firmware" and games["PPSA00003"]["firmware"] == "11.00")

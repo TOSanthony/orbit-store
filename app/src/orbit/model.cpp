@@ -487,6 +487,7 @@ GameUpdateStatus parse_game_update_status(const json::Value &value)
         item.version = entry.text("version");
         item.blocked = entry.text("state") == "needs-firmware";
         item.firmware = entry.text("firmware");
+        item.size = entry.number("size");
         if (!item.title_id.empty())
             status.games.push_back(std::move(item));
     }

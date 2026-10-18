@@ -100,6 +100,7 @@ export interface GameUpdate {
   version: string;
   state: "available" | "needs-firmware";
   firmware?: string;
+  size?: number; // bytes, when Sony's list gave it
 }
 
 export interface Storage {

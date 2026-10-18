@@ -723,6 +723,7 @@ export default function App() {
             checking={orbit.gameChecking}
             check={orbit.checkGameUpdates}
             job={orbit.gameJob}
+            catalogue={orbit.games}
             act={orbit.gameUpdateAction}
           />
         ) : tab === "Browse" || tab === "Apps" || tab === "DLC" ? (

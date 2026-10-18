@@ -312,6 +312,7 @@ struct GameUpdateItem
     std::string version;   // 06.005.000
     bool blocked = false;  // the patch needs a newer firmware than this console has
     std::string firmware;  // "11.00" when blocked
+    double size = 0;       // the patch in bytes; 0 when unknown
 };
 
 // The game update being downloaded or installed (the console handles one at a time).

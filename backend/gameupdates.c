@@ -6,6 +6,7 @@
 #include "appdb.h"
 #include "orbit.h"
 #include "patchfeed.h"
+#include "patchmanifest.h"
 #include "sonynet.h"
 #include <pthread.h>
 #include <stdio.h>
@@ -24,6 +25,7 @@ typedef struct {
     bool blocked; /* a newer patch exists but needs a newer firmware */
     char needs[16];
     char manifest[768]; /* the JSON listing the patch's pieces */
+    int64_t size;       /* the patch's size in bytes, 0 when Sony's list could not be read */
 } Entry;
 
 static struct {
@@ -131,6 +133,19 @@ static void run_check(void) {
         e->blocked = choice.state == PATCHFEED_NEEDS_NEWER_FW;
         if (e->blocked)
             patchfeed_firmware_text(choice.offer->system_ver, e->needs, sizeof e->needs);
+        else {
+            /* The size is only in the manifest; a failure here just leaves the size out. */
+            SonyBody list_body = {0};
+            char ignore[160] = "", reason[100] = "";
+            if (sony_get(e->manifest, 4u * 1024 * 1024, &list_body, stopping, ignore, sizeof ignore)) {
+                patchmanifest m;
+                if (!patchmanifest_parse(list_body.data, list_body.size, &m, reason, sizeof reason)) {
+                    e->size = m.total;
+                    patchmanifest_free(&m);
+                }
+                free(list_body.data);
+            }
+        }
     }
     free(games);
     if (stopping()) {
@@ -257,8 +272,10 @@ cJSON *gameupdates_status(void) {
         cJSON_AddStringToObject(g, "state", e->blocked ? "needs-firmware" : "available");
         if (e->blocked)
             cJSON_AddStringToObject(g, "firmware", e->needs);
-        else
+        else {
+            cJSON_AddNumberToObject(g, "size", (double)e->size);
             available++;
+        }
         cJSON_AddItemToArray(games, g);
     }
     cJSON_AddBoolToObject(o, "supported", gu.started);
