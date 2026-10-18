@@ -563,6 +563,7 @@ http::Response Fixture::send(const http::Request &request)
             "\"preferredStorage\":" +
             json::quote(preferred_) + ",\"ps4Hidden\":" + (ps4_hidden_ ? "true" : "false") +
             ",\"installPkgs\":" + (install_pkgs_ ? "true" : "false") +
+            ",\"deletePkgs\":" + (delete_pkgs_ ? "true" : "false") +
             ",\"httpPort\":34177}";
         return response;
     }
@@ -705,6 +706,12 @@ http::Response Fixture::send(const http::Request &request)
         if (!input.text("nasUrl").empty())
             nas_saved_ = true;
         response.body = sources_json();
+        return response;
+    }
+    if (!get && path == "/api/v1/settings/delete-pkgs")
+    {
+        delete_pkgs_ = input.flag("deletePkgs", false);
+        response.body = std::string("{\"deletePkgs\":") + (delete_pkgs_ ? "true" : "false") + "}";
         return response;
     }
     if (!get && path == "/api/v1/settings/install-pkgs")

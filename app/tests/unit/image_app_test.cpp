@@ -830,6 +830,21 @@ TEST(App, InstallingPackagesAfterDownloadIsOffUntilTheSwitchIsTurnedOn)
     EXPECT_FALSE(h.store.state().system.install_pkgs);
 }
 
+TEST(App, InstalledPackagesAreKeptUntilTheSwitchIsTurnedOn)
+{
+    AppHarness h;
+    h.settle();
+    EXPECT_FALSE(h.store.state().system.delete_pkgs);
+    h.store.set_delete_pkgs(true);
+    ASSERT_TRUE(h.store.run_next_action());
+    h.settle(3);
+    EXPECT_TRUE(h.store.state().system.delete_pkgs);
+    h.store.set_delete_pkgs(false);
+    ASSERT_TRUE(h.store.run_next_action());
+    h.settle(3);
+    EXPECT_FALSE(h.store.state().system.delete_pkgs);
+}
+
 TEST(App, SettingsChoosesTheDefaultDrive)
 {
     AppHarness h;

@@ -785,6 +785,19 @@ void SettingsScreen::build_storage(Pane &pane) const
                    ui::ButtonKind::secondary, !archives_saving}});
     if (result.setting == Setting::archives && !result.error.empty())
         pane.error(result.error);
+    pane.gap(12.0f);
+    pane.rule();
+    pane.heading(tr("Installed packages"));
+    pane.body(state.system.delete_pkgs
+                  ? tr("A .pkg is deleted once your PS5 has installed it. This only applies to packages Orbit installs.")
+                  : tr("A .pkg is kept in the homebrew folder after your PS5 has installed it."));
+    const bool pkgs_saving = result.busy && result.setting == Setting::delete_pkgs;
+    pane.buttons({{Kind::delete_pkgs_toggle,
+                   state.system.delete_pkgs ? tr("Keep packages after installing")
+                                            : tr("Delete packages after installing"),
+                   ui::ButtonKind::secondary, !pkgs_saving}});
+    if (result.setting == Setting::delete_pkgs && !result.error.empty())
+        pane.error(result.error);
 }
 
 // ---- Pair a device (src/Pairing.tsx, on the console) ----
@@ -1399,6 +1412,10 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
     case Kind::install_pkgs_toggle:
         error_.clear();
         ctx_.store.set_install_pkgs(!state.system.install_pkgs);
+        break;
+    case Kind::delete_pkgs_toggle:
+        error_.clear();
+        ctx_.store.set_delete_pkgs(!state.system.delete_pkgs);
         break;
     case Kind::archives_toggle:
         error_.clear();

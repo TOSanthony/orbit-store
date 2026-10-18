@@ -588,6 +588,7 @@ class SettingsScreen final : public Screen
         zero_toggle,
         archives_toggle,
         install_pkgs_toggle,
+        delete_pkgs_toggle,
         download_limit_less,
         download_limit_more,
         appearance, // index of a background preset

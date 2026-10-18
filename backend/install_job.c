@@ -136,6 +136,7 @@ static void run(const Request *q) {
     printf("[ORBIT] install: started %s as %s\n", q->path, session.content_id);
     time_t began = time(NULL), moved = began;
     uint64_t last = 0;
+    bool finished = false;
     for (;;) {
         sleep(POLL_SECONDS);
         if (orbit_is_stopping()) {
@@ -161,6 +162,7 @@ static void run(const Request *q) {
         bool whole = st.total == 0 || st.downloaded >= st.total;
         if ((!strcmp(st.state, "playable") || !strcmp(st.state, "completed")) && whole) {
             set(q->id, "installed", 100, "", 0);
+            finished = true;
             break;
         }
         if (!strcmp(st.state, "none") && now - began < NO_STATUS_SECONDS) continue;
@@ -181,6 +183,17 @@ static void run(const Request *q) {
         set(q->id, "installing", percent, "", 0);
     }
     install_session_close(&session);
+    /* Only a package Orbit itself handed over, and only once the console reported every byte
+     * copied: anything less keeps the file. */
+    if (finished) {
+        pthread_mutex_lock(&orbit.mutex);
+        bool remove_it = orbit.delete_pkgs;
+        pthread_mutex_unlock(&orbit.mutex);
+        if (remove_it) {
+            if (unlink(q->path) == 0) printf("[ORBIT] install: removed %s after installing it\n", q->path);
+            else printf("[ORBIT] install: could not remove %s\n", q->path);
+        }
+    }
 }
 
 static void *worker(void *arg) {

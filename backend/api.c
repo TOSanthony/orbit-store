@@ -330,6 +330,7 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
         cJSON_AddBoolToObject(o, "soundsOff", orbit.sounds_off);
         cJSON_AddBoolToObject(o, "ps4Hidden", orbit.ps4_hidden);
         cJSON_AddBoolToObject(o, "installPkgs", orbit.install_pkgs);
+        cJSON_AddBoolToObject(o, "deletePkgs", orbit.delete_pkgs);
         cJSON_AddNumberToObject(o, "concurrentDownloads", orbit.concurrent_downloads);
         cJSON_AddNumberToObject(o, "httpPort", orbit.port);
         cJSON_AddStringToObject(o, "launcherStatus", orbit.launcher_status);
@@ -504,6 +505,27 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
             if (rc) orbit.sounds_off = previous;
             cJSON *o = cJSON_CreateObject();
             cJSON_AddBoolToObject(o, "soundsOff", orbit.sounds_off);
+            pthread_mutex_unlock(&orbit.mutex);
+            cJSON_Delete(input);
+            if (rc) {
+                cJSON_Delete(o);
+                return error(c, 503, "Could not save the setting.");
+            }
+            return json_response(c, 200, o);
+        }
+        if ((get || post) && !strcmp(url, "/api/v1/settings/delete-pkgs")) {
+            const cJSON *value = cJSON_GetObjectItemCaseSensitive(input, "deletePkgs");
+            if (post && !cJSON_IsBool(value)) {
+                cJSON_Delete(input);
+                return error(c, 400, "Expected deletePkgs.");
+            }
+            pthread_mutex_lock(&orbit.mutex);
+            bool previous = orbit.delete_pkgs;
+            if (post) orbit.delete_pkgs = cJSON_IsTrue(value);
+            int rc = post ? state_save_locked() : 0;
+            if (rc) orbit.delete_pkgs = previous;
+            cJSON *o = cJSON_CreateObject();
+            cJSON_AddBoolToObject(o, "deletePkgs", orbit.delete_pkgs);
             pthread_mutex_unlock(&orbit.mutex);
             cJSON_Delete(input);
             if (rc) {
