@@ -382,6 +382,40 @@ static void *worker(void *unused) {
     return NULL;
 }
 
+/* The icon the console keeps for an installed game ("local-<title id>"): the cover for games the
+ * catalogue does not list. Read from the console's own files, never from the network. */
+static int art_local(const char *title_id, bool hero, unsigned char **data, size_t *size, char *mime,
+                     size_t mime_cap, char *why, size_t why_cap) {
+    bool shaped = strlen(title_id) == 9 && (!strncmp(title_id, "PPSA", 4) || !strncmp(title_id, "CUSA", 4));
+    for (int i = 4; shaped && i < 9; i++)
+        shaped = title_id[i] >= '0' && title_id[i] <= '9';
+    if (!shaped || hero) {
+        if (why_cap)
+            copy_text(why, why_cap, "not an installed game's icon");
+        return 404;
+    }
+    const char *suffix[] = {"", "_00"};
+    for (int i = 0; i < 2; i++) {
+        char path[1100];
+        snprintf(path, sizeof path, "%s/user/appmeta/%s%s/icon0.png", orbit.system_root, title_id, suffix[i]);
+        unsigned char *bytes = NULL;
+        size_t length = 0;
+        if (read_regular_file(path, 4u * 1024 * 1024, &bytes, &length))
+            continue;
+        if (length < 8 || memcmp(bytes, "\x89PNG\r\n\x1a\n", 8)) {
+            free(bytes);
+            continue;
+        }
+        *data = bytes;
+        *size = length;
+        copy_text(mime, mime_cap, "image/png");
+        return 200;
+    }
+    if (why_cap)
+        copy_text(why, why_cap, "the console has no icon for this game");
+    return 404;
+}
+
 int art_get(const char *game_id, const char *kind, unsigned char **data, size_t *size, char *mime,
             size_t mime_cap, char *why, size_t why_cap) {
     *data = NULL;
@@ -391,6 +425,8 @@ int art_get(const char *game_id, const char *kind, unsigned char **data, size_t 
     bool hero = !strcmp(kind, "hero");
     if (!art_identifier(game_id) || (!hero && strcmp(kind, "cover")))
         return 404;
+    if (!strncmp(game_id, "local-", 6))
+        return art_local(game_id + 6, hero, data, size, mime, mime_cap, why, why_cap);
     char urls[2][2048];
     if (!urls_for(game_id, hero, urls)) {
         if (why_cap)

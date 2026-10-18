@@ -89,7 +89,10 @@ export function GameUpdates({
             <li key={game.titleId}>
               <Artwork
                 className="update-cover"
-                src={cover(catalogue, game.titleId)?.cover || "/orbit.svg"}
+                src={
+                  cover(catalogue, game.titleId)?.cover ||
+                  `/api/v1/art/local-${game.titleId}/cover`
+                }
                 fallbackSrc={cover(catalogue, game.titleId)?.coverFallback}
                 alt=""
                 decoding="async"

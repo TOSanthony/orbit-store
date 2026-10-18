@@ -163,7 +163,14 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         if (const Game *art = catalogue_entry(state, game.title_id))
             draw_cover(ctx_, list, *art, cover, 12.0f);
         else
-            ui::cover_placeholder(list, type, cover, game.name.empty() ? game.title_id : game.name, 12.0f);
+        {
+            // Not in the catalogue: the icon the console keeps for the installed game (the
+            // placeholder shows until it arrives, and stays if the console has none).
+            Game local;
+            local.id = "local-" + game.title_id;
+            local.title = game.name.empty() ? game.title_id : game.name;
+            draw_cover(ctx_, list, local, cover, 12.0f);
+        }
 
         const float tx = cover.x + cover.w + 28.0f;
         const float right_edge = row.x + row.w - kRowPad;
