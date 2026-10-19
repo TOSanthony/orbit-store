@@ -459,6 +459,7 @@ class GameUpdatesScreen final : public Screen
 
   private:
     int row_ = 0;
+    int bar_ = -1; // the button above the list that has the focus, -1 when the list has it
     std::uint64_t result_serial_ = 0;
 };
 

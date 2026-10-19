@@ -54,6 +54,7 @@ static int queue_place(const GameUpdateStatus &status, const std::string &title_
 void GameUpdatesScreen::focus()
 {
     row_ = 0;
+    bar_ = -1;
 }
 
 Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedback, bool focused)
@@ -73,15 +74,85 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
             intent.toast = tr(result.error);
     }
     row_ = std::clamp(row_, 0, std::max(0, count - 1));
-    if (input.nav == Direction::up)
+    // The three buttons above the list: Check, Update all and (with a queue) Clear queue.
+    const int buttons = count > 0 ? (status.queue.empty() ? 2 : 3) : 0;
+    bar_ = buttons > 0 ? std::min(bar_, buttons - 1) : -1;
+    const auto do_check = [&]
     {
-        if (row_ == 0)
+        // A game installed since the last check shows up after this.
+        if (!status.checking && !ctx_.store.setting_result().busy)
+        {
+            feedback.play(hui::audio::Cue::select);
+            ctx_.store.check_game_updates();
+        }
+    };
+    const auto do_all = [&]
+    {
+        // Download every update, one after the other.
+        feedback.play(hui::audio::Cue::select);
+        ctx_.store.game_update_job("queueAll", "");
+    };
+    const auto do_clear = [&]
+    {
+        // Forget the waiting updates; the running one carries on.
+        feedback.play(hui::audio::Cue::select);
+        ctx_.store.game_update_job("clearQueue", "");
+    };
+    if (input.is_pressed(Action::north))
+        do_check();
+    else if (input.is_pressed(Action::west) && count > 0)
+        do_all();
+    else if (input.is_pressed(Action::jump_next) && !status.queue.empty())
+        do_clear();
+    else if (bar_ >= 0)
+    {
+        if (input.nav == Direction::up)
         {
             intent.kind = Intent::Kind::top_bar;
             return intent;
         }
-        --row_;
-        feedback.play(hui::audio::Cue::focus);
+        else if (input.nav == Direction::down)
+        {
+            bar_ = -1;
+            feedback.play(hui::audio::Cue::focus);
+        }
+        else if (input.nav == Direction::left || input.nav == Direction::right)
+        {
+            const int next = std::clamp(bar_ + (input.nav == Direction::right ? 1 : -1), 0, buttons - 1);
+            if (next != bar_)
+                feedback.play(hui::audio::Cue::focus);
+            bar_ = next;
+        }
+        else if (input.is_pressed(Action::confirm))
+        {
+            if (bar_ == 0)
+                do_check();
+            else if (bar_ == 1)
+                do_all();
+            else
+                do_clear();
+        }
+    }
+    else if (input.nav == Direction::up)
+    {
+        if (row_ == 0)
+        {
+            if (buttons > 0)
+            {
+                bar_ = 0;
+                feedback.play(hui::audio::Cue::focus);
+            }
+            else
+            {
+                intent.kind = Intent::Kind::top_bar;
+                return intent;
+            }
+        }
+        else
+        {
+            --row_;
+            feedback.play(hui::audio::Cue::focus);
+        }
     }
     else if (input.nav == Direction::down)
     {
@@ -94,27 +165,6 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
         {
             refuse(feedback, input);
         }
-    }
-    else if (input.is_pressed(Action::north))
-    {
-        // Triangle: look for new updates now (a game installed since the last check).
-        if (!status.checking && !ctx_.store.setting_result().busy)
-        {
-            feedback.play(hui::audio::Cue::select);
-            ctx_.store.check_game_updates();
-        }
-    }
-    else if (input.is_pressed(Action::west) && count > 0)
-    {
-        // Square: download every update, one after the other.
-        feedback.play(hui::audio::Cue::select);
-        ctx_.store.game_update_job("queueAll", "");
-    }
-    else if (input.is_pressed(Action::jump_next) && !status.queue.empty())
-    {
-        // R2: forget the waiting updates; the running one carries on.
-        feedback.play(hui::audio::Cue::select);
-        ctx_.store.game_update_job("clearQueue", "");
     }
     else if (input.is_pressed(Action::confirm) && count > 0)
     {
@@ -178,7 +228,15 @@ std::vector<hui::ui::Hint> GameUpdatesScreen::hints() const
 {
     const GameUpdateStatus &status = ctx_.store.state().game_update_status;
     std::vector<hui::ui::Hint> items;
-    if (!status.games.empty())
+    if (bar_ >= 0)
+    {
+        items.push_back({hui::ui::Button::cross, tr("Select")});
+        items.push_back({hui::ui::Button::triangle, tr("Check")});
+        items.push_back({hui::ui::Button::square, tr("Update all")});
+        if (!status.queue.empty())
+            items.push_back({hui::ui::Button::r2, tr("Clear queue")});
+    }
+    else if (!status.games.empty())
     {
         const GameUpdateItem &game =
             status.games[static_cast<std::size_t>(std::clamp(row_, 0, static_cast<int>(status.games.size()) - 1))];
@@ -245,7 +303,8 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
             const std::string &label = labels[static_cast<std::size_t>(k)];
             const float w = ui::button_width(type, label, 20.0f, ui::ButtonKind::secondary);
             x -= w;
-            ui::button(list, type, {x, kBarY, w, ui::kFieldHeight}, label, ui::ButtonKind::secondary, 0.0f);
+            ui::button(list, type, {x, kBarY, w, ui::kFieldHeight}, label, ui::ButtonKind::secondary,
+                       focused && bar_ == k ? 1.0f : 0.0f, !(k == 0 && status.checking));
             x -= kBarGap;
         }
     }
@@ -262,7 +321,7 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
                            kRowHeight};
         if (row.y + row.h < kListTop - 6.0f || row.y > kListBottom)
             continue;
-        if (focused && i == row_)
+        if (focused && bar_ < 0 && i == row_)
             list.rounded_rect(row, 18.0f, ui::Color::rgb(0xffffff, 0.06f));
         const ui::Rect cover{row.x + kRowPad, row.y + (row.h - kCover) * 0.5f, kCover, kCover};
         // The console's own icon for the game, else the catalogue's cover: Orbit decides which
