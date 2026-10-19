@@ -20,7 +20,7 @@ sce_sys/) are copied there automatically; use --no-extract to skip this and
 --refresh-covers to replace images extracted earlier. Images you placed yourself are kept.
 
 For a .zip holding a PS5 game, sce_sys/param.json gives the title, title ID and version
-(--no-param to skip). With --ai, Gemini fills what is still missing for every game: description
+(--no-param to skip). A .pkg (PS4 or PS5) is read the same way: its title, content ID, DLC label, version and icon0.png go into the index and covers/ With --ai, Gemini fills what is still missing for every game: description
 (French), publisher, genre, tagline and release date; it only renames games whose title came from
 the file name. Results are kept in .ai-cache.json and the key comes from the GEMINI_API_KEYS
 environment variable (comma separated). The title ID and the title are sent to Google. Never put
@@ -525,6 +525,115 @@ def read_ps4_version(path: Path) -> str:
     return ""
 
 
+def parse_sfo(sfo: bytes) -> dict:
+    """The text and number values of a param.sfo, by key name."""
+    found = {}
+    if len(sfo) < 20 or sfo[:4] != b"\x00PSF":
+        return found
+    keys_at, data_at, n = struct.unpack("<3I", sfo[8:20])
+    for k in range(min(n, 512)):
+        if len(sfo) < 36 + 16 * k:
+            break
+        key_off, fmt, length, _, data_off = struct.unpack("<HHIII", sfo[20 + 16 * k:36 + 16 * k])
+        end = sfo.find(b"\x00", keys_at + key_off)
+        name = sfo[keys_at + key_off:end].decode("ascii", "replace")
+        if fmt in (0x0004, 0x0204):
+            found[name] = sfo[data_at + data_off:data_at + data_off + length].split(b"\x00")[0].decode("utf-8", "replace")
+    return found
+
+
+PKG_ICON_MAX = 4 * 1024 * 1024
+
+
+def read_pkg(path: Path):
+    """What a PS4 or PS5 .pkg says about itself, read from its first blocks without extracting it:
+    {"titleId", "contentId", "label", "title", "version", "icon"}, or None when it cannot be read.
+
+    PS4 packages start with the "\\x7fCNT" header; PS5 ones with "\\x7fFIH", which says where the same header is
+    embedded. Its entry table points at param.json (PS5) or param.sfo (PS4) and icon0.png. An encrypted entry is
+    skipped. The label is the end of the content ID (EP0001-PPSA20397_00-LIMITEDPACK00000 -> LIMITEDPACK00000),
+    which is also the name of the folder the console makes for an installed DLC."""
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(0x1000)
+            base = 0
+            if head[:4] == b"\x7fFIH" and len(head) >= 0xA8:
+                base = struct.unpack("<Q", head[0x58:0x60])[0]
+                handle.seek(base)
+                head = handle.read(0x1000)
+            if head[:4] != b"\x7fCNT" or len(head) < 0x100:
+                return None
+            info = {"titleId": "", "contentId": "", "label": "", "title": "", "version": "", "icon": None}
+            content_id = head[0x40:0x64].split(b"\x00")[0].decode("ascii", "replace")
+            if re.fullmatch(r"[A-Z]{2}\d{4}-[A-Z]{4}\d{5}_\d{2}-[A-Za-z0-9_]{1,16}", content_id):
+                info["contentId"] = content_id
+                info["label"] = content_id.rsplit("-", 1)[1]
+                info["titleId"] = content_id.split("-")[1][:9]
+            count, table = struct.unpack(">I", head[0x10:0x14])[0], struct.unpack(">I", head[0x18:0x1C])[0]
+            if not 0 < count <= 256 or table <= 0:
+                return info if info["contentId"] else None
+            handle.seek(base + table)
+            raw = handle.read(count * 32)
+            for i in range(len(raw) // 32):
+                ident, _, flags, _, offset, size = struct.unpack(">6I", raw[i * 32:i * 32 + 24])
+                if flags & 0x80000000 or not size:
+                    continue                                          # encrypted
+                if ident in (0x1000, 0x2000) and size <= 1 << 16 and not info["title"]:
+                    handle.seek(base + offset)
+                    blob = handle.read(size)
+                    if ident == 0x2000 and blob.lstrip()[:1] == b"{":
+                        try:
+                            data = json.loads(blob.decode("utf-8-sig", "replace").strip("\x00 \r\n\t"))
+                        except ValueError:
+                            continue
+                        local = data.get("localizedParameters") if isinstance(data, dict) else None
+                        local = local if isinstance(local, dict) else {}
+                        names = []
+                        for language in (local.get("defaultLanguage"), "en-US", "en-GB"):
+                            entry = local.get(language) if isinstance(language, str) else None
+                            if isinstance(entry, dict):
+                                names.append(entry.get("titleName"))
+                        names += [v.get("titleName") for v in local.values() if isinstance(v, dict)]
+                        info["title"] = next((clean_text(n, 120) for n in names if isinstance(n, str) and n.strip()), "")
+                        info["version"] = clean_text(data.get("contentVersion"), 24)
+                        if not info["titleId"]:
+                            info["titleId"] = clean_text(data.get("titleId"), 9).upper()
+                    elif ident == 0x1000:
+                        fields = parse_sfo(blob)
+                        info["title"] = clean_text(fields.get("TITLE", ""), 120)
+                        info["version"] = clean_text(fields.get("APP_VER") or fields.get("VERSION") or "", 24)
+                        if not info["titleId"]:
+                            info["titleId"] = clean_text(fields.get("TITLE_ID", ""), 9).upper()
+                elif ident == 0x1200 and 8 < size <= PKG_ICON_MAX and info["icon"] is None:
+                    handle.seek(base + offset)
+                    blob = handle.read(size)
+                    if len(blob) == size and blob.startswith(b"\x89PNG\r\n\x1a\n"):
+                        info["icon"] = blob
+            return info
+    except (OSError, struct.error, ValueError, IndexError):
+        return None
+
+
+def store_icon(data: bytes, art_id: str, root: Path, folder: str, images: dict, refresh: bool) -> bool:
+    """Write a package's icon as <root>/<folder>/<art_id>_icon0.png. Existing files are kept unless --refresh-covers
+    is given, and an image of yours (.jpg / .webp in covers/) is never replaced. True when written."""
+    if custom_art(root, images, art_id, "icon0"):
+        return False
+    name = f"{art_id}_icon0.png"
+    if not refresh and name.lower() in images:
+        return False
+    target = root / folder / name
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(target.name + ".part")
+        temporary.write_bytes(data)
+        temporary.replace(target)
+    except OSError:
+        return False
+    images[name.lower()] = f"{folder}/{name}"
+    return True
+
+
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
 
@@ -629,7 +738,7 @@ def main() -> int:
     parser.add_argument("--no-optimize", action="store_true", help="do not write small .jpg copies of the covers (needs Pillow)")
     parser.add_argument("--no-extract", action="store_true", help="do not take icon0.png / pic1.png out of .zip files")
     parser.add_argument("--refresh-covers", action="store_true", help="overwrite covers already extracted from a .zip")
-    parser.add_argument("--no-param", action="store_true", help="do not read sce_sys/param.json (title, title ID, version) from PS5 .zip files")
+    parser.add_argument("--no-param", action="store_true", help="do not read sce_sys/param.json from PS5 .zip files, nor the title, content ID and icon inside .pkg files")
     parser.add_argument("--ai", action="store_true", help="ask Gemini to fill missing description, publisher, genre, tagline and release date (needs GEMINI_API_KEYS)")
     parser.add_argument("--ai-max", type=int, default=40, help="most Gemini requests per run (default 40)")
     parser.add_argument("--prospero", action="store_true", help="fetch title, publisher, region and artwork from prosperopatches.com (PS5) and orbispatches.com (PS4) (cached in .prospero-cache.json)")
@@ -866,6 +975,11 @@ def main() -> int:
         key = relative.as_posix()
         extra = overrides.get(key, {})
         param = read_param(path) if suffix == ".zip" and not args.no_param else None
+        pkg = read_pkg(path) if suffix == ".pkg" and not args.no_param else None
+        if pkg and not param and (pkg["title"] or pkg["titleId"]):
+            # A package says the same things as a .zip's param.json: title, title ID and (PS5) version.
+            version = pkg["version"] if re.fullmatch(r"\d+(\.\d+){1,3}", pkg["version"]) and (pkg["titleId"] or "").startswith("PPSA") else ""
+            param = {"title": pkg["title"], "titleId": pkg["titleId"] if re.fullmatch(r"(PPSA|CUSA)\d{5}", pkg["titleId"]) else "", "version": version}
         match = TITLE_ID.search(key)
         path_id = (match.group(1).upper() + match.group(2)) if match else ""
         title_id = (extra.get("titleId") or path_id or (param or {}).get("titleId") or "").upper()
@@ -901,6 +1015,14 @@ def main() -> int:
             "sizeBytes": size,
         }
         pr_fields, pr_title = set(), False
+        art_id = title_id                      # the picture's name: a DLC has its own icon, named by its label
+        own_title = False                      # a DLC is named by its package, not by its game's page
+        if pkg and pkg["contentId"] and pkg["titleId"] in ("", title_id):
+            row["contentId"] = pkg["contentId"]
+            if pack == "DLC":
+                row["label"] = pkg["label"]
+                art_id = f"{title_id}_{pkg['label']}"
+                own_title = bool(pkg["title"]) and not extra.get("title")
         if suffix in ARCHIVES:
             row["compression"] = ARCHIVES[suffix]
             inner = inspect_zip(path) if suffix == ".zip" else None
@@ -940,7 +1062,7 @@ def main() -> int:
                 pr_fields = {f for f in ("publisher", "region") if got.get(f) and not extra.get(f)}
                 for f in pr_fields:
                     row[f] = got[f]
-                if got.get("name") and not extra.get("title"):      # apps, DLC and updates too: the site's name, as written
+                if got.get("name") and not extra.get("title") and not own_title:      # apps, DLC and updates too: the site's name, as written
                     row["title"], pr_title = got["name"], True
                 for kind, source in (("icon0", "icon"), ("pic1", "hero")):
                     pr_images += prospero_art(title_id, kind, got.get(source, ""), got.get("heroAlt", "") if kind == "pic1" else "")
@@ -952,16 +1074,20 @@ def main() -> int:
                 if entry.get(field) and not extra.get(field) and field not in pr_fields and not (pack and field == "tagline"):
                     row[field] = entry[field]
                     db_fields.add(field)
-            if entry.get("title") and not extra.get("title") and not (param or {}).get("title") and not pr_title:
+            if entry.get("title") and not extra.get("title") and not (param or {}).get("title") and not pr_title and not own_title:
                 row["title"], pr_title = entry["title"], True
             db_hits += 1
         if suffix == ".zip" and not args.no_extract:
             for kind in extract_art(path, title_id, root, args.covers, images, args.refresh_covers):
                 extracted.append(f"{title_id}_{kind}.png")
+        if pkg and pkg["icon"] and pack != "UPDATES" and not args.no_extract and (pkg["titleId"] in ("", title_id)):
+            if store_icon(pkg["icon"], art_id, root, args.covers, images, args.refresh_covers):
+                extracted.append(f"{art_id}_icon0.png")
         for field, kind in (("cover", "icon0"), ("hero", "pic1")):
-            if not args.no_optimize and optimize_art(root, images, title_id, kind, args.refresh_covers):
+            picture_id = art_id if kind == "icon0" else title_id
+            if not args.no_optimize and optimize_art(root, images, picture_id, kind, args.refresh_covers):
                 optimized += 1
-            hit = artwork_for(images, title_id, kind)
+            hit = artwork_for(images, picture_id, kind) or (artwork_for(images, title_id, kind) if picture_id != title_id else None)
             # The game's own image, else the default one from assets/.
             if hit or fallback.get(field):
                 row[field] = hit or fallback[field]

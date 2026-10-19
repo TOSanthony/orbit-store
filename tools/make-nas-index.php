@@ -1018,7 +1018,7 @@ summary{cursor:pointer;font-weight:600}
   <h3>Index des jeux</h3>
   <form class="sform" method="post" id="refreshForm">
     <input type="hidden" name="action" value="refresh"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-    <label><input type="checkbox" name="param" value="1" checked> Lire le param.json des .zip PS5 (titre, identifiant, version)</label>
+    <label><input type="checkbox" name="param" value="1" checked> Lire le param.json des .zip PS5 et l'intérieur des .pkg (titre, identifiant, version, icône, DLC)</label>
     <label><input type="checkbox" name="prospero" value="1" checked> Récupérer titre, éditeur, région, icône et fond sur prosperopatches.com (tes propres images de covers/ restent prioritaires)</label>
 <?php if (!empty(array_filter((array)$GEMINI_KEYS))): ?>
     <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (Gemini) les infos manquantes (description, éditeur, genre, accroche, date de sortie)</label>
