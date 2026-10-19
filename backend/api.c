@@ -46,7 +46,7 @@ static enum MHD_Result respond(struct MHD_Connection *c, unsigned code, const ch
     MHD_add_response_header(r, "Referrer-Policy", "no-referrer");
     MHD_add_response_header(r, "Cache-Control", "no-store");
     MHD_add_response_header(r, "Content-Security-Policy",
-                            "default-src 'self'; img-src 'self' https:; style-src 'self' "
+                            "default-src 'self'; img-src 'self' https: blob:; style-src 'self' "
                             "'unsafe-inline'; script-src 'self'; "
                             "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'");
     enum MHD_Result rc = MHD_queue_response(c, code, r);

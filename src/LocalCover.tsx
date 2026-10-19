@@ -55,7 +55,7 @@ export function LocalCover({
       <Artwork
         key={local || cover || "mark"}
         src={local || cover || "/orbit.svg"}
-        fallbackSrc={fallback}
+        fallbackSrc={local ? cover || fallback : fallback}
         alt=""
         decoding="async"
         referrerPolicy="no-referrer"
@@ -82,7 +82,7 @@ export function GameIcon({
       className={className}
       key={local || cover || "mark"}
       src={local || cover || "/orbit.svg"}
-      fallbackSrc={fallback}
+      fallbackSrc={local ? cover || fallback : fallback}
       alt=""
       decoding="async"
       referrerPolicy="no-referrer"
