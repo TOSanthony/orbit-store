@@ -309,6 +309,7 @@ class Store
     void poll_browser();
     void send_setting(Setting setting, std::string a = {}, std::string b = {}, bool flag = false);
     void poll_settings();
+    void poll_game_updates();
     void post_restart(Restart restart, std::string detail);
     void continue_restart(bool unreachable);
 
@@ -355,6 +356,7 @@ class Store
     Starting start_state_ = Starting::idle;
     bool automatic_checks_sent_ = false;
     int settings_countdown_ = 0; // polls until the statuses are read again
+    int game_updates_countdown_ = 0; // polls until the game updates are read again
     bool settings_busy_ = false; // a check, install or refresh is running
     Link worker_link_ = Link::connecting;
     Restart restart_ = Restart::idle;

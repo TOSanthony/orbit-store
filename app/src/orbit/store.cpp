@@ -27,6 +27,9 @@ constexpr double kRestartStop = 30.0; // Orbit should have stopped by then
 constexpr int kRestartAttempts = 2;
 // Without Settings open, statuses are read every twentieth poll (a minute).
 constexpr int kSettingsEvery = 20;
+// The Updates tab depends on the game update count, so that is read much more often than the
+// rest of the statuses: it is a small request to the service on this console.
+constexpr int kGameUpdatesEvery = 2;
 
 // A catalogue fetch is needed when anything that changes the list changes:
 // the server, its catalogue revision, or the source choices.
@@ -860,8 +863,33 @@ void Store::poll_once()
     if (want_settings_.load() || settings_busy_ || --settings_countdown_ <= 0)
     {
         settings_countdown_ = kSettingsEvery;
+        game_updates_countdown_ = kGameUpdatesEvery;
         poll_settings();
     }
+    else if (--game_updates_countdown_ <= 0)
+    {
+        game_updates_countdown_ = kGameUpdatesEvery;
+        poll_game_updates();
+    }
+}
+
+// Only the game updates: the count that shows or hides the Updates tab, and the running update.
+void Store::poll_game_updates()
+{
+    api::Result<GameUpdateStatus> game_updates = client_.game_updates();
+    if (game_updates.ok() && (game_updates.value.checking || game_updates.value.job.active ||
+                              !game_updates.value.queue.empty()))
+        settings_busy_ = true; // poll the statuses at the quick pace until it is done
+    inbox_.post(
+        [this, game_updates = std::move(game_updates)]() mutable
+        {
+            if (!game_updates.ok())
+                return;
+            state_.game_updates = game_updates.value.count;
+            state_.game_update_status = std::move(game_updates.value);
+            state_.have_game_updates = true;
+            ++state_.serial;
+        });
 }
 
 // The catalogue and update statuses (Settings, and the update badge).
