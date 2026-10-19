@@ -28,8 +28,12 @@ case "$kind" in
         if [[ ! -d $checkout/.git ]]; then
             mkdir -p "$checkout"
             git -C "$checkout" init --quiet
-            git -C "$checkout" remote add origin https://github.com/SvenGDK/UFS2Tool.git
-            git -C "$checkout" fetch --quiet --depth 1 origin "$revision"
+            # The project's own fork first; the pinned revision is checked below either way.
+            git -C "$checkout" remote add origin https://github.com/TOSanthony/UFS2Tool.git
+            git -C "$checkout" fetch --quiet --depth 1 origin "$revision" || {
+                git -C "$checkout" remote set-url origin https://github.com/SvenGDK/UFS2Tool.git
+                git -C "$checkout" fetch --quiet --depth 1 origin "$revision"
+            }
             git -C "$checkout" checkout --quiet --detach FETCH_HEAD
         fi
         actual=$(git -C "$checkout" rev-parse HEAD)
@@ -68,8 +72,12 @@ case "$kind" in
         if [[ ! -d $checkout/.git ]]; then
             mkdir -p "$checkout"
             git -C "$checkout" init --quiet
-            git -C "$checkout" remote add origin https://github.com/PSBrew/MkPFS.git
-            git -C "$checkout" fetch --quiet --depth 1 origin "$revision"
+            # The project's own fork first; the pinned revision is checked below either way.
+            git -C "$checkout" remote add origin https://github.com/TOSanthony/MkPFS.git
+            git -C "$checkout" fetch --quiet --depth 1 origin "$revision" || {
+                git -C "$checkout" remote set-url origin https://github.com/PSBrew/MkPFS.git
+                git -C "$checkout" fetch --quiet --depth 1 origin "$revision"
+            }
             git -C "$checkout" checkout --quiet --detach FETCH_HEAD
         fi
         actual=$(git -C "$checkout" rev-parse HEAD)
