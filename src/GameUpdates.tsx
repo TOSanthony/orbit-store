@@ -136,7 +136,9 @@ export function GameUpdates({
                     {t("Waiting")} · #{queue.indexOf(game.titleId) + 1}
                   </p>
                 )}
-                {job && job.titleId === game.titleId && (
+                {job &&
+                  job.titleId === game.titleId &&
+                  job.phase !== "cancelled" && (
                   <>
                     <p>{statusLine(job)}</p>
                     {job.phase === "installing" && job.waiting ? (

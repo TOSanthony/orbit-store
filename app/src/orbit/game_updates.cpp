@@ -369,7 +369,8 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         const float right_edge = row.x + row.w - kRowPad;
         const float info_width = right_edge - tx;
         const GameUpdateJob &job = status.job;
-        const bool this_job = job.present && job.title_id == game.title_id && !job.phase.empty();
+        const bool this_job = job.present && job.title_id == game.title_id && !job.phase.empty() &&
+                              job.phase != "cancelled"; // a cancelled update goes back to "Update available"
         const int place = queue_place(status, game.title_id);
         const bool paused = this_job && job.phase == "paused";
         const bool running = this_job && job.active && job.phase != "installing";
