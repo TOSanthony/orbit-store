@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 /* Sony signs its download servers with its own root, which public CA lists do not carry. */
@@ -68,6 +69,21 @@ static size_t collect(char *data, size_t a, size_t b, void *context) {
     c->body->size += n;
     next[c->body->size] = 0;
     return n;
+}
+/* A bigger receive buffer on the connection, as the main download engine does: the default is small
+ * for a long path to a server far away, and caps the speed. A larger system value is never reduced,
+ * and a refusal is ignored. */
+#define PATCH_SOCKET_BUFFER (1024 * 1024)
+#define PATCH_READ_BUFFER (256 * 1024)
+static int tune_socket(void *unused, curl_socket_t fd, curlsocktype purpose) {
+    (void)unused;
+    if (purpose == CURLSOCKTYPE_IPCXN) {
+        int current = 0, wanted = PATCH_SOCKET_BUFFER;
+        socklen_t length = sizeof current;
+        if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &current, &length) || current < wanted)
+            setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &wanted, sizeof wanted);
+    }
+    return CURL_SOCKOPT_OK;
 }
 static size_t store(char *data, size_t a, size_t b, void *context) {
     Write *w = context;
@@ -302,6 +318,8 @@ static sony_range_result range(const char *url, int64_t start, int64_t end, int 
         curl_easy_setopt(curl, CURLOPT_OPENSOCKETFUNCTION, provider_open_socket);
     }
     curl_easy_setopt(curl, CURLOPT_RANGE, range_text);
+    curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, (long)PATCH_READ_BUFFER);
+    curl_easy_setopt(curl, CURLOPT_SOCKOPTFUNCTION, tune_socket);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 45L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, store);
