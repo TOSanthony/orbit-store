@@ -9,6 +9,7 @@
 #include "orbit/screens.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 namespace orbit
@@ -20,12 +21,12 @@ constexpr float kTitleBaseline = 176.0f; // as the Games, Library and Downloads 
 constexpr float kListTop = 308.0f; // as the grid of Games, under the filter row
 constexpr float kBarY = 216.0f;    // the filter row of Games and Applications
 constexpr float kBarGap = 14.0f;
-constexpr float kRowHeight = 150.0f;
+constexpr float kRowHeight = 210.0f; // as a download
 constexpr float kRowGap = 8.0f;
-constexpr float kRowWidth = 1400.0f;
+constexpr float kRowWidth = 1920.0f - 2.0f * ui::kGutter; // as the grid of Games and Applications
 constexpr float kRowLeft = (1920.0f - kRowWidth) * 0.5f; // the list sits in the middle of the screen
 constexpr float kRowPad = 22.0f;
-constexpr float kCover = 106.0f;
+constexpr float kCover = 130.0f;
 constexpr float kListBottom = 1010.0f;
 
 // The console's message in the person's language, then its technical detail if it has one.
@@ -323,7 +324,7 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
             continue;
         if (focused && bar_ < 0 && i == row_)
             list.rounded_rect(row, 18.0f, ui::Color::rgb(0xffffff, 0.06f));
-        const ui::Rect cover{row.x + kRowPad, row.y + (row.h - kCover) * 0.5f, kCover, kCover};
+        const ui::Rect cover{row.x + kRowPad, row.y + kRowPad, kCover, kCover};
         // The console's own icon for the game, else the catalogue's cover: Orbit decides which
         // (GET /api/v1/art/local-<title id>/cover); the placeholder shows until it arrives.
         Game local;
@@ -331,65 +332,117 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         local.title = game.name.empty() ? game.title_id : game.name;
         draw_cover(ctx_, list, local, cover, 12.0f);
 
+        // The same rows as Downloads: name and status, where it comes from, the progress bar,
+        // the transfer, then the actions.
         const float tx = cover.x + cover.w + 28.0f;
         const float right_edge = row.x + row.w - kRowPad;
-        ui::text(list, type.semibold, game.name.empty() ? game.title_id : game.name, tx, row.y + 54.0f, 28.0f,
-                 ui::color::text);
-        ui::text(list, type.regular, game.title_id, right_edge, row.y + 54.0f, 18.0f, ui::color::text3,
+        const float info_width = right_edge - tx;
+        const GameUpdateJob &job = status.job;
+        const bool this_job = job.present && job.title_id == game.title_id && !job.phase.empty();
+        const int place = queue_place(status, game.title_id);
+        const bool paused = this_job && job.phase == "paused";
+        const bool running = this_job && job.active && job.phase != "installing";
+        const bool installing = this_job && job.phase == "installing";
+        const double fraction =
+            this_job && job.total > 0.0 ? std::clamp(job.done / job.total, 0.0, 1.0) : 0.0;
+        const float progress = installing ? static_cast<float>(job.install_percent) / 100.0f
+                                          : static_cast<float>(fraction);
+
+        std::string state = place > 0 ? std::string(tr("Waiting")) + " \xC2\xB7 #" + std::to_string(place)
+                                      : std::string(tr("Update available"));
+        ui::Color state_ink = ui::color::text2;
+        if (this_job)
+        {
+            if (job.phase == "preparing")
+                state = tr("Preparing the download\xE2\x80\xA6");
+            else if (job.phase == "downloading")
+                state = tr("Downloading");
+            else if (job.phase == "verifying")
+                state = tr("Checking the downloaded files\xE2\x80\xA6");
+            else if (job.phase == "installing")
+                state = tr("Installing");
+            else if (job.phase == "installed")
+                state = tr("Installed");
+            else if (job.phase == "paused")
+                state = tr("Paused");
+            else if (job.phase == "cancelled")
+                state = tr("Cancelled");
+            else if (job.phase == "downloaded")
+                state = tr("Downloaded");
+            else
+                state = tr("Update failed");
+            if (job.phase == "failed")
+                state_ink = ui::color::bad;
+            else if (job.phase == "installed")
+                state_ink = ui::color::ok;
+            else if (job.active)
+                state_ink = ui::Color::rgb(0xd0d0d0);
+        }
+        const float state_width = type.regular.measure(state, 16.0f);
+        ui::text(list, type.regular, state, right_edge, row.y + kRowPad + 21.0f, 16.0f, state_ink,
                  ui::Align::right);
+        ui::text_fit(list, type.medium, game.name.empty() ? game.title_id : game.name, tx,
+                     row.y + kRowPad + 22.0f, 23.0f, info_width - state_width - 24.0f, ui::color::text);
         const std::string versions =
+            game.title_id + " \xC2\xB7 " +
             tr("Installed {version}", {{"version", game.installed.empty() ? std::string("?") : game.installed}}) +
             "  \xE2\x86\x92  " + tr("Available {version}", {{"version", game.version}});
-        ui::text(list, type.regular, versions, tx, row.y + 92.0f, 20.0f, ui::color::text2);
-        if (game.size > 0.0)
+        ui::text_fit(list, type.regular, versions, tx, row.y + kRowPad + 51.0f, 16.0f, info_width,
+                     ui::color::text3);
+
+        ui::progress_bar(list, {tx, row.y + kRowPad + 74.0f, info_width, 6.0f}, progress,
+                         job.phase == "failed" && this_job ? ui::color::bad
+                         : job.phase == "installed" && this_job ? ui::color::ok
+                                                                : ui::color::action);
+        const double received = this_job ? job.done : 0.0;
+        const double total_bytes = this_job && job.total > 0.0 ? job.total : game.size;
+        const std::string left =
+            installing ? std::string(tr("Installing")) + " \xC2\xB7 " + std::to_string(job.install_percent) + "%"
+                       : format_bytes(received) + " / " + format_bytes(total_bytes) + " \xC2\xB7 " +
+                             i18n::percent(fraction * 100.0);
+        const float transfer_y = row.y + kRowPad + 104.0f;
+        ui::text(list, type.regular, left, tx, transfer_y, 16.0f, ui::color::text3);
+        std::string right;
+        if (this_job && (job.phase == "failed" || (job.phase == "downloaded" && !job.error.empty())))
         {
-            // The size sits under the title ID, at the right edge, after a drive icon.
-            const float width = ui::text(list, type.regular, format_bytes(game.size), right_edge, row.y + 92.0f,
-                                         20.0f, ui::color::text2, ui::Align::right);
-            ui::icon_storage(list, right_edge - width - 26.0f, row.y + 85.0f, 40.0f, ui::color::text2);
+            ui::text_fit(list, type.regular, explained(job), right_edge, transfer_y, 16.0f, 620.0f,
+                         ui::color::bad, ui::Align::right);
         }
-        const GameUpdateJob &job = status.job;
-        const bool this_job = job.present && job.title_id == game.title_id;
-        if (this_job && !job.phase.empty())
+        else
         {
-            const double fraction = job.total > 0.0 ? std::clamp(job.done / job.total, 0.0, 1.0) : 0.0;
-            char percent[16];
-            std::snprintf(percent, sizeof(percent), "%d", static_cast<int>(fraction * 100.0));
-            std::string line;
-            if (job.phase == "preparing")
-                line = tr("Preparing the download\xE2\x80\xA6");
-            else if (job.phase == "downloading")
-                line = tr("Downloading {percent}% \xC2\xB7 {speed}",
-                          {{"percent", percent}, {"speed", format_bytes(job.speed) + "/s"}});
-            else if (job.phase == "verifying")
-                line = tr("Checking the downloaded files\xE2\x80\xA6");
-            else if (job.phase == "installing")
-                line = tr("Installing {percent}%", {{"percent", std::to_string(job.install_percent)}});
-            else if (job.phase == "installed")
-                line = tr("Installed");
-            else if (job.phase == "downloaded")
-                line = job.error.empty() ? std::string(tr("Downloaded")) : explained(job);
-            else if (job.phase == "paused")
-                line = std::string(tr("Paused")) + " \xC2\xB7 " + percent + "%";
-            else if (job.phase == "cancelled")
-                line = tr("Cancelled");
+            if (running && job.speed > 0.0)
+            {
+                const double minutes = std::ceil((job.total - job.done) / job.speed / 60.0);
+                right = tr("{speed}/s \xC2\xB7 {minutes} min remaining",
+                           {{"speed", format_bytes(job.speed)}, {"minutes", i18n::count(static_cast<long>(minutes))}});
+            }
             else
-                line = tr("Update failed: {error}", {{"error", explained(job)}});
-            ui::text(list, type.regular, line, tx, row.y + 122.0f, 18.0f, ui::color::text2);
-            if (job.phase == "downloading" || job.phase == "verifying" || job.phase == "paused")
-                ui::progress_bar(list, {tx, row.y + row.h - 22.0f, right_edge - tx - 360.0f, 6.0f},
-                                 static_cast<float>(fraction), ui::color::text);
-            else if (job.phase == "installing")
-                ui::progress_bar(list, {tx, row.y + row.h - 22.0f, right_edge - tx - 360.0f, 6.0f},
-                                 static_cast<float>(job.install_percent) / 100.0f, ui::color::text);
+            {
+                right = tr("{size} remaining", {{"size", format_bytes(std::max(0.0, total_bytes - received))}});
+            }
+            ui::text(list, type.regular, right, right_edge, transfer_y, 16.0f, ui::color::text3,
+                     ui::Align::right);
         }
-        else if (const int place = queue_place(status, game.title_id); place > 0)
-            ui::text(list, type.regular, std::string(tr("Waiting")) + " \xC2\xB7 #" + std::to_string(place), tx,
-                     row.y + 122.0f, 18.0f, ui::color::text2);
-        else if (game.blocked)
-            ui::text(list, type.regular,
-                     tr("Needs firmware {firmware} or later", {{"firmware", game.firmware}}), tx,
-                     row.y + 122.0f, 18.0f, ui::color::text3);
+
+        // Small buttons, always shown; the first one of the focused row rings.
+        std::vector<std::string> actions;
+        if (paused)
+            actions = {tr("Resume"), tr("Cancel")};
+        else if (running)
+            actions = {tr("Pause"), tr("Cancel")};
+        else if (place > 0)
+            actions = {tr("Remove from queue")};
+        else if (!installing)
+            actions = {status.job.active || status.job.phase == "paused" ? tr("Add to queue") : tr("Download")};
+        float ax = tx;
+        for (std::size_t a = 0; a < actions.size(); ++a)
+        {
+            const float width = type.medium.measure(actions[a], 16.0f) + 2.0f * 22.0f;
+            const bool on = focused && bar_ < 0 && i == row_ && a == 0;
+            ui::button(list, type, {ax, row.y + kRowPad + 128.0f, width, 38.0f}, actions[a],
+                       on ? ui::ButtonKind::primary : ui::ButtonKind::secondary, on ? 1.0f : 0.0f, true, 16.0f);
+            ax += width + 12.0f;
+        }
     }
     list.pop_clip();
 }
