@@ -27,6 +27,7 @@ constexpr float kListTop = 284.0f;
 constexpr float kRowHeight = 210.0f;
 constexpr float kRowGap = 8.0f;
 constexpr float kRowWidth = 1400.0f;
+constexpr float kRowLeft = (1920.0f - kRowWidth) * 0.5f; // the list sits in the middle of the screen, as Game updates
 constexpr float kRowPad = 22.0f;
 constexpr float kCover = 130.0f;
 constexpr float kInfoWidth = kRowWidth - 2 * kRowPad - kCover - 28.0f;
@@ -522,7 +523,7 @@ void DownloadsScreen::draw(Frame &frame, bool focused) const
         const auto location = location_lines(job, type);
         const float extra_height = location_height(location);
         const ui::Rect row{
-            ui::kGutter, kListTop + row_offset - scroll_.value,
+            kRowLeft, kListTop + row_offset - scroll_.value,
             kRowWidth, kRowHeight + extra_height};
         row_offset += row.h + kRowGap;
         if (row.y > 1080.0f || row.y + row.h < 0.0f)
