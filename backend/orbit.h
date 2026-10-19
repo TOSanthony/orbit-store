@@ -24,7 +24,7 @@
 #define ORBIT_VERSION "1.2.0"
 /* API revisions: raise one by 1 whenever that API gains or changes an
  * endpoint, a field or a behaviour. Shown in the TV app's More settings. */
-#define ORBIT_API_GAME_UPDATES 5
+#define ORBIT_API_GAME_UPDATES 6
 #define ORBIT_API_ARTWORK 2
 #define ORBIT_SOURCE_NOTICE_VERSION 1
 #define ORBIT_SOURCE_ARCHIVE 1U

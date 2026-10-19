@@ -41,6 +41,7 @@ static struct {
     size_t count;
     size_t failed;
     size_t ps4_seen, ps4_offered;
+    char seen[1600];       /* every PS5 game checked: installed version and the newest one Sony lists */
     char no_uri[200];      /* PS5 games with no update list address in app.db or param.json */
     char ps4_skipped[200]; /* PS4 games whose installed version could not be read, with what app.db holds */
 } gu = {.mutex = PTHREAD_MUTEX_INITIALIZER, .changed = PTHREAD_COND_INITIALIZER};
@@ -181,6 +182,7 @@ static void run_check(void) {
     size_t total = 0, count = 0, failed = 0, ps4_seen = 0, ps4_offered = 0;
     char ps4_skipped[200] = "";
     char no_uri[200] = "";
+    char seen[1600] = "";
     char first_failure[200] = "";
     if (appdb_read(path, games, MAX_GAMES, &total, error, sizeof error) < 0) {
         char text[200];
@@ -249,6 +251,15 @@ static void run_check(void) {
                     snprintf(first_failure, sizeof first_failure, "%s: not a Sony update list", game->title_id);
                 failed++;
                 continue;
+            }
+            {
+                char newest[16] = "-";
+                for (int k = 0; k < n; k++)
+                    if (strcmp(list[k].version, newest) > 0 || newest[0] == '-')
+                        copy_text(newest, sizeof newest, list[k].version);
+                size_t used = strlen(seen);
+                snprintf(seen + used, sizeof seen - used, "%s%s %s>%s(%d)", used ? "; " : "", game->title_id,
+                         installed[0] ? installed : "?", newest, n);
             }
             patchfeed_choice choice = patchfeed_choose(list, (size_t)n,
                                                        patchfeed_version_valid(installed) ? installed : "",
@@ -334,6 +345,7 @@ static void run_check(void) {
     gu.ps4_offered = ps4_offered;
     copy_text(gu.ps4_skipped, sizeof gu.ps4_skipped, ps4_skipped);
     copy_text(gu.no_uri, sizeof gu.no_uri, no_uri);
+    copy_text(gu.seen, sizeof gu.seen, seen);
     copy_text(gu.detail, sizeof gu.detail, first_failure);
     gu.checked = time(NULL);
     gu.error[0] = 0;
@@ -507,6 +519,7 @@ cJSON *gameupdates_status(void) {
     cJSON_AddNumberToObject(ps4, "offered", (double)gu.ps4_offered);
     cJSON_AddStringToObject(ps4, "unreadableVersion", gu.ps4_skipped);
     cJSON_AddStringToObject(o, "noUpdateAddress", gu.no_uri);
+    cJSON_AddStringToObject(o, "seen", gu.seen);
     pthread_mutex_unlock(&gu.mutex);
     cJSON_AddNumberToObject(o, "count", available);
     cJSON_AddItemToObject(o, "games", games);
