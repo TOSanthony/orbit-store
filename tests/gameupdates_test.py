@@ -12,6 +12,8 @@ SERVED = {  # basename -> version.xml
     "PPSA00003-version.xml": TEMPLATE % dict(id="PPSA00003", ver="02.000.000", fw=0x11000000),
     "PPSA00005-version.xml": TEMPLATE % dict(id="PPSA00005", ver="01.000.000", fw=0x10200006),
     "PPSA00006-version.xml": "not xml at all",
+    "PPSA00007-version.xml": TEMPLATE % dict(id="PPSA00007", ver="02.000.000", fw=0x10200006),
+    "PPSA00008-version.xml": TEMPLATE % dict(id="PPSA00008", ver="02.000.000", fw=0x10200006),
 }
 import hashlib, re
 BIN = {}        # path -> bytes (patch pieces and manifests)
@@ -271,6 +273,30 @@ with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as dri
     BEHAVE["PPSA00001-piece1.pkg"] = "hang-once"
     s = run(root, "10200000", "PPSA00001", drive, pause="cancel-active")
     check("cancelling a running update deletes its partial download", s.get("phase") == "cancelled" and not [n for n in os.listdir(drive + "/homebrew") if n.startswith(".") or n.endswith(".pkg")])
+
+# ---- games app.db cannot describe: no update address (disc install) or not written yet ----
+with tempfile.TemporaryDirectory() as root:
+    build(root, [(1, "05.000.000")], {})
+    con = sqlite3.connect(root + "/system_data/priv/mms/app.db")
+    con.execute("INSERT INTO tbl_contentinfo VALUES ('PPSA00007','Disc game','{\"CONTENT_VERSION\":\"01.000.000\"}')")
+    con.commit(); con.close()
+    def param(i, extra):
+        d = root + "/user/appmeta/PPSA%05d" % i
+        os.makedirs(d, exist_ok=True)
+        json.dump(dict({"contentVersion": "01.000.000", "versionFileUri":
+                        "https://sgst.prod.dl.playstation.net/sgst/prod/00/np/PPSA%05d_00/PPSA%05d-version.xml" % (i, i)}, **extra),
+                  open(d + "/param.json", "w"))
+    param(7, {})
+    param(8, {"titleId": "PPSA00008", "localizedParameters": {"defaultLanguage": "en-US", "en-US": {"titleName": "Fresh install"}}})
+    s = run(root, "10200000")
+    games = {g["titleId"]: g for g in s["games"]}
+    check("a game with no update address in app.db uses param.json's", games.get("PPSA00007", {}).get("version") == "02.000.000")
+    check("a game missing from app.db is found in appmeta", games.get("PPSA00008", {}).get("version") == "02.000.000"
+          and games["PPSA00008"]["name"] == "Fresh install")
+    check("nothing is reported as lacking an update address", s.get("noUpdateAddress") == "")
+    os.remove(root + "/user/appmeta/PPSA00007/param.json")
+    s = run(root, "10200000")
+    check("a game with no update address anywhere is named in the status", "PPSA00007" in s.get("noUpdateAddress", ""))
 
 # ---- the queue ----
 with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as drive:

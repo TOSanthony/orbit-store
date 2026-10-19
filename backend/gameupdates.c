@@ -8,6 +8,7 @@
 #include "patchfeed.h"
 #include "patchmanifest.h"
 #include "sonynet.h"
+#include <dirent.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,6 +41,7 @@ static struct {
     size_t count;
     size_t failed;
     size_t ps4_seen, ps4_offered;
+    char no_uri[200];      /* PS5 games with no update list address in app.db or param.json */
     char ps4_skipped[200]; /* PS4 games whose installed version could not be read, with what app.db holds */
 } gu = {.mutex = PTHREAD_MUTEX_INITIALIZER, .changed = PTHREAD_COND_INITIALIZER};
 
@@ -99,6 +101,67 @@ bool gameupdates_check_ok(void) {
     pthread_mutex_unlock(&gu.mutex);
     return ok;
 }
+/* What the console keeps for an installed game in /user/appmeta/<id>/param.json: it is written
+ * at once after an install, while app.db can lag behind. Fills what app.db did not give. */
+static bool read_param(const char *title_id, appdb_game *g) {
+    char path[1100];
+    snprintf(path, sizeof path, "%s/user/appmeta/%s/param.json", orbit.system_root, title_id);
+    unsigned char *data = NULL;
+    size_t length = 0;
+    if (read_regular_file(path, 256 * 1024, &data, &length))
+        return false;
+    cJSON *json = cJSON_ParseWithLength((const char *)data, length);
+    free(data);
+    if (!json)
+        return false;
+    if (!g->title_id[0])
+        copy_text(g->title_id, sizeof g->title_id, title_id);
+    if (!g->version_file_uri[0]) {
+        const char *uri = json_text(json, "versionFileUri");
+        if (uri[0] && strlen(uri) < sizeof g->version_file_uri)
+            copy_text(g->version_file_uri, sizeof g->version_file_uri, uri);
+    }
+    if (!g->content_version[0]) {
+        const char *version = json_text(json, "contentVersion");
+        if (version[0] && strlen(version) < sizeof g->content_version)
+            copy_text(g->content_version, sizeof g->content_version, version);
+    }
+    if (!g->title_name[0]) {
+        const cJSON *all = cJSON_GetObjectItemCaseSensitive(json, "localizedParameters");
+        const char *language = json_text(all, "defaultLanguage");
+        const cJSON *one = language[0] ? cJSON_GetObjectItemCaseSensitive(all, language) : NULL;
+        const char *name = one ? json_text(one, "titleName") : "";
+        if (name[0])
+            copy_text(g->title_name, sizeof g->title_name, name);
+    }
+    cJSON_Delete(json);
+    return true;
+}
+/* Games installed since app.db was last written are missing from it: add them from appmeta. */
+static size_t add_unlisted_games(appdb_game *games, size_t total, size_t cap) {
+    char path[600];
+    snprintf(path, sizeof path, "%s/user/appmeta", orbit.system_root);
+    DIR *dir = opendir(path);
+    if (!dir)
+        return total;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) && total < cap) {
+        const char *name = entry->d_name;
+        if (strlen(name) != 9 || (strncmp(name, "PPSA", 4) && strncmp(name, "CUSA", 4)))
+            continue;
+        bool known = false;
+        for (size_t i = 0; i < total && !known; i++)
+            known = !strcmp(games[i].title_id, name);
+        if (known)
+            continue;
+        appdb_game g;
+        memset(&g, 0, sizeof g);
+        if (read_param(name, &g) && g.content_version[0])
+            games[total++] = g;
+    }
+    closedir(dir);
+    return total;
+}
 static void set_error(const char *text) {
     pthread_mutex_lock(&gu.mutex);
     copy_text(gu.error, sizeof gu.error, text);
@@ -117,6 +180,7 @@ static void run_check(void) {
     }
     size_t total = 0, count = 0, failed = 0, ps4_seen = 0, ps4_offered = 0;
     char ps4_skipped[200] = "";
+    char no_uri[200] = "";
     char first_failure[200] = "";
     if (appdb_read(path, games, MAX_GAMES, &total, error, sizeof error) < 0) {
         char text[200];
@@ -126,6 +190,7 @@ static void run_check(void) {
         free(found);
         return;
     }
+    total = add_unlisted_games(games, total, MAX_GAMES);
     cJSON *saved = NULL;
     {
         char *saved_text = NULL;
@@ -139,7 +204,7 @@ static void run_check(void) {
         }
     }
     for (size_t i = 0; i < total && !stopping(); i++) {
-        const appdb_game *game = &games[i];
+        appdb_game *game = &games[i];
         /* PS5 titles: Sony's version.xml is the format patchfeed reads. PS4 titles have no such list
          * here; only an update .pkg on the person's NAS can offer them an update. */
         bool ps4 = !strncmp(game->title_id, "CUSA", 4);
@@ -151,8 +216,19 @@ static void run_check(void) {
                          *game->content_version ? game->content_version : "?");
                 continue;
             }
-        } else if (strncmp(game->title_id, "PPSA", 4) || !*game->version_file_uri)
+        } else if (strncmp(game->title_id, "PPSA", 4))
             continue;
+        else if (!*game->version_file_uri) {
+            /* app.db has no update list address for it (a disc install, say): param.json may. */
+            appdb_game fill = *game;
+            read_param(game->title_id, &fill);
+            if (!*fill.version_file_uri) {
+                size_t used = strlen(no_uri);
+                snprintf(no_uri + used, sizeof no_uri - used, "%s%s", used ? " " : "", game->title_id);
+                continue;
+            }
+            copy_text(game->version_file_uri, sizeof game->version_file_uri, fill.version_file_uri);
+        }
         char installed[16];
         installed_version(game->title_id, game->content_version, installed, sizeof installed);
         Entry *e = NULL;
@@ -257,6 +333,7 @@ static void run_check(void) {
     gu.ps4_seen = ps4_seen;
     gu.ps4_offered = ps4_offered;
     copy_text(gu.ps4_skipped, sizeof gu.ps4_skipped, ps4_skipped);
+    copy_text(gu.no_uri, sizeof gu.no_uri, no_uri);
     copy_text(gu.detail, sizeof gu.detail, first_failure);
     gu.checked = time(NULL);
     gu.error[0] = 0;
@@ -429,6 +506,7 @@ cJSON *gameupdates_status(void) {
     cJSON_AddNumberToObject(ps4, "installed", (double)gu.ps4_seen);
     cJSON_AddNumberToObject(ps4, "offered", (double)gu.ps4_offered);
     cJSON_AddStringToObject(ps4, "unreadableVersion", gu.ps4_skipped);
+    cJSON_AddStringToObject(o, "noUpdateAddress", gu.no_uri);
     pthread_mutex_unlock(&gu.mutex);
     cJSON_AddNumberToObject(o, "count", available);
     cJSON_AddItemToObject(o, "games", games);
