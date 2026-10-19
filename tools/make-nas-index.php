@@ -800,6 +800,8 @@ if (is_file($indexFile)) {
                 'title' => $s('title') ?: $s('filename'),
                 'titleId' => $s('titleId'),
                 'filename' => $s('filename'),
+                'packTitle' => $s('packTitle'),
+                'label' => $s('label'),
                 'path' => rawurldecode($s('path') ?: $s('url')),
                 'size' => (int)($r['sizeBytes'] ?? 0),
                 'format' => $s('format') ?: '—',
@@ -952,6 +954,7 @@ ul.files .fmt{font-weight:600;color:var(--accent);white-space:nowrap}
 .pbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .6s linear}
 .pbox .chk{display:flex;gap:.5rem;align-items:center}
 ul.files .fn{word-break:break-all}
+ul.files .fn small{display:block;color:var(--dim);font-size:.75rem}
 ul.files .sz{color:var(--dim);white-space:nowrap}
 dl{display:grid;grid-template-columns:max-content 1fr;gap:.35rem 1rem;margin:0 1.4rem;font-size:.9rem}
 dt{color:var(--dim)}dd{margin:0;word-break:break-all}
@@ -1104,7 +1107,7 @@ summary{cursor:pointer;font-weight:600}
   all.forEach((g) => {
     g.size = g.files.reduce((a, f) => a + f.size, 0);
     g.formats = [...new Set(g.files.map((f) => f.format))];
-    g.search = (g.title + ' ' + g.titleId + ' ' + g.files.map((f) => f.filename).join(' ')).toLowerCase();
+    g.search = (g.title + ' ' + g.titleId + ' ' + g.files.map((f) => f.filename + ' ' + f.packTitle + ' ' + f.label).join(' ')).toLowerCase();
   });
   const sortTitle = (a, b) => a.title.localeCompare(b.title, 'fr', { sensitivity: 'base' });
   // Plateformes affichées : les deux, PS5 seulement ou PS4 seulement (retenu dans ce navigateur).
@@ -1287,6 +1290,12 @@ summary{cursor:pointer;font-weight:600}
 
   // ---- Fiche ----
   const dlg = $('dlg');
+  function fileName(f) {
+    const span = el('span', 'fn');
+    if (!f.packTitle) { span.textContent = f.filename; return span; }
+    span.append(f.packTitle, el('small', null, [f.label, f.filename].filter(Boolean).join(' · ')));
+    return span;
+  }
   function openGame(g) {
     $('dHero').style.backgroundImage = g.heroReal ? cssUrl(g.hero) : g.hero ? cssUrl(g.hero) : '';
     $('dArt').replaceWith(Object.assign(picture(g, false), { id: 'dArt' }));
@@ -1297,7 +1306,7 @@ summary{cursor:pointer;font-weight:600}
     $('dFilesTitle').textContent = files.length > 1 ? 'Fichiers (' + files.length + ')' : 'Fichier';
     $('dFiles').replaceChildren(...files.map((f) => {
       const li = el('li'); li.title = f.path;
-      li.append(el('span', 'fmt', f.format + (f.compression ? ' · ' + f.compression : '')), el('span', 'fn', f.filename),
+      li.append(el('span', 'fmt', f.format + (f.compression ? ' · ' + f.compression : '')), fileName(f),
         el('span', 'sz', [f.version && 'v' + f.version, bytes(f.size)].filter(Boolean).join(' · ')));
       return li;
     }));

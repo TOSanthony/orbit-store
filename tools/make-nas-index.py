@@ -1021,6 +1021,8 @@ def main() -> int:
             row["contentId"] = pkg["contentId"]
             if pack == "DLC":
                 row["label"] = pkg["label"]
+                if pkg["title"]:
+                    row["packTitle"] = pkg["title"]      # the DLC's own name; "title" is shared by the whole pack
                 art_id = f"{title_id}_{pkg['label']}"
                 own_title = bool(pkg["title"]) and not extra.get("title")
         if suffix in ARCHIVES:
