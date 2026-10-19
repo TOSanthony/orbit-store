@@ -39,6 +39,8 @@ static struct {
     Entry *entries;
     size_t count;
     size_t failed;
+    size_t ps4_seen, ps4_offered;
+    char ps4_skipped[200]; /* PS4 games whose installed version could not be read, with what app.db holds */
 } gu = {.mutex = PTHREAD_MUTEX_INITIALIZER, .changed = PTHREAD_COND_INITIALIZER};
 
 static bool stopping(void) {
@@ -85,7 +87,8 @@ static void run_check(void) {
         set_error("Not enough memory to check for updates.");
         return;
     }
-    size_t total = 0, count = 0, failed = 0;
+    size_t total = 0, count = 0, failed = 0, ps4_seen = 0, ps4_offered = 0;
+    char ps4_skipped[200] = "";
     char first_failure[200] = "";
     if (appdb_read(path, games, MAX_GAMES, &total, error, sizeof error) < 0) {
         char text[200];
@@ -112,8 +115,15 @@ static void run_check(void) {
         /* PS5 titles: Sony's version.xml is the format patchfeed reads. PS4 titles have no such list
          * here; only an update .pkg on the person's NAS can offer them an update. */
         bool ps4 = !strncmp(game->title_id, "CUSA", 4);
-        if (ps4 ? !patchfeed_app_version_valid(game->content_version)
-                : strncmp(game->title_id, "PPSA", 4) || !*game->version_file_uri)
+        if (ps4) {
+            ps4_seen++;
+            if (!patchfeed_app_version_valid(game->content_version)) {
+                size_t used = strlen(ps4_skipped);
+                snprintf(ps4_skipped + used, sizeof ps4_skipped - used, "%s%s=%s", used ? " " : "", game->title_id,
+                         *game->content_version ? game->content_version : "?");
+                continue;
+            }
+        } else if (strncmp(game->title_id, "PPSA", 4) || !*game->version_file_uri)
             continue;
         char installed[16];
         installed_version(game->title_id, game->content_version, installed, sizeof installed);
@@ -188,6 +198,8 @@ static void run_check(void) {
             e->blocked = false;
             e->needs[0] = 0;
             e->size = nas_size;
+            if (ps4)
+                ps4_offered++;
         }
         if (e && !e->blocked && strncmp(e->manifest, "nas:", 4)) {
             /* The size is only in the manifest; a failure here just leaves the size out. */
@@ -214,6 +226,9 @@ static void run_check(void) {
     gu.entries = found;
     gu.count = count;
     gu.failed = failed;
+    gu.ps4_seen = ps4_seen;
+    gu.ps4_offered = ps4_offered;
+    copy_text(gu.ps4_skipped, sizeof gu.ps4_skipped, ps4_skipped);
     copy_text(gu.detail, sizeof gu.detail, first_failure);
     gu.checked = time(NULL);
     gu.error[0] = 0;
@@ -341,6 +356,10 @@ cJSON *gameupdates_status(void) {
     cJSON_AddNumberToObject(o, "failed", (double)gu.failed);
     cJSON_AddStringToObject(o, "error", gu.error);
     cJSON_AddStringToObject(o, "detail", gu.detail);
+    cJSON *ps4 = cJSON_AddObjectToObject(o, "ps4");
+    cJSON_AddNumberToObject(ps4, "installed", (double)gu.ps4_seen);
+    cJSON_AddNumberToObject(ps4, "offered", (double)gu.ps4_offered);
+    cJSON_AddStringToObject(ps4, "unreadableVersion", gu.ps4_skipped);
     pthread_mutex_unlock(&gu.mutex);
     cJSON_AddNumberToObject(o, "count", available);
     cJSON_AddItemToObject(o, "games", games);
