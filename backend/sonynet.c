@@ -269,8 +269,8 @@ bool sony_get(const char *url, size_t max, SonyBody *body, sony_stop_fn stop, ch
 }
 
 /* The connection kept between the slices of one download: opening a new one for each slice costs a
- * TCP and TLS handshake and restarts the transfer's slow start. Only the download thread uses it. */
-static CURL *held;
+ * TCP and TLS handshake and restarts the transfer's slow start. Each download thread has its own. */
+static __thread CURL *held; /* one per thread: parallel slices each keep their own */
 void sony_range_close(void) {
     if (held) {
         curl_easy_cleanup(held);

@@ -53,7 +53,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.connection.close(); return
         self.wfile.write(chunk)
     def log_message(self, *a): pass
-server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 
 def uri(i):
@@ -251,6 +251,28 @@ with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as dri
     s = run(root, "10200000", "PPSA00001", None)
     check("no drive with room fails cleanly", s.get("phase") == "failed" and "space" in s.get("error", ""))
 
+# ---- pieces larger than one slice are fetched over several connections ----
+with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as drive:
+    build(root, [(1, "05.000.000")], {})
+    payload = make_patch("PPSA00001", [10_000_000, 9_000_001, 3000])
+    final = drive + "/homebrew/PPSA00001-v06.005.000.pkg"
+    LOG.clear()
+    s = run(root, "10200000", "PPSA00001", drive)
+    check("big pieces are split over several requests and the file is intact",
+          s.get("phase") == "downloaded" and open(final, "rb").read() == payload
+          and LOG.count("PPSA00001-piece0.pkg") >= 3 and LOG.count("PPSA00001-piece1.pkg") >= 3)
+    os.remove(final)
+    BEHAVE["PPSA00001-piece0.pkg"] = "drop-once"
+    s = run(root, "10200000", "PPSA00001", drive)
+    check("a connection dropped in one slice is retried and the file is intact",
+          s.get("phase") == "downloaded" and open(final, "rb").read() == payload)
+    os.remove(final)
+    BEHAVE["PPSA00001-piece1.pkg"] = "bad-once"
+    s = run(root, "10200000", "PPSA00001", drive)
+    check("a big piece that fails its checksum is downloaded again while the next one goes on",
+          s.get("phase") == "downloaded" and open(final, "rb").read() == payload)
+    BEHAVE.clear()
+
 # ---- pause, resume and cancel ----
 with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as drive:
     build(root, [(1, "05.000.000")], {})
@@ -273,6 +295,18 @@ with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as dri
     BEHAVE["PPSA00001-piece1.pkg"] = "hang-once"
     s = run(root, "10200000", "PPSA00001", drive, pause="cancel-active")
     check("cancelling a running update deletes its partial download", s.get("phase") == "cancelled" and not [n for n in os.listdir(drive + "/homebrew") if n.startswith(".") or n.endswith(".pkg")])
+
+# ---- pause and resume with a piece split into slices ----
+with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as drive:
+    build(root, [(1, "05.000.000")], {})
+    payload = make_patch("PPSA00001", [12_000_000, 20000])
+    final = drive + "/homebrew/PPSA00001-v06.005.000.pkg"
+    BEHAVE["PPSA00001-piece0.pkg"] = "hang-once"
+    s = run(root, "10200000", "PPSA00001", drive, pause="pause")
+    check("pausing a sliced piece keeps it paused", s.get("phase") == "paused")
+    BEHAVE.clear()
+    s = run(root, "10200000", "PPSA00001", drive, pause="resume")
+    check("resuming a sliced piece gives the exact file", s.get("phase") == "downloaded" and open(final, "rb").read() == payload)
 
 # ---- games app.db cannot describe: no update address (disc install) or not written yet ----
 with tempfile.TemporaryDirectory() as root:

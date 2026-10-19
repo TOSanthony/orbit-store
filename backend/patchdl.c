@@ -245,82 +245,263 @@ static void wait_seconds(unsigned seconds) {
         sleep(1);
 }
 
-/* Downloads what is missing of piece i in slices, so progress and the stop flag move steadily. */
+/* Downloads what is missing of piece i over several connections at once. The rest of the piece is cut
+ * into slices; each connection takes the next slice, so one connection's speed limit no longer caps the
+ * download. What is kept for a resume is the contiguous part from the start, as before: a slice that
+ * finished beyond a gap is fetched again, which costs at most the slices that were in flight. */
+#define PARALLEL_STREAMS 4
+#define SLICE_BYTES (4LL * 1024 * 1024)
+#define SLICE_RETRIES 3
+
+static atomic_bool fan_failed;
+static bool fan_stop(void) {
+    return stopped() || atomic_load(&fan_failed);
+}
+
+typedef struct {
+    PatchJob *job;
+    const patchmanifest_piece *piece;
+    int64_t base;                   /* where the first slice starts inside the piece */
+    size_t slices;
+    volatile int64_t *reached;      /* per slice: the position reached inside the piece */
+    atomic_bool *finished;          /* per slice */
+    atomic_size_t next;
+    atomic_int alive;
+    pthread_mutex_t mutex;          /* guards the first error */
+    sony_range_result result;
+    char why[120];
+} Fan;
+
+static int64_t slice_start(const Fan *fan, size_t k) {
+    return fan->base + (int64_t)k * SLICE_BYTES;
+}
+static int64_t slice_end(const Fan *fan, size_t k) {
+    int64_t end = slice_start(fan, k) + SLICE_BYTES;
+    return end < fan->piece->size ? end : fan->piece->size;
+}
+
+static void fan_fail(Fan *fan, sony_range_result r, const char *why) {
+    pthread_mutex_lock(&fan->mutex);
+    /* A real error beats the "aborted" the other connections report once one has failed. */
+    if (fan->result == SONY_RANGE_OK || (fan->result == SONY_RANGE_ABORTED && r != SONY_RANGE_ABORTED)) {
+        fan->result = r;
+        snprintf(fan->why, sizeof fan->why, "%s", why);
+    }
+    pthread_mutex_unlock(&fan->mutex);
+    atomic_store(&fan_failed, true);
+}
+
+static void *fan_worker(void *context) {
+    Fan *fan = context;
+    PatchJob *job = fan->job;
+    char why[120] = "";
+    for (;;) {
+        size_t k = atomic_fetch_add(&fan->next, 1);
+        if (k >= fan->slices || fan_stop())
+            break;
+        unsigned tries = 0;
+        for (;;) {
+            volatile int64_t *position = &fan->reached[k];
+            sony_range_result r =
+                job->nas ? nas_range(job->nas_url, *position, slice_end(fan, k), job->fd, fan->piece->offset,
+                                     position, fan_stop, why, sizeof why)
+                         : sony_range(fan->piece->url, *position, slice_end(fan, k), job->fd, fan->piece->offset,
+                                      position, fan_stop, why, sizeof why);
+            if (r == SONY_RANGE_OK) {
+                atomic_store(&fan->finished[k], true);
+                break;
+            }
+            if (r == SONY_RANGE_FAILED && ++tries <= SLICE_RETRIES && !fan_stop()) {
+                sleep(1); /* a hiccup on one connection: try that slice again from where it stopped */
+                continue;
+            }
+            fan_fail(fan, r, why);
+            goto out;
+        }
+    }
+out:
+    sony_range_close();
+    atomic_fetch_sub(&fan->alive, 1);
+    return NULL;
+}
+
 static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, char *why, size_t why_cap) {
     const patchmanifest_piece *piece = &job->manifest.pieces[i];
-    sony_range_result r = SONY_RANGE_OK;
-    while (job->written[i] < piece->size) {
-        int64_t start = job->written[i];
-        int64_t end = start + 8LL * 1024 * 1024 < piece->size ? start + 8LL * 1024 * 1024 : piece->size;
-        volatile int64_t position = start;
-        r = job->nas ? nas_range(job->nas_url, start, end, job->fd, piece->offset, &position, stopped, why, why_cap)
-                     : sony_range(piece->url, start, end, job->fd, piece->offset, &position, stopped, why, why_cap);
-        job->written[i] = r == SONY_RANGE_IGNORED ? 0 : position;
-        if (r != SONY_RANGE_OK)
-            return r;
+    if (job->written[i] >= piece->size)
+        return SONY_RANGE_OK;
+    Fan fan = {.job = job, .piece = piece, .base = job->written[i], .result = SONY_RANGE_OK};
+    fan.slices = (size_t)((piece->size - fan.base + SLICE_BYTES - 1) / SLICE_BYTES);
+    fan.reached = calloc(fan.slices, sizeof *fan.reached);
+    fan.finished = calloc(fan.slices, sizeof *fan.finished);
+    if (!fan.reached || !fan.finished) {
+        free((void *)fan.reached);
+        free(fan.finished);
+        snprintf(why, why_cap, "not enough memory");
+        return SONY_RANGE_FAILED;
+    }
+    for (size_t k = 0; k < fan.slices; k++)
+        fan.reached[k] = slice_start(&fan, k);
+    atomic_store(&fan.next, 0);
+    atomic_store(&fan_failed, false);
+    pthread_mutex_init(&fan.mutex, NULL);
+
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 512 * 1024);
+    pthread_t threads[PARALLEL_STREAMS];
+    size_t started = 0, wanted = fan.slices < PARALLEL_STREAMS ? fan.slices : PARALLEL_STREAMS;
+    atomic_store(&fan.alive, (int)wanted);
+    for (; started < wanted; started++)
+        if (pthread_create(&threads[started], &attr, fan_worker, &fan))
+            break;
+    pthread_attr_destroy(&attr);
+    if (started < wanted) {
+        atomic_fetch_sub(&fan.alive, (int)(wanted - started));
+        if (started == 0) {
+            /* No thread at all: nothing could run. */
+            fan_fail(&fan, SONY_RANGE_FAILED, "could not start the download");
+        }
+    }
+
+    while (atomic_load(&fan.alive) > 0) {
+        nanosleep(&(struct timespec){.tv_nsec = 200 * 1000000L}, NULL);
+        int64_t prefix = fan.base, received = 0;
+        bool gap = false;
+        for (size_t k = 0; k < fan.slices; k++) {
+            int64_t reached = atomic_load(&fan.finished[k]) ? slice_end(&fan, k) : fan.reached[k];
+            received += reached - slice_start(&fan, k);
+            if (!gap) {
+                prefix = reached;
+                gap = reached < slice_end(&fan, k);
+            }
+        }
+        job->written[i] = prefix;
         time_t now = time(NULL);
         if (now - speed->mark_time >= 3) {
-            speed->speed = (double)(job->written[i] - speed->mark_bytes) / (double)(now - speed->mark_time);
+            speed->speed = (double)(fan.base + received - speed->mark_bytes) / (double)(now - speed->mark_time);
             speed->mark_time = now;
-            speed->mark_bytes = job->written[i];
+            speed->mark_bytes = fan.base + received;
         }
-        publish(job, i, job->written[i], speed->speed);
+        publish(job, i, fan.base + received, speed->speed);
         if (now - job->last_save >= SAVE_EVERY)
             save_state(job);
     }
-    return SONY_RANGE_OK;
-}
+    for (size_t t = 0; t < started; t++)
+        pthread_join(threads[t], NULL);
 
-/* One piece with retries. Returns "" on success, "cancelled" when stopped, or a reason. */
-static const char *fetch_piece(PatchJob *job, size_t i, char *detail, size_t detail_cap) {
-    const patchmanifest_piece *piece = &job->manifest.pieces[i];
-    unsigned network_failures = 0, hash_failures = 0;
-    Speed speed = {.mark_time = time(NULL), .mark_bytes = job->written[i]};
-    while (!job->done[i]) {
-        if (stopped())
-            return "cancelled";
-        if (job->written[i] < piece->size) {
-            char why[120] = "";
-            sony_range_result r = download_piece(job, i, &speed, why, sizeof why);
-            if (r != SONY_RANGE_OK) {
-                save_state(job);
-                if (stopped())
-                    return "cancelled";
-                if (r == SONY_RANGE_DISK) {
-                    snprintf(detail, detail_cap, "%s", why);
-                    return "The drive is full or was disconnected.";
-                }
-                if (r == SONY_RANGE_REFUSED) {
-                    snprintf(detail, detail_cap, "piece %zu: %s", i + 1, why);
-                    return "Sony refused the download. The link may have expired.";
-                }
-                if (++network_failures > MAX_NETWORK_FAILURES) {
-                    snprintf(detail, detail_cap, "piece %zu: %s", i + 1, why);
-                    return "The connection to Sony kept failing.";
-                }
-                unsigned wait = 1u << (network_failures < 5 ? network_failures : 5);
-                wait_seconds(wait);
-                continue;
-            }
-        }
-        phase("verifying", "");
-        bool ok = digest_matches(job, piece);
-        if (stopped())
-            return "cancelled";
-        phase("downloading", "");
-        if (ok) {
-            job->done[i] = true;
-            save_state(job);
-            publish(job, i, piece->size, speed.speed);
-            return "";
-        }
-        if (++hash_failures >= 2) {
-            snprintf(detail, detail_cap, "piece %zu", i + 1);
-            return "A downloaded piece failed its checksum twice.";
-        }
-        job->written[i] = 0;
+    int64_t prefix = fan.base;
+    bool gap = false;
+    for (size_t k = 0; k < fan.slices && !gap; k++) {
+        int64_t reached = atomic_load(&fan.finished[k]) ? slice_end(&fan, k) : fan.reached[k];
+        prefix = reached;
+        gap = reached < slice_end(&fan, k);
+    }
+    sony_range_result r = fan.result;
+    if (r == SONY_RANGE_OK && prefix < piece->size)
+        r = stopped() ? SONY_RANGE_ABORTED : SONY_RANGE_FAILED;
+    job->written[i] = r == SONY_RANGE_IGNORED ? 0 : prefix;
+    if (r != SONY_RANGE_OK)
+        snprintf(why, why_cap, "%s", fan.why[0] ? fan.why : "the download was interrupted");
+    pthread_mutex_destroy(&fan.mutex);
+    free((void *)fan.reached);
+    free(fan.finished);
+    atomic_store(&fan_failed, false);
+    if (r == SONY_RANGE_OK) {
+        publish(job, i, piece->size, speed->speed);
         save_state(job);
     }
+    return r;
+}
+
+/* One piece downloaded, with retries. Returns "" once all of it is on the drive, "cancelled" when
+ * stopped, or a reason. Its checksum is checked separately (see settle), while the next piece downloads. */
+static const char *fetch_piece(PatchJob *job, size_t i, char *detail, size_t detail_cap) {
+    const patchmanifest_piece *piece = &job->manifest.pieces[i];
+    unsigned network_failures = 0;
+    Speed speed = {.mark_time = time(NULL), .mark_bytes = job->written[i]};
+    while (job->written[i] < piece->size) {
+        if (stopped())
+            return "cancelled";
+        char why[120] = "";
+        sony_range_result r = download_piece(job, i, &speed, why, sizeof why);
+        if (r == SONY_RANGE_OK)
+            break;
+        save_state(job);
+        if (stopped())
+            return "cancelled";
+        if (r == SONY_RANGE_DISK) {
+            snprintf(detail, detail_cap, "%s", why);
+            return "The drive is full or was disconnected.";
+        }
+        if (r == SONY_RANGE_REFUSED) {
+            snprintf(detail, detail_cap, "piece %zu: %s", i + 1, why);
+            return "Sony refused the download. The link may have expired.";
+        }
+        if (++network_failures > MAX_NETWORK_FAILURES) {
+            snprintf(detail, detail_cap, "piece %zu: %s", i + 1, why);
+            return "The connection to Sony kept failing.";
+        }
+        unsigned wait = 1u << (network_failures < 5 ? network_failures : 5);
+        wait_seconds(wait);
+    }
+    return "";
+}
+
+/* A piece being checked on its own thread while the next one downloads. */
+typedef struct {
+    PatchJob *job;
+    size_t piece;
+    bool ok;
+    bool running;
+    pthread_t thread;
+} Check;
+
+static void *check_worker(void *context) {
+    Check *check = context;
+    check->ok = digest_matches(check->job, &check->job->manifest.pieces[check->piece]);
+    return NULL;
+}
+
+static bool check_start(Check *check, PatchJob *job, size_t piece) {
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 512 * 1024);
+    check->job = job;
+    check->piece = piece;
+    check->ok = false;
+    check->running = pthread_create(&check->thread, &attr, check_worker, check) == 0;
+    pthread_attr_destroy(&attr);
+    if (!check->running) { /* no thread to spare: check it here, as one piece at a time */
+        check->ok = digest_matches(job, &job->manifest.pieces[piece]);
+        check->running = true;
+        check->thread = 0;
+        return false;
+    }
+    return true;
+}
+
+/* Waits for the running check. A piece that fails its checksum is downloaded again once; a second
+ * failure ends the download. *redo receives that piece's number so the caller goes back to it. */
+static const char *settle(PatchJob *job, Check *check, unsigned *failures, size_t *redo, char *detail,
+                          size_t detail_cap) {
+    if (check->thread)
+        pthread_join(check->thread, NULL);
+    check->running = false;
+    check->thread = 0;
+    if (stopped())
+        return "cancelled";
+    if (check->ok) {
+        job->done[check->piece] = true;
+        save_state(job);
+        return "";
+    }
+    if (++failures[check->piece] >= 2) {
+        snprintf(detail, detail_cap, "piece %zu", check->piece + 1);
+        return "A downloaded piece failed its checksum twice.";
+    }
+    job->written[check->piece] = 0;
+    save_state(job);
+    *redo = check->piece;
     return "";
 }
 
@@ -440,8 +621,46 @@ static void run(const char *manifest_url) {
                 load_state(&job, part.st_size == job.manifest.total ? job.manifest.total : -1);
         }
         phase("downloading", "");
-        for (size_t i = 0; !*outcome && i < job.manifest.count; i++)
-            outcome = fetch_piece(&job, i, detail, sizeof detail);
+        unsigned *failures = calloc(job.manifest.count, sizeof *failures);
+        Check check = {0};
+        size_t i = 0;
+        if (!failures)
+            outcome = "Not enough memory.";
+        while (!*outcome) {
+            if (i < job.manifest.count && job.done[i]) {
+                i++;
+                continue;
+            }
+            if (i < job.manifest.count) {
+                outcome = fetch_piece(&job, i, detail, sizeof detail);
+                if (*outcome)
+                    break;
+            } else if (check.running) {
+                phase("verifying", ""); /* only the last piece is left to check */
+            }
+            size_t redo = (size_t)-1;
+            if (check.running) {
+                outcome = settle(&job, &check, failures, &redo, detail, sizeof detail);
+                if (*outcome)
+                    break;
+            }
+            if (redo != (size_t)-1) {
+                i = redo;
+                continue;
+            }
+            if (i >= job.manifest.count)
+                break;
+            check_start(&check, &job, i); /* checked while the next piece downloads */
+            i++;
+        }
+        if (check.running) {
+            if (check.thread)
+                pthread_join(check.thread, NULL);
+            check.running = false;
+        }
+        free(failures);
+        if (!*outcome)
+            phase("downloading", "");
         sony_range_close();
         if (!*outcome && fsync(job.fd) != 0)
             outcome = "The drive could not save the file.";
