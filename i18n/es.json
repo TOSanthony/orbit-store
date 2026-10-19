@@ -310,6 +310,8 @@
   "Download history records a completed transfer. Find it in Library to check its current location.": "El historial de descargas registra una transferencia completada. Búscala en la biblioteca para comprobar su ubicación actual.",
   "Download options": "Opciones de descarga",
   "Download service": "Servicio de descargas",
+  "Game updates API": "API de actualizaciones de juegos",
+  "Artwork API": "API de imágenes",
   "Download service {version} is running": "El servicio de descargas {version} está en ejecución",
   "Download service {version} is running. Resume your downloads in Downloads.": "El servicio de descargas {version} está en ejecución. Reanuda tus descargas en Descargas.",
   "Download size": "Tamaño de descarga",

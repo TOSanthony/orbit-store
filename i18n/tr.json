@@ -310,6 +310,8 @@
   "Download history records a completed transfer. Find it in Library to check its current location.": "İndirme geçmişinde tamamlanmış bir aktarım var. Geçerli konumunu kontrol etmek için kitaplıkta bulun.",
   "Download options": "İndirme seçenekleri",
   "Download service": "İndirme hizmeti",
+  "Game updates API": "Game updates API",
+  "Artwork API": "Artwork API",
   "Download service {version} is running": "İndirme hizmeti {version} çalışıyor",
   "Download service {version} is running. Resume your downloads in Downloads.": "İndirme hizmeti {version} çalışıyor. İndirmelerinizi İndirmeler'de sürdürün.",
   "Download size": "İndirme boyutu",

@@ -372,6 +372,8 @@
   "Download history records a completed transfer. Find it in Library to check its current location.": "Download history records a completed transfer. Find it in Library to check its current location.",
   "Download options": "Download options",
   "Download service": "Download service",
+  "Game updates API": "Game updates API",
+  "Artwork API": "Artwork API",
   "Download service {version} is running": "Download service {version} is running",
   "Download service {version} is running. Resume your downloads in Downloads.": "Download service {version} is running. Resume your downloads in Downloads.",
   "Download size": "Download size",

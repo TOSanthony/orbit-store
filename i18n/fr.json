@@ -310,6 +310,8 @@
   "Download history records a completed transfer. Find it in Library to check its current location.": "L’historique indique un transfert terminé. Retrouvez-le dans la bibliothèque pour vérifier son emplacement actuel.",
   "Download options": "Options de téléchargement",
   "Download service": "Service de téléchargement",
+  "Game updates API": "API des mises à jour de jeux",
+  "Artwork API": "API des illustrations",
   "Download service {version} is running": "Le service de téléchargement {version} fonctionne",
   "Download service {version} is running. Resume your downloads in Downloads.": "Le service de téléchargement {version} fonctionne. Reprenez vos téléchargements dans Téléchargements.",
   "Download size": "Taille du téléchargement",

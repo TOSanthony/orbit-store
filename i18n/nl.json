@@ -310,6 +310,8 @@
   "Download history records a completed transfer. Find it in Library to check its current location.": "De downloadgeschiedenis vermeldt een voltooide overdracht. Zoek die op in de bibliotheek om de huidige locatie te controleren.",
   "Download options": "Downloadopties",
   "Download service": "Downloadservice",
+  "Game updates API": "Game-updates-API",
+  "Artwork API": "Artwork-API",
   "Download service {version} is running": "Downloadservice {version} is actief",
   "Download service {version} is running. Resume your downloads in Downloads.": "Downloadservice {version} is actief. Hervat je downloads in Downloads.",
   "Download size": "Downloadgrootte",

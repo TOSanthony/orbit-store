@@ -1466,6 +1466,12 @@ void SettingsScreen::build_more(Pane &pane) const
     pane.version_row(tr("TV app"), running.empty() ? tr("Unknown") : running);
     pane.version_row(tr("Download service"),
                      state.system.version.empty() ? tr("Unknown") : state.system.version);
+    pane.version_row(tr("Game updates API"), state.system.api_game_updates > 0
+                                                 ? std::to_string(state.system.api_game_updates)
+                                                 : tr("Unknown"));
+    pane.version_row(tr("Artwork API"), state.system.api_artwork > 0
+                                            ? std::to_string(state.system.api_artwork)
+                                            : tr("Unknown"));
 }
 
 // ---- input ----

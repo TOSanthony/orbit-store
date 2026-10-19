@@ -558,6 +558,7 @@ http::Response Fixture::send(const http::Request &request)
     {
         response.body =
             "{\"name\":\"Orbit Store\",\"version\":" + json::quote(running_) +
+            ",\"apis\":{\"gameUpdates\":3,\"artwork\":2}" +
             ",\"platform\":\"fixture\",\"paired\":" + (authorised ? "true" : "false") +
             ",\"localSessionAvailable\":true,\"stateHealthy\":true,\"catalogueRevision\":7,"
             "\"preferredStorage\":" +

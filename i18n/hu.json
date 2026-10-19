@@ -310,6 +310,8 @@
   "Download history records a completed transfer. Find it in Library to check its current location.": "A letöltési előzmények rögzítik a befejezett átvitelt. Keresd meg a Könyvtárban az aktuális helyének ellenőrzéséhez.",
   "Download options": "Letöltési lehetőségek",
   "Download service": "Letöltési szolgáltatás",
+  "Game updates API": "Game updates API",
+  "Artwork API": "Artwork API",
   "Download service {version} is running": "A(z) {version} letöltési szolgáltatás fut",
   "Download service {version} is running. Resume your downloads in Downloads.": "A(z) {version} letöltési szolgáltatás fut. Folytasd a letöltéseidet a Letöltésekben.",
   "Download size": "Letöltési méret",

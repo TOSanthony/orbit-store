@@ -22,6 +22,8 @@ struct System
 {
     std::string name;
     std::string version;
+    int api_game_updates = 0; // API revisions; 0 when the service does not report them
+    int api_artwork = 0;
     std::string instance_id;
     bool stopping = false;
     std::string platform; // "ps5", "desktop" or "fixture"
