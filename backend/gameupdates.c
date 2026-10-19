@@ -119,8 +119,13 @@ static bool read_param(const char *title_id, appdb_game *g) {
         copy_text(g->title_id, sizeof g->title_id, title_id);
     if (!g->version_file_uri[0]) {
         const char *uri = json_text(json, "versionFileUri");
-        if (uri[0] && strlen(uri) < sizeof g->version_file_uri)
+        if (uri[0] && strlen(uri) < sizeof g->version_file_uri) {
             copy_text(g->version_file_uri, sizeof g->version_file_uri, uri);
+            /* The console pads this value with spaces. */
+            size_t end = strlen(g->version_file_uri);
+            while (end && g->version_file_uri[end - 1] == ' ')
+                g->version_file_uri[--end] = 0;
+        }
     }
     if (!g->content_version[0]) {
         const char *version = json_text(json, "contentVersion");

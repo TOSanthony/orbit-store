@@ -284,7 +284,7 @@ with tempfile.TemporaryDirectory() as root:
         d = root + "/user/appmeta/PPSA%05d" % i
         os.makedirs(d, exist_ok=True)
         json.dump(dict({"contentVersion": "01.000.000", "versionFileUri":
-                        "https://sgst.prod.dl.playstation.net/sgst/prod/00/np/PPSA%05d_00/PPSA%05d-version.xml" % (i, i)}, **extra),
+                        "https://sgst.prod.dl.playstation.net/sgst/prod/00/np/PPSA%05d_00/PPSA%05d-version.xml" % (i, i) + " " * 40}, **extra),
                   open(d + "/param.json", "w"))
     param(7, {})
     param(8, {"titleId": "PPSA00008", "localizedParameters": {"defaultLanguage": "en-US", "en-US": {"titleName": "Fresh install"}}})
