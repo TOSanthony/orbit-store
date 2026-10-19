@@ -56,6 +56,7 @@ void GameUpdatesScreen::focus()
 {
     row_ = 0;
     bar_ = -1;
+    button_ = 0;
 }
 
 Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedback, bool focused)
@@ -134,6 +135,18 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
                 do_clear();
         }
     }
+    else if ((input.nav == Direction::left || input.nav == Direction::right) && count > 0)
+    {
+        // Left/Right move between the row's buttons (Pause/Resume and Cancel).
+        const GameUpdateItem &g = games[static_cast<std::size_t>(row_)];
+        const bool mine = status.job.present && status.job.title_id == g.title_id;
+        const bool two = mine && ((status.job.active && status.job.phase != "installing") ||
+                                  status.job.phase == "paused");
+        const int next = std::clamp(button_ + (input.nav == Direction::right ? 1 : -1), 0, two ? 1 : 0);
+        if (next != button_)
+            feedback.play(hui::audio::Cue::focus);
+        button_ = next;
+    }
     else if (input.nav == Direction::up)
     {
         if (row_ == 0)
@@ -152,6 +165,7 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
         else
         {
             --row_;
+            button_ = 0;
             feedback.play(hui::audio::Cue::focus);
         }
     }
@@ -160,6 +174,7 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
         if (row_ + 1 < count)
         {
             ++row_;
+            button_ = 0;
             feedback.play(hui::audio::Cue::focus);
         }
         else
@@ -172,7 +187,21 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
         const GameUpdateItem &game = games[static_cast<std::size_t>(row_)];
         const bool this_job = status.job.present && status.job.title_id == game.title_id;
         const bool installing = this_job && status.job.active && status.job.phase == "installing";
-        if (this_job && status.job.active && !installing)
+        const bool paused_here = this_job && !status.job.active && status.job.phase == "paused";
+        if (button_ == 1 && (paused_here || (this_job && status.job.active && !installing)))
+        {
+            // The second button: cancel and delete what was downloaded.
+            feedback.play(hui::audio::Cue::select);
+            ctx_.store.game_update_job("cancel", game.title_id);
+            button_ = 0;
+        }
+        else if (paused_here)
+        {
+            // Resume where it stopped.
+            feedback.play(hui::audio::Cue::select);
+            ctx_.store.game_update_job("download", game.title_id);
+        }
+        else if (this_job && status.job.active && !installing)
         {
             // X while it downloads: pause, keeping everything already received.
             feedback.play(hui::audio::Cue::select);
@@ -244,7 +273,9 @@ std::vector<hui::ui::Hint> GameUpdatesScreen::hints() const
         const bool this_job = status.job.present && status.job.title_id == game.title_id;
         const bool paused = this_job && !status.job.active && status.job.phase == "paused";
         const bool installing = this_job && status.job.active && status.job.phase == "installing";
-        if (paused)
+        if ((paused || (this_job && status.job.active && !installing)) && button_ == 1)
+            items.push_back({hui::ui::Button::cross, tr("Cancel")});
+        else if (paused)
             items.push_back({hui::ui::Button::cross, tr("Resume")});
         else if (this_job && status.job.active && !installing)
             items.push_back({hui::ui::Button::cross, tr("Pause")});
@@ -443,7 +474,7 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         for (std::size_t a = 0; a < actions.size(); ++a)
         {
             const float width = type.medium.measure(actions[a], 16.0f) + 2.0f * 22.0f;
-            const bool on = focused && bar_ < 0 && i == row_ && a == 0;
+            const bool on = focused && bar_ < 0 && i == row_ && a == static_cast<std::size_t>(button_);
             ui::button(list, type, {ax, row.y + kRowPad + 128.0f, width, 38.0f}, actions[a],
                        on ? ui::ButtonKind::primary : ui::ButtonKind::secondary, on ? 1.0f : 0.0f, true, 16.0f);
             ax += width + 12.0f;
