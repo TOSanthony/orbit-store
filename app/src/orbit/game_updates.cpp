@@ -240,9 +240,6 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
             ui::text(list, type.regular,
                      tr("Needs firmware {firmware} or later", {{"firmware", game.firmware}}), tx,
                      row.y + 122.0f, 18.0f, ui::color::text3);
-        if (focused && i == row_ && !game.blocked)
-            ui::text(list, type.regular, this_job && job.active ? tr("Cancel") : tr("Download and install"),
-                     right_edge, row.y + 122.0f, 18.0f, ui::color::text3, ui::Align::right);
     }
     list.pop_clip();
 }
