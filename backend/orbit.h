@@ -270,6 +270,7 @@ int tvapp_start(void);
 void tvapp_stop(void);
 cJSON *tvapp_status(void);
 int tvapp_action(const cJSON *input, char *error, size_t cap);
+const cJSON *catalog_best_row_locked(const char *title_id);
 int art_start(void);
 void art_stop(void);
 int art_get(const char *game_id, const char *kind, unsigned char **data, size_t *size, char *mime,

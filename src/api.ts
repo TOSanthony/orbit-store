@@ -51,3 +51,28 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
     clearTimeout(timeout);
   }
 }
+
+// A picture from Orbit (the request needs the pairing token, so an <img> cannot ask for it itself).
+// Returns an object URL, or null when Orbit has none. Orbit answers 202 while it fetches one.
+export async function apiImage(path: string): Promise<string | null> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const response = await fetch(`/api/v1${path}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (response.status === 202) {
+        await new Promise((done) => setTimeout(done, 1500));
+        continue;
+      }
+      if (
+        !response.ok ||
+        !(response.headers.get("Content-Type") || "").startsWith("image/")
+      )
+        return null;
+      return URL.createObjectURL(await response.blob());
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}

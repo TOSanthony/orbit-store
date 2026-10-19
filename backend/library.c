@@ -282,14 +282,12 @@ static cJSON *normalize(const cJSON *response, char *error, size_t cap) {
         /* Catalogue artwork is optional enrichment, independent of source selection.
          * Never trust/forward ShadowMount's supplied icon URL to a browser. */
         pthread_mutex_lock(&orbit.mutex);
-        cJSON *release;
-        cJSON_ArrayForEach(release, orbit.catalog)
-            if (!strcmp(json_text(release, "titleId"), id)) {
-                cJSON_AddStringToObject(item, "cover", json_text(release, "cover"));
-                const char *fallback = json_text(release, "coverFallback");
-                if (*fallback) cJSON_AddStringToObject(item, "coverFallback", fallback);
-                break;
-            }
+        const cJSON *release = catalog_best_row_locked(id);
+        if (release) {
+            cJSON_AddStringToObject(item, "cover", json_text(release, "cover"));
+            const char *fallback = json_text(release, "coverFallback");
+            if (*fallback) cJSON_AddStringToObject(item, "coverFallback", fallback);
+        }
         pthread_mutex_unlock(&orbit.mutex);
         cJSON_AddItemToArray(out, item);
     }

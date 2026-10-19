@@ -13,7 +13,7 @@ import {
   StorageOverview,
   StorageProgress,
 } from "./LibraryActions";
-import { Artwork } from "./Artwork";
+import { LocalCover } from "./LocalCover";
 import { Select } from "./Select";
 import { formatDate, placeName, t, tn } from "./i18n";
 
@@ -343,16 +343,11 @@ function Inventory({
                           title: g.title,
                         })}
                       >
-                        <span className="library-cover">
-                          <Artwork
-                            key={g.cover || "mark"}
-                            src={g.cover || "/orbit.svg"}
-                            fallbackSrc={g.coverFallback}
-                            alt=""
-                            decoding="async"
-                            referrerPolicy="no-referrer"
-                          />
-                        </span>
+                        <LocalCover
+                          titleId={g.titleId}
+                          cover={g.cover}
+                          fallback={g.coverFallback}
+                        />
                         <span className="library-card-content">
                           <span className="library-title">{g.title}</span>
                           <span className="library-status-line">

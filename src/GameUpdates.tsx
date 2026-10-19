@@ -1,6 +1,6 @@
-import { Artwork } from "./Artwork";
 import { Icon } from "./components";
 import { t } from "./i18n";
+import { GameIcon } from "./LocalCover";
 import { useState } from "react";
 import { bytes, type Game, type GameUpdate, type GameUpdateJob } from "./types";
 
@@ -92,16 +92,11 @@ export function GameUpdates({
         <ul className="game-updates">
           {games.map((game) => (
             <li key={game.titleId}>
-              <Artwork
+              <GameIcon
                 className="update-cover"
-                src={
-                  cover(catalogue, game.titleId)?.cover ||
-                  `/api/v1/art/local-${game.titleId}/cover`
-                }
-                fallbackSrc={cover(catalogue, game.titleId)?.coverFallback}
-                alt=""
-                decoding="async"
-                referrerPolicy="no-referrer"
+                titleId={game.titleId}
+                cover={cover(catalogue, game.titleId)?.cover}
+                fallback={cover(catalogue, game.titleId)?.coverFallback}
               />
               <div className="update-body">
                 <div>

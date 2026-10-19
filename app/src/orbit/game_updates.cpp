@@ -26,16 +26,6 @@ constexpr float kRowPad = 22.0f;
 constexpr float kCover = 106.0f;
 constexpr float kListBottom = 1010.0f;
 
-// The catalogue entry with this title ID, for its cover (null for apps and games it does not list).
-const Game *catalogue_entry(const Snapshot &state, std::string_view title_id)
-{
-    for (const Game &game : state.games)
-        for (const Release &release : game.releases)
-            if (release.title_id == title_id)
-                return &game;
-    return nullptr;
-}
-
 // The console's message in the person's language, then its technical detail if it has one.
 std::string explained(const GameUpdateJob &job)
 {
@@ -202,17 +192,12 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         if (focused && i == row_)
             list.rounded_rect(row, 18.0f, ui::Color::rgb(0xffffff, 0.06f));
         const ui::Rect cover{row.x + kRowPad, row.y + (row.h - kCover) * 0.5f, kCover, kCover};
-        if (const Game *art = catalogue_entry(state, game.title_id))
-            draw_cover(ctx_, list, *art, cover, 12.0f);
-        else
-        {
-            // Not in the catalogue: the icon the console keeps for the installed game (the
-            // placeholder shows until it arrives, and stays if the console has none).
-            Game local;
-            local.id = "local-" + game.title_id;
-            local.title = game.name.empty() ? game.title_id : game.name;
-            draw_cover(ctx_, list, local, cover, 12.0f);
-        }
+        // The console's own icon for the game, else the catalogue's cover: Orbit decides which
+        // (GET /api/v1/art/local-<title id>/cover); the placeholder shows until it arrives.
+        Game local;
+        local.id = "local-" + game.title_id;
+        local.title = game.name.empty() ? game.title_id : game.name;
+        draw_cover(ctx_, list, local, cover, 12.0f);
 
         const float tx = cover.x + cover.w + 28.0f;
         const float right_edge = row.x + row.w - kRowPad;

@@ -197,17 +197,13 @@ float status_labels(hui::gfx::DrawList &list, const ui::Type &type, float x, flo
     return y + 26.0f;
 }
 
-const Game *catalogue_game(const Snapshot &state, std::string_view title_id)
+// What draw_cover needs to ask Orbit for a library game's picture: its "local-" art ID.
+Game local_cover(const LibraryGame &game)
 {
-    for (const Game &game : state.games)
-    {
-        for (const Release &release : game.releases)
-        {
-            if (release.title_id == title_id)
-                return &game;
-        }
-    }
-    return nullptr;
+    Game local;
+    local.id = "local-" + game.title_id;
+    local.title = game.title;
+    return local;
 }
 
 std::string file_name(const std::string &path)
@@ -1141,19 +1137,9 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                 const float scale = 1.0f;
                 list.push_transform(scale, r.cx(), r.cy(), 0.0f, 0.0f);
                 ui::focus_ring(list, r, ui::kArtRadius, focus);
-                if (const Game *art = catalogue_game(state, game.title_id))
-                {
-                    draw_cover(ctx_, list, *art, r, ui::kArtRadius);
-                }
-                else
-                {
-                    // .library-cover with the Orbit mark when no artwork matches.
-                    list.gradient_rect(r, ui::kArtRadius, ui::Color::rgb(0x242424),
-                                       ui::Color::rgb(0x151515));
-                    if (ctx_.mark != 0)
-                        list.image(ctx_.mark, r.inset(48.0f), hui::gfx::kFullUv,
-                                   ui::Color::rgb(0xffffff, 0.6f));
-                }
+                // The console's own icon for the game, else the catalogue's cover: Orbit decides
+                // which (GET /api/v1/art/local-<title id>/cover), the same way for every client.
+                draw_cover(ctx_, list, local_cover(game), r, ui::kArtRadius);
                 list.pop_transform();
                 if (!game.on_drive)
                     list.rounded_rect(r, ui::kArtRadius, ui::color::night0.with_alpha(0.3f));
@@ -1289,15 +1275,7 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                 ui::state_fill(list, r, 18.0f, focus);
                 const ui::Color ink = ui::state_ink(focus), dim = ui::state_ink_dim(focus);
                 const ui::Rect cover{r.x + 16.0f, r.y + 16.0f, r.h - 32.0f, r.h - 32.0f};
-                if (const Game *art = catalogue_game(state, game.title_id))
-                    draw_cover(ctx_, list, *art, cover, 12.0f);
-                else
-                {
-                    list.gradient_rect(cover, 12.0f, ui::Color::rgb(0x242424), ui::Color::rgb(0x151515));
-                    if (ctx_.mark != 0)
-                        list.image(ctx_.mark, cover.inset(14.0f), hui::gfx::kFullUv,
-                                   ui::Color::rgb(0xffffff, 0.6f));
-                }
+                draw_cover(ctx_, list, local_cover(game), cover, 12.0f);
                 const float tx = cover.x + cover.w + 18.0f, tw = r.x + r.w - tx - 16.0f;
                 ui::text_fit(list, type.medium, game.title, tx, r.cy() - 6.0f, 21.0f, tw, ink);
                 drive_icon(list, tx + 11.0f, r.cy() + 24.0f, 20.0f, dim);

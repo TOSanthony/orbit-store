@@ -382,6 +382,29 @@ static void *worker(void *unused) {
     return NULL;
 }
 
+/* The catalogue row that best stands for a title ID, across the public catalogue and My NAS: the
+ * game itself before an app, an app before DLC, DLC before updates (all of them carry the game's
+ * title ID, and only the game has the game's own cover). Only rows of enabled sources count.
+ * orbit.mutex must be held. */
+const cJSON *catalog_best_row_locked(const char *title_id) {
+    const cJSON *best = NULL, *entry;
+    int best_rank = 99;
+    const cJSON *lists[2] = {orbit.catalog, orbit.nas_catalog};
+    for (size_t l = 0; l < 2; l++)
+        cJSON_ArrayForEach(entry, lists[l]) {
+            if (strcasecmp(json_text(entry, "titleId"), title_id) ||
+                !source_enabled_locked(release_find(json_text(entry, "id"))))
+                continue;
+            const char *tag = json_text(entry, "tagline");
+            int rank = !strcmp(tag, "UPDATES") ? 3 : !strcmp(tag, "DLC") ? 2 : !strcmp(tag, "APPS") ? 1 : 0;
+            if (rank < best_rank) {
+                best = entry;
+                best_rank = rank;
+            }
+        }
+    return best;
+}
+
 /* The icon the console keeps for an installed game ("local-<title id>"): the cover for games the
  * catalogue does not list. Read from the console's own files, never from the network. */
 static int art_local(const char *title_id, bool hero, unsigned char **data, size_t *size, char *mime,
@@ -423,8 +446,17 @@ static int art_local(const char *title_id, bool hero, unsigned char **data, size
             return 200;
         }
     }
+    /* No icon file on the console (the game is not installed, or is only listed): the catalogue's cover. */
+    char catalogue_id[64] = "";
+    pthread_mutex_lock(&orbit.mutex);
+    const cJSON *row = catalog_best_row_locked(title_id);
+    if (row)
+        copy_text(catalogue_id, sizeof catalogue_id, json_text(row, "gameId"));
+    pthread_mutex_unlock(&orbit.mutex);
+    if (*catalogue_id && art_identifier(catalogue_id))
+        return art_get(catalogue_id, "cover", data, size, mime, mime_cap, why, why_cap);
     if (why_cap)
-        copy_text(why, why_cap, "the console has no icon for this game");
+        copy_text(why, why_cap, "neither the console nor the catalogue has an image for this game");
     return 404;
 }
 
