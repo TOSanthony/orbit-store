@@ -71,6 +71,28 @@ static void installed_version(const char *title_id, const char *from_db, char *o
             return;
     }
 }
+/* The version the console reports for one installed game right now ("" when it cannot tell). */
+bool gameupdates_current_version(const char *title_id, char *out, size_t cap) {
+    out[0] = 0;
+    char path[600], error[160];
+    snprintf(path, sizeof path, "%s%s", orbit.system_root, APP_DB);
+    appdb_game *games = calloc(MAX_GAMES, sizeof *games);
+    if (!games)
+        return false;
+    size_t total = 0;
+    bool found = false;
+    if (appdb_read(path, games, MAX_GAMES, &total, error, sizeof error) >= 0) {
+        for (size_t i = 0; i < total; i++) {
+            if (strcmp(games[i].title_id, title_id))
+                continue;
+            installed_version(title_id, games[i].content_version, out, cap);
+            found = out[0] != 0;
+            break;
+        }
+    }
+    free(games);
+    return found;
+}
 static void set_error(const char *text) {
     pthread_mutex_lock(&gu.mutex);
     copy_text(gu.error, sizeof gu.error, text);

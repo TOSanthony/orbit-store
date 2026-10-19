@@ -312,6 +312,9 @@ static const char *fetch_piece(PatchJob *job, size_t i, char *detail, size_t det
     return "";
 }
 
+#define INSTALL_VERIFY_SECONDS 1800
+#define INSTALL_VERIFY_STEP 5
+
 static void installed_progress(unsigned percent, void *context) {
     (void)context;
     pthread_mutex_lock(&pd.mutex);
@@ -483,6 +486,26 @@ static void run(const char *manifest_url) {
     int code = install_package_blocking(path, name, installed_progress, NULL, stopped, error, sizeof error);
     if (code != 0)
         return finish(stopped() ? "cancelled" : "failed", error);
+    /* The console takes over from here and may report "playable" before the update is in. It is
+     * installed only once the game reports the new version; until then the job stays installing. */
+    char title_id[16], target[16];
+    pthread_mutex_lock(&pd.mutex);
+    copy_text(title_id, sizeof title_id, pd.title_id);
+    copy_text(target, sizeof target, pd.version);
+    pthread_mutex_unlock(&pd.mutex);
+    bool arrived = false;
+    for (int waited = 0; waited < INSTALL_VERIFY_SECONDS && !arrived; waited += INSTALL_VERIFY_STEP) {
+        char now[16];
+        if (gameupdates_current_version(title_id, now, sizeof now) && strcmp(now, target) >= 0) {
+            arrived = true;
+            break;
+        }
+        if (stopped() || orbit_is_stopping())
+            return finish("cancelled", "");
+        sleep(INSTALL_VERIFY_STEP);
+    }
+    if (!arrived)
+        return finish("failed", "The console has not finished installing the update yet. Check the Notifications on the console, then check for updates again.");
     pthread_mutex_lock(&orbit.mutex);
     bool remove_it = orbit.delete_pkgs;
     pthread_mutex_unlock(&orbit.mutex);

@@ -245,6 +245,7 @@ int gameupdates_action(const cJSON *input, char *error, size_t cap);
 bool gameupdates_offer(const char *title_id, char *name, size_t name_cap, char *version, size_t version_cap,
                        char *manifest, size_t manifest_cap);
 void gameupdates_request_refresh(void);
+bool gameupdates_current_version(const char *title_id, char *out, size_t cap);
 /* Downloading and installing a game update (patchdl.c): one at a time. */
 int patchdl_start(const char *title_id, char *error, size_t cap);
 int patchdl_pause(char *error, size_t cap);
