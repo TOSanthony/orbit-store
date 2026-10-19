@@ -84,7 +84,7 @@ export function GameUpdates({
   return (
     <section className="page">
       <div className="page-heading">
-        <h1>{dlc ? t("Add-on content (DLC)") : t("Game updates")}</h1>
+        <h1>{dlc ? t("Add-on content") : t("Updates")}</h1>
         <span>
           {dlc
             ? t("DLC found: {count}", { count: ready })

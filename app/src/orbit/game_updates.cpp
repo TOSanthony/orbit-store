@@ -304,7 +304,7 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
     const GameUpdateStatus &status = state.game_update_status;
     const std::vector<GameUpdateItem> &games = dlc_mode_ ? status.dlc : status.games;
 
-    const float title = ui::text(list, type.semibold, dlc_mode_ ? tr("Add-on content (DLC)") : tr("Game updates"),
+    const float title = ui::text(list, type.semibold, dlc_mode_ ? tr("Add-on content") : tr("Updates"),
                                  ui::kGutter, kTitleBaseline, 60.0f, ui::color::text);
     ui::text(list, type.regular,
              dlc_mode_ ? tr("DLC found: {count}", {{"count", std::to_string(games.size())}})
