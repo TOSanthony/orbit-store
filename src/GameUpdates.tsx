@@ -131,7 +131,13 @@ export function GameUpdates({
             <li key={game.titleId}>
               <GameIcon
                 className="update-cover"
-                titleId={game.baseId || game.titleId}
+                titleId={
+                  game.baseId
+                    ? game.label
+                      ? `dlc-${game.baseId}-${game.label}`
+                      : game.baseId
+                    : game.titleId
+                }
                 cover={cover(catalogue, game.baseId || game.titleId)?.cover}
                 fallback={
                   cover(catalogue, game.baseId || game.titleId)?.coverFallback

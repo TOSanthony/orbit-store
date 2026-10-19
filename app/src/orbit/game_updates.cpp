@@ -364,7 +364,9 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         // The console's own icon for the game, else the catalogue's cover: Orbit decides which
         // (GET /api/v1/art/local-<title id>/cover); the placeholder shows until it arrives.
         Game local;
-        local.id = "local-" + (game.base_id.empty() ? game.title_id : game.base_id);
+        // A DLC shows the icon from its own package (Orbit falls back to the game's when it has none).
+        local.id = "local-" + (game.base_id.empty() ? game.title_id
+                               : game.label.empty() ? game.base_id : "dlc-" + game.base_id + "-" + game.label);
         local.title = game.name.empty() ? game.title_id : game.name;
         draw_cover(ctx_, list, local, cover, 12.0f);
 

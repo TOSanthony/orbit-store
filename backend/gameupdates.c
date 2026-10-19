@@ -220,36 +220,135 @@ static bool label_from_content_id(const char *content_id, const char *title_id, 
     copy_text(label, cap, dash + 1);
     return true;
 }
-static bool label_from_header(const Release *r, const char *title_id, char *label, size_t cap, char *why,
-                              size_t why_cap) {
+/* What the package says about a DLC, read with a few small range requests: its label, its name and its icon. */
+typedef struct {
+    char label[24], name[96];
+    unsigned char *icon; /* malloc'd PNG, or NULL */
+    size_t icon_size;
+} PkgMeta;
+#define PKG_ICON_MAX (1024 * 1024)
+#define ICON_BUDGET (16 * 1024 * 1024)
+
+static uint32_t le32(const unsigned char *p) {
+    return (uint32_t)p[3] << 24 | (uint32_t)p[2] << 16 | (uint32_t)p[1] << 8 | p[0];
+}
+/* TITLE from a PS4 param.sfo. */
+static bool sfo_title(const unsigned char *d, size_t n, char *out, size_t cap) {
+    if (n < 20 || memcmp(d, "\0PSF", 4))
+        return false;
+    uint32_t keys = le32(d + 8), data = le32(d + 12), count = le32(d + 16);
+    for (uint32_t i = 0; i < count && 20 + (size_t)(i + 1) * 16 <= n; i++) {
+        const unsigned char *e = d + 20 + (size_t)i * 16;
+        uint32_t key = keys + (uint32_t)(e[0] | e[1] << 8), at = data + le32(e + 12), len = le32(e + 4);
+        if (key >= n || at >= n || strncmp((const char *)d + key, "TITLE", 6))
+            continue;
+        if (len > n - at)
+            len = (uint32_t)(n - at);
+        char text[128];
+        snprintf(text, sizeof text, "%.*s", (int)(len < sizeof text - 1 ? len : sizeof text - 1), (const char *)d + at);
+        copy_text(out, cap, text);
+        return out[0] != 0;
+    }
+    return false;
+}
+/* The title in a PS5 param.json. */
+static bool json_title(const unsigned char *d, size_t n, char *out, size_t cap) {
+    cJSON *json = cJSON_ParseWithLength((const char *)d, n);
+    const cJSON *all = json ? cJSON_GetObjectItemCaseSensitive(json, "localizedParameters") : NULL;
+    const char *language = json_text(all, "defaultLanguage");
+    const cJSON *one = language[0] ? cJSON_GetObjectItemCaseSensitive(all, language) : NULL;
+    const char *name = one ? json_text(one, "titleName") : "";
+    if (!name[0] && all) {
+        const cJSON *each;
+        cJSON_ArrayForEach(each, all) {
+            if (cJSON_IsObject(each) && json_text(each, "titleName")[0]) {
+                name = json_text(each, "titleName");
+                break;
+            }
+        }
+    }
+    copy_text(out, cap, name);
+    cJSON_Delete(json);
+    return out[0] != 0;
+}
+/* Bytes [start, start+len) of the NAS file, into buf. */
+static bool pkg_read(const Release *r, int fd, int64_t start, size_t len, unsigned char *buf, char *why,
+                     size_t why_cap) {
+    if (start < 0 || !len || start + (int64_t)len > r->size) {
+        snprintf(why, why_cap, "outside the file");
+        return false;
+    }
+    volatile int64_t at = start;
+    if (nas_range(r->url, start, start + (int64_t)len, fd, -start, &at, stopping, why, why_cap) != SONY_RANGE_OK)
+        return false;
+    return pread(fd, buf, len, 0) == (ssize_t)len;
+}
+static bool pkg_meta(const Release *r, const char *title_id, PkgMeta *meta, char *why, size_t why_cap) {
+    memset(meta, 0, sizeof *meta);
     FILE *tmp = tmpfile();
     if (!tmp) {
         snprintf(why, why_cap, "no temporary file");
         return false;
     }
     int fd = fileno(tmp);
-    unsigned char head[0x100];
     bool ok = false;
-    volatile int64_t pos = 0;
-    int64_t want = r->size < 0x1000 ? r->size : 0x1000;
-    if (nas_range(r->url, 0, want, fd, 0, &pos, stopping, why, why_cap) == SONY_RANGE_OK &&
-        pread(fd, head, sizeof head, 0) == (ssize_t)sizeof head) {
-        if (be32(head) == 0x7F434E54) { /* PS4: the header is the file's own */
-            ok = label_from_content_id((const char *)head + 0x40, title_id, label, cap);
-        } else if (be32(head) == 0x7F464948) { /* PS5: the header sits where the first one says */
-            unsigned char pre[0xA8];
-            uint64_t inner = pread(fd, pre, sizeof pre, 0) == (ssize_t)sizeof pre ? le64(pre + 0x58) : 0;
-            if (inner > 0 && (int64_t)inner + 0x100 <= r->size) {
-                volatile int64_t at = (int64_t)inner;
-                if (nas_range(r->url, (int64_t)inner, (int64_t)inner + 0x100, fd, -(int64_t)inner,
-                              &at, stopping, why, why_cap) == SONY_RANGE_OK) {
-                    unsigned char cnt[0x100];
-                    if (pread(fd, cnt, sizeof cnt, 0) == (ssize_t)sizeof cnt && be32(cnt) == 0x7F434E54)
-                        ok = label_from_content_id((const char *)cnt + 0x40, title_id, label, cap);
-                }
+    unsigned char head[0x100], cnt[0x100];
+    int64_t base = 0;
+    if (!pkg_read(r, fd, 0, sizeof head, head, why, why_cap))
+        goto done;
+    if (be32(head) == 0x7F434E54) { /* PS4: the header is the file's own */
+        memcpy(cnt, head, sizeof cnt);
+    } else if (be32(head) == 0x7F464948) { /* PS5: the header sits where the first one says */
+        uint64_t inner = le64(head + 0x58);
+        if (!inner || inner > (uint64_t)r->size || !pkg_read(r, fd, (int64_t)inner, sizeof cnt, cnt, why, why_cap) ||
+            be32(cnt) != 0x7F434E54) {
+            snprintf(why, why_cap, "no embedded header");
+            goto done;
+        }
+        base = (int64_t)inner;
+    } else {
+        snprintf(why, why_cap, "not a package");
+        goto done;
+    }
+    if (!label_from_content_id((const char *)cnt + 0x40, title_id, meta->label, sizeof meta->label)) {
+        snprintf(why, why_cap, "no usable content id");
+        goto done;
+    }
+    ok = true; /* the label is what matters; the name and the icon are a bonus */
+    uint32_t count = be32(cnt + 0x10), table = be32(cnt + 0x18);
+    if (count == 0 || count > 64 || table == 0)
+        goto done;
+    unsigned char entries[64 * 32];
+    if (!pkg_read(r, fd, base + table, (size_t)count * 32, entries, why, why_cap))
+        goto done;
+    why[0] = 0;
+    for (uint32_t i = 0; i < count; i++) {
+        const unsigned char *e = entries + (size_t)i * 32;
+        uint32_t ident = be32(e), flags = be32(e + 8), off = be32(e + 16), size = be32(e + 20);
+        if ((flags & 0x80000000u) || !size)
+            continue; /* encrypted */
+        if ((ident == 0x2000 || ident == 0x1000) && size <= 64 * 1024 && !meta->name[0]) {
+            unsigned char *text = malloc(size);
+            if (text && pkg_read(r, fd, base + off, size, text, why, why_cap)) {
+                if (ident == 0x2000 && text[0] == '{')
+                    json_title(text, size, meta->name, sizeof meta->name);
+                else if (ident == 0x1000)
+                    sfo_title(text, size, meta->name, sizeof meta->name);
+            }
+            free(text);
+        } else if (ident == 0x1200 && size <= PKG_ICON_MAX && !meta->icon) {
+            unsigned char *png = malloc(size);
+            if (png && pkg_read(r, fd, base + off, size, png, why, why_cap) && size > 8 &&
+                !memcmp(png, "\x89PNG\r\n\x1a\n", 8)) {
+                meta->icon = png;
+                meta->icon_size = size;
+            } else {
+                free(png);
             }
         }
     }
+    why[0] = 0;
+done:
     fclose(tmp);
     if (!ok && !why[0])
         snprintf(why, why_cap, "no content id in the header");
@@ -271,9 +370,46 @@ static bool label_from_name(const char *filename, char *label, size_t cap) {
     return true;
 }
 static struct {
-    char id[24], label[24];
-} dlc_labels[256];
-static size_t dlc_label_count;
+    char id[24], base[16], label[24], name[96];
+    unsigned char *icon;
+    size_t icon_size;
+} dlc_meta[256];
+static size_t dlc_meta_count, dlc_icon_bytes;
+static pthread_mutex_t dlc_meta_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/* The icon the package of this DLC carries, as a copy the caller frees; false when there is none. */
+bool gameupdates_dlc_icon(const char *title_id, const char *label, unsigned char **data, size_t *size) {
+    bool found = false;
+    pthread_mutex_lock(&dlc_meta_mutex);
+    for (size_t i = 0; i < dlc_meta_count && !found; i++) {
+        if (!dlc_meta[i].icon || strcmp(dlc_meta[i].base, title_id) || strcmp(dlc_meta[i].label, label))
+            continue;
+        *data = malloc(dlc_meta[i].icon_size);
+        if (*data) {
+            memcpy(*data, dlc_meta[i].icon, dlc_meta[i].icon_size);
+            *size = dlc_meta[i].icon_size;
+            found = true;
+        }
+    }
+    pthread_mutex_unlock(&dlc_meta_mutex);
+    return found;
+}
+static bool dlc_has_icon(const char *base, const char *label) {
+    bool has = false;
+    pthread_mutex_lock(&dlc_meta_mutex);
+    for (size_t i = 0; i < dlc_meta_count && !has; i++)
+        has = dlc_meta[i].icon && !strcmp(dlc_meta[i].base, base) && !strcmp(dlc_meta[i].label, label);
+    pthread_mutex_unlock(&dlc_meta_mutex);
+    return has;
+}
+static void dlc_meta_free(void) {
+    pthread_mutex_lock(&dlc_meta_mutex);
+    for (size_t i = 0; i < dlc_meta_count; i++)
+        free(dlc_meta[i].icon);
+    memset(dlc_meta, 0, sizeof dlc_meta);
+    dlc_meta_count = dlc_icon_bytes = 0;
+    pthread_mutex_unlock(&dlc_meta_mutex);
+}
 
 /* Adds an entry for each DLC the NAS lists for an installed game and the console does not have yet. */
 static void add_dlc(const appdb_game *games, size_t total, Entry *found, size_t *count, char *skipped,
@@ -288,21 +424,42 @@ static void add_dlc(const appdb_game *games, size_t total, Entry *found, size_t 
         size_t n = nas_dlc_list(id, list, 16);
         for (size_t k = 0; k < n && *count < MAX_GAMES; k++) {
             const Release *r = &list[k];
-            char label[24] = "", why[120] = "";
-            for (size_t c = 0; c < dlc_label_count && !label[0]; c++)
-                if (!strcmp(dlc_labels[c].id, r->id))
-                    copy_text(label, sizeof label, dlc_labels[c].label);
-            if (!label[0]) {
-                if (!label_from_header(r, id, label, sizeof label, why, sizeof why) &&
-                    !label_from_name(r->filename, label, sizeof label)) {
+            char label[24] = "", name[96] = "", why[120] = "";
+            bool cached = false;
+            pthread_mutex_lock(&dlc_meta_mutex);
+            for (size_t c = 0; c < dlc_meta_count && !cached; c++)
+                if (!strcmp(dlc_meta[c].id, r->id) && !strcmp(dlc_meta[c].base, id)) {
+                    copy_text(label, sizeof label, dlc_meta[c].label);
+                    copy_text(name, sizeof name, dlc_meta[c].name);
+                    cached = true;
+                }
+            pthread_mutex_unlock(&dlc_meta_mutex);
+            if (!cached) {
+                PkgMeta meta;
+                if (pkg_meta(r, id, &meta, why, sizeof why)) {
+                    copy_text(label, sizeof label, meta.label);
+                    copy_text(name, sizeof name, meta.name);
+                } else if (!label_from_name(r->filename, label, sizeof label)) {
                     size_t used = strlen(skipped);
                     snprintf(skipped + used, skipped_cap - used, "%s%s (%s)", used ? "; " : "", r->filename, why);
                     continue;
                 }
-                if (dlc_label_count < sizeof dlc_labels / sizeof dlc_labels[0]) {
-                    copy_text(dlc_labels[dlc_label_count].id, sizeof dlc_labels[0].id, r->id);
-                    copy_text(dlc_labels[dlc_label_count++].label, sizeof dlc_labels[0].label, label);
+                pthread_mutex_lock(&dlc_meta_mutex);
+                if (dlc_meta_count < sizeof dlc_meta / sizeof dlc_meta[0]) {
+                    size_t at = dlc_meta_count++;
+                    copy_text(dlc_meta[at].id, sizeof dlc_meta[at].id, r->id);
+                    copy_text(dlc_meta[at].base, sizeof dlc_meta[at].base, id);
+                    copy_text(dlc_meta[at].label, sizeof dlc_meta[at].label, label);
+                    copy_text(dlc_meta[at].name, sizeof dlc_meta[at].name, name);
+                    if (meta.icon && dlc_icon_bytes + meta.icon_size <= ICON_BUDGET) {
+                        dlc_meta[at].icon = meta.icon;
+                        dlc_meta[at].icon_size = meta.icon_size;
+                        dlc_icon_bytes += meta.icon_size;
+                        meta.icon = NULL;
+                    }
                 }
+                pthread_mutex_unlock(&dlc_meta_mutex);
+                free(meta.icon);
             }
             if (gameupdates_dlc_installed(id, label))
                 continue;
@@ -318,7 +475,7 @@ static void add_dlc(const appdb_game *games, size_t total, Entry *found, size_t 
             copy_text(e->label, sizeof e->label, label);
             copy_text(e->game_name, sizeof e->game_name, games[i].title_name);
             /* The index names a DLC by its game's id unless titles.json says better; the label is clearer then. */
-            copy_text(e->name, sizeof e->name, strcmp(r->title, id) ? r->title : label);
+            copy_text(e->name, sizeof e->name, strcmp(r->title, id) ? r->title : name[0] ? name : label);
             snprintf(e->manifest, sizeof e->manifest, "nas:%s", r->id);
             e->size = r->size;
         }
@@ -581,6 +738,7 @@ void gameupdates_stop(void) {
     gu.entries = NULL;
     gu.count = 0;
     pthread_mutex_unlock(&gu.mutex);
+    dlc_meta_free();
 }
 int gameupdates_action(const cJSON *input, char *error, size_t cap) {
     const char *action = json_text(input, "action");
@@ -687,6 +845,7 @@ cJSON *gameupdates_status(void) {
         cJSON_AddStringToObject(g, "name", e->name);
         cJSON_AddStringToObject(g, "gameName", e->game_name);
         cJSON_AddStringToObject(g, "label", e->label);
+        cJSON_AddBoolToObject(g, "hasIcon", dlc_has_icon(e->base, e->label));
         cJSON_AddStringToObject(g, "state", "available");
         cJSON_AddNumberToObject(g, "size", (double)e->size);
         cJSON_AddItemToArray(dlc, g);

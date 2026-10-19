@@ -409,6 +409,18 @@ const cJSON *catalog_best_row_locked(const char *title_id) {
  * catalogue does not list. Read from the console's own files, never from the network. */
 static int art_local(const char *title_id, bool hero, unsigned char **data, size_t *size, char *mime,
                      size_t mime_cap, char *why, size_t why_cap) {
+    /* "dlc-<game id>-<label>": the icon inside that DLC's package, which Orbit read from the NAS when it
+     * listed it; a DLC without one shows its game's icon. */
+    if (!strncmp(title_id, "dlc-", 4) && strlen(title_id) > 14 && title_id[13] == '-') {
+        char game[10];
+        memcpy(game, title_id + 4, 9);
+        game[9] = 0;
+        if (!hero && gameupdates_dlc_icon(game, title_id + 14, data, size)) {
+            copy_text(mime, mime_cap, "image/png");
+            return 200;
+        }
+        return art_local(game, hero, data, size, mime, mime_cap, why, why_cap);
+    }
     bool shaped = strlen(title_id) == 9 && (!strncmp(title_id, "PPSA", 4) || !strncmp(title_id, "CUSA", 4));
     for (int i = 4; shaped && i < 9; i++)
         shaped = title_id[i] >= '0' && title_id[i] <= '9';

@@ -251,6 +251,8 @@ bool gameupdates_current_version(const char *title_id, char *out, size_t cap);
 /* Downloading and installing a game update (patchdl.c): one at a time. */
 /* A DLC's key is "<game id>/<label>" (PPSA00001/LIMITEDPACK00000); an update's is the game id. */
 bool gameupdates_split_dlc(const char *key, char *base, size_t base_cap, char *label, size_t label_cap);
+/* The icon inside the package of this DLC (game id, label), as a copy to free; false when it has none. */
+bool gameupdates_dlc_icon(const char *title_id, const char *label, unsigned char **data, size_t *size);
 /* True when the console has this DLC: /user/addcont/<game>/<label>/ exists. */
 bool gameupdates_dlc_installed(const char *title_id, const char *label);
 int patchdl_start(const char *title_id, char *error, size_t cap);

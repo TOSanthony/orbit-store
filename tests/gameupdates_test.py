@@ -15,7 +15,7 @@ SERVED = {  # basename -> version.xml
     "PPSA00007-version.xml": TEMPLATE % dict(id="PPSA00007", ver="02.000.000", fw=0x10200006),
     "PPSA00008-version.xml": TEMPLATE % dict(id="PPSA00008", ver="02.000.000", fw=0x10200006),
 }
-import hashlib, re
+import hashlib, struct, re
 BIN = {}        # path -> bytes (patch pieces and manifests)
 LOG = []        # every request path, in order
 BEHAVE = {}     # path -> "bad-once" | "bad-always" | "drop-once" | "gone"
@@ -296,23 +296,43 @@ with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as dri
     check("cancelling a running update deletes its partial download", s.get("phase") == "cancelled" and not [n for n in os.listdir(drive + "/homebrew") if n.startswith(".") or n.endswith(".pkg")])
 
 # ---- DLC listed on the NAS: found by the label in the package, hidden once the console has it ----
-def fake_pkg(kind, content_id, size):
+PNG = bytes.fromhex("89504e470d0a1a0a") + bytes(range(200))
+def sfo(title):
+    key, val = b"TITLE\0", title.encode() + b"\0"
+    head = b"\0PSF" + struct.pack("<IIII", 0x101, 20 + 16, 20 + 16 + len(key), 1)
+    entry = struct.pack("<HHIII", 0, 0x0204, len(val), len(val), 0)
+    return head + entry + key + val
+
+def fake_pkg(kind, content_id, size, title="", icon=None):
     body = bytearray(size)
+    base = 0 if kind == "ps4" else 0x800
     if kind == "ps4":
         body[0:4] = bytes.fromhex("7f434e54")
-        body[0x40:0x64] = content_id.encode()
     elif kind == "ps5":
         body[0:4] = bytes.fromhex("7f464948")
-        body[0x58:0x60] = (0x800).to_bytes(8, "little")
-        body[0x800:0x804] = bytes.fromhex("7f434e54")
-        body[0x840:0x864] = content_id.encode()
-    for j in range(0x1000, size): body[j] = (j * 7) % 251
+        body[0x58:0x60] = base.to_bytes(8, "little")
+        body[base:base + 4] = bytes.fromhex("7f434e54")
+    if kind in ("ps4", "ps5"):
+        body[base + 0x40:base + 0x64] = content_id.encode()
+        parts, at = [], 0x2000
+        if title:
+            data = sfo(title) if kind == "ps4" else json.dumps({"localizedParameters": {"defaultLanguage": "en-US", "en-US": {"titleName": title}}}).encode()
+            parts.append((0x1000 if kind == "ps4" else 0x2000, at, data)); at += len(data) + 16
+        if icon:
+            parts.append((0x1200, at, icon)); at += len(icon) + 16
+        table = 0x400
+        body[base + 0x10:base + 0x14] = struct.pack(">I", len(parts))
+        body[base + 0x18:base + 0x1c] = struct.pack(">I", table)
+        for i, (ident, off, data) in enumerate(parts):
+            body[base + table + i * 32:base + table + i * 32 + 32] = struct.pack(">IIIIII", ident, 0, 0, 0, off, len(data)) + bytes(8)
+            body[base + off:base + off + len(data)] = data
+    for j in range(base + 0x2000 + 0x1000, size): body[j] = (j * 7) % 251
     return bytes(body)
 
 with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as drive:
     build(root, [(1, "06.005.000")], {})
-    ps5 = fake_pkg("ps5", "EP0001-PPSA00001_00-LIMITEDPACK00000", 9000)
-    ps4 = fake_pkg("ps4", "EP0002-CUSA16194_00-PS4DLCPACK000001", 7000)
+    ps5 = fake_pkg("ps5", "EP0001-PPSA00001_00-LIMITEDPACK00000", 12000, "Claws of Awaji", PNG)
+    ps4 = fake_pkg("ps4", "EP0002-CUSA16194_00-PS4DLCPACK000001", 12000, "PS4 Season Pass", PNG)
     named = fake_pkg("none", "", 5000)
     BIN["dlc-ps5.pkg"], BIN["dlc-ps4.pkg"] = ps5, ps4
     BIN["EP0003-PPSA00001_00-NAMEDONLY0000001.pkg"] = named
@@ -330,6 +350,9 @@ with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as dri
     keys = {d["titleId"]: d for d in s.get("dlc", [])}
     check("a PS5 DLC is found by the label in its package header", "PPSA00001/LIMITEDPACK00000" in keys)
     check("a PS4 DLC is found by the label in its package header", "CUSA16194/PS4DLCPACK000001" in keys)
+    check("the DLC is named from its package and its icon is kept",
+          keys["PPSA00001/LIMITEDPACK00000"].get("name") == "Claws of Awaji" and keys["PPSA00001/LIMITEDPACK00000"].get("hasIcon") is True
+          and keys["CUSA16194/PS4DLCPACK000001"].get("name") == "PS4 Season Pass" and keys["CUSA16194/PS4DLCPACK000001"].get("hasIcon") is True)
     check("a DLC whose header says nothing is found by its file name", "PPSA00001/NAMEDONLY0000001" in keys)
     check("a DLC that cannot be named is reported, not listed", "unreadable.pkg" in s.get("dlcSkipped", "") and len(keys) == 3)
     check("the DLC belong to their game and are not updates",
