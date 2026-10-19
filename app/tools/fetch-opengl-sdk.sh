@@ -12,7 +12,12 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 version=1.0.0
 archive_sha256=f93643c04c843d56143b00951df1f8042ea7706ae9f19e4e9abf158e1ead77c5
 manifest_sha256=f4b91f672be037fbac3f82494f1225deaf4c227a03f37ac3ffa56abb213b943f
-url="https://github.com/blackbearreloaded/ps5-opengl/releases/download/v$version/ps5-opengl-sdk-$version.tar.gz"
+# The project's own copy comes first: the upstream release has disappeared once. The archive
+# checksum below is what makes either source safe.
+urls=(
+    "https://github.com/TOSanthony/Orbit-Store-PS5/releases/download/deps-v1/ps5-opengl-sdk-$version.tar.gz"
+    "https://github.com/blackbearreloaded/ps5-opengl/releases/download/v$version/ps5-opengl-sdk-$version.tar.gz"
+)
 
 cache="$root/.deps/ps5-opengl"
 archive="$cache/ps5-opengl-sdk-$version.tar.gz"
@@ -23,7 +28,15 @@ mkdir -p "$cache"
 if [[ ! -f $prefix/manifest.sha256 ]]; then
     if [[ ! -f $archive ]] || ! sha256sum --check --status <<<"$archive_sha256  $archive"; then
         printf '==> [opengl] Downloading ps5-opengl SDK %s\n' "$version" >&2
-        curl -fL --retry 3 -o "$archive.part" "$url"
+        fetched=false
+        for url in "${urls[@]}"; do
+            if curl -fL --retry 3 -o "$archive.part" "$url"; then
+                fetched=true
+                break
+            fi
+            printf '==> [opengl] %s failed, trying the next source\n' "$url" >&2
+        done
+        $fetched || { echo "ps5-opengl SDK could not be downloaded" >&2; exit 2; }
         mv -- "$archive.part" "$archive"
     fi
     sha256sum --check --status <<<"$archive_sha256  $archive" || {
