@@ -14,6 +14,7 @@ source="$directory/googletest-$version"
 archive="$directory/googletest-$version.tar.gz"
 stamp="$directory/.source-sha256"
 url="https://github.com/google/googletest/archive/refs/tags/v$version.tar.gz"
+mirror_url="https://github.com/TOSanthony/Orbit-Store-PS5/releases/download/deps-v1/googletest-$version.tar.gz" # the project's own copy; the hash checks either
 hash="65fab701d9829d38cb77c14acdc431d2108bfdbf8979e40eb8ae567edf10b27c"
 
 for command in wget sha256sum tar; do
@@ -31,7 +32,7 @@ fi
 if [[ ! -f $archive ]]; then
     temporary="$archive.download"
     rm -f -- "$temporary"
-    wget -q "$url" -O "$temporary"
+    wget -q "$mirror_url" -O "$temporary" || wget -q "$url" -O "$temporary"
     printf '%s  %s\n' "$hash" "$temporary" | sha256sum --check --strict >/dev/null
     mv "$temporary" "$archive"
 fi

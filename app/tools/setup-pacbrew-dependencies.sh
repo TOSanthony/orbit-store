@@ -15,6 +15,7 @@ archive="$cache/ps5-payload-dev-$version.tar.gz"
 release="$cache/$version"
 sysroot="$release/sysroot"
 url="https://github.com/ps5-payload-dev/pacbrew-repo/releases/download/$version/ps5-payload-dev.tar.gz"
+mirror_url="https://github.com/TOSanthony/Orbit-Store-PS5/releases/download/deps-v1/ps5-payload-dev.tar.gz" # the project's own copy; the hash below checks either
 hash=a85f65de418a8e6a898c6c3e3c870d50fff7618a200e4dd59ea9692af6ecec4d
 mode=${1:-}
 [[ -n $mode ]] && shift
@@ -67,7 +68,7 @@ if [[ $actual_marker != "$expected_marker" || ! -d $sysroot/user/homebrew/lib ]]
     if [[ ! -f $archive ]] || ! printf '%s  %s\n' "$hash" "$archive" | sha256sum --check --strict >/dev/null 2>&1; then
         temporary="$archive.download"
         echo "==> [pacbrew] Downloading $version prebuilt ports (about 346 MB)" >&2
-        wget -q "$url" -O "$temporary"
+        wget -q "$mirror_url" -O "$temporary" || wget -q "$url" -O "$temporary"
         printf '%s  %s\n' "$hash" "$temporary" | sha256sum --check --strict >&2
         mv "$temporary" "$archive"
     fi

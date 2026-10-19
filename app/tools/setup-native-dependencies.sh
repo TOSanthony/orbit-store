@@ -16,9 +16,15 @@ zlib_version="1.3.2"
 zlib_source="$zlib_directory/zlib-$zlib_version"
 zlib_archive="$zlib_directory/zlib-$zlib_version.tar.gz"
 zlib_stamp="$zlib_root/.source-version"
-sdk_url="https://github.com/ps5-payload-dev/sdk/releases/download/v0.42/ps5-payload-sdk.zip"
+# The project's own copy (release deps-v1) is tried first; the pinned hashes make either source safe.
+mirror="https://github.com/TOSanthony/Orbit-Store-PS5/releases/download/deps-v1"
+sdk_urls=(
+    "$mirror/ps5-payload-sdk.zip"
+    "https://github.com/ps5-payload-dev/sdk/releases/download/v0.42/ps5-payload-sdk.zip"
+)
 sdk_hash="8cfbc7cd5811e719eb4f0c47eea668d3dc7b40bc8ab11c4a5031d40c23ec02da"
 zlib_urls=(
+    "$mirror/zlib-$zlib_version.tar.gz"
     "https://github.com/madler/zlib/releases/download/v$zlib_version/zlib-$zlib_version.tar.gz"
     "https://zlib.net/fossils/zlib-$zlib_version.tar.gz"
 )
@@ -50,7 +56,10 @@ mkdir -p "$cache"
 if ! $skip_sdk && [[ ! -x "$sdk/bin/prospero-lld" ]]; then
     archive="$cache/ps5-payload-sdk.zip"
     temporary="$archive.download"
-    wget -q "$sdk_url" -O "$temporary"
+    for sdk_url in "${sdk_urls[@]}"; do
+        wget -q "$sdk_url" -O "$temporary" && break
+        echo "==> [deps] $sdk_url failed, trying the next source" >&2
+    done
     printf '%s  %s\n' "$sdk_hash" "$temporary" | sha256sum --check --strict
     mv "$temporary" "$archive"
     unzip -q -o "$archive" -d "$cache"
