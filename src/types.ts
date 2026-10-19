@@ -52,7 +52,8 @@ export interface Game {
   newOnOrbitRank?: number | null;
   releases: Release[];
 }
-export type SourceId = "vikingfile" | "archive" | "akirabox" | "datanodes" | "nas";
+export type SourceId =
+  "vikingfile" | "archive" | "akirabox" | "datanodes" | "nas";
 export interface SourceSettings {
   enabled: SourceId[];
   acknowledged: boolean;
@@ -79,6 +80,7 @@ export interface GameUpdateJob {
     | "preparing"
     | "downloading"
     | "verifying"
+    | "paused"
     | "installing"
     | "installed"
     | "downloaded"

@@ -306,7 +306,9 @@ std::vector<Scenario> scenarios()
                     Mode::normal,
                     false,
                     {run(2.0f, [](orbit::App &app) { app.show_tab(orbit::tab::updates); }),
-                     pause(1.5f, "game-updates"), move(Direction::down), pause(0.8f, "game-updates-second")}});
+                     pause(1.5f, "game-updates"), tap(Action::confirm), pause(1.5f, "game-updates-downloading"),
+                     tap(Action::confirm), pause(1.5f, "game-updates-paused"), tap(Action::confirm),
+                     pause(1.2f, "game-updates-resumed"), tap(Action::back), pause(1.2f, "game-updates-cancelled")}});
     list.push_back(
         {"library",
          Mode::normal,

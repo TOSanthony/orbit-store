@@ -321,7 +321,7 @@ struct GameUpdateJob
     bool present = false;
     bool active = false;
     std::string title_id;
-    std::string phase; // preparing, downloading, verifying, installing, installed, downloaded, failed, cancelled
+    std::string phase; // preparing, downloading, verifying, paused, installing, installed, downloaded, failed, cancelled
     double done = 0.0;
     double total = 0.0;
     double speed = 0.0; // bytes per second

@@ -98,10 +98,16 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
     {
         const GameUpdateItem &game = games[static_cast<std::size_t>(row_)];
         const bool this_job = status.job.present && status.job.title_id == game.title_id;
-        if (this_job && status.job.active)
+        const bool installing = this_job && status.job.active && status.job.phase == "installing";
+        if (this_job && status.job.active && !installing)
         {
+            // X while it downloads: pause, keeping everything already received.
             feedback.play(hui::audio::Cue::select);
-            ctx_.store.game_update_job("cancel", game.title_id);
+            ctx_.store.game_update_job("pause", game.title_id);
+        }
+        else if (installing)
+        {
+            refuse(feedback, input);
         }
         else if (game.blocked)
         {
@@ -115,8 +121,20 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
         }
         else if (!ctx_.store.setting_result().busy)
         {
+            // X when idle starts the download; X when paused resumes it where it stopped.
             feedback.play(hui::audio::Cue::select);
             ctx_.store.game_update_job("download", game.title_id);
+        }
+    }
+    else if (input.is_pressed(Action::back) && count > 0)
+    {
+        // Circle: cancel the running or paused update and delete what was downloaded.
+        const GameUpdateItem &game = games[static_cast<std::size_t>(row_)];
+        const bool this_job = status.job.present && status.job.title_id == game.title_id;
+        if (this_job && (status.job.active || status.job.phase == "paused"))
+        {
+            feedback.play(hui::audio::Cue::select);
+            ctx_.store.game_update_job("cancel", game.title_id);
         }
     }
     return intent;
@@ -128,9 +146,19 @@ std::vector<hui::ui::Hint> GameUpdatesScreen::hints() const
     std::vector<hui::ui::Hint> items;
     if (!status.games.empty())
     {
-        const std::size_t row = static_cast<std::size_t>(std::clamp(row_, 0, static_cast<int>(status.games.size()) - 1));
-        const bool running = status.job.present && status.job.active && status.job.title_id == status.games[row].title_id;
-        items.push_back({hui::ui::Button::cross, running ? tr("Cancel") : tr("Download")});
+        const GameUpdateItem &game =
+            status.games[static_cast<std::size_t>(std::clamp(row_, 0, static_cast<int>(status.games.size()) - 1))];
+        const bool this_job = status.job.present && status.job.title_id == game.title_id;
+        const bool paused = this_job && !status.job.active && status.job.phase == "paused";
+        const bool installing = this_job && status.job.active && status.job.phase == "installing";
+        if (paused)
+            items.push_back({hui::ui::Button::cross, tr("Resume")});
+        else if (this_job && status.job.active && !installing)
+            items.push_back({hui::ui::Button::cross, tr("Pause")});
+        else if (!installing)
+            items.push_back({hui::ui::Button::cross, tr("Download")});
+        if (paused || (this_job && status.job.active))
+            items.push_back({hui::ui::Button::circle, tr("Cancel")});
     }
     items.push_back({hui::ui::Button::l1, tr("Tabs"), hui::ui::Button::r1});
     return items;
@@ -224,12 +252,14 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
                 line = tr("Installed");
             else if (job.phase == "downloaded")
                 line = job.error.empty() ? std::string(tr("Downloaded")) : explained(job);
+            else if (job.phase == "paused")
+                line = std::string(tr("Paused")) + " \xC2\xB7 " + percent + "%";
             else if (job.phase == "cancelled")
                 line = tr("Cancelled");
             else
                 line = tr("Update failed: {error}", {{"error", explained(job)}});
             ui::text(list, type.regular, line, tx, row.y + 122.0f, 18.0f, ui::color::text2);
-            if (job.phase == "downloading" || job.phase == "verifying")
+            if (job.phase == "downloading" || job.phase == "verifying" || job.phase == "paused")
                 ui::progress_bar(list, {tx, row.y + row.h - 22.0f, right_edge - tx - 360.0f, 6.0f},
                                  static_cast<float>(fraction), ui::color::text);
             else if (job.phase == "installing")

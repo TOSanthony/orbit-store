@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Checks the game-update worker end to end with a fake app.db, param.json files and a fake Sony server."""
-import http.server, json, os, sqlite3, subprocess, sys, tempfile, threading
+import time, http.server, json, os, sqlite3, subprocess, sys, tempfile, threading
 
 driver = sys.argv[1]
 TEMPLATE = ('<title_patch nptitleid="%(id)s_00"><app_tag content_id="UP4001-%(id)s_00-X">'
@@ -38,6 +38,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(chunk)))
         if code == 206: self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end - 1, len(data)))
         self.end_headers()
+        if mode == "hang-once":
+            BEHAVE.pop(name)
+            self.wfile.write(chunk[: len(chunk) // 2]); self.wfile.flush()
+            time.sleep(4)
+            try: self.wfile.write(chunk[len(chunk) // 2:])
+            except OSError: pass
+            return
         if mode == "drop-once":
             BEHAVE.pop(name)
             self.wfile.write(chunk[: len(chunk) // 2]); self.wfile.flush()
@@ -65,15 +72,21 @@ def build(root, rows, params):
         os.makedirs(d)
         json.dump({"contentVersion": ver}, open(d + "/param.json", "w"))
 
-def run(root, firmware, download=None, storage=None, patches=None, nas=None):
+def run(root, firmware, download=None, storage=None, patches=None, nas=None, pause=None):
     env = dict(os.environ, ORBIT_TEST_GAMEUPDATES_BASE="http://127.0.0.1:%d" % server.server_port)
+    if pause: env["ORBIT_TEST_PAUSE"] = pause
     if storage: env["ORBIT_TEST_STORAGE"] = storage
     if patches: env["ORBIT_TEST_GAME_PATCHES"] = patches
     if nas: env["ORBIT_TEST_NAS_UPDATE"] = nas
     args = [driver, root, firmware] + ([download] if download else [])
     out = subprocess.run(args, env=env, capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, (out.returncode, out.stderr)
-    return json.loads(out.stdout)
+    decoder, text, at, last = json.JSONDecoder(), out.stdout, 0, None
+    while at < len(text):                       # the driver may print several objects; the last one counts
+        while at < len(text) and text[at].isspace(): at += 1
+        if at >= len(text): break
+        last, at = decoder.raw_decode(text, at)
+    return last
 
 failures = 0
 def check(name, ok):
@@ -233,4 +246,27 @@ with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as dri
     # the console without a drive
     s = run(root, "10200000", "PPSA00001", None)
     check("no drive with room fails cleanly", s.get("phase") == "failed" and "space" in s.get("error", ""))
+
+# ---- pause, resume and cancel ----
+with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as drive:
+    build(root, [(1, "05.000.000")], {})
+    payload = make_patch("PPSA00001", [30000, 40000])
+    final = drive + "/homebrew/PPSA00001-v06.005.000.pkg"
+    part = drive + "/homebrew/.PPSA00001-v06.005.000.pkg.part"
+    BEHAVE["PPSA00001-piece1.pkg"] = "hang-once"
+    s = run(root, "10200000", "PPSA00001", drive, pause="pause")
+    check("pausing stops the download and shows the paused phase", s.get("phase") == "paused" and s.get("active") is False)
+    check("a paused download keeps its part file", os.path.exists(part))
+    BEHAVE.clear()
+    BEHAVE["PPSA00001-piece1.pkg"] = "hang-once"; LOG.clear()
+    s = run(root, "10200000", "PPSA00001", drive, pause="resume")
+    check("resuming finishes the update with the right file", s.get("phase") == "downloaded" and os.path.exists(final) and open(final, "rb").read() == payload)
+    os.remove(final)
+    BEHAVE["PPSA00001-piece1.pkg"] = "hang-once"
+    s = run(root, "10200000", "PPSA00001", drive, pause="cancel")
+    check("cancelling a paused update ends cancelled", s.get("phase") == "cancelled")
+    check("and deletes what was downloaded", not [n for n in os.listdir(drive + "/homebrew") if n.startswith(".") or n.endswith(".pkg")])
+    BEHAVE["PPSA00001-piece1.pkg"] = "hang-once"
+    s = run(root, "10200000", "PPSA00001", drive, pause="cancel-active")
+    check("cancelling a running update deletes its partial download", s.get("phase") == "cancelled" and not [n for n in os.listdir(drive + "/homebrew") if n.startswith(".") or n.endswith(".pkg")])
 sys.exit(1 if failures else 0)

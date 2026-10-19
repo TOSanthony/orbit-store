@@ -127,6 +127,26 @@ int install_package_blocking(const char *path, const char *name, install_progres
     return -1;
 }
 
+/* Waits for the download thread to finish, then prints the job as JSON. */
+static void wait_inactive(bool print) {
+    for (int wait = 0; wait < 600; wait++) {
+        cJSON *now = gameupdates_status();
+        const cJSON *job = cJSON_GetObjectItemCaseSensitive(now, "job");
+        const cJSON *active = cJSON_GetObjectItemCaseSensitive(job, "active");
+        if (cJSON_IsFalse(active)) {
+            if (print) {
+                char *text = cJSON_Print(job);
+                puts(text);
+                free(text);
+            }
+            cJSON_Delete(now);
+            return;
+        }
+        cJSON_Delete(now);
+        usleep(100000);
+    }
+}
+
 int main(int argc, char **argv) {
     if (argc != 3 && argc != 4)
         return 2;
@@ -150,19 +170,34 @@ int main(int argc, char **argv) {
                 gameupdates_stop();
                 return 0;
             }
-            for (int wait = 0; wait < 600; wait++) {
-                cJSON *now = gameupdates_status();
-                const cJSON *job = cJSON_GetObjectItemCaseSensitive(now, "job");
-                const cJSON *active = cJSON_GetObjectItemCaseSensitive(job, "active");
-                if (cJSON_IsFalse(active)) {
-                    char *text = cJSON_Print(job);
-                    puts(text);
-                    free(text);
-                    cJSON_Delete(now);
-                    break;
+            const char *mode = getenv("ORBIT_TEST_PAUSE");
+            if (mode) {
+                /* Stop the download part-way (the fake server stalls on one piece), then act on it. */
+                usleep(1200000);
+                if (!strcmp(mode, "cancel-active"))
+                    patchdl_cancel();
+                else {
+                    char problem[160] = "";
+                    int refused = patchdl_pause(problem, sizeof problem);
+                    if (refused != 202)
+                        printf("{\"pauseRefused\":%d}\n", refused);
                 }
+            }
+            wait_inactive(true);
+            if (mode && !strcmp(mode, "cancel")) {
+                patchdl_cancel();
+                cJSON *now = gameupdates_status();
+                char *text = cJSON_Print(cJSON_GetObjectItemCaseSensitive(now, "job"));
+                puts(text);
+                free(text);
                 cJSON_Delete(now);
-                usleep(100000);
+            }
+            if (mode && !strcmp(mode, "resume")) {
+                char message2[256] = "";
+                int again = patchdl_start(argv[3], message2, sizeof message2);
+                if (again != 202)
+                    printf("{\"startRefused\":%d}\n", again);
+                wait_inactive(true);
             }
             cJSON_Delete(status);
             patchdl_stop();

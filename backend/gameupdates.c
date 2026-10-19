@@ -298,6 +298,8 @@ int gameupdates_action(const cJSON *input, char *error, size_t cap) {
     const char *action = json_text(input, "action");
     if (!strcmp(action, "download"))
         return patchdl_start(json_text(input, "titleId"), error, cap);
+    if (!strcmp(action, "pause"))
+        return patchdl_pause(error, cap);
     if (!strcmp(action, "cancel")) {
         patchdl_cancel();
         return 202;

@@ -1309,6 +1309,8 @@
   "There is not enough free space on the console to install this package.": "Bu paketi yüklemek için konsolda yeterli boş alan yok.",
   "Console": "Konsol",
   "Another game update is already in progress.": "Başka bir oyun güncellemesi zaten sürüyor.",
+  "Another game update is paused. Resume it or cancel it first.": "Başka bir oyun güncellemesi duraklatıldı. Önce devam ettir veya iptal et.",
+  "There is no download to pause.": "Duraklatılacak bir indirme yok.",
   "Checking the downloaded files…": "İndirilen dosyalar denetleniyor…",
   "Could not read Sony's update list.": "Sony’nin güncelleme listesi okunamadı.",
   "Download and install": "İndir ve yükle",

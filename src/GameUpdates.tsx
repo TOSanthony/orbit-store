@@ -21,6 +21,8 @@ function statusLine(job: GameUpdateJob): string {
       });
     case "verifying":
       return t("Checking the downloaded files…");
+    case "paused":
+      return `${t("Paused")} · ${percent}%`;
     case "installing":
       return t("Installing {percent}%", { percent: job.installPercent });
     case "installed":
@@ -50,10 +52,13 @@ export function GameUpdates({
   check: () => Promise<void>;
   job: GameUpdateJob | null;
   catalogue: Game[];
-  act: (action: "download" | "cancel", titleId: string) => Promise<void>;
+  act: (
+    action: "download" | "pause" | "cancel",
+    titleId: string,
+  ) => Promise<void>;
 }) {
   const [message, setMessage] = useState("");
-  const run = (action: "download" | "cancel", id: string) => {
+  const run = (action: "download" | "pause" | "cancel", id: string) => {
     setMessage("");
     act(action, id).catch((e: unknown) =>
       setMessage(e instanceof Error ? e.message : ""),
@@ -112,24 +117,48 @@ export function GameUpdates({
                 {job && job.titleId === game.titleId && (
                   <>
                     <p>{statusLine(job)}</p>
-                    {job.active && job.total > 0 && (
-                      <progress value={job.done} max={job.total} />
-                    )}
+                    {(job.active || job.phase === "paused") &&
+                      job.total > 0 && (
+                        <progress value={job.done} max={job.total} />
+                      )}
                   </>
                 )}
                 {game.state === "available" &&
-                  (job?.active && job.titleId === game.titleId ? (
-                    <button onClick={() => run("cancel", game.titleId)}>
-                      {t("Cancel")}
-                    </button>
-                  ) : (
-                    <button
-                      disabled={!!job?.active}
-                      onClick={() => run("download", game.titleId)}
-                    >
-                      {t("Download and install")}
-                    </button>
-                  ))}
+                  (() => {
+                    const mine = job?.titleId === game.titleId ? job : null;
+                    const paused =
+                      !!mine && !mine.active && mine.phase === "paused";
+                    const installing =
+                      !!mine?.active && mine.phase === "installing";
+                    const running = !!mine?.active && !installing;
+                    return (
+                      <div className="update-actions">
+                        {running && (
+                          <button onClick={() => run("pause", game.titleId)}>
+                            {t("Pause")}
+                          </button>
+                        )}
+                        {paused && (
+                          <button onClick={() => run("download", game.titleId)}>
+                            {t("Resume")}
+                          </button>
+                        )}
+                        {!running && !paused && !installing && (
+                          <button
+                            disabled={!!job?.active}
+                            onClick={() => run("download", game.titleId)}
+                          >
+                            {t("Download and install")}
+                          </button>
+                        )}
+                        {(running || paused || installing) && (
+                          <button onClick={() => run("cancel", game.titleId)}>
+                            {t("Cancel")}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 {game.state === "needs-firmware" && (
                   <p className="muted">
                     {t("Needs firmware {firmware} or later", {

@@ -1309,6 +1309,8 @@
   "There is not enough free space on the console to install this package.": "Nincs elég szabad hely a konzolon a csomag telepítéséhez.",
   "Console": "Konzol",
   "Another game update is already in progress.": "Egy másik játékfrissítés már folyamatban van.",
+  "Another game update is paused. Resume it or cancel it first.": "Egy másik játékfrissítés szüneteltetve van. Előbb folytasd vagy szakítsd meg.",
+  "There is no download to pause.": "Nincs szüneteltethető letöltés.",
   "Checking the downloaded files…": "A letöltött fájlok ellenőrzése…",
   "Could not read Sony's update list.": "Nem sikerült beolvasni a Sony frissítéslistáját.",
   "Download and install": "Letöltés és telepítés",

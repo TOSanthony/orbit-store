@@ -224,7 +224,7 @@ export function useOrbit() {
     gameChecking,
     gameJob,
     gameUpdateAction: async (
-      action: "download" | "cancel",
+      action: "download" | "pause" | "cancel",
       titleId: string,
     ) => {
       try {

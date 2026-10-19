@@ -243,6 +243,7 @@ bool gameupdates_offer(const char *title_id, char *name, size_t name_cap, char *
 void gameupdates_request_refresh(void);
 /* Downloading and installing a game update (patchdl.c): one at a time. */
 int patchdl_start(const char *title_id, char *error, size_t cap);
+int patchdl_pause(char *error, size_t cap);
 void patchdl_cancel(void);
 void patchdl_stop(void);
 cJSON *patchdl_status(void);

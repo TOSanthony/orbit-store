@@ -1319,6 +1319,8 @@
   "There is not enough free space on the console to install this package.": "Non c'è abbastanza spazio libero sulla console per installare questo pacchetto.",
   "Console": "Console",
   "Another game update is already in progress.": "Un altro aggiornamento di gioco è già in corso.",
+  "Another game update is paused. Resume it or cancel it first.": "Un altro aggiornamento di gioco è in pausa. Riprendilo o annullalo prima.",
+  "There is no download to pause.": "Nessun download da mettere in pausa.",
   "Checking the downloaded files…": "Controllo dei file scaricati…",
   "Could not read Sony's update list.": "Impossibile leggere l’elenco degli aggiornamenti di Sony.",
   "Download and install": "Scarica e installa",

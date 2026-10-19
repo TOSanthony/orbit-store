@@ -31,7 +31,8 @@
 static struct {
     pthread_mutex_t mutex;
     bool active;
-    atomic_bool cancel;
+    atomic_bool cancel; /* stop and throw the download away */
+    atomic_bool pause;  /* stop and keep it, to resume later */
     char title_id[16], name[96], version[16];
     char phase[16], error[200], detail[200];
     int64_t done, total;
@@ -40,8 +41,19 @@ static struct {
     bool started;
 } pd = {.mutex = PTHREAD_MUTEX_INITIALIZER};
 
+/* What a paused download leaves on its drive, so cancelling it later can delete it. */
+static struct {
+    bool present;
+    Storage drive;
+    char part[96], state[96];
+} kept;
+
 static bool stopped(void) {
-    return atomic_load(&pd.cancel) || orbit_is_stopping();
+    return atomic_load(&pd.cancel) || atomic_load(&pd.pause) || orbit_is_stopping();
+}
+/* The phase a stop leads to: paused when the person paused, else cancelled. */
+static const char *stop_phase(void) {
+    return atomic_load(&pd.pause) && !atomic_load(&pd.cancel) && !orbit_is_stopping() ? "paused" : "cancelled";
 }
 static void phase(const char *name, const char *error) {
     pthread_mutex_lock(&pd.mutex);
@@ -358,7 +370,7 @@ static void run(const char *manifest_url) {
         SonyBody body = {0};
         if (!sony_get(manifest_url, MANIFEST_MAX, &body, stopped, why, sizeof why)) {
             if (stopped())
-                return finish("cancelled", "");
+                return finish(stop_phase(), "");
             return finish_d("failed", "Could not read Sony's update list.", why);
         }
         int parsed = patchmanifest_parse(body.data, body.size, &job.manifest, why, sizeof why);
@@ -421,6 +433,21 @@ static void run(const char *manifest_url) {
         if (!strcmp(outcome, "cancelled"))
             save_state(&job);
         close(job.fd);
+        if (!strcmp(outcome, "cancelled")) {
+            if (!strcmp(stop_phase(), "paused")) {
+                /* Kept as it is: the part file and its state wait for the person to resume. */
+                pthread_mutex_lock(&pd.mutex);
+                kept.present = true;
+                kept.drive = drive;
+                copy_text(kept.part, sizeof kept.part, job.part);
+                copy_text(kept.state, sizeof kept.state, job.state);
+                pthread_mutex_unlock(&pd.mutex);
+            } else if (atomic_load(&pd.cancel) && !orbit_is_stopping()) {
+                /* Cancelled on purpose: what was downloaded goes too. */
+                unlinkat(job.dir, job.part, 0);
+                unlinkat(job.dir, job.state, 0);
+            }
+        }
         if (!*outcome && renameat(job.dir, job.part, job.dir, job.final_name) != 0)
             outcome = "The finished file could not be saved.";
         if (!*outcome)
@@ -432,7 +459,7 @@ static void run(const char *manifest_url) {
     close(job.dir);
     if (*outcome) {
         if (!strcmp(outcome, "cancelled"))
-            return finish("cancelled", "");
+            return finish(stop_phase(), "");
         return finish_d("failed", outcome, detail);
     }
     pthread_mutex_lock(&pd.mutex);
@@ -448,6 +475,7 @@ static void run(const char *manifest_url) {
         return finish("failed", "Downloaded, but the console has too little free space to install it.");
     }
     phase("installing", "");
+    atomic_store(&pd.pause, false); /* a pause asked as the download ended does not stop the install */
     char name[96], error[200] = "";
     pthread_mutex_lock(&pd.mutex);
     copy_text(name, sizeof name, pd.name);
@@ -492,6 +520,11 @@ int patchdl_start(const char *title_id, char *error, size_t cap) {
         copy_text(error, cap, "Another game update is already in progress.");
         return 409;
     }
+    if (!strcmp(pd.phase, "paused") && kept.present && strcmp(pd.title_id, title_id)) {
+        pthread_mutex_unlock(&pd.mutex);
+        copy_text(error, cap, "Another game update is paused. Resume it or cancel it first.");
+        return 409;
+    }
     char *url = strdup(manifest);
     if (!url) {
         pthread_mutex_unlock(&pd.mutex);
@@ -499,6 +532,8 @@ int patchdl_start(const char *title_id, char *error, size_t cap) {
         return 503;
     }
     atomic_store(&pd.cancel, false);
+    atomic_store(&pd.pause, false);
+    kept.present = false;
     pd.active = true;
     copy_text(pd.title_id, sizeof pd.title_id, title_id);
     copy_text(pd.name, sizeof pd.name, name);
@@ -529,8 +564,62 @@ int patchdl_start(const char *title_id, char *error, size_t cap) {
     return 202;
 }
 
+/* Pause: stops the transfer and keeps everything, so "download" resumes where it stopped. */
+int patchdl_pause(char *error, size_t cap) {
+    pthread_mutex_lock(&pd.mutex);
+    bool can = pd.active && (!strcmp(pd.phase, "preparing") || !strcmp(pd.phase, "downloading") ||
+                             !strcmp(pd.phase, "verifying"));
+    if (can)
+        atomic_store(&pd.pause, true);
+    pthread_mutex_unlock(&pd.mutex);
+    if (!can) {
+        copy_text(error, cap, "There is no download to pause.");
+        return 409;
+    }
+    return 202;
+}
+
+/* Cancel: stops a running update, or discards a paused one together with what it had downloaded. */
 void patchdl_cancel(void) {
-    atomic_store(&pd.cancel, true);
+    pthread_mutex_lock(&pd.mutex);
+    if (pd.active) {
+        atomic_store(&pd.cancel, true);
+        pthread_mutex_unlock(&pd.mutex);
+        return;
+    }
+    bool paused = !strcmp(pd.phase, "paused");
+    bool had_files = paused && kept.present;
+    Storage drive = kept.drive;
+    char part[96], state[96];
+    copy_text(part, sizeof part, kept.part);
+    copy_text(state, sizeof state, kept.state);
+    if (paused)
+        kept.present = false;
+    pthread_mutex_unlock(&pd.mutex);
+    if (!paused)
+        return;
+    if (had_files) {
+        Job *place = calloc(1, sizeof *place);
+        if (place) {
+            copy_text(place->storage_id, sizeof place->storage_id, drive.id);
+            copy_text(place->root, sizeof place->root, drive.root);
+            place->device = drive.device;
+            place->inode = drive.inode;
+            int dir = storage_open(place);
+            free(place);
+            if (dir >= 0) {
+                unlinkat(dir, part, 0);
+                unlinkat(dir, state, 0);
+                close(dir);
+            }
+        }
+    }
+    pthread_mutex_lock(&pd.mutex);
+    if (!pd.active && !strcmp(pd.phase, "paused")) {
+        copy_text(pd.phase, sizeof pd.phase, "cancelled");
+        pd.done = 0;
+    }
+    pthread_mutex_unlock(&pd.mutex);
 }
 
 void patchdl_stop(void) {

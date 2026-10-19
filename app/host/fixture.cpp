@@ -732,8 +732,19 @@ http::Response Fixture::send(const http::Request &request)
         response.body = "{\"preferredStorage\":" + json::quote(preferred_) + "}";
         return response;
     }
-    if (get && path == "/api/v1/game-updates")
+    if (path == "/api/v1/game-updates")
     {
+        if (!get)
+        {
+            const std::string action = input.text("action");
+            game_job_ = action == "download" ? "downloading" : action == "pause" ? "paused" : "";
+        }
+        std::string job;
+        if (!game_job_.empty())
+            job = ",\"job\":{\"titleId\":\"PPSA01341\",\"name\":\"Demon's Souls\",\"version\":\"01.007.000\","
+                  "\"phase\":\"" + game_job_ + "\",\"active\":" + (game_job_ == "downloading" ? "true" : "false") +
+                  ",\"done\":1850000000,\"total\":4509715660,\"speed\":18900000,\"piece\":1,\"pieces\":1,"
+                  "\"installPercent\":0,\"error\":\"\",\"detail\":\"\"}";
         response.body =
             "{\"supported\":true,\"checking\":false,\"checked\":1,\"failed\":0,\"error\":\"\",\"detail\":\"\",\"count\":3,"
             "\"games\":["
@@ -742,7 +753,7 @@ http::Response Fixture::send(const http::Request &request)
             "{\"titleId\":\"CUSA00093\",\"name\":\"DRIVECLUB\",\"installed\":\"01.00\",\"version\":\"01.28\","
             "\"state\":\"available\",\"size\":19187761152},"
             "{\"titleId\":\"PPSA20397\",\"name\":\"Assassin's Creed Shadows\",\"installed\":\"01.019.076\","
-            "\"version\":\"01.021.023\",\"state\":\"available\",\"size\":147382468608}]}";
+            "\"version\":\"01.021.023\",\"state\":\"available\",\"size\":147382468608}]" + job + "}";
         return response;
     }
     if (path == "/api/v1/catalog/updates")
