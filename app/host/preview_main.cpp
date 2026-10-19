@@ -302,6 +302,11 @@ std::vector<Scenario> scenarios()
          tap(Action::confirm), pause(0.5f, "browse-platform-menu"), move(Direction::down), move(Direction::down),
          tap(Action::confirm), move(Direction::down), pause(0.8f, "browse-ps4"),
          tap(Action::confirm), pause(0.8f, "browse-ps4-details")}});
+    list.push_back({"game-updates",
+                    Mode::normal,
+                    false,
+                    {run(2.0f, [](orbit::App &app) { app.show_tab(orbit::tab::updates); }),
+                     pause(1.5f, "game-updates"), move(Direction::down), pause(0.8f, "game-updates-second")}});
     list.push_back(
         {"library",
          Mode::normal,

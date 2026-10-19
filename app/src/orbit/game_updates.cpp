@@ -122,6 +122,20 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
     return intent;
 }
 
+std::vector<hui::ui::Hint> GameUpdatesScreen::hints() const
+{
+    const GameUpdateStatus &status = ctx_.store.state().game_update_status;
+    std::vector<hui::ui::Hint> items;
+    if (!status.games.empty())
+    {
+        const std::size_t row = static_cast<std::size_t>(std::clamp(row_, 0, static_cast<int>(status.games.size()) - 1));
+        const bool running = status.job.present && status.job.active && status.job.title_id == status.games[row].title_id;
+        items.push_back({hui::ui::Button::cross, running ? tr("Cancel") : tr("Download")});
+    }
+    items.push_back({hui::ui::Button::l1, tr("Tabs"), hui::ui::Button::r1});
+    return items;
+}
+
 void GameUpdatesScreen::draw(Frame &frame, bool focused) const
 {
     hui::gfx::DrawList &list = frame.scene;

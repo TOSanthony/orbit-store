@@ -732,6 +732,19 @@ http::Response Fixture::send(const http::Request &request)
         response.body = "{\"preferredStorage\":" + json::quote(preferred_) + "}";
         return response;
     }
+    if (get && path == "/api/v1/game-updates")
+    {
+        response.body =
+            "{\"supported\":true,\"checking\":false,\"checked\":1,\"failed\":0,\"error\":\"\",\"detail\":\"\",\"count\":3,"
+            "\"games\":["
+            "{\"titleId\":\"PPSA01341\",\"name\":\"Demon's Souls\",\"installed\":\"01.006.000\",\"version\":\"01.007.000\","
+            "\"state\":\"available\",\"size\":4509715660},"
+            "{\"titleId\":\"CUSA00093\",\"name\":\"DRIVECLUB\",\"installed\":\"01.00\",\"version\":\"01.28\","
+            "\"state\":\"available\",\"size\":19187761152},"
+            "{\"titleId\":\"PPSA20397\",\"name\":\"Assassin's Creed Shadows\",\"installed\":\"01.019.076\","
+            "\"version\":\"01.021.023\",\"state\":\"available\",\"size\":147382468608}]}";
+        return response;
+    }
     if (path == "/api/v1/catalog/updates")
     {
         if (!get)

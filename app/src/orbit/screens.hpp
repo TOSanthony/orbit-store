@@ -455,6 +455,7 @@ class GameUpdatesScreen final : public Screen
     void focus() override;
     Intent update(const InputFrame &input, float dt, Feedback &feedback, bool focused) override;
     void draw(Frame &frame, bool focused) const override;
+    std::vector<hui::ui::Hint> hints() const override;
 
   private:
     int row_ = 0;
