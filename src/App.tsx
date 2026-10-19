@@ -733,7 +733,7 @@ export default function App() {
             games={orbit.gameDlcList}
             checking={orbit.gameChecking}
             check={orbit.checkGameUpdates}
-            job={orbit.gameJob}
+            job={orbit.gameDlcJob}
             queue={orbit.gameQueue}
             catalogue={orbit.games}
             act={orbit.gameUpdateAction}

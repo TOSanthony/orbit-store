@@ -256,7 +256,7 @@ bool gameupdates_dlc_icon(const char *title_id, const char *label, unsigned char
 /* True when the console has this DLC: /user/addcont/<game>/<label>/ exists. */
 bool gameupdates_dlc_installed(const char *title_id, const char *label);
 int patchdl_start(const char *title_id, char *error, size_t cap);
-int patchdl_pause(char *error, size_t cap);
+int patchdl_pause(const char *title_id, char *error, size_t cap);
 /* The queue of updates waiting for their turn (patchdl.c). */
 int patchdl_enqueue(const char *title_id, char *error, size_t cap);
 void patchdl_dequeue(const char *title_id);
@@ -265,9 +265,9 @@ void patchdl_queue_load(void);
 void patchdl_queue_pump(void);
 cJSON *patchdl_queue_json(void);
 bool gameupdates_check_ok(void);
-void patchdl_cancel(void);
+void patchdl_cancel(const char *title_id);
 void patchdl_stop(void);
-cJSON *patchdl_status(void);
+cJSON *patchdl_status(bool dlc);
 int updates_start(void);
 void updates_stop(void);
 cJSON *updates_status(void);

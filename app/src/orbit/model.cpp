@@ -509,20 +509,23 @@ GameUpdateStatus parse_game_update_status(const json::Value &value)
     for (const json::Value &entry : value["queue"].items())
         if (!entry.as_string().empty())
             status.queue.push_back(entry.as_string());
-    if (value["job"].is_object())
+    for (int k = 0; k < 2; ++k)
     {
-        const json::Value &job = value["job"];
-        status.job.present = true;
-        status.job.active = job.flag("active");
-        status.job.title_id = job.text("titleId");
-        status.job.phase = job.text("phase");
-        status.job.done = job.number("done");
-        status.job.total = job.number("total");
-        status.job.speed = job.number("speed");
-        status.job.install_percent = static_cast<int>(job.number("installPercent"));
-        status.job.waiting = job.flag("waiting");
-        status.job.error = job.text("error");
-        status.job.detail = job.text("detail");
+        const json::Value &job = value[k == 0 ? "job" : "dlcJob"];
+        if (!job.is_object())
+            continue;
+        GameUpdateJob &out = k == 0 ? status.job : status.dlc_job; // the DLC download has its own slot
+        out.present = true;
+        out.active = job.flag("active");
+        out.title_id = job.text("titleId");
+        out.phase = job.text("phase");
+        out.done = job.number("done");
+        out.total = job.number("total");
+        out.speed = job.number("speed");
+        out.install_percent = static_cast<int>(job.number("installPercent"));
+        out.waiting = job.flag("waiting");
+        out.error = job.text("error");
+        out.detail = job.text("detail");
     }
     return status;
 }

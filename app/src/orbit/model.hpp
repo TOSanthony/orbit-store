@@ -349,7 +349,8 @@ struct GameUpdateStatus
     std::string detail; // why the first failed game failed (technical, English)
     std::vector<GameUpdateItem> games;
     std::vector<GameUpdateItem> dlc; // DLC on the NAS that an installed game does not have yet
-    GameUpdateJob job;
+    GameUpdateJob job;     // the update being downloaded
+    GameUpdateJob dlc_job; // the DLC being downloaded, at the same time
     std::vector<std::string> queue; // title IDs waiting for their turn, in order
 };
 

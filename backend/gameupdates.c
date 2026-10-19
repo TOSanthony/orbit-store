@@ -745,7 +745,7 @@ int gameupdates_action(const cJSON *input, char *error, size_t cap) {
     if (!strcmp(action, "download"))
         return patchdl_start(json_text(input, "titleId"), error, cap);
     if (!strcmp(action, "pause"))
-        return patchdl_pause(error, cap);
+        return patchdl_pause(json_text(input, "titleId"), error, cap);
     if (!strcmp(action, "queue"))
         return patchdl_enqueue(json_text(input, "titleId"), error, cap);
     if (!strcmp(action, "dequeue")) {
@@ -783,7 +783,7 @@ int gameupdates_action(const cJSON *input, char *error, size_t cap) {
         return 202;
     }
     if (!strcmp(action, "cancel")) {
-        patchdl_cancel();
+        patchdl_cancel(json_text(input, "titleId"));
         return 202;
     }
     if (strcmp(action, "refresh")) {
@@ -870,9 +870,12 @@ cJSON *gameupdates_status(void) {
     cJSON_AddNumberToObject(o, "count", available);
     cJSON_AddItemToObject(o, "games", games);
     cJSON_AddItemToObject(o, "queue", patchdl_queue_json());
-    cJSON *job = patchdl_status();
+    cJSON *job = patchdl_status(false);
     if (job)
         cJSON_AddItemToObject(o, "job", job);
+    cJSON *dlc_job = patchdl_status(true);
+    if (dlc_job)
+        cJSON_AddItemToObject(o, "dlcJob", dlc_job);
     return o;
 }
 

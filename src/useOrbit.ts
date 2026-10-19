@@ -25,6 +25,7 @@ export function useOrbit() {
   const [gameDlcList, setGameDlcList] = useState<GameUpdate[]>([]);
   const [gameChecking, setGameChecking] = useState(false);
   const [gameJob, setGameJob] = useState<GameUpdateJob | null>(null);
+  const [gameDlcJob, setGameDlcJob] = useState<GameUpdateJob | null>(null);
   const [gameQueue, setGameQueue] = useState<string[]>([]);
   const [browser, setBrowser] = useSnapshot<BrowserSession | null>(null);
   const [system, setSystem] = useSnapshot<System | null>(null),
@@ -87,6 +88,7 @@ export function useOrbit() {
                 games: GameUpdate[];
                 dlc?: GameUpdate[];
                 job?: GameUpdateJob;
+                dlcJob?: GameUpdateJob;
                 queue?: string[];
               }>("/game-updates").catch(() => ({
                 count: 0,
@@ -94,6 +96,7 @@ export function useOrbit() {
                 games: [] as GameUpdate[],
                 dlc: [] as GameUpdate[],
                 job: undefined as GameUpdateJob | undefined,
+                dlcJob: undefined as GameUpdateJob | undefined,
                 queue: [] as string[],
               })),
             ]);
@@ -109,6 +112,7 @@ export function useOrbit() {
             setGameDlcList(patches.dlc ?? []);
             setGameChecking(!!patches.checking);
             setGameJob(patches.job ?? null);
+            setGameDlcJob(patches.dlcJob ?? null);
             setGameQueue(patches.queue ?? []);
           }
         } else {
@@ -120,6 +124,7 @@ export function useOrbit() {
           setGameDlcList([]);
           setGameChecking(false);
           setGameJob(null);
+          setGameDlcJob(null);
           setGameQueue([]);
         }
         if (!alive.current) return;
@@ -235,6 +240,7 @@ export function useOrbit() {
     gameUpdateList,
     gameChecking,
     gameJob,
+    gameDlcJob,
     gameQueue,
     gameUpdateAction: async (
       action:

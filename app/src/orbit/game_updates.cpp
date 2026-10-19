@@ -139,9 +139,9 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
     {
         // Left/Right move between the row's buttons (Pause/Resume and Cancel).
         const GameUpdateItem &g = games[static_cast<std::size_t>(row_)];
-        const bool mine = status.job.present && status.job.title_id == g.title_id;
-        const bool two = mine && ((status.job.active && status.job.phase != "installing") ||
-                                  status.job.phase == "paused");
+        const bool mine = job_of(status).present && job_of(status).title_id == g.title_id;
+        const bool two = mine && ((job_of(status).active && job_of(status).phase != "installing") ||
+                                  job_of(status).phase == "paused");
         const int next = std::clamp(button_ + (input.nav == Direction::right ? 1 : -1), 0, two ? 1 : 0);
         if (next != button_)
             feedback.play(hui::audio::Cue::focus);
@@ -185,10 +185,10 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
     else if (input.is_pressed(Action::confirm) && count > 0)
     {
         const GameUpdateItem &game = games[static_cast<std::size_t>(row_)];
-        const bool this_job = status.job.present && status.job.title_id == game.title_id;
-        const bool installing = this_job && status.job.active && status.job.phase == "installing";
-        const bool paused_here = this_job && !status.job.active && status.job.phase == "paused";
-        if (button_ == 1 && (paused_here || (this_job && status.job.active && !installing)))
+        const bool this_job = job_of(status).present && job_of(status).title_id == game.title_id;
+        const bool installing = this_job && job_of(status).active && job_of(status).phase == "installing";
+        const bool paused_here = this_job && !job_of(status).active && job_of(status).phase == "paused";
+        if (button_ == 1 && (paused_here || (this_job && job_of(status).active && !installing)))
         {
             // The second button: cancel and delete what was downloaded.
             feedback.play(hui::audio::Cue::select);
@@ -201,7 +201,7 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
             feedback.play(hui::audio::Cue::select);
             ctx_.store.game_update_job("download", game.title_id);
         }
-        else if (this_job && status.job.active && !installing)
+        else if (this_job && job_of(status).active && !installing)
         {
             // X while it downloads: pause, keeping everything already received.
             feedback.play(hui::audio::Cue::select);
@@ -222,7 +222,7 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
             feedback.play(hui::audio::Cue::select);
             ctx_.store.game_update_job("dequeue", game.title_id);
         }
-        else if (status.job.active || (status.job.present && status.job.phase == "paused"))
+        else if (job_of(status).active || (job_of(status).present && job_of(status).phase == "paused"))
         {
             // Another update has the line: this one waits for its turn.
             feedback.play(hui::audio::Cue::select);
@@ -239,8 +239,8 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
     {
         // Circle: cancel the running or paused update and delete what was downloaded.
         const GameUpdateItem &game = games[static_cast<std::size_t>(row_)];
-        const bool this_job = status.job.present && status.job.title_id == game.title_id;
-        if (this_job && (status.job.active || status.job.phase == "paused"))
+        const bool this_job = job_of(status).present && job_of(status).title_id == game.title_id;
+        if (this_job && (job_of(status).active || job_of(status).phase == "paused"))
         {
             feedback.play(hui::audio::Cue::select);
             ctx_.store.game_update_job("cancel", game.title_id);
@@ -271,21 +271,21 @@ std::vector<hui::ui::Hint> GameUpdatesScreen::hints() const
     {
         const GameUpdateItem &game =
             listed[static_cast<std::size_t>(std::clamp(row_, 0, static_cast<int>(listed.size()) - 1))];
-        const bool this_job = status.job.present && status.job.title_id == game.title_id;
-        const bool paused = this_job && !status.job.active && status.job.phase == "paused";
-        const bool installing = this_job && status.job.active && status.job.phase == "installing";
-        if ((paused || (this_job && status.job.active && !installing)) && button_ == 1)
+        const bool this_job = job_of(status).present && job_of(status).title_id == game.title_id;
+        const bool paused = this_job && !job_of(status).active && job_of(status).phase == "paused";
+        const bool installing = this_job && job_of(status).active && job_of(status).phase == "installing";
+        if ((paused || (this_job && job_of(status).active && !installing)) && button_ == 1)
             items.push_back({hui::ui::Button::cross, tr("Cancel")});
         else if (paused)
             items.push_back({hui::ui::Button::cross, tr("Resume")});
-        else if (this_job && status.job.active && !installing)
+        else if (this_job && job_of(status).active && !installing)
             items.push_back({hui::ui::Button::cross, tr("Pause")});
         else if (queue_place(status, game.title_id) > 0)
             items.push_back({hui::ui::Button::cross, tr("Remove from queue")});
         else if (!installing)
             items.push_back({hui::ui::Button::cross,
-                             status.job.active || status.job.phase == "paused" ? tr("Add to queue") : tr("Download")});
-        if (paused || (this_job && status.job.active))
+                             job_of(status).active || job_of(status).phase == "paused" ? tr("Add to queue") : tr("Download")});
+        if (paused || (this_job && job_of(status).active))
             items.push_back({hui::ui::Button::circle, tr("Cancel")});
         items.push_back({hui::ui::Button::triangle, tr("Check")});
         items.push_back({hui::ui::Button::square, dlc_mode_ ? tr("Install all") : tr("Update all")});
@@ -375,7 +375,7 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         const float tx = cover.x + cover.w + 28.0f;
         const float right_edge = row.x + row.w - kRowPad;
         const float info_width = right_edge - tx;
-        const GameUpdateJob &job = status.job;
+        const GameUpdateJob &job = job_of(status);
         const bool this_job = job.present && job.title_id == game.title_id && !job.phase.empty() &&
                               job.phase != "cancelled"; // a cancelled update goes back to "Update available"
         const int place = queue_place(status, game.title_id);
@@ -480,7 +480,7 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         else if (place > 0)
             actions = {tr("Remove from queue")};
         else if (!installing)
-            actions = {status.job.active || status.job.phase == "paused" ? tr("Add to queue") : tr("Download")};
+            actions = {job_of(status).active || job_of(status).phase == "paused" ? tr("Add to queue") : tr("Download")};
         float ax = tx;
         for (std::size_t a = 0; a < actions.size(); ++a)
         {

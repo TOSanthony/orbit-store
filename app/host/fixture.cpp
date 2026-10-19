@@ -771,7 +771,8 @@ http::Response Fixture::send(const http::Request &request)
         queue += "]";
         std::string job;
         if (!game_job_.empty())
-            job = ",\"job\":{\"titleId\":\"" + game_job_id_ + "\",\"name\":\"Demon's Souls\",\"version\":\"01.007.000\","
+            job = std::string(game_job_id_.find('/') != std::string::npos ? ",\"dlcJob\":{" : ",\"job\":{") +
+                  "\"titleId\":\"" + game_job_id_ + "\",\"name\":\"Demon's Souls\",\"version\":\"01.007.000\","
                   "\"phase\":\"" + game_job_ + "\",\"active\":" + (game_job_ == "downloading" ? "true" : "false") +
                   ",\"done\":1850000000,\"total\":4509715660,\"speed\":18900000,\"piece\":1,\"pieces\":1,"
                   "\"installPercent\":0,\"error\":\"\",\"detail\":\"\"}";

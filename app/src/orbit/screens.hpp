@@ -460,6 +460,10 @@ class GameUpdatesScreen final : public Screen
 
   private:
     bool dlc_mode_ = false;
+    const GameUpdateJob &job_of(const GameUpdateStatus &status) const
+    {
+        return dlc_mode_ ? status.dlc_job : status.job;
+    }
     int row_ = 0;
     int button_ = 0; // which of the focused row's buttons has the focus
     int bar_ = -1; // the button above the list that has the focus, -1 when the list has it

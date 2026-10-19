@@ -1,4 +1,5 @@
-/* Downloads a game update from Sony and installs it. One at a time.
+/* Downloads a game update from Sony and installs it. One update and one DLC at a time: they have a
+ * slot each, so a DLC can download while an update does.
  *
  * The patch is a list of pieces (patchmanifest.h). Each piece is fetched with a Range request,
  * written at its place in a ".part" file next to the console's other downloads, and checked
@@ -28,7 +29,14 @@
 #define MAX_NETWORK_FAILURES 8
 #define SAVE_EVERY 5
 
-static struct {
+/* What a paused download leaves on its drive, so cancelling it later can delete it. */
+typedef struct {
+    bool present;
+    Storage drive;
+    char part[96], state[96];
+} Kept;
+
+typedef struct Slot {
     pthread_mutex_t mutex;
     bool active;
     atomic_bool cancel; /* stop and throw the download away */
@@ -40,7 +48,20 @@ static struct {
     unsigned piece, pieces, install_percent;
     bool waiting; /* the console took the package and the update is not in yet */
     bool started;
-} pd = {.mutex = PTHREAD_MUTEX_INITIALIZER};
+    atomic_bool fan_failed; /* a connection of the running piece gave up */
+    Kept kept;
+} Slot;
+
+/* slots[0] runs the game updates, slots[1] the DLC (their key is "<game>/<label>"). The code below
+ * works on "the slot of this thread": each thread that touches a download sets `cur` first, so the
+ * single-download code reads as before. */
+static Slot slots[2] = {{.mutex = PTHREAD_MUTEX_INITIALIZER}, {.mutex = PTHREAD_MUTEX_INITIALIZER}};
+static __thread Slot *cur = &slots[0];
+#define pd (*cur)
+#define kept (cur->kept)
+static Slot *slot_for(const char *title_id) {
+    return title_id && strchr(title_id, '/') ? &slots[1] : &slots[0];
+}
 
 /* The updates waiting for their turn, in order. Kept in game-update-queue.json so a restart
  * keeps it; each one is checked against the current offers when its turn comes. */
@@ -51,13 +72,6 @@ static struct {
     char ids[QUEUE_MAX][32];
     size_t count;
 } queue = {.mutex = PTHREAD_MUTEX_INITIALIZER};
-
-/* What a paused download leaves on its drive, so cancelling it later can delete it. */
-static struct {
-    bool present;
-    Storage drive;
-    char part[96], state[96];
-} kept;
 
 static bool stopped(void) {
     return atomic_load(&pd.cancel) || atomic_load(&pd.pause) || orbit_is_stopping();
@@ -87,6 +101,7 @@ static void finish(const char *name, const char *error) {
 }
 
 typedef struct {
+    Slot *slot;              /* the download this job belongs to */
     int dir;                 /* the drive's homebrew folder */
     int fd;                  /* the .part file */
     char final_name[64], part[96], state[96];
@@ -253,9 +268,8 @@ static void wait_seconds(unsigned seconds) {
 #define SLICE_BYTES (4LL * 1024 * 1024)
 #define SLICE_RETRIES 3
 
-static atomic_bool fan_failed;
 static bool fan_stop(void) {
-    return stopped() || atomic_load(&fan_failed);
+    return stopped() || atomic_load(&cur->fan_failed);
 }
 
 typedef struct {
@@ -288,12 +302,13 @@ static void fan_fail(Fan *fan, sony_range_result r, const char *why) {
         snprintf(fan->why, sizeof fan->why, "%s", why);
     }
     pthread_mutex_unlock(&fan->mutex);
-    atomic_store(&fan_failed, true);
+    atomic_store(&cur->fan_failed, true);
 }
 
 static void *fan_worker(void *context) {
     Fan *fan = context;
     PatchJob *job = fan->job;
+    cur = job->slot;
     char why[120] = "";
     for (;;) {
         size_t k = atomic_fetch_add(&fan->next, 1);
@@ -342,7 +357,7 @@ static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, c
     for (size_t k = 0; k < fan.slices; k++)
         fan.reached[k] = slice_start(&fan, k);
     atomic_store(&fan.next, 0);
-    atomic_store(&fan_failed, false);
+    atomic_store(&cur->fan_failed, false);
     pthread_mutex_init(&fan.mutex, NULL);
 
     pthread_attr_t attr;
@@ -405,7 +420,7 @@ static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, c
     pthread_mutex_destroy(&fan.mutex);
     free((void *)fan.reached);
     free(fan.finished);
-    atomic_store(&fan_failed, false);
+    atomic_store(&cur->fan_failed, false);
     if (r == SONY_RANGE_OK) {
         publish(job, i, piece->size, speed->speed);
         save_state(job);
@@ -458,6 +473,7 @@ typedef struct {
 
 static void *check_worker(void *context) {
     Check *check = context;
+    cur = check->job->slot;
     check->ok = digest_matches(check->job, &check->job->manifest.pieces[check->piece]);
     return NULL;
 }
@@ -509,7 +525,7 @@ static const char *settle(PatchJob *job, Check *check, unsigned *failures, size_
 #define INSTALL_VERIFY_STEP 5
 
 static void installed_progress(unsigned percent, void *context) {
-    (void)context;
+    cur = context;
     pthread_mutex_lock(&pd.mutex);
     pd.install_percent = percent;
     pthread_mutex_unlock(&pd.mutex);
@@ -542,6 +558,7 @@ static void run(const char *manifest_url) {
     phase("preparing", "");
     PatchJob job;
     memset(&job, 0, sizeof job);
+    job.slot = cur;
     job.dir = job.fd = -1;
     copy_text(job.manifest_url, sizeof job.manifest_url, manifest_url);
     if (!strncmp(manifest_url, "nas:", 4)) {
@@ -718,7 +735,7 @@ static void run(const char *manifest_url) {
     pthread_mutex_lock(&pd.mutex);
     copy_text(name, sizeof name, pd.name);
     pthread_mutex_unlock(&pd.mutex);
-    int code = install_package_blocking(path, name, installed_progress, NULL, stopped, error, sizeof error);
+    int code = install_package_blocking(path, name, installed_progress, cur, stopped, error, sizeof error);
     if (code != 0)
         return finish(stopped() ? "cancelled" : "failed", error);
     /* The console takes over from here and may report "playable" before the update is in. It is
@@ -760,15 +777,22 @@ static void run(const char *manifest_url) {
 }
 
 void patchdl_queue_pump(void);
+typedef struct {
+    Slot *slot;
+    char *url;
+} Start;
 static void *worker(void *arg) {
-    char *url = arg;
-    run(url);
-    free(url);
+    Start *start = arg;
+    cur = start->slot;
+    run(start->url);
+    free(start->url);
+    free(start);
     patchdl_queue_pump(); /* a finished, failed or cancelled update gives way to the next one */
     return NULL;
 }
 
 int patchdl_start(const char *title_id, char *error, size_t cap) {
+    cur = slot_for(title_id);
     if (orbit.desktop
 #ifdef ORBIT_TEST
         && !getenv("ORBIT_TEST_GAMEUPDATES_BASE")
@@ -795,7 +819,11 @@ int patchdl_start(const char *title_id, char *error, size_t cap) {
         return 409;
     }
     char *url = strdup(manifest);
-    if (!url) {
+    Start *start = url ? malloc(sizeof *start) : NULL;
+    if (start)
+        *start = (Start){.slot = cur, .url = url};
+    if (!start) {
+        free(url);
         pthread_mutex_unlock(&pd.mutex);
         copy_text(error, cap, "Not enough memory.");
         return 503;
@@ -820,12 +848,13 @@ int patchdl_start(const char *title_id, char *error, size_t cap) {
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, 512 * 1024);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    int failed = pthread_create(&thread, &attr, worker, url);
+    int failed = pthread_create(&thread, &attr, worker, start);
     pthread_attr_destroy(&attr);
     if (failed) {
         pd.active = false;
         pd.started = false;
         free(url);
+        free(start);
         pthread_mutex_unlock(&pd.mutex);
         copy_text(error, cap, "Orbit could not start the download.");
         return 503;
@@ -835,7 +864,8 @@ int patchdl_start(const char *title_id, char *error, size_t cap) {
 }
 
 /* Pause: stops the transfer and keeps everything, so "download" resumes where it stopped. */
-int patchdl_pause(char *error, size_t cap) {
+int patchdl_pause(const char *title_id, char *error, size_t cap) {
+    cur = slot_for(title_id);
     pthread_mutex_lock(&pd.mutex);
     bool can = pd.active && (!strcmp(pd.phase, "preparing") || !strcmp(pd.phase, "downloading") ||
                              !strcmp(pd.phase, "verifying"));
@@ -850,7 +880,8 @@ int patchdl_pause(char *error, size_t cap) {
 }
 
 /* Cancel: stops a running update, or discards a paused one together with what it had downloaded. */
-void patchdl_cancel(void) {
+void patchdl_cancel(const char *title_id) {
+    cur = slot_for(title_id);
     pthread_mutex_lock(&pd.mutex);
     if (pd.active) {
         atomic_store(&pd.cancel, true);
@@ -949,36 +980,42 @@ void patchdl_queue_load(void) {
     cJSON_Delete(o);
 }
 
-/* Starts the next waiting update when nothing is running and nothing is paused. */
+/* Starts the waiting updates and DLC whose slot is free: nothing running and nothing paused there. */
 void patchdl_queue_pump(void) {
     for (;;) {
         if (orbit_is_stopping())
             return;
-        pthread_mutex_lock(&pd.mutex);
-        bool busy = pd.active || !strcmp(pd.phase, "paused");
-        pthread_mutex_unlock(&pd.mutex);
-        if (busy)
-            return;
         char id[32];
+        size_t at = (size_t)-1;
         pthread_mutex_lock(&queue.mutex);
-        if (!queue.count) {
+        for (size_t i = 0; i < queue.count && at == (size_t)-1; i++) {
+            Slot *slot = slot_for(queue.ids[i]);
+            pthread_mutex_lock(&slot->mutex);
+            bool busy = slot->active || !strcmp(slot->phase, "paused");
+            pthread_mutex_unlock(&slot->mutex);
+            if (!busy)
+                at = i;
+        }
+        if (at == (size_t)-1) {
             pthread_mutex_unlock(&queue.mutex);
             return;
         }
-        copy_text(id, sizeof id, queue.ids[0]);
-        memmove(queue.ids[0], queue.ids[1], (queue.count - 1) * sizeof queue.ids[0]);
+        copy_text(id, sizeof id, queue.ids[at]);
+        memmove(queue.ids[at], queue.ids[at + 1], (queue.count - at - 1) * sizeof queue.ids[0]);
         queue.count--;
         queue_save_locked();
         pthread_mutex_unlock(&queue.mutex);
         char error[200];
         int code = patchdl_start(id, error, sizeof error);
         if (code == 202)
-            return;
-        if (code == 409) { /* something else got in first: keep its place at the front */
+            continue; /* its slot is taken now; the other one may be free */
+        if (code == 409) { /* something else got in first: keep its place */
             pthread_mutex_lock(&queue.mutex);
             if (queue.count < QUEUE_MAX) {
-                memmove(queue.ids[1], queue.ids[0], queue.count * sizeof queue.ids[0]);
-                copy_text(queue.ids[0], sizeof queue.ids[0], id);
+                if (at > queue.count)
+                    at = queue.count;
+                memmove(queue.ids[at + 1], queue.ids[at], (queue.count - at) * sizeof queue.ids[0]);
+                copy_text(queue.ids[at], sizeof queue.ids[0], id);
                 queue.count++;
                 queue_save_locked();
             }
@@ -996,6 +1033,7 @@ int patchdl_enqueue(const char *title_id, char *error, size_t cap) {
         copy_text(error, cap, "This game has no update this console can install.");
         return 404;
     }
+    cur = slot_for(title_id);
     pthread_mutex_lock(&pd.mutex);
     bool busy = pd.active || !strcmp(pd.phase, "paused");
     bool same = busy && !strcmp(pd.title_id, title_id);
@@ -1011,7 +1049,10 @@ int patchdl_enqueue(const char *title_id, char *error, size_t cap) {
             return 200; /* already waiting */
         }
     }
-    if (!busy && !queue.count) {
+    size_t ahead = 0; /* waiting for this same slot */
+    for (size_t i = 0; i < queue.count; i++)
+        ahead += slot_for(queue.ids[i]) == cur;
+    if (!busy && !ahead) {
         pthread_mutex_unlock(&queue.mutex);
         return patchdl_start(title_id, error, cap);
     }
@@ -1057,18 +1098,24 @@ cJSON *patchdl_queue_json(void) {
 }
 
 void patchdl_stop(void) {
-    atomic_store(&pd.cancel, true);
+    for (int k = 0; k < 2; k++)
+        atomic_store(&slots[k].cancel, true);
     for (int i = 0; i < 50; i++) {
-        pthread_mutex_lock(&pd.mutex);
-        bool active = pd.active;
-        pthread_mutex_unlock(&pd.mutex);
+        bool active = false;
+        for (int k = 0; k < 2; k++) {
+            pthread_mutex_lock(&slots[k].mutex);
+            active = active || slots[k].active;
+            pthread_mutex_unlock(&slots[k].mutex);
+        }
         if (!active)
             return;
         nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 100000000}, NULL);
     }
 }
 
-cJSON *patchdl_status(void) {
+/* The update download (dlc = false) or the DLC download (dlc = true), NULL before the first one. */
+cJSON *patchdl_status(bool dlc) {
+    cur = &slots[dlc ? 1 : 0];
     pthread_mutex_lock(&pd.mutex);
     if (!pd.started) {
         pthread_mutex_unlock(&pd.mutex);

@@ -375,6 +375,22 @@ with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as dri
           s.get("job", {}).get("titleId") == "CUSA16194/PS4DLCPACK000001"
           and os.path.exists(drive + "/homebrew/CUSA16194-dlc-PS4DLCPACK000001.pkg"))
 
+# ---- a DLC downloads while an update is stalled: they have a slot each ----
+with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as drive:
+    build(root, [(1, "05.000.000")], {})
+    make_patch("PPSA00001", [30000, 40000])
+    pkg = fake_pkg("ps4", "EP0002-CUSA16194_00-PS4DLCPACK000001", 12000, "PS4 Season Pass", PNG)
+    BIN["dlc-ps4.pkg"] = pkg
+    os.environ["ORBIT_TEST_NAS_DLC"] = "CUSA16194|dlc-ps4.pkg|%d|%s" % (len(pkg), hashlib.sha256(pkg).hexdigest())
+    BEHAVE["PPSA00001-piece1.pkg"] = "hang-once"
+    s = run(root, "10200000", "PPSA00001", drive, queue="parallel", second="CUSA16194/PS4DLCPACK000001")
+    os.environ.pop("ORBIT_TEST_NAS_DLC", None)
+    BEHAVE.clear()
+    check("a DLC added during an update starts at once, not in the queue", s.get("update") == 202 and s.get("dlc") == 202)
+    check("the DLC finishes while the update is still downloading",
+          s.get("dlcJob", {}).get("phase") == "downloaded" and s.get("job", {}).get("active") is True
+          and os.path.exists(drive + "/homebrew/CUSA16194-dlc-PS4DLCPACK000001.pkg"))
+
 # ---- pause and resume with a piece split into slices ----
 with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as drive:
     build(root, [(1, "05.000.000")], {})

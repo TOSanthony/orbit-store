@@ -171,11 +171,17 @@ int install_package_blocking(const char *path, const char *name, install_progres
     return -1;
 }
 
+/* The status key of the download being watched: DLC have a slot of their own. */
+static bool watch_dlc;
+static const char *job_key(void) {
+    return watch_dlc ? "dlcJob" : "job";
+}
+
 /* Waits for the download thread to finish, then prints the job as JSON. */
 static void wait_inactive(bool print) {
     for (int wait = 0; wait < 600; wait++) {
         cJSON *now = gameupdates_status();
-        const cJSON *job = cJSON_GetObjectItemCaseSensitive(now, "job");
+        const cJSON *job = cJSON_GetObjectItemCaseSensitive(now, job_key());
         const cJSON *active = cJSON_GetObjectItemCaseSensitive(job, "active");
         if (cJSON_IsFalse(active)) {
             if (print) {
@@ -195,7 +201,7 @@ static void wait_inactive(bool print) {
 static void wait_queue_done(const char *last_title) {
     for (int wait = 0; wait < 900; wait++) {
         cJSON *now = gameupdates_status();
-        const cJSON *job = cJSON_GetObjectItemCaseSensitive(now, "job");
+        const cJSON *job = cJSON_GetObjectItemCaseSensitive(now, job_key());
         const cJSON *queue = cJSON_GetObjectItemCaseSensitive(now, "queue");
         const cJSON *title = cJSON_GetObjectItemCaseSensitive(job, "titleId");
         const cJSON *active = cJSON_GetObjectItemCaseSensitive(job, "active");
@@ -214,7 +220,7 @@ static void print_status(int first, int second, int again) {
     cJSON_AddNumberToObject(out, "first", first);
     cJSON_AddNumberToObject(out, "second", second);
     cJSON_AddNumberToObject(out, "again", again);
-    cJSON_AddItemToObject(out, "job", cJSON_DetachItemFromObject(now, "job"));
+    cJSON_AddItemToObject(out, "job", cJSON_DetachItemFromObject(now, job_key()));
     cJSON_AddItemToObject(out, "queue", cJSON_DetachItemFromObject(now, "queue"));
     char *text = cJSON_Print(out);
     puts(text);
@@ -229,6 +235,7 @@ int main(int argc, char **argv) {
     copy_text(orbit.system_root, sizeof orbit.system_root, argv[1]);
     orbit.firmware = (uint32_t)strtoul(argv[2], NULL, 16);
     orbit.desktop = true;
+    watch_dlc = argc == 4 && strchr(argv[3], '/');
     orbit.state_fd = open(argv[1], O_RDONLY | O_DIRECTORY);
     if (gameupdates_start())
         return 3;
@@ -243,7 +250,7 @@ int main(int argc, char **argv) {
             /* The queue was saved by an earlier run: it starts by itself once a check has passed. */
             for (int wait = 0; wait < 300; wait++) {
                 cJSON *now = gameupdates_status();
-                const cJSON *job = cJSON_GetObjectItemCaseSensitive(now, "job");
+                const cJSON *job = cJSON_GetObjectItemCaseSensitive(now, job_key());
                 const cJSON *active = cJSON_GetObjectItemCaseSensitive(job, "active");
                 bool finished = job && cJSON_IsFalse(active);
                 cJSON_Delete(now);
@@ -261,6 +268,37 @@ int main(int argc, char **argv) {
             /* argv[3] first, then the game named by the variable, then the second again. */
             char message[256] = "";
             patchdl_queue_clear();
+            if (!strcmp(queue_mode, "parallel")) {
+                /* An update that stalls, and a DLC added meanwhile: the DLC has its own slot and must finish. */
+                int update = patchdl_start(argv[3], message, sizeof message);
+                int dlc = patchdl_enqueue(getenv("ORBIT_TEST_QUEUE_SECOND"), message, sizeof message);
+                const cJSON *dlc_job = NULL;
+                cJSON *now = NULL;
+                for (int wait = 0; wait < 60; wait++) {
+                    cJSON_Delete(now);
+                    now = gameupdates_status();
+                    dlc_job = cJSON_GetObjectItemCaseSensitive(now, "dlcJob");
+                    const cJSON *active = cJSON_GetObjectItemCaseSensitive(dlc_job, "active");
+                    if (dlc_job && cJSON_IsFalse(active))
+                        break;
+                    usleep(100000);
+                }
+                cJSON *out = cJSON_CreateObject();
+                cJSON_AddNumberToObject(out, "update", update);
+                cJSON_AddNumberToObject(out, "dlc", dlc);
+                cJSON_AddItemToObject(out, "job", cJSON_DetachItemFromObject(now, "job"));
+                cJSON_AddItemToObject(out, "dlcJob", cJSON_DetachItemFromObject(now, "dlcJob"));
+                char *text = cJSON_Print(out);
+                puts(text);
+                free(text);
+                cJSON_Delete(out);
+                cJSON_Delete(now);
+                patchdl_cancel(argv[3]);
+                cJSON_Delete(status);
+                patchdl_stop();
+                gameupdates_stop();
+                return 0;
+            }
             int first = patchdl_enqueue(argv[3], message, sizeof message);
             const char *second_id = getenv("ORBIT_TEST_QUEUE_SECOND");
             int second = patchdl_enqueue(second_id, message, sizeof message);
@@ -291,19 +329,19 @@ int main(int argc, char **argv) {
                 /* Stop the download part-way (the fake server stalls on one piece), then act on it. */
                 usleep(1200000);
                 if (!strcmp(mode, "cancel-active"))
-                    patchdl_cancel();
+                    patchdl_cancel(argv[3]);
                 else {
                     char problem[160] = "";
-                    int refused = patchdl_pause(problem, sizeof problem);
+                    int refused = patchdl_pause(argv[3], problem, sizeof problem);
                     if (refused != 202)
                         printf("{\"pauseRefused\":%d}\n", refused);
                 }
             }
             wait_inactive(true);
             if (mode && !strcmp(mode, "cancel")) {
-                patchdl_cancel();
+                patchdl_cancel(argv[3]);
                 cJSON *now = gameupdates_status();
-                char *text = cJSON_Print(cJSON_GetObjectItemCaseSensitive(now, "job"));
+                char *text = cJSON_Print(cJSON_GetObjectItemCaseSensitive(now, job_key()));
                 puts(text);
                 free(text);
                 cJSON_Delete(now);
