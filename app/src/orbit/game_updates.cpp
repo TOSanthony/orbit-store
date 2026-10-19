@@ -390,14 +390,19 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         ui::text_fit(list, type.regular, versions, tx, row.y + kRowPad + 51.0f, 16.0f, info_width,
                      ui::color::text3);
 
-        ui::progress_bar(list, {tx, row.y + kRowPad + 74.0f, info_width, 6.0f}, progress,
-                         job.phase == "failed" && this_job ? ui::color::bad
-                         : job.phase == "installed" && this_job ? ui::color::ok
-                                                                : ui::color::action);
+        const ui::Rect bar{tx, row.y + kRowPad + 74.0f, info_width, 6.0f};
+        if (installing && job.waiting)
+            ui::progress_bar_busy(list, bar, ctx_.clock, ui::color::action);
+        else
+            ui::progress_bar(list, bar, progress,
+                             job.phase == "failed" && this_job ? ui::color::bad
+                             : job.phase == "installed" && this_job ? ui::color::ok
+                                                                    : ui::color::action);
         const double received = this_job ? job.done : 0.0;
         const double total_bytes = this_job && job.total > 0.0 ? job.total : game.size;
         const std::string left =
-            installing ? std::string(tr("Installing")) + " \xC2\xB7 " + std::to_string(job.install_percent) + "%"
+            installing && job.waiting ? std::string(tr("Installing\xE2\x80\xA6 waiting for the console"))
+            : installing ? std::string(tr("Installing")) + " \xC2\xB7 " + std::to_string(job.install_percent) + "%"
                        : format_bytes(received) + " / " + format_bytes(total_bytes) + " \xC2\xB7 " +
                              i18n::percent(fraction * 100.0);
         const float transfer_y = row.y + kRowPad + 104.0f;
@@ -408,7 +413,7 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
             ui::text_fit(list, type.regular, explained(job), right_edge, transfer_y, 16.0f, 620.0f,
                          ui::color::bad, ui::Align::right);
         }
-        else
+        else if (!installing)
         {
             if (running && job.speed > 0.0)
             {

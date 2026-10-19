@@ -1313,6 +1313,7 @@
   "Another game update is already in progress.": "Egy másik játékfrissítés már folyamatban van.",
   "Another game update is paused. Resume it or cancel it first.": "Egy másik játékfrissítés szüneteltetve van. Előbb folytasd vagy szakítsd meg.",
   "There is no download to pause.": "Nincs szüneteltethető letöltés.",
+  "Installing… waiting for the console": "Installing… waiting for the console",
   "Waiting": "Waiting",
   "Update all": "Update all",
   "Clear queue": "Clear queue",

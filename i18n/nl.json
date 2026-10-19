@@ -1313,6 +1313,7 @@
   "Another game update is already in progress.": "Er is al een andere game-update bezig.",
   "Another game update is paused. Resume it or cancel it first.": "Een andere game-update is gepauzeerd. Hervat of annuleer die eerst.",
   "There is no download to pause.": "Er is geen download om te pauzeren.",
+  "Installing… waiting for the console": "Installing… waiting for the console",
   "Waiting": "Waiting",
   "Update all": "Update all",
   "Clear queue": "Clear queue",

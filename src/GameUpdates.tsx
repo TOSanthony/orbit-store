@@ -24,7 +24,9 @@ function statusLine(job: GameUpdateJob): string {
     case "paused":
       return `${t("Paused")} · ${percent}%`;
     case "installing":
-      return t("Installing {percent}%", { percent: job.installPercent });
+      return job.waiting
+        ? t("Installing… waiting for the console")
+        : t("Installing {percent}%", { percent: job.installPercent });
     case "installed":
       return t("Installed");
     case "downloaded":
@@ -137,10 +139,14 @@ export function GameUpdates({
                 {job && job.titleId === game.titleId && (
                   <>
                     <p>{statusLine(job)}</p>
-                    {(job.active || job.phase === "paused") &&
+                    {job.phase === "installing" && job.waiting ? (
+                      <progress />
+                    ) : (
+                      (job.active || job.phase === "paused") &&
                       job.total > 0 && (
                         <progress value={job.done} max={job.total} />
-                      )}
+                      )
+                    )}
                   </>
                 )}
                 {game.state === "available" &&

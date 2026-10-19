@@ -328,6 +328,7 @@ struct GameUpdateJob
     double total = 0.0;
     double speed = 0.0; // bytes per second
     int install_percent = 0;
+    bool waiting = false; // installing: the console has the package and is finishing
     std::string error;
     std::string detail;
 };

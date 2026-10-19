@@ -38,6 +38,7 @@ static struct {
     int64_t done, total;
     double speed;
     unsigned piece, pieces, install_percent;
+    bool waiting; /* the console took the package and the update is not in yet */
     bool started;
 } pd = {.mutex = PTHREAD_MUTEX_INITIALIZER};
 
@@ -74,6 +75,7 @@ static void phase(const char *name, const char *error) {
 }
 static void finish_d(const char *name, const char *error, const char *detail) {
     pthread_mutex_lock(&pd.mutex);
+    pd.waiting = false;
     copy_text(pd.phase, sizeof pd.phase, name);
     copy_text(pd.error, sizeof pd.error, error ? error : "");
     copy_text(pd.detail, sizeof pd.detail, detail ? detail : "");
@@ -503,6 +505,9 @@ static void run(const char *manifest_url) {
     copy_text(title_id, sizeof title_id, pd.title_id);
     copy_text(target, sizeof target, pd.version);
     pthread_mutex_unlock(&pd.mutex);
+    pthread_mutex_lock(&pd.mutex);
+    pd.waiting = true; /* no real progress is known from here: the console is finishing */
+    pthread_mutex_unlock(&pd.mutex);
     bool arrived = false;
     for (int waited = 0; waited < INSTALL_VERIFY_SECONDS && !arrived; waited += INSTALL_VERIFY_STEP) {
         char now[16];
@@ -579,6 +584,7 @@ int patchdl_start(const char *title_id, char *error, size_t cap) {
     pd.done = pd.total = 0;
     pd.speed = 0;
     pd.piece = pd.pieces = pd.install_percent = 0;
+    pd.waiting = false;
     pd.started = true;
     pthread_attr_t attr;
     pthread_t thread;
@@ -852,6 +858,7 @@ cJSON *patchdl_status(void) {
         cJSON_AddNumberToObject(o, "piece", pd.piece);
         cJSON_AddNumberToObject(o, "pieces", pd.pieces);
         cJSON_AddNumberToObject(o, "installPercent", pd.install_percent);
+        cJSON_AddBoolToObject(o, "waiting", pd.waiting);
         cJSON_AddStringToObject(o, "error", pd.error);
         cJSON_AddStringToObject(o, "detail", pd.detail);
     }

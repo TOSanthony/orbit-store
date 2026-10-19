@@ -91,6 +91,7 @@ export interface GameUpdateJob {
   total: number;
   speed: number;
   installPercent: number;
+  waiting?: boolean; // installing: the console has the package and is finishing
   error: string;
   detail: string;
 }

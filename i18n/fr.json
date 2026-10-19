@@ -1323,6 +1323,7 @@
   "Another game update is already in progress.": "Une autre mise à jour de jeu est déjà en cours.",
   "Another game update is paused. Resume it or cancel it first.": "Une autre mise à jour de jeu est en pause. Reprenez-la ou annulez-la d'abord.",
   "There is no download to pause.": "Aucun téléchargement à mettre en pause.",
+  "Installing… waiting for the console": "Installation… en attente de la console",
   "Waiting": "En attente",
   "Update all": "Tout mettre à jour",
   "Clear queue": "Vider la file",

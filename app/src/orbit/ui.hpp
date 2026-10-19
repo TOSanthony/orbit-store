@@ -141,6 +141,8 @@ void cover_placeholder(DrawList &list, const Type &type, const Rect &r, std::str
                        float radius);
 
 void progress_bar(DrawList &list, const Rect &r, float fraction, Color fill);
+// A bar with no known progress: a segment sliding along it (clock is in seconds).
+void progress_bar_busy(DrawList &list, const Rect &r, float clock, Color fill);
 
 // The browser's .modal: a dark panel with a hairline edge and a deep shadow.
 void modal(DrawList &list, const Rect &r);

@@ -210,6 +210,17 @@ void progress_bar(DrawList &list, const Rect &r, float fraction, Color fill)
         list.rounded_rect({r.x, r.y, std::max(r.h, r.w * fraction), r.h}, r.h * 0.5f, fill);
 }
 
+void progress_bar_busy(DrawList &list, const Rect &r, float clock, Color fill)
+{
+    list.rounded_rect(r, r.h * 0.5f, Color::rgb(0xffffff, 0.14f));
+    const float segment = r.w * 0.22f;
+    const float t = std::fmod(clock * 0.45f, 1.0f);
+    const float x = r.x - segment + (r.w + segment) * t;
+    const float left = std::max(x, r.x), right = std::min(x + segment, r.x + r.w);
+    if (right > left)
+        list.rounded_rect({left, r.y, std::max(r.h, right - left), r.h}, r.h * 0.5f, fill);
+}
+
 void modal(DrawList &list, const Rect &r)
 {
     list.shadow({r.x, r.y + 30.0f, r.w, r.h}, kPanelRadius, 90.0f, Color::rgb(0x000000, 0.6f));
