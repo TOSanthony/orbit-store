@@ -24,7 +24,7 @@
 #define ORBIT_VERSION "1.2.0"
 /* API revisions: raise one by 1 whenever that API gains or changes an
  * endpoint, a field or a behaviour. Shown in the TV app's More settings. */
-#define ORBIT_API_GAME_UPDATES 3
+#define ORBIT_API_GAME_UPDATES 4
 #define ORBIT_API_ARTWORK 2
 #define ORBIT_SOURCE_NOTICE_VERSION 1
 #define ORBIT_SOURCE_ARCHIVE 1U
@@ -249,6 +249,14 @@ bool gameupdates_current_version(const char *title_id, char *out, size_t cap);
 /* Downloading and installing a game update (patchdl.c): one at a time. */
 int patchdl_start(const char *title_id, char *error, size_t cap);
 int patchdl_pause(char *error, size_t cap);
+/* The queue of updates waiting for their turn (patchdl.c). */
+int patchdl_enqueue(const char *title_id, char *error, size_t cap);
+void patchdl_dequeue(const char *title_id);
+void patchdl_queue_clear(void);
+void patchdl_queue_load(void);
+void patchdl_queue_pump(void);
+cJSON *patchdl_queue_json(void);
+bool gameupdates_check_ok(void);
 void patchdl_cancel(void);
 void patchdl_stop(void);
 cJSON *patchdl_status(void);

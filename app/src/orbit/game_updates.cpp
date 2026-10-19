@@ -17,7 +17,9 @@ namespace orbit
 namespace
 {
 constexpr float kTitleBaseline = 176.0f; // as the Games, Library and Downloads titles
-constexpr float kListTop = 236.0f;
+constexpr float kListTop = 308.0f; // as the grid of Games, under the filter row
+constexpr float kBarY = 216.0f;    // the filter row of Games and Applications
+constexpr float kBarGap = 14.0f;
 constexpr float kRowHeight = 150.0f;
 constexpr float kRowGap = 8.0f;
 constexpr float kRowWidth = 1400.0f;
@@ -38,6 +40,15 @@ std::string explained(const GameUpdateJob &job)
 
 GameUpdatesScreen::GameUpdatesScreen(Context &context) : Screen(context)
 {
+}
+
+// 1-based place in the queue, 0 when the update is not waiting.
+static int queue_place(const GameUpdateStatus &status, const std::string &title_id)
+{
+    for (std::size_t i = 0; i < status.queue.size(); ++i)
+        if (status.queue[i] == title_id)
+            return static_cast<int>(i) + 1;
+    return 0;
 }
 
 void GameUpdatesScreen::focus()
@@ -84,6 +95,27 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
             refuse(feedback, input);
         }
     }
+    else if (input.is_pressed(Action::north))
+    {
+        // Triangle: look for new updates now (a game installed since the last check).
+        if (!status.checking && !ctx_.store.setting_result().busy)
+        {
+            feedback.play(hui::audio::Cue::select);
+            ctx_.store.check_game_updates();
+        }
+    }
+    else if (input.is_pressed(Action::west) && count > 0)
+    {
+        // Square: download every update, one after the other.
+        feedback.play(hui::audio::Cue::select);
+        ctx_.store.game_update_job("queueAll", "");
+    }
+    else if (input.is_pressed(Action::jump_next) && !status.queue.empty())
+    {
+        // R2: forget the waiting updates; the running one carries on.
+        feedback.play(hui::audio::Cue::select);
+        ctx_.store.game_update_job("clearQueue", "");
+    }
     else if (input.is_pressed(Action::confirm) && count > 0)
     {
         const GameUpdateItem &game = games[static_cast<std::size_t>(row_)];
@@ -104,10 +136,17 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
             refuse(feedback, input);
             intent.toast = tr("This update needs a newer firmware than this console has.");
         }
-        else if (status.job.active)
+        else if (queue_place(status, game.title_id) > 0)
         {
-            refuse(feedback, input);
-            intent.toast = tr("Another game update is already in progress.");
+            // X on a waiting update takes it out of the queue.
+            feedback.play(hui::audio::Cue::select);
+            ctx_.store.game_update_job("dequeue", game.title_id);
+        }
+        else if (status.job.active || (status.job.present && status.job.phase == "paused"))
+        {
+            // Another update has the line: this one waits for its turn.
+            feedback.play(hui::audio::Cue::select);
+            ctx_.store.game_update_job("queue", game.title_id);
         }
         else if (!ctx_.store.setting_result().busy)
         {
@@ -125,6 +164,11 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
         {
             feedback.play(hui::audio::Cue::select);
             ctx_.store.game_update_job("cancel", game.title_id);
+        }
+        else if (queue_place(status, game.title_id) > 0)
+        {
+            feedback.play(hui::audio::Cue::select);
+            ctx_.store.game_update_job("dequeue", game.title_id);
         }
     }
     return intent;
@@ -145,10 +189,17 @@ std::vector<hui::ui::Hint> GameUpdatesScreen::hints() const
             items.push_back({hui::ui::Button::cross, tr("Resume")});
         else if (this_job && status.job.active && !installing)
             items.push_back({hui::ui::Button::cross, tr("Pause")});
+        else if (queue_place(status, game.title_id) > 0)
+            items.push_back({hui::ui::Button::cross, tr("Remove from queue")});
         else if (!installing)
-            items.push_back({hui::ui::Button::cross, tr("Download")});
+            items.push_back({hui::ui::Button::cross,
+                             status.job.active || status.job.phase == "paused" ? tr("Add to queue") : tr("Download")});
         if (paused || (this_job && status.job.active))
             items.push_back({hui::ui::Button::circle, tr("Cancel")});
+        items.push_back({hui::ui::Button::triangle, tr("Check")});
+        items.push_back({hui::ui::Button::square, tr("Update all")});
+        if (!status.queue.empty())
+            items.push_back({hui::ui::Button::r2, tr("Clear queue")});
     }
     items.push_back({hui::ui::Button::l1, tr("Tabs"), hui::ui::Button::r1});
     return items;
@@ -175,6 +226,28 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
                  tr("Installed games with a newer patch on Sony\xE2\x80\x99s servers appear here."), 960.0f,
                  508.0f, 20.0f, ui::color::text2, ui::Align::center);
         return;
+    }
+
+    {
+        // The actions of this page, on the row where Games and Applications keep their filters.
+        double total_bytes = 0.0;
+        for (const GameUpdateItem &game : games)
+            total_bytes += game.size;
+        std::vector<std::string> labels;
+        labels.push_back(status.checking ? std::string(tr("Checking\xE2\x80\xA6")) : std::string(tr("Check for updates")));
+        labels.push_back(std::string(tr("Update all")) + " (" + std::to_string(games.size()) + ") \xC2\xB7 " +
+                         format_bytes(total_bytes));
+        if (!status.queue.empty())
+            labels.push_back(std::string(tr("Clear queue")));
+        float x = 1920.0f - ui::kGutter;
+        for (int k = static_cast<int>(labels.size()) - 1; k >= 0; --k)
+        {
+            const std::string &label = labels[static_cast<std::size_t>(k)];
+            const float w = ui::button_width(type, label, 20.0f, ui::ButtonKind::secondary);
+            x -= w;
+            ui::button(list, type, {x, kBarY, w, ui::kFieldHeight}, label, ui::ButtonKind::secondary, 0.0f);
+            x -= kBarGap;
+        }
     }
 
     // Keep the focused row on screen: the list moves up once the cursor passes the bottom.
@@ -251,6 +324,9 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
                 ui::progress_bar(list, {tx, row.y + row.h - 22.0f, right_edge - tx - 360.0f, 6.0f},
                                  static_cast<float>(job.install_percent) / 100.0f, ui::color::text);
         }
+        else if (const int place = queue_place(status, game.title_id); place > 0)
+            ui::text(list, type.regular, std::string(tr("Waiting")) + " \xC2\xB7 #" + std::to_string(place), tx,
+                     row.y + 122.0f, 18.0f, ui::color::text2);
         else if (game.blocked)
             ui::text(list, type.regular,
                      tr("Needs firmware {firmware} or later", {{"firmware", game.firmware}}), tx,

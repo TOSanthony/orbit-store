@@ -307,6 +307,9 @@ std::vector<Scenario> scenarios()
                     false,
                     {run(2.0f, [](orbit::App &app) { app.show_tab(orbit::tab::updates); }),
                      pause(1.5f, "game-updates"), tap(Action::confirm), pause(1.5f, "game-updates-downloading"),
+                     tap(Action::west), pause(1.2f, "game-updates-queue"), move(Direction::down),
+                     pause(0.8f, "game-updates-queue-focus"), tap(Action::confirm), pause(0.8f, "game-updates-dequeued"),
+                     tap(Action::jump_next), pause(0.8f, "game-updates-cleared"), move(Direction::up),
                      tap(Action::confirm), pause(1.5f, "game-updates-paused"), tap(Action::confirm),
                      pause(1.2f, "game-updates-resumed"), tap(Action::back), pause(1.2f, "game-updates-cancelled")}});
     list.push_back(

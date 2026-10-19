@@ -38,12 +38,22 @@ function statusLine(job: GameUpdateJob): string {
   }
 }
 
+type UpdateAction =
+  | "download"
+  | "pause"
+  | "cancel"
+  | "queue"
+  | "queueAll"
+  | "dequeue"
+  | "clearQueue";
+
 // Installed games that have a newer patch on Sony's servers. The console decides what is listed.
 export function GameUpdates({
   games,
   checking,
   check,
   job,
+  queue,
   act,
   catalogue,
 }: {
@@ -51,20 +61,21 @@ export function GameUpdates({
   checking: boolean;
   check: () => Promise<void>;
   job: GameUpdateJob | null;
+  queue: string[];
   catalogue: Game[];
-  act: (
-    action: "download" | "pause" | "cancel",
-    titleId: string,
-  ) => Promise<void>;
+  act: (action: UpdateAction, titleId?: string) => Promise<void>;
 }) {
   const [message, setMessage] = useState("");
-  const run = (action: "download" | "pause" | "cancel", id: string) => {
+  const run = (action: UpdateAction, id = "") => {
     setMessage("");
     act(action, id).catch((e: unknown) =>
       setMessage(e instanceof Error ? e.message : ""),
     );
   };
   const ready = games.filter((game) => game.state === "available").length;
+  const totalBytes = games.reduce((sum, game) => sum + (game.size ?? 0), 0);
+  // One update has the line while it runs or is paused; the others wait behind it.
+  const busy = !!job && (job.active || job.phase === "paused");
   return (
     <section className="page">
       <div className="page-heading">
@@ -76,6 +87,15 @@ export function GameUpdates({
         >
           {checking ? t("Checking…") : t("Check for game updates")}
         </button>
+        {games.length > 0 && (
+          <button onClick={() => run("queueAll")}>
+            {t("Update all")} ({games.length})
+            {totalBytes ? ` · ${bytes(totalBytes)}` : ""}
+          </button>
+        )}
+        {queue.length > 0 && (
+          <button onClick={() => run("clearQueue")}>{t("Clear queue")}</button>
+        )}
       </div>
       {message && <p className="muted">{message}</p>}
       {games.length === 0 ? (
@@ -109,6 +129,11 @@ export function GameUpdates({
                   {t("Available {version}", { version: game.version })}
                   {game.size ? ` · ${bytes(game.size)}` : ""}
                 </p>
+                {queue.includes(game.titleId) && (
+                  <p>
+                    {t("Waiting")} · #{queue.indexOf(game.titleId) + 1}
+                  </p>
+                )}
                 {job && job.titleId === game.titleId && (
                   <>
                     <p>{statusLine(job)}</p>
@@ -126,6 +151,7 @@ export function GameUpdates({
                     const installing =
                       !!mine?.active && mine.phase === "installing";
                     const running = !!mine?.active && !installing;
+                    const waiting = queue.includes(game.titleId);
                     return (
                       <div className="update-actions">
                         {running && (
@@ -138,12 +164,20 @@ export function GameUpdates({
                             {t("Resume")}
                           </button>
                         )}
-                        {!running && !paused && !installing && (
+                        {waiting && (
+                          <button onClick={() => run("dequeue", game.titleId)}>
+                            {t("Remove from queue")}
+                          </button>
+                        )}
+                        {!running && !paused && !installing && !waiting && (
                           <button
-                            disabled={!!job?.active}
-                            onClick={() => run("download", game.titleId)}
+                            onClick={() =>
+                              run(busy ? "queue" : "download", game.titleId)
+                            }
                           >
-                            {t("Download and install")}
+                            {busy
+                              ? t("Add to queue")
+                              : t("Download and install")}
                           </button>
                         )}
                         {(running || paused || installing) && (

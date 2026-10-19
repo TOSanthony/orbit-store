@@ -344,6 +344,7 @@ struct GameUpdateStatus
     std::string detail; // why the first failed game failed (technical, English)
     std::vector<GameUpdateItem> games;
     GameUpdateJob job;
+    std::vector<std::string> queue; // title IDs waiting for their turn, in order
 };
 
 // The download service's own updates (GET /api/v1/updates): Orbit, the payload.

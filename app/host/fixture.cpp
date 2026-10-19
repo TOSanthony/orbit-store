@@ -558,7 +558,7 @@ http::Response Fixture::send(const http::Request &request)
     {
         response.body =
             "{\"name\":\"Orbit Store\",\"version\":" + json::quote(running_) +
-            ",\"apis\":{\"gameUpdates\":3,\"artwork\":2}" +
+            ",\"apis\":{\"gameUpdates\":4,\"artwork\":2}" +
             ",\"platform\":\"fixture\",\"paired\":" + (authorised ? "true" : "false") +
             ",\"localSessionAvailable\":true,\"stateHealthy\":true,\"catalogueRevision\":7,"
             "\"preferredStorage\":" +
@@ -738,8 +738,26 @@ http::Response Fixture::send(const http::Request &request)
         if (!get)
         {
             const std::string action = input.text("action");
-            game_job_ = action == "download" ? "downloading" : action == "pause" ? "paused" : "";
+            const std::string title = input.text("titleId");
+            if (action == "queueAll")
+            {
+                if (game_job_.empty())
+                    game_job_ = "downloading";
+                game_queue_ = {"CUSA00093", "PPSA20397"};
+            }
+            else if (action == "queue")
+                game_queue_.push_back(title);
+            else if (action == "dequeue")
+                game_queue_.erase(std::remove(game_queue_.begin(), game_queue_.end(), title), game_queue_.end());
+            else if (action == "clearQueue")
+                game_queue_.clear();
+            else
+                game_job_ = action == "download" ? "downloading" : action == "pause" ? "paused" : "";
         }
+        std::string queue = ",\"queue\":[";
+        for (std::size_t q = 0; q < game_queue_.size(); ++q)
+            queue += std::string(q ? "," : "") + "\"" + game_queue_[q] + "\"";
+        queue += "]";
         std::string job;
         if (!game_job_.empty())
             job = ",\"job\":{\"titleId\":\"PPSA01341\",\"name\":\"Demon's Souls\",\"version\":\"01.007.000\","
@@ -754,7 +772,7 @@ http::Response Fixture::send(const http::Request &request)
             "{\"titleId\":\"CUSA00093\",\"name\":\"DRIVECLUB\",\"installed\":\"01.00\",\"version\":\"01.28\","
             "\"state\":\"available\",\"size\":19187761152},"
             "{\"titleId\":\"PPSA20397\",\"name\":\"Assassin's Creed Shadows\",\"installed\":\"01.019.076\","
-            "\"version\":\"01.021.023\",\"state\":\"available\",\"size\":147382468608}]" + job + "}";
+            "\"version\":\"01.021.023\",\"state\":\"available\",\"size\":147382468608}]" + queue + job + "}";
         return response;
     }
     if (path == "/api/v1/catalog/updates")

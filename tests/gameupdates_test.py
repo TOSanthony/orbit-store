@@ -72,9 +72,11 @@ def build(root, rows, params):
         os.makedirs(d)
         json.dump({"contentVersion": ver}, open(d + "/param.json", "w"))
 
-def run(root, firmware, download=None, storage=None, patches=None, nas=None, pause=None):
+def run(root, firmware, download=None, storage=None, patches=None, nas=None, pause=None, queue=None, second=None):
     env = dict(os.environ, ORBIT_TEST_GAMEUPDATES_BASE="http://127.0.0.1:%d" % server.server_port)
     if pause: env["ORBIT_TEST_PAUSE"] = pause
+    if queue: env["ORBIT_TEST_QUEUE"] = queue
+    if second: env["ORBIT_TEST_QUEUE_SECOND"] = second
     if storage: env["ORBIT_TEST_STORAGE"] = storage
     if patches: env["ORBIT_TEST_GAME_PATCHES"] = patches
     if nas: env["ORBIT_TEST_NAS_UPDATE"] = nas
@@ -269,4 +271,31 @@ with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as dri
     BEHAVE["PPSA00001-piece1.pkg"] = "hang-once"
     s = run(root, "10200000", "PPSA00001", drive, pause="cancel-active")
     check("cancelling a running update deletes its partial download", s.get("phase") == "cancelled" and not [n for n in os.listdir(drive + "/homebrew") if n.startswith(".") or n.endswith(".pkg")])
+
+# ---- the queue ----
+with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as drive:
+    build(root, [(1, "05.000.000"), (2, "05.000.000")], {})
+    make_patch("PPSA00001", [20000])
+    make_patch("PPSA00002", [20000])
+    f1 = drive + "/homebrew/PPSA00001-v06.005.000.pkg"
+    f2 = drive + "/homebrew/PPSA00002-v06.005.000.pkg"
+    BEHAVE["PPSA00001-piece0.pkg"] = "hang-once"  # keeps the first one busy while the second is queued
+    s = run(root, "10200000", "PPSA00001", drive, queue="run", second="PPSA00002")
+    check("the first update starts and the second is accepted into the queue", s["first"] == 202 and s["second"] == 202)
+    check("adding the same update again changes nothing", s["again"] == 200)
+    check("the queued update starts by itself when the first ends", os.path.exists(f1) and os.path.exists(f2))
+    check("and the queue is empty afterwards", s["queue"] == [] and s["job"]["titleId"] == "PPSA00002" and s["job"]["phase"] == "downloaded")
+    for n in os.listdir(drive + "/homebrew"): os.remove(drive + "/homebrew/" + n)
+    BEHAVE["PPSA00001-piece0.pkg"] = "hang-once"; LOG.clear()
+    s = run(root, "10200000", "PPSA00001", drive, queue="dequeue", second="PPSA00002")
+    check("a queued update that is removed never downloads", os.path.exists(f1) and not os.path.exists(f2) and not [l for l in LOG if "PPSA00002-piece" in l])
+    for n in os.listdir(drive + "/homebrew"): os.remove(drive + "/homebrew/" + n)
+    BEHAVE["PPSA00001-piece0.pkg"] = "hang-once"; LOG.clear()
+    s = run(root, "10200000", "PPSA00001", drive, queue="clear", second="PPSA00002")
+    check("clearing the queue leaves the running update alone", os.path.exists(f1) and not os.path.exists(f2) and s["queue"] == [])
+    for n in os.listdir(drive + "/homebrew"): os.remove(drive + "/homebrew/" + n)
+    json.dump({"queue": ["PPSA09999", "PPSA00002"]}, open(root + "/game-update-queue.json", "w"))
+    orbit_drive = drive
+    s = run(root, "10200000", storage=drive, queue="load")
+    check("a saved queue resumes after a restart and skips an update no longer offered", os.path.exists(f2))
 sys.exit(1 if failures else 0)

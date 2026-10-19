@@ -77,6 +77,7 @@ class Fixture final : public http::Transport
     bool delete_pkgs_ = false;  // the delete-after-install switch
     bool install_pkgs_ = false; // the install-after-download switch
     bool nas_saved_ = false; // a My NAS address was sent
+    std::vector<std::string> game_queue_; // title IDs waiting behind the game update job
     std::string game_job_;   // the game update job phase: "", downloading or paused
     bool acknowledged_ = false;
     std::string preferred_ = "usb0";

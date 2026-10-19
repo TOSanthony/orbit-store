@@ -93,6 +93,12 @@ bool gameupdates_current_version(const char *title_id, char *out, size_t cap) {
     free(games);
     return found;
 }
+bool gameupdates_check_ok(void) {
+    pthread_mutex_lock(&gu.mutex);
+    bool ok = !gu.error[0] && gu.failed == 0;
+    pthread_mutex_unlock(&gu.mutex);
+    return ok;
+}
 static void set_error(const char *text) {
     pthread_mutex_lock(&gu.mutex);
     copy_text(gu.error, sizeof gu.error, text);
@@ -276,6 +282,9 @@ static void *worker(void *unused) {
         gu.busy = true;
         pthread_mutex_unlock(&gu.mutex);
         run_check();
+        /* A restart keeps the queue; it only runs once a check has shown what is on offer. */
+        if (gameupdates_check_ok())
+            patchdl_queue_pump();
         pthread_mutex_lock(&gu.mutex);
         gu.busy = false;
         next = time(NULL) + CHECK_INTERVAL;
@@ -296,6 +305,7 @@ int gameupdates_start(void) {
         return 0;
     }
     gu.stop = false;
+    patchdl_queue_load();
     int failed = pthread_create(&gu.thread, NULL, worker, NULL);
     gu.started = !failed;
     pthread_mutex_unlock(&gu.mutex);
@@ -322,6 +332,41 @@ int gameupdates_action(const cJSON *input, char *error, size_t cap) {
         return patchdl_start(json_text(input, "titleId"), error, cap);
     if (!strcmp(action, "pause"))
         return patchdl_pause(error, cap);
+    if (!strcmp(action, "queue"))
+        return patchdl_enqueue(json_text(input, "titleId"), error, cap);
+    if (!strcmp(action, "dequeue")) {
+        patchdl_dequeue(json_text(input, "titleId"));
+        return 202;
+    }
+    if (!strcmp(action, "clearQueue")) {
+        patchdl_queue_clear();
+        return 202;
+    }
+    if (!strcmp(action, "queueAll")) {
+        char ids[64][16];
+        size_t n = 0;
+        pthread_mutex_lock(&gu.mutex);
+        for (size_t i = 0; i < gu.count && n < 64; i++)
+            if (!gu.entries[i].blocked)
+                copy_text(ids[n++], sizeof ids[0], gu.entries[i].title_id);
+        pthread_mutex_unlock(&gu.mutex);
+        if (!n) {
+            copy_text(error, cap, "There is no update this console can install.");
+            return 409;
+        }
+        int accepted = 0;
+        for (size_t i = 0; i < n; i++) {
+            char ignored[120];
+            int code = patchdl_enqueue(ids[i], ignored, sizeof ignored);
+            if (code == 202 || code == 200)
+                accepted++;
+        }
+        if (!accepted) {
+            copy_text(error, cap, "Every update is already running or waiting.");
+            return 409;
+        }
+        return 202;
+    }
     if (!strcmp(action, "cancel")) {
         patchdl_cancel();
         return 202;
@@ -387,6 +432,7 @@ cJSON *gameupdates_status(void) {
     pthread_mutex_unlock(&gu.mutex);
     cJSON_AddNumberToObject(o, "count", available);
     cJSON_AddItemToObject(o, "games", games);
+    cJSON_AddItemToObject(o, "queue", patchdl_queue_json());
     cJSON *job = patchdl_status();
     if (job)
         cJSON_AddItemToObject(o, "job", job);

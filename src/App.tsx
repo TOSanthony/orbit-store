@@ -723,6 +723,7 @@ export default function App() {
             checking={orbit.gameChecking}
             check={orbit.checkGameUpdates}
             job={orbit.gameJob}
+            queue={orbit.gameQueue}
             catalogue={orbit.games}
             act={orbit.gameUpdateAction}
           />

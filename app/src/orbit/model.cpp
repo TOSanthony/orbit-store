@@ -494,6 +494,9 @@ GameUpdateStatus parse_game_update_status(const json::Value &value)
         if (!item.title_id.empty() && !item.blocked)
             status.games.push_back(std::move(item));
     }
+    for (const json::Value &entry : value["queue"].items())
+        if (!entry.as_string().empty())
+            status.queue.push_back(entry.as_string());
     if (value["job"].is_object())
     {
         const json::Value &job = value["job"];

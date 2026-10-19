@@ -147,12 +147,45 @@ static void wait_inactive(bool print) {
     }
 }
 
+/* Waits until the given game's update has finished and nothing is waiting. */
+static void wait_queue_done(const char *last_title) {
+    for (int wait = 0; wait < 900; wait++) {
+        cJSON *now = gameupdates_status();
+        const cJSON *job = cJSON_GetObjectItemCaseSensitive(now, "job");
+        const cJSON *queue = cJSON_GetObjectItemCaseSensitive(now, "queue");
+        const cJSON *title = cJSON_GetObjectItemCaseSensitive(job, "titleId");
+        const cJSON *active = cJSON_GetObjectItemCaseSensitive(job, "active");
+        bool finished = cJSON_IsString(title) && !strcmp(title->valuestring, last_title) && cJSON_IsFalse(active) &&
+                        cJSON_GetArraySize(queue) == 0;
+        cJSON_Delete(now);
+        if (finished)
+            return;
+        usleep(100000);
+    }
+}
+
+static void print_status(int first, int second, int again) {
+    cJSON *now = gameupdates_status();
+    cJSON *out = cJSON_CreateObject();
+    cJSON_AddNumberToObject(out, "first", first);
+    cJSON_AddNumberToObject(out, "second", second);
+    cJSON_AddNumberToObject(out, "again", again);
+    cJSON_AddItemToObject(out, "job", cJSON_DetachItemFromObject(now, "job"));
+    cJSON_AddItemToObject(out, "queue", cJSON_DetachItemFromObject(now, "queue"));
+    char *text = cJSON_Print(out);
+    puts(text);
+    free(text);
+    cJSON_Delete(out);
+    cJSON_Delete(now);
+}
+
 int main(int argc, char **argv) {
     if (argc != 3 && argc != 4)
         return 2;
     copy_text(orbit.system_root, sizeof orbit.system_root, argv[1]);
     orbit.firmware = (uint32_t)strtoul(argv[2], NULL, 16);
     orbit.desktop = true;
+    orbit.state_fd = open(argv[1], O_RDONLY | O_DIRECTORY);
     if (gameupdates_start())
         return 3;
     for (int i = 0; i < 200; i++) {
@@ -161,6 +194,45 @@ int main(int argc, char **argv) {
         const cJSON *error = cJSON_GetObjectItemCaseSensitive(status, "error");
         bool done = (cJSON_IsNumber(checked) && checked->valuedouble > 0) ||
                     (cJSON_IsString(error) && *error->valuestring);
+        const char *queue_mode = getenv("ORBIT_TEST_QUEUE");
+        if (done && queue_mode && !strcmp(queue_mode, "load")) {
+            /* The queue was saved by an earlier run: it starts by itself once a check has passed. */
+            for (int wait = 0; wait < 300; wait++) {
+                cJSON *now = gameupdates_status();
+                const cJSON *job = cJSON_GetObjectItemCaseSensitive(now, "job");
+                const cJSON *active = cJSON_GetObjectItemCaseSensitive(job, "active");
+                bool finished = job && cJSON_IsFalse(active);
+                cJSON_Delete(now);
+                if (finished)
+                    break;
+                usleep(100000);
+            }
+            print_status(0, 0, 0);
+            cJSON_Delete(status);
+            patchdl_stop();
+            gameupdates_stop();
+            return 0;
+        }
+        if (done && argc == 4 && queue_mode) {
+            /* argv[3] first, then the game named by the variable, then the second again. */
+            char message[256] = "";
+            patchdl_queue_clear();
+            int first = patchdl_enqueue(argv[3], message, sizeof message);
+            const char *second_id = getenv("ORBIT_TEST_QUEUE_SECOND");
+            int second = patchdl_enqueue(second_id, message, sizeof message);
+            int again = patchdl_enqueue(second_id, message, sizeof message);
+            if (!strcmp(queue_mode, "dequeue"))
+                patchdl_dequeue(second_id);
+            if (!strcmp(queue_mode, "clear"))
+                patchdl_queue_clear();
+            wait_queue_done(!strcmp(queue_mode, "run") ? second_id : argv[3]);
+            usleep(300000);
+            print_status(first, second, again);
+            cJSON_Delete(status);
+            patchdl_stop();
+            gameupdates_stop();
+            return 0;
+        }
         if (done && argc == 4) {
             char message[256] = "";
             int code = patchdl_start(argv[3], message, sizeof message);

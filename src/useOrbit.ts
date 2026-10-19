@@ -24,6 +24,7 @@ export function useOrbit() {
   const [gameUpdateList, setGameUpdateList] = useState<GameUpdate[]>([]);
   const [gameChecking, setGameChecking] = useState(false);
   const [gameJob, setGameJob] = useState<GameUpdateJob | null>(null);
+  const [gameQueue, setGameQueue] = useState<string[]>([]);
   const [browser, setBrowser] = useSnapshot<BrowserSession | null>(null);
   const [system, setSystem] = useSnapshot<System | null>(null),
     [sources, setSources] = useSnapshot<SourceSettings | null>(null),
@@ -84,11 +85,13 @@ export function useOrbit() {
                 checking?: boolean;
                 games: GameUpdate[];
                 job?: GameUpdateJob;
+                queue?: string[];
               }>("/game-updates").catch(() => ({
                 count: 0,
                 checking: false,
                 games: [] as GameUpdate[],
                 job: undefined as GameUpdateJob | undefined,
+                queue: [] as string[],
               })),
             ]);
           if (alive.current) {
@@ -102,6 +105,7 @@ export function useOrbit() {
             );
             setGameChecking(!!patches.checking);
             setGameJob(patches.job ?? null);
+            setGameQueue(patches.queue ?? []);
           }
         } else {
           setJobs([]);
@@ -111,6 +115,7 @@ export function useOrbit() {
           setGameUpdateList([]);
           setGameChecking(false);
           setGameJob(null);
+          setGameQueue([]);
         }
         if (!alive.current) return;
         setSystem(sys);
@@ -223,9 +228,17 @@ export function useOrbit() {
     gameUpdateList,
     gameChecking,
     gameJob,
+    gameQueue,
     gameUpdateAction: async (
-      action: "download" | "pause" | "cancel",
-      titleId: string,
+      action:
+        | "download"
+        | "pause"
+        | "cancel"
+        | "queue"
+        | "queueAll"
+        | "dequeue"
+        | "clearQueue",
+      titleId = "",
     ) => {
       try {
         await api("/game-updates", { action, titleId });

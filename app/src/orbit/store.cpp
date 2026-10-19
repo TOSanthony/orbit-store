@@ -873,7 +873,8 @@ void Store::poll_settings()
     api::Result<GameUpdateStatus> game_updates = client_.game_updates();
     settings_busy_ = (catalogue.ok() && catalogue.value.busy) ||
                      (service.ok() && service.value.busy) || (tv.ok() && tv.value.busy) ||
-                     (game_updates.ok() && (game_updates.value.checking || game_updates.value.job.active));
+                     (game_updates.ok() && (game_updates.value.checking || game_updates.value.job.active ||
+                            !game_updates.value.queue.empty()));
     inbox_.post(
         [this, catalogue = std::move(catalogue), service = std::move(service),
          tv = std::move(tv), game_updates = std::move(game_updates)]() mutable

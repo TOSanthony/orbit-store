@@ -41,6 +41,16 @@ static struct {
     bool started;
 } pd = {.mutex = PTHREAD_MUTEX_INITIALIZER};
 
+/* The updates waiting for their turn, in order. Kept in game-update-queue.json so a restart
+ * keeps it; each one is checked against the current offers when its turn comes. */
+#define QUEUE_MAX 32
+#define QUEUE_FILE "game-update-queue.json"
+static struct {
+    pthread_mutex_t mutex;
+    char ids[QUEUE_MAX][16];
+    size_t count;
+} queue = {.mutex = PTHREAD_MUTEX_INITIALIZER};
+
 /* What a paused download leaves on its drive, so cancelling it later can delete it. */
 static struct {
     bool present;
@@ -515,10 +525,12 @@ static void run(const char *manifest_url) {
     gameupdates_request_refresh();
 }
 
+void patchdl_queue_pump(void);
 static void *worker(void *arg) {
     char *url = arg;
     run(url);
     free(url);
+    patchdl_queue_pump(); /* a finished, failed or cancelled update gives way to the next one */
     return NULL;
 }
 
@@ -643,6 +655,170 @@ void patchdl_cancel(void) {
         pd.done = 0;
     }
     pthread_mutex_unlock(&pd.mutex);
+    patchdl_queue_pump(); /* the queue was waiting behind the paused update */
+}
+
+/* ---- the queue ---- */
+/* Caller holds queue.mutex. */
+static void queue_save_locked(void) {
+    if (orbit.state_fd < 0)
+        return;
+    cJSON *o = cJSON_CreateObject(), *a = cJSON_AddArrayToObject(o, "queue");
+    for (size_t i = 0; i < queue.count; i++)
+        cJSON_AddItemToArray(a, cJSON_CreateString(queue.ids[i]));
+    char *s = cJSON_PrintUnformatted(o);
+    cJSON_Delete(o);
+    if (!s)
+        return;
+    int fd = openat(orbit.state_fd, QUEUE_FILE ".tmp", O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);
+    bool ok = false;
+    if (fd >= 0) {
+        size_t n = strlen(s), p = 0;
+        while (p < n) {
+            ssize_t w = write(fd, s + p, n - p);
+            if (w <= 0)
+                break;
+            p += (size_t)w;
+        }
+        ok = p == n && fsync(fd) == 0;
+        if (close(fd) != 0)
+            ok = false;
+    }
+    free(s);
+    if (ok)
+        renameat(orbit.state_fd, QUEUE_FILE ".tmp", orbit.state_fd, QUEUE_FILE);
+}
+
+void patchdl_queue_load(void) {
+    if (orbit.state_fd < 0)
+        return;
+    int fd = openat(orbit.state_fd, QUEUE_FILE, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0)
+        return;
+    char buffer[2048];
+    ssize_t n = read(fd, buffer, sizeof buffer - 1);
+    close(fd);
+    if (n <= 0)
+        return;
+    cJSON *o = cJSON_ParseWithLength(buffer, (size_t)n);
+    const cJSON *a = o ? cJSON_GetObjectItemCaseSensitive(o, "queue") : NULL;
+    pthread_mutex_lock(&queue.mutex);
+    queue.count = 0;
+    const cJSON *item;
+    cJSON_ArrayForEach(item, a) {
+        if (queue.count < QUEUE_MAX && cJSON_IsString(item) && item->valuestring[0] &&
+            strlen(item->valuestring) < sizeof queue.ids[0])
+            copy_text(queue.ids[queue.count++], sizeof queue.ids[0], item->valuestring);
+    }
+    pthread_mutex_unlock(&queue.mutex);
+    cJSON_Delete(o);
+}
+
+/* Starts the next waiting update when nothing is running and nothing is paused. */
+void patchdl_queue_pump(void) {
+    for (;;) {
+        if (orbit_is_stopping())
+            return;
+        pthread_mutex_lock(&pd.mutex);
+        bool busy = pd.active || !strcmp(pd.phase, "paused");
+        pthread_mutex_unlock(&pd.mutex);
+        if (busy)
+            return;
+        char id[16];
+        pthread_mutex_lock(&queue.mutex);
+        if (!queue.count) {
+            pthread_mutex_unlock(&queue.mutex);
+            return;
+        }
+        copy_text(id, sizeof id, queue.ids[0]);
+        memmove(queue.ids[0], queue.ids[1], (queue.count - 1) * sizeof queue.ids[0]);
+        queue.count--;
+        queue_save_locked();
+        pthread_mutex_unlock(&queue.mutex);
+        char error[200];
+        int code = patchdl_start(id, error, sizeof error);
+        if (code == 202)
+            return;
+        if (code == 409) { /* something else got in first: keep its place at the front */
+            pthread_mutex_lock(&queue.mutex);
+            if (queue.count < QUEUE_MAX) {
+                memmove(queue.ids[1], queue.ids[0], queue.count * sizeof queue.ids[0]);
+                copy_text(queue.ids[0], sizeof queue.ids[0], id);
+                queue.count++;
+                queue_save_locked();
+            }
+            pthread_mutex_unlock(&queue.mutex);
+            return;
+        }
+        /* No update to install any more (already done, or no longer offered): next one. */
+    }
+}
+
+/* Starts the update when the line is free, otherwise puts it at the end of the queue. */
+int patchdl_enqueue(const char *title_id, char *error, size_t cap) {
+    char name[96], version[16], manifest[768];
+    if (!gameupdates_offer(title_id, name, sizeof name, version, sizeof version, manifest, sizeof manifest)) {
+        copy_text(error, cap, "This game has no update this console can install.");
+        return 404;
+    }
+    pthread_mutex_lock(&pd.mutex);
+    bool busy = pd.active || !strcmp(pd.phase, "paused");
+    bool same = busy && !strcmp(pd.title_id, title_id);
+    pthread_mutex_unlock(&pd.mutex);
+    if (same) {
+        copy_text(error, cap, "This update is already in progress.");
+        return 409;
+    }
+    pthread_mutex_lock(&queue.mutex);
+    for (size_t i = 0; i < queue.count; i++) {
+        if (!strcmp(queue.ids[i], title_id)) {
+            pthread_mutex_unlock(&queue.mutex);
+            return 200; /* already waiting */
+        }
+    }
+    if (!busy && !queue.count) {
+        pthread_mutex_unlock(&queue.mutex);
+        return patchdl_start(title_id, error, cap);
+    }
+    if (queue.count >= QUEUE_MAX) {
+        pthread_mutex_unlock(&queue.mutex);
+        copy_text(error, cap, "The update queue is full.");
+        return 409;
+    }
+    copy_text(queue.ids[queue.count++], sizeof queue.ids[0], title_id);
+    queue_save_locked();
+    pthread_mutex_unlock(&queue.mutex);
+    patchdl_queue_pump();
+    return 202;
+}
+
+void patchdl_dequeue(const char *title_id) {
+    pthread_mutex_lock(&queue.mutex);
+    for (size_t i = 0; i < queue.count; i++) {
+        if (strcmp(queue.ids[i], title_id))
+            continue;
+        memmove(queue.ids[i], queue.ids[i + 1], (queue.count - i - 1) * sizeof queue.ids[0]);
+        queue.count--;
+        queue_save_locked();
+        break;
+    }
+    pthread_mutex_unlock(&queue.mutex);
+}
+
+void patchdl_queue_clear(void) {
+    pthread_mutex_lock(&queue.mutex);
+    queue.count = 0;
+    queue_save_locked();
+    pthread_mutex_unlock(&queue.mutex);
+}
+
+cJSON *patchdl_queue_json(void) {
+    cJSON *a = cJSON_CreateArray();
+    pthread_mutex_lock(&queue.mutex);
+    for (size_t i = 0; i < queue.count; i++)
+        cJSON_AddItemToArray(a, cJSON_CreateString(queue.ids[i]));
+    pthread_mutex_unlock(&queue.mutex);
+    return a;
 }
 
 void patchdl_stop(void) {
