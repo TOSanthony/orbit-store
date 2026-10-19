@@ -22,6 +22,7 @@ export function useOrbit() {
     [storage, setStorage] = useSnapshot<Storage[]>([]);
   const [ready, setReady] = useState(false);
   const [gameUpdateList, setGameUpdateList] = useState<GameUpdate[]>([]);
+  const [gameDlcList, setGameDlcList] = useState<GameUpdate[]>([]);
   const [gameChecking, setGameChecking] = useState(false);
   const [gameJob, setGameJob] = useState<GameUpdateJob | null>(null);
   const [gameQueue, setGameQueue] = useState<string[]>([]);
@@ -84,12 +85,14 @@ export function useOrbit() {
                 count: number;
                 checking?: boolean;
                 games: GameUpdate[];
+                dlc?: GameUpdate[];
                 job?: GameUpdateJob;
                 queue?: string[];
               }>("/game-updates").catch(() => ({
                 count: 0,
                 checking: false,
                 games: [] as GameUpdate[],
+                dlc: [] as GameUpdate[],
                 job: undefined as GameUpdateJob | undefined,
                 queue: [] as string[],
               })),
@@ -103,6 +106,7 @@ export function useOrbit() {
             setGameUpdateList(
               (patches.games ?? []).filter((g) => g.state === "available"),
             );
+            setGameDlcList(patches.dlc ?? []);
             setGameChecking(!!patches.checking);
             setGameJob(patches.job ?? null);
             setGameQueue(patches.queue ?? []);
@@ -113,6 +117,7 @@ export function useOrbit() {
           setFavorites([]);
           setBrowser(null);
           setGameUpdateList([]);
+          setGameDlcList([]);
           setGameChecking(false);
           setGameJob(null);
           setGameQueue([]);
@@ -225,6 +230,8 @@ export function useOrbit() {
   ).length;
   return {
     gameUpdates,
+    gameDlc: gameDlcList.length,
+    gameDlcList,
     gameUpdateList,
     gameChecking,
     gameJob,
@@ -236,6 +243,7 @@ export function useOrbit() {
         | "cancel"
         | "queue"
         | "queueAll"
+        | "queueAllDlc"
         | "dequeue"
         | "clearQueue",
       titleId = "",

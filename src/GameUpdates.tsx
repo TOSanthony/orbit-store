@@ -46,6 +46,7 @@ type UpdateAction =
   | "cancel"
   | "queue"
   | "queueAll"
+  | "queueAllDlc"
   | "dequeue"
   | "clearQueue";
 
@@ -58,7 +59,9 @@ export function GameUpdates({
   queue,
   act,
   catalogue,
+  dlc = false,
 }: {
+  dlc?: boolean; // the DLC tab: the same list for DLC the NAS has and an installed game lacks
   games: GameUpdate[];
   checking: boolean;
   check: () => Promise<void>;
@@ -81,17 +84,25 @@ export function GameUpdates({
   return (
     <section className="page">
       <div className="page-heading">
-        <h1>{t("Game updates")}</h1>
-        <span>{t("Updates found: {count}", { count: ready })}</span>
+        <h1>{dlc ? t("Add-on content (DLC)") : t("Game updates")}</h1>
+        <span>
+          {dlc
+            ? t("DLC found: {count}", { count: ready })
+            : t("Updates found: {count}", { count: ready })}
+        </span>
         <button
           disabled={checking}
           onClick={() => void check().catch(() => {})}
         >
-          {checking ? t("Checking…") : t("Check for game updates")}
+          {checking
+            ? t("Checking…")
+            : dlc
+              ? t("Check for DLC")
+              : t("Check for game updates")}
         </button>
         {games.length > 0 && (
-          <button onClick={() => run("queueAll")}>
-            {t("Update all")} ({games.length})
+          <button onClick={() => run(dlc ? "queueAllDlc" : "queueAll")}>
+            {dlc ? t("Install all") : t("Update all")} ({games.length})
             {totalBytes ? ` · ${bytes(totalBytes)}` : ""}
           </button>
         )}
@@ -103,11 +114,15 @@ export function GameUpdates({
       {games.length === 0 ? (
         <div className="empty">
           <Icon name="download" />
-          <h2>{t("No game updates")}</h2>
+          <h2>{dlc ? t("No DLC") : t("No game updates")}</h2>
           <p>
-            {t(
-              "Installed games with a newer patch on Sony’s servers appear here.",
-            )}
+            {dlc
+              ? t(
+                  "DLC on your NAS that your installed games do not have yet appear here.",
+                )
+              : t(
+                  "Installed games with a newer patch on Sony’s servers appear here.",
+                )}
           </p>
         </div>
       ) : (
@@ -116,19 +131,32 @@ export function GameUpdates({
             <li key={game.titleId}>
               <GameIcon
                 className="update-cover"
-                titleId={game.titleId}
-                cover={cover(catalogue, game.titleId)?.cover}
-                fallback={cover(catalogue, game.titleId)?.coverFallback}
+                titleId={game.baseId || game.titleId}
+                cover={cover(catalogue, game.baseId || game.titleId)?.cover}
+                fallback={
+                  cover(catalogue, game.baseId || game.titleId)?.coverFallback
+                }
               />
               <div className="update-body">
                 <div>
                   <strong>{game.name || game.titleId}</strong>
-                  <span>{game.titleId}</span>
+                  <span>{game.baseId || game.titleId}</span>
                 </div>
                 <p>
-                  {t("Installed {version}", { version: game.installed || "?" })}
-                  {" → "}
-                  {t("Available {version}", { version: game.version })}
+                  {dlc ? (
+                    <>
+                      {game.gameName ? `${game.gameName} · ` : ""}
+                      {game.label}
+                    </>
+                  ) : (
+                    <>
+                      {t("Installed {version}", {
+                        version: game.installed || "?",
+                      })}
+                      {" → "}
+                      {t("Available {version}", { version: game.version })}
+                    </>
+                  )}
                   {game.size ? ` · ${bytes(game.size)}` : ""}
                 </p>
                 {queue.includes(game.titleId) && (

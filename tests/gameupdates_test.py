@@ -26,6 +26,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body = SERVED.get(name)
         data = body.encode() if body is not None else BIN.get(name)
         mode = BEHAVE.get(name)
+        if mode in ("bad-once", "drop-once", "hang-once"):
+            mode = BEHAVE.pop(name, None)   # the slices arrive together: only the first request gets the fault
         if data is None or mode == "gone":
             self.send_response(404); self.end_headers(); return
         start, end, code = 0, len(data), 200
@@ -35,20 +37,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         chunk = data[start:end]
         if mode in ("bad-once", "bad-always"):
             chunk = bytes((b ^ 0xFF) for b in chunk)
-            if mode == "bad-once": BEHAVE.pop(name)
         self.send_response(code)
         self.send_header("Content-Length", str(len(chunk)))
         if code == 206: self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end - 1, len(data)))
         self.end_headers()
         if mode == "hang-once":
-            BEHAVE.pop(name)
             self.wfile.write(chunk[: len(chunk) // 2]); self.wfile.flush()
             time.sleep(4)
             try: self.wfile.write(chunk[len(chunk) // 2:])
             except OSError: pass
             return
         if mode == "drop-once":
-            BEHAVE.pop(name)
             self.wfile.write(chunk[: len(chunk) // 2]); self.wfile.flush()
             self.connection.close(); return
         self.wfile.write(chunk)
@@ -295,6 +294,63 @@ with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as dri
     BEHAVE["PPSA00001-piece1.pkg"] = "hang-once"
     s = run(root, "10200000", "PPSA00001", drive, pause="cancel-active")
     check("cancelling a running update deletes its partial download", s.get("phase") == "cancelled" and not [n for n in os.listdir(drive + "/homebrew") if n.startswith(".") or n.endswith(".pkg")])
+
+# ---- DLC listed on the NAS: found by the label in the package, hidden once the console has it ----
+def fake_pkg(kind, content_id, size):
+    body = bytearray(size)
+    if kind == "ps4":
+        body[0:4] = bytes.fromhex("7f434e54")
+        body[0x40:0x64] = content_id.encode()
+    elif kind == "ps5":
+        body[0:4] = bytes.fromhex("7f464948")
+        body[0x58:0x60] = (0x800).to_bytes(8, "little")
+        body[0x800:0x804] = bytes.fromhex("7f434e54")
+        body[0x840:0x864] = content_id.encode()
+    for j in range(0x1000, size): body[j] = (j * 7) % 251
+    return bytes(body)
+
+with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as drive:
+    build(root, [(1, "06.005.000")], {})
+    ps5 = fake_pkg("ps5", "EP0001-PPSA00001_00-LIMITEDPACK00000", 9000)
+    ps4 = fake_pkg("ps4", "EP0002-CUSA16194_00-PS4DLCPACK000001", 7000)
+    named = fake_pkg("none", "", 5000)
+    BIN["dlc-ps5.pkg"], BIN["dlc-ps4.pkg"] = ps5, ps4
+    BIN["EP0003-PPSA00001_00-NAMEDONLY0000001.pkg"] = named
+    BIN["unreadable.pkg"] = named
+    spec = ";".join("%s|%s|%d|%s" % (g, f, len(b), hashlib.sha256(b).hexdigest()) for g, f, b in [
+        ("PPSA00001", "dlc-ps5.pkg", ps5), ("CUSA16194", "dlc-ps4.pkg", ps4),
+        ("PPSA00001", "EP0003-PPSA00001_00-NAMEDONLY0000001.pkg", named), ("PPSA00001", "unreadable.pkg", named)])
+    def run_dlc(**kw):
+        old = os.environ.get("ORBIT_TEST_NAS_DLC"); os.environ["ORBIT_TEST_NAS_DLC"] = spec
+        try: return run(root, "10200000", **kw)
+        finally:
+            if old is None: os.environ.pop("ORBIT_TEST_NAS_DLC", None)
+            else: os.environ["ORBIT_TEST_NAS_DLC"] = old
+    s = run_dlc()
+    keys = {d["titleId"]: d for d in s.get("dlc", [])}
+    check("a PS5 DLC is found by the label in its package header", "PPSA00001/LIMITEDPACK00000" in keys)
+    check("a PS4 DLC is found by the label in its package header", "CUSA16194/PS4DLCPACK000001" in keys)
+    check("a DLC whose header says nothing is found by its file name", "PPSA00001/NAMEDONLY0000001" in keys)
+    check("a DLC that cannot be named is reported, not listed", "unreadable.pkg" in s.get("dlcSkipped", "") and len(keys) == 3)
+    check("the DLC belong to their game and are not updates",
+          keys["PPSA00001/LIMITEDPACK00000"].get("baseId") == "PPSA00001" and s.get("dlcCount") == 3
+          and all("/" not in g["titleId"] for g in s["games"]))
+    os.makedirs(root + "/user/addcont/PPSA00001/LIMITEDPACK00000")
+    s = run_dlc()
+    keys = {d["titleId"] for d in s.get("dlc", [])}
+    check("a DLC the console already has is no longer listed",
+          "PPSA00001/LIMITEDPACK00000" not in keys and "CUSA16194/PS4DLCPACK000001" in keys and s.get("dlcCount") == 2)
+    final = drive + "/homebrew/PPSA00001-dlc-NAMEDONLY0000001.pkg"
+    s = run_dlc(download="PPSA00001/NAMEDONLY0000001", storage=drive)
+    check("a DLC downloads, is checked and saved under its own name",
+          s.get("phase") == "downloaded" and os.path.exists(final) and open(final, "rb").read() == named)
+    s = run_dlc(download="PPSA00001/NOSUCHLABEL000000", storage=drive)
+    check("a DLC that is not offered is refused", s.get("startRefused") == 404)
+    for n in os.listdir(drive + "/homebrew"): os.remove(drive + "/homebrew/" + n)
+    s = run_dlc(download="PPSA00001/NAMEDONLY0000001", storage=drive, queue="run", second="CUSA16194/PS4DLCPACK000001")
+    check("a queued DLC starts by itself after the first one",
+          s.get("job", {}).get("titleId") == "CUSA16194/PS4DLCPACK000001"
+          and os.path.exists(drive + "/homebrew/CUSA16194-dlc-PS4DLCPACK000001.pkg"))
 
 # ---- pause and resume with a piece split into slices ----
 with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as drive:

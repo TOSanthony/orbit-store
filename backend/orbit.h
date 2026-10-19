@@ -24,7 +24,7 @@
 #define ORBIT_VERSION "1.2.0"
 /* API revisions: raise one by 1 whenever that API gains or changes an
  * endpoint, a field or a behaviour. Shown in the TV app's More settings. */
-#define ORBIT_API_GAME_UPDATES 7
+#define ORBIT_API_GAME_UPDATES 8
 #define ORBIT_API_ARTWORK 2
 #define ORBIT_SOURCE_NOTICE_VERSION 1
 #define ORBIT_SOURCE_ARCHIVE 1U
@@ -184,6 +184,8 @@ int nas_game_patches(char **data, size_t *size);
 bool nas_best_update(const char *title_id, const char *newer_than, const char *same_ok, char *id, size_t id_cap,
                      char *version, size_t version_cap, int64_t *size);
 bool nas_release_copy(const char *id, Release *out);
+/* The plain .pkg files the NAS index lists as DLC (packages/ps5/dlc/) for this game, up to `max`. */
+size_t nas_dlc_list(const char *title_id, Release *out, size_t max);
 int nas_start(void);
 void nas_stop(void);
 int browser_start(void);
@@ -247,6 +249,10 @@ bool gameupdates_offer(const char *title_id, char *name, size_t name_cap, char *
 void gameupdates_request_refresh(void);
 bool gameupdates_current_version(const char *title_id, char *out, size_t cap);
 /* Downloading and installing a game update (patchdl.c): one at a time. */
+/* A DLC's key is "<game id>/<label>" (PPSA00001/LIMITEDPACK00000); an update's is the game id. */
+bool gameupdates_split_dlc(const char *key, char *base, size_t base_cap, char *label, size_t label_cap);
+/* True when the console has this DLC: /user/addcont/<game>/<label>/ exists. */
+bool gameupdates_dlc_installed(const char *title_id, const char *label);
 int patchdl_start(const char *title_id, char *error, size_t cap);
 int patchdl_pause(char *error, size_t cap);
 /* The queue of updates waiting for their turn (patchdl.c). */

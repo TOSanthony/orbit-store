@@ -33,7 +33,7 @@ static struct {
     bool active;
     atomic_bool cancel; /* stop and throw the download away */
     atomic_bool pause;  /* stop and keep it, to resume later */
-    char title_id[16], name[96], version[16];
+    char title_id[32], name[96], version[24];
     char phase[16], error[200], detail[200];
     int64_t done, total;
     double speed;
@@ -48,7 +48,7 @@ static struct {
 #define QUEUE_FILE "game-update-queue.json"
 static struct {
     pthread_mutex_t mutex;
-    char ids[QUEUE_MAX][16];
+    char ids[QUEUE_MAX][32];
     size_t count;
 } queue = {.mutex = PTHREAD_MUTEX_INITIALIZER};
 
@@ -594,7 +594,11 @@ static void run(const char *manifest_url) {
         return finish("failed", "The drive could not be opened for writing.");
     }
     pthread_mutex_lock(&pd.mutex);
-    snprintf(job.final_name, sizeof job.final_name, "%s-v%s.pkg", pd.title_id, pd.version);
+    char dlc_game[16], dlc_label[24];
+    if (gameupdates_split_dlc(pd.title_id, dlc_game, sizeof dlc_game, dlc_label, sizeof dlc_label))
+        snprintf(job.final_name, sizeof job.final_name, "%s-dlc-%s.pkg", dlc_game, dlc_label);
+    else
+        snprintf(job.final_name, sizeof job.final_name, "%s-v%s.pkg", pd.title_id, pd.version);
     pthread_mutex_unlock(&pd.mutex);
     snprintf(job.part, sizeof job.part, ".%s.part", job.final_name);
     snprintf(job.state, sizeof job.state, ".%s.state.json", job.final_name);
@@ -719,7 +723,7 @@ static void run(const char *manifest_url) {
         return finish(stopped() ? "cancelled" : "failed", error);
     /* The console takes over from here and may report "playable" before the update is in. It is
      * installed only once the game reports the new version; until then the job stays installing. */
-    char title_id[16], target[16];
+    char title_id[32], target[24];
     pthread_mutex_lock(&pd.mutex);
     copy_text(title_id, sizeof title_id, pd.title_id);
     copy_text(target, sizeof target, pd.version);
@@ -729,8 +733,14 @@ static void run(const char *manifest_url) {
     pthread_mutex_unlock(&pd.mutex);
     bool arrived = false;
     for (int waited = 0; waited < INSTALL_VERIFY_SECONDS && !arrived; waited += INSTALL_VERIFY_STEP) {
-        char now[16];
-        if (gameupdates_current_version(title_id, now, sizeof now) && strcmp(now, target) >= 0) {
+        char now[16], game[16], label[24];
+        if (gameupdates_split_dlc(title_id, game, sizeof game, label, sizeof label)) {
+            /* A DLC is in once the console has made its folder. */
+            if (gameupdates_dlc_installed(game, label)) {
+                arrived = true;
+                break;
+            }
+        } else if (gameupdates_current_version(title_id, now, sizeof now) && strcmp(now, target) >= 0) {
             arrived = true;
             break;
         }
@@ -767,7 +777,7 @@ int patchdl_start(const char *title_id, char *error, size_t cap) {
         copy_text(error, cap, "Game updates can only be downloaded on the console.");
         return 409;
     }
-    char name[96], version[16], manifest[768];
+    char name[96], version[24], manifest[768];
     if (!gameupdates_offer(title_id, name, sizeof name, version, sizeof version, manifest, sizeof manifest) ||
         (strncmp(manifest, "nas:", 4) && !patchfeed_url_allowed(manifest))) {
         copy_text(error, cap, "This game has no update this console can install.");
@@ -949,7 +959,7 @@ void patchdl_queue_pump(void) {
         pthread_mutex_unlock(&pd.mutex);
         if (busy)
             return;
-        char id[16];
+        char id[32];
         pthread_mutex_lock(&queue.mutex);
         if (!queue.count) {
             pthread_mutex_unlock(&queue.mutex);
@@ -981,7 +991,7 @@ void patchdl_queue_pump(void) {
 
 /* Starts the update when the line is free, otherwise puts it at the end of the queue. */
 int patchdl_enqueue(const char *title_id, char *error, size_t cap) {
-    char name[96], version[16], manifest[768];
+    char name[96], version[24], manifest[768];
     if (!gameupdates_offer(title_id, name, sizeof name, version, sizeof version, manifest, sizeof manifest)) {
         copy_text(error, cap, "This game has no update this console can install.");
         return 404;

@@ -428,6 +428,25 @@ bool nas_best_update(const char *title_id, const char *newer_than, const char *s
     return found;
 }
 
+/* The plain .pkg files the NAS index lists as DLC (packages/ps5/dlc/) for this game. */
+size_t nas_dlc_list(const char *title_id, Release *out, size_t max) {
+    size_t found = 0;
+    pthread_mutex_lock(&orbit.mutex);
+    if (active_locked() && orbit.nas_catalog) {
+        for (size_t i = 0; i < orbit.nas_count && found < max; i++) {
+            const Release *r = &orbit.nas_releases[i];
+            const cJSON *view = cJSON_GetArrayItem(orbit.nas_catalog, (int)i);
+            size_t name = strlen(r->filename);
+            if (!view || strcasecmp(r->title_id, title_id) || strcmp(json_text(view, "tagline"), "DLC") ||
+                r->compression[0] || r->size <= 0 || name < 5 || strcasecmp(r->filename + name - 4, ".pkg"))
+                continue;
+            out[found++] = *r;
+        }
+    }
+    pthread_mutex_unlock(&orbit.mutex);
+    return found;
+}
+
 /* A copy of the NAS release with this id (its address and checksum), for downloading it. */
 bool nas_release_copy(const char *id, Release *out) {
     bool found = false;

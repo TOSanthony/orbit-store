@@ -315,6 +315,10 @@ struct GameUpdateItem
     bool blocked = false;  // the patch needs a newer firmware than this console has
     std::string firmware;  // "11.00" when blocked
     double size = 0;       // the patch in bytes; 0 when unknown
+    // A DLC: title_id is its key ("PPSA01552/LIMITEDPACK00000"), the game it belongs to is base_id.
+    std::string base_id;
+    std::string game_name;
+    std::string label;
 };
 
 // The game update being downloaded or installed (the console handles one at a time).
@@ -344,6 +348,7 @@ struct GameUpdateStatus
     std::string error;
     std::string detail; // why the first failed game failed (technical, English)
     std::vector<GameUpdateItem> games;
+    std::vector<GameUpdateItem> dlc; // DLC on the NAS that an installed game does not have yet
     GameUpdateJob job;
     std::vector<std::string> queue; // title IDs waiting for their turn, in order
 };

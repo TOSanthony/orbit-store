@@ -88,7 +88,51 @@ bool nas_best_update(const char *title_id, const char *newer_than, const char *s
     *size = bytes;
     return true;
 }
+/* DLC files listed in the NAS index, described by the test: "PPSA00001|file.pkg|size|sha256;..." */
+static bool test_dlc(size_t index, char *game, char *file, long long *bytes, char *hash) {
+    const char *spec = getenv("ORBIT_TEST_NAS_DLC");
+    if (!spec)
+        return false;
+    char copy[2048];
+    snprintf(copy, sizeof copy, "%s", spec);
+    size_t at = 0;
+    for (char *item = strtok(copy, ";"); item; item = strtok(NULL, ";"), at++) {
+        if (at != index)
+            continue;
+        hash[0] = 0;
+        return sscanf(item, "%15[^|]|%127[^|]|%lld|%79s", game, file, bytes, hash) >= 3;
+    }
+    return false;
+}
+static void fill_dlc(Release *out, size_t index, const char *game, const char *file, long long bytes, const char *hash) {
+    memset(out, 0, sizeof *out);
+    snprintf(out->id, sizeof out->id, "dlc-%zu", index);
+    snprintf(out->title, sizeof out->title, "%s", game);
+    snprintf(out->title_id, sizeof out->title_id, "%s", game);
+    snprintf(out->filename, sizeof out->filename, "%s", file);
+    snprintf(out->url, sizeof out->url, "https://nas.example/dlc/%s", file);
+    snprintf(out->sha256, sizeof out->sha256, "%s", hash);
+    out->size = bytes;
+}
+size_t nas_dlc_list(const char *title_id, Release *out, size_t max) {
+    size_t found = 0;
+    char game[16], file[128], hash[80];
+    long long bytes;
+    for (size_t i = 0; found < max && test_dlc(i, game, file, &bytes, hash); i++)
+        if (!strcmp(game, title_id))
+            fill_dlc(&out[found++], i, game, file, bytes, hash);
+    return found;
+}
 bool nas_release_copy(const char *id, Release *out) {
+    if (!strncmp(id, "dlc-", 4)) {
+        char game[16], file[128], hash[80];
+        long long bytes;
+        size_t index = (size_t)atoi(id + 4);
+        if (!test_dlc(index, game, file, &bytes, hash))
+            return false;
+        fill_dlc(out, index, game, file, bytes, hash);
+        return true;
+    }
     const char *spec = getenv("ORBIT_TEST_NAS_UPDATE");
     char game[16] = "", ver[16] = "", hash[80] = "";
     long long bytes = 0;

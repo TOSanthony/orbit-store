@@ -886,6 +886,7 @@ void Store::poll_game_updates()
             if (!game_updates.ok())
                 return;
             state_.game_updates = game_updates.value.count;
+            state_.game_dlc = static_cast<int>(game_updates.value.dlc.size());
             state_.game_update_status = std::move(game_updates.value);
             state_.have_game_updates = true;
             ++state_.serial;
@@ -911,6 +912,7 @@ void Store::poll_settings()
             if (game_updates.ok())
             {
                 state_.game_updates = game_updates.value.count;
+                state_.game_dlc = static_cast<int>(game_updates.value.dlc.size());
                 state_.game_update_status = std::move(game_updates.value);
                 state_.have_game_updates = true;
             }
@@ -1128,6 +1130,7 @@ void Store::run_setting(Command &command)
                 [this, status = std::move(result.value)]() mutable
                 {
                     state_.game_updates = status.count;
+                    state_.game_dlc = static_cast<int>(status.dlc.size());
                     state_.game_update_status = std::move(status);
                     state_.have_game_updates = true;
                     ++state_.serial;

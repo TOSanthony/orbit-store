@@ -3,17 +3,21 @@
  * Reads the installed games from the console's app.db, downloads each game's version.xml from
  * Sony, and keeps the answer for the TV app and the browser UI. It only reads: nothing is
  * downloaded or installed here, and a failure of one game never affects the others. */
+#define _POSIX_C_SOURCE 200809L
 #include "appdb.h"
 #include "orbit.h"
 #include "patchfeed.h"
 #include "patchmanifest.h"
 #include "sonynet.h"
+#include <ctype.h>
 #include <dirent.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 #define APP_DB "/system_data/priv/mms/app.db"
 #define MAX_GAMES 512
@@ -22,7 +26,9 @@
 #define CHECK_INTERVAL (6 * 60 * 60)
 
 typedef struct {
-    char title_id[16], name[96], installed[16], available[16];
+    char title_id[32], name[96], installed[16], available[16]; /* a DLC's title_id is its key, see orbit.h */
+    bool dlc;
+    char base[16], label[24], game_name[96]; /* for a DLC: the game it belongs to and its folder name */
     bool blocked; /* a newer patch exists but needs a newer firmware */
     char needs[16];
     char manifest[768]; /* the JSON listing the patch's pieces */
@@ -43,6 +49,8 @@ static struct {
     size_t ps4_seen, ps4_offered;
     char seen[1600];       /* every PS5 game checked: installed version and the newest one Sony lists */
     char no_uri[200];      /* PS5 games with no update list address in app.db or param.json */
+    char dlc_skipped[200]; /* DLC files on the NAS whose name on the console could not be worked out */
+    size_t dlc_count;
     char ps4_skipped[200]; /* PS4 games whose installed version could not be read, with what app.db holds */
 } gu = {.mutex = PTHREAD_MUTEX_INITIALIZER, .changed = PTHREAD_COND_INITIALIZER};
 
@@ -167,6 +175,155 @@ static size_t add_unlisted_games(appdb_game *games, size_t total, size_t cap) {
     }
     closedir(dir);
     return total;
+}
+/* ---- DLC ---- */
+bool gameupdates_split_dlc(const char *key, char *base, size_t base_cap, char *label, size_t label_cap) {
+    const char *slash = strchr(key, '/');
+    if (!slash || slash == key || !slash[1])
+        return false;
+    size_t n = (size_t)(slash - key);
+    if (n >= base_cap || strlen(slash + 1) >= label_cap)
+        return false;
+    memcpy(base, key, n);
+    base[n] = 0;
+    copy_text(label, label_cap, slash + 1);
+    return true;
+}
+/* The console keeps each installed DLC in its own folder: /user/addcont/<game id>/<label>/. */
+bool gameupdates_dlc_installed(const char *title_id, const char *label) {
+    char path[1200];
+    snprintf(path, sizeof path, "%s/user/addcont/%s/%s", orbit.system_root, title_id, label);
+    struct stat st;
+    return !stat(path, &st) && S_ISDIR(st.st_mode);
+}
+/* The label of a DLC package is the end of its content id (EP0001-PPSA20397_00-LIMITEDPACK00000), which the
+ * package carries in its header: straight at 0x40 for a PS4 package, inside the embedded header of a PS5 one. */
+static uint32_t be32(const unsigned char *p) {
+    return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
+}
+static uint64_t le64(const unsigned char *p) {
+    uint64_t v = 0;
+    for (int i = 7; i >= 0; i--)
+        v = v << 8 | p[i];
+    return v;
+}
+static bool label_from_content_id(const char *content_id, const char *title_id, char *label, size_t cap) {
+    char id[40];
+    memcpy(id, content_id, 36);
+    id[36] = 0;
+    const char *dash = strrchr(id, '-');
+    if (!dash || !strstr(id, title_id) || strlen(dash + 1) < 1 || strlen(dash + 1) >= cap)
+        return false;
+    for (const char *c = dash + 1; *c; c++)
+        if (!isalnum((unsigned char)*c) && *c != '_')
+            return false;
+    copy_text(label, cap, dash + 1);
+    return true;
+}
+static bool label_from_header(const Release *r, const char *title_id, char *label, size_t cap, char *why,
+                              size_t why_cap) {
+    FILE *tmp = tmpfile();
+    if (!tmp) {
+        snprintf(why, why_cap, "no temporary file");
+        return false;
+    }
+    int fd = fileno(tmp);
+    unsigned char head[0x100];
+    bool ok = false;
+    volatile int64_t pos = 0;
+    int64_t want = r->size < 0x1000 ? r->size : 0x1000;
+    if (nas_range(r->url, 0, want, fd, 0, &pos, stopping, why, why_cap) == SONY_RANGE_OK &&
+        pread(fd, head, sizeof head, 0) == (ssize_t)sizeof head) {
+        if (be32(head) == 0x7F434E54) { /* PS4: the header is the file's own */
+            ok = label_from_content_id((const char *)head + 0x40, title_id, label, cap);
+        } else if (be32(head) == 0x7F464948) { /* PS5: the header sits where the first one says */
+            unsigned char pre[0xA8];
+            uint64_t inner = pread(fd, pre, sizeof pre, 0) == (ssize_t)sizeof pre ? le64(pre + 0x58) : 0;
+            if (inner > 0 && (int64_t)inner + 0x100 <= r->size) {
+                volatile int64_t at = (int64_t)inner;
+                if (nas_range(r->url, (int64_t)inner, (int64_t)inner + 0x100, fd, -(int64_t)inner,
+                              &at, stopping, why, why_cap) == SONY_RANGE_OK) {
+                    unsigned char cnt[0x100];
+                    if (pread(fd, cnt, sizeof cnt, 0) == (ssize_t)sizeof cnt && be32(cnt) == 0x7F434E54)
+                        ok = label_from_content_id((const char *)cnt + 0x40, title_id, label, cap);
+                }
+            }
+        }
+    }
+    fclose(tmp);
+    if (!ok && !why[0])
+        snprintf(why, why_cap, "no content id in the header");
+    return ok;
+}
+/* Same label from a name like EP0001-PPSA20397_00-LIMITEDPACK00000.pkg, when the header could not be read. */
+static bool label_from_name(const char *filename, char *label, size_t cap) {
+    const char *at = strstr(filename, "_00-");
+    if (!at || cap < 17)
+        return false;
+    at += 4;
+    size_t n = 0;
+    while (n < 16 && (isalnum((unsigned char)at[n]) || at[n] == '_'))
+        n++;
+    if (n != 16)
+        return false;
+    memcpy(label, at, 16);
+    label[16] = 0;
+    return true;
+}
+static struct {
+    char id[24], label[24];
+} dlc_labels[256];
+static size_t dlc_label_count;
+
+/* Adds an entry for each DLC the NAS lists for an installed game and the console does not have yet. */
+static void add_dlc(const appdb_game *games, size_t total, Entry *found, size_t *count, char *skipped,
+                    size_t skipped_cap) {
+    Release *list = calloc(16, sizeof *list);
+    if (!list)
+        return;
+    for (size_t i = 0; i < total && !stopping(); i++) {
+        const char *id = games[i].title_id;
+        if (strncmp(id, "PPSA", 4) && strncmp(id, "CUSA", 4))
+            continue;
+        size_t n = nas_dlc_list(id, list, 16);
+        for (size_t k = 0; k < n && *count < MAX_GAMES; k++) {
+            const Release *r = &list[k];
+            char label[24] = "", why[120] = "";
+            for (size_t c = 0; c < dlc_label_count && !label[0]; c++)
+                if (!strcmp(dlc_labels[c].id, r->id))
+                    copy_text(label, sizeof label, dlc_labels[c].label);
+            if (!label[0]) {
+                if (!label_from_header(r, id, label, sizeof label, why, sizeof why) &&
+                    !label_from_name(r->filename, label, sizeof label)) {
+                    size_t used = strlen(skipped);
+                    snprintf(skipped + used, skipped_cap - used, "%s%s (%s)", used ? "; " : "", r->filename, why);
+                    continue;
+                }
+                if (dlc_label_count < sizeof dlc_labels / sizeof dlc_labels[0]) {
+                    copy_text(dlc_labels[dlc_label_count].id, sizeof dlc_labels[0].id, r->id);
+                    copy_text(dlc_labels[dlc_label_count++].label, sizeof dlc_labels[0].label, label);
+                }
+            }
+            if (gameupdates_dlc_installed(id, label))
+                continue;
+            bool twice = false;
+            for (size_t e = 0; e < *count && !twice; e++)
+                twice = found[e].dlc && !strcmp(found[e].base, id) && !strcmp(found[e].label, label);
+            if (twice)
+                continue;
+            Entry *e = &found[(*count)++];
+            snprintf(e->title_id, sizeof e->title_id, "%s/%s", id, label);
+            e->dlc = true;
+            copy_text(e->base, sizeof e->base, id);
+            copy_text(e->label, sizeof e->label, label);
+            copy_text(e->game_name, sizeof e->game_name, games[i].title_name);
+            /* The index names a DLC by its game's id unless titles.json says better; the label is clearer then. */
+            copy_text(e->name, sizeof e->name, strcmp(r->title, id) ? r->title : label);
+            snprintf(e->manifest, sizeof e->manifest, "nas:%s", r->id);
+            e->size = r->size;
+        }
+    }
+    free(list);
 }
 static void set_error(const char *text) {
     pthread_mutex_lock(&gu.mutex);
@@ -336,6 +493,9 @@ static void run_check(void) {
         }
     }
     cJSON_Delete(saved);
+    size_t updates = count;
+    char dlc_skipped[200] = "";
+    add_dlc(games, total, found, &count, dlc_skipped, sizeof dlc_skipped);
     free(games);
     if (stopping()) {
         free(found);
@@ -345,6 +505,8 @@ static void run_check(void) {
     free(gu.entries);
     gu.entries = found;
     gu.count = count;
+    gu.dlc_count = count - updates;
+    copy_text(gu.dlc_skipped, sizeof gu.dlc_skipped, dlc_skipped);
     gu.failed = failed;
     gu.ps4_seen = ps4_seen;
     gu.ps4_offered = ps4_offered;
@@ -436,16 +598,17 @@ int gameupdates_action(const cJSON *input, char *error, size_t cap) {
         patchdl_queue_clear();
         return 202;
     }
-    if (!strcmp(action, "queueAll")) {
-        char ids[64][16];
+    if (!strcmp(action, "queueAll") || !strcmp(action, "queueAllDlc")) {
+        char ids[64][32];
         size_t n = 0;
+        const bool want_dlc = !strcmp(action, "queueAllDlc");
         pthread_mutex_lock(&gu.mutex);
         for (size_t i = 0; i < gu.count && n < 64; i++)
-            if (!gu.entries[i].blocked)
+            if (!gu.entries[i].blocked && gu.entries[i].dlc == want_dlc)
                 copy_text(ids[n++], sizeof ids[0], gu.entries[i].title_id);
         pthread_mutex_unlock(&gu.mutex);
         if (!n) {
-            copy_text(error, cap, "There is no update this console can install.");
+            copy_text(error, cap, want_dlc ? "There is no DLC to install." : "There is no update this console can install.");
             return 409;
         }
         int accepted = 0;
@@ -456,7 +619,7 @@ int gameupdates_action(const cJSON *input, char *error, size_t cap) {
                 accepted++;
         }
         if (!accepted) {
-            copy_text(error, cap, "Every update is already running or waiting.");
+            copy_text(error, cap, want_dlc ? "Every DLC is already running or waiting." : "Every update is already running or waiting.");
             return 409;
         }
         return 202;
@@ -495,7 +658,7 @@ cJSON *gameupdates_status(void) {
     /* Patches this console can install first, then those that need a newer firmware. */
     for (size_t n = 0; n < gu.count * 2; n++) {
         const Entry *e = &gu.entries[n % gu.count];
-        if (e->blocked != (n >= gu.count))
+        if (e->dlc || e->blocked != (n >= gu.count))
             continue;
         cJSON *g = cJSON_CreateObject();
         if (!g)
@@ -513,6 +676,25 @@ cJSON *gameupdates_status(void) {
         }
         cJSON_AddItemToArray(games, g);
     }
+    cJSON *dlc = cJSON_CreateArray();
+    for (size_t n = 0; dlc && n < gu.count; n++) {
+        const Entry *e = &gu.entries[n];
+        cJSON *g = e->dlc ? cJSON_CreateObject() : NULL;
+        if (!g)
+            continue;
+        cJSON_AddStringToObject(g, "titleId", e->title_id);
+        cJSON_AddStringToObject(g, "baseId", e->base);
+        cJSON_AddStringToObject(g, "name", e->name);
+        cJSON_AddStringToObject(g, "gameName", e->game_name);
+        cJSON_AddStringToObject(g, "label", e->label);
+        cJSON_AddStringToObject(g, "state", "available");
+        cJSON_AddNumberToObject(g, "size", (double)e->size);
+        cJSON_AddItemToArray(dlc, g);
+    }
+    cJSON_AddNumberToObject(o, "dlcCount", (double)gu.dlc_count);
+    cJSON_AddStringToObject(o, "dlcSkipped", gu.dlc_skipped);
+    if (dlc)
+        cJSON_AddItemToObject(o, "dlc", dlc);
     cJSON_AddBoolToObject(o, "supported", gu.started);
     cJSON_AddBoolToObject(o, "checking", gu.busy);
     cJSON_AddNumberToObject(o, "checked", (double)gu.checked);

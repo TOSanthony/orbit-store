@@ -39,7 +39,7 @@ std::string explained(const GameUpdateJob &job)
 }
 } // namespace
 
-GameUpdatesScreen::GameUpdatesScreen(Context &context) : Screen(context)
+GameUpdatesScreen::GameUpdatesScreen(Context &context, bool dlc) : Screen(context), dlc_mode_(dlc)
 {
 }
 
@@ -65,7 +65,7 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
     if (!focused)
         return intent;
     const GameUpdateStatus &status = ctx_.store.state().game_update_status;
-    const std::vector<GameUpdateItem> &games = status.games;
+    const std::vector<GameUpdateItem> &games = dlc_mode_ ? status.dlc : status.games;
     const int count = static_cast<int>(games.size());
     // A refused request (another update running, nothing to install) is told once.
     const SettingResult &result = ctx_.store.setting_result();
@@ -92,7 +92,7 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
     {
         // Download every update, one after the other.
         feedback.play(hui::audio::Cue::select);
-        ctx_.store.game_update_job("queueAll", "");
+        ctx_.store.game_update_job(dlc_mode_ ? "queueAllDlc" : "queueAll", "");
     };
     const auto do_clear = [&]
     {
@@ -257,19 +257,20 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
 std::vector<hui::ui::Hint> GameUpdatesScreen::hints() const
 {
     const GameUpdateStatus &status = ctx_.store.state().game_update_status;
+    const std::vector<GameUpdateItem> &listed = dlc_mode_ ? status.dlc : status.games;
     std::vector<hui::ui::Hint> items;
     if (bar_ >= 0)
     {
         items.push_back({hui::ui::Button::cross, tr("Select")});
         items.push_back({hui::ui::Button::triangle, tr("Check")});
-        items.push_back({hui::ui::Button::square, tr("Update all")});
+        items.push_back({hui::ui::Button::square, dlc_mode_ ? tr("Install all") : tr("Update all")});
         if (!status.queue.empty())
             items.push_back({hui::ui::Button::r2, tr("Clear queue")});
     }
-    else if (!status.games.empty())
+    else if (!listed.empty())
     {
         const GameUpdateItem &game =
-            status.games[static_cast<std::size_t>(std::clamp(row_, 0, static_cast<int>(status.games.size()) - 1))];
+            listed[static_cast<std::size_t>(std::clamp(row_, 0, static_cast<int>(listed.size()) - 1))];
         const bool this_job = status.job.present && status.job.title_id == game.title_id;
         const bool paused = this_job && !status.job.active && status.job.phase == "paused";
         const bool installing = this_job && status.job.active && status.job.phase == "installing";
@@ -287,7 +288,7 @@ std::vector<hui::ui::Hint> GameUpdatesScreen::hints() const
         if (paused || (this_job && status.job.active))
             items.push_back({hui::ui::Button::circle, tr("Cancel")});
         items.push_back({hui::ui::Button::triangle, tr("Check")});
-        items.push_back({hui::ui::Button::square, tr("Update all")});
+        items.push_back({hui::ui::Button::square, dlc_mode_ ? tr("Install all") : tr("Update all")});
         if (!status.queue.empty())
             items.push_back({hui::ui::Button::r2, tr("Clear queue")});
     }
@@ -301,19 +302,23 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
     const Snapshot &state = ctx_.store.state();
     const ui::Type &type = ctx_.type;
     const GameUpdateStatus &status = state.game_update_status;
-    const std::vector<GameUpdateItem> &games = status.games;
+    const std::vector<GameUpdateItem> &games = dlc_mode_ ? status.dlc : status.games;
 
-    const float title =
-        ui::text(list, type.semibold, tr("Game updates"), ui::kGutter, kTitleBaseline, 60.0f, ui::color::text);
-    ui::text(list, type.regular, tr("Updates found: {count}", {{"count", std::to_string(state.game_updates)}}),
+    const float title = ui::text(list, type.semibold, dlc_mode_ ? tr("Add-on content (DLC)") : tr("Game updates"),
+                                 ui::kGutter, kTitleBaseline, 60.0f, ui::color::text);
+    ui::text(list, type.regular,
+             dlc_mode_ ? tr("DLC found: {count}", {{"count", std::to_string(games.size())}})
+                       : tr("Updates found: {count}", {{"count", std::to_string(state.game_updates)}}),
              ui::kGutter + title + 24.0f, kTitleBaseline, 20.0f, ui::color::text3);
 
     if (games.empty())
     {
-        ui::text(list, type.light, tr("No game updates"), 960.0f, 462.0f, 32.0f, ui::color::text,
-                 ui::Align::center);
+        ui::text(list, type.light, dlc_mode_ ? tr("No DLC") : tr("No game updates"), 960.0f, 462.0f, 32.0f,
+                 ui::color::text, ui::Align::center);
         ui::text(list, type.regular,
-                 tr("Installed games with a newer patch on Sony\xE2\x80\x99s servers appear here."), 960.0f,
+                 dlc_mode_ ? tr("DLC on your NAS that your installed games do not have yet appear here.")
+                           : tr("Installed games with a newer patch on Sony\xE2\x80\x99s servers appear here."),
+                 960.0f,
                  508.0f, 20.0f, ui::color::text2, ui::Align::center);
         return;
     }
@@ -324,8 +329,8 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         for (const GameUpdateItem &game : games)
             total_bytes += game.size;
         std::vector<std::string> labels;
-        labels.push_back(status.checking ? std::string(tr("Checking\xE2\x80\xA6")) : std::string(tr("Check for updates")));
-        labels.push_back(std::string(tr("Update all")) + " (" + std::to_string(games.size()) + ") \xC2\xB7 " +
+        labels.push_back(status.checking ? std::string(tr("Checking\xE2\x80\xA6")) : std::string(dlc_mode_ ? tr("Check for DLC") : tr("Check for updates")));
+        labels.push_back(std::string(dlc_mode_ ? tr("Install all") : tr("Update all")) + " (" + std::to_string(games.size()) + ") \xC2\xB7 " +
                          format_bytes(total_bytes));
         if (!status.queue.empty())
             labels.push_back(std::string(tr("Clear queue")));
@@ -359,7 +364,7 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         // The console's own icon for the game, else the catalogue's cover: Orbit decides which
         // (GET /api/v1/art/local-<title id>/cover); the placeholder shows until it arrives.
         Game local;
-        local.id = "local-" + game.title_id;
+        local.id = "local-" + (game.base_id.empty() ? game.title_id : game.base_id);
         local.title = game.name.empty() ? game.title_id : game.name;
         draw_cover(ctx_, list, local, cover, 12.0f);
 
@@ -381,7 +386,7 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
                                           : static_cast<float>(fraction);
 
         std::string state = place > 0 ? std::string(tr("Waiting")) + " \xC2\xB7 #" + std::to_string(place)
-                                      : std::string(tr("Update available"));
+                                      : std::string(dlc_mode_ ? tr("DLC available") : tr("Update available"));
         ui::Color state_ink = ui::color::text2;
         if (this_job)
         {
@@ -416,6 +421,9 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         ui::text_fit(list, type.medium, game.name.empty() ? game.title_id : game.name, tx,
                      row.y + kRowPad + 22.0f, 23.0f, info_width - state_width - 24.0f, ui::color::text);
         const std::string versions =
+            dlc_mode_ ? game.base_id + " \xC2\xB7 " + (game.game_name.empty() ? std::string() : game.game_name + " \xC2\xB7 ") +
+                            game.label
+                      :
             game.title_id + " \xC2\xB7 " +
             tr("Installed {version}", {{"version", game.installed.empty() ? std::string("?") : game.installed}}) +
             "  \xE2\x86\x92  " + tr("Available {version}", {{"version", game.version}});

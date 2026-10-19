@@ -23,6 +23,7 @@ enum class FixtureMode
     offline, // Orbit is not running
     setup,   // sources not chosen yet
     updates, // as normal, with newer releases of Orbit and the TV app
+    dlc,     // as normal, with DLC on the NAS that installed games do not have yet
 };
 
 class Fixture final : public http::Transport
@@ -61,6 +62,7 @@ class Fixture final : public http::Transport
     std::string tv_app_json() const;
 
     FixtureMode mode_;
+    std::string game_job_id_ = "PPSA01341"; // the game (or DLC key) the game update job is for
     Mutex mutex_;
     std::vector<Job> jobs_;
     int next_job_ = 100;

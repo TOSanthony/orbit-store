@@ -104,6 +104,10 @@ export interface GameUpdate {
   state: "available" | "needs-firmware";
   firmware?: string;
   size?: number; // bytes, when Sony's list gave it
+  // A DLC (the `dlc` list): titleId is its key "<game>/<label>"; these name the game and the pack.
+  baseId?: string;
+  gameName?: string;
+  label?: string;
 }
 
 export interface Storage {

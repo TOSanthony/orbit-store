@@ -451,13 +451,15 @@ class DownloadsScreen final : public Screen
 class GameUpdatesScreen final : public Screen
 {
   public:
-    explicit GameUpdatesScreen(Context &context);
+    // dlc: lists the DLC on the NAS an installed game lacks (the DLC tab) instead of the game updates.
+    explicit GameUpdatesScreen(Context &context, bool dlc = false);
     void focus() override;
     Intent update(const InputFrame &input, float dt, Feedback &feedback, bool focused) override;
     void draw(Frame &frame, bool focused) const override;
     std::vector<hui::ui::Hint> hints() const override;
 
   private:
+    bool dlc_mode_ = false;
     int row_ = 0;
     int button_ = 0; // which of the focused row's buttons has the focus
     int bar_ = -1; // the button above the list that has the focus, -1 when the list has it
@@ -735,7 +737,7 @@ class App
     DiscoverScreen discover_;
     BrowseScreen browse_;
     BrowseScreen apps_;
-    BrowseScreen dlc_;
+    GameUpdatesScreen dlc_;
     GameUpdatesScreen updates_;
     LibraryScreen library_;
     DownloadsScreen downloads_;

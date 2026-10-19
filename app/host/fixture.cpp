@@ -558,7 +558,7 @@ http::Response Fixture::send(const http::Request &request)
     {
         response.body =
             "{\"name\":\"Orbit Store\",\"version\":" + json::quote(running_) +
-            ",\"apis\":{\"gameUpdates\":7,\"artwork\":2}" +
+            ",\"apis\":{\"gameUpdates\":8,\"artwork\":2}" +
             ",\"platform\":\"fixture\",\"paired\":" + (authorised ? "true" : "false") +
             ",\"localSessionAvailable\":true,\"stateHealthy\":true,\"catalogueRevision\":7,"
             "\"preferredStorage\":" +
@@ -739,7 +739,14 @@ http::Response Fixture::send(const http::Request &request)
         {
             const std::string action = input.text("action");
             const std::string title = input.text("titleId");
-            if (action == "queueAll")
+            if (action == "queueAllDlc")
+            {
+                if (game_job_.empty())
+                    game_job_ = "downloading";
+                game_queue_ = {"CUSA00093/SEASONPASS000000", "PPSA20397/LIMITEDPACK00000"};
+                game_job_id_ = "PPSA01341/DELUXEPACK000000";
+            }
+            else if (action == "queueAll")
             {
                 if (game_job_.empty())
                     game_job_ = "downloading";
@@ -752,7 +759,11 @@ http::Response Fixture::send(const http::Request &request)
             else if (action == "clearQueue")
                 game_queue_.clear();
             else
+            {
                 game_job_ = action == "download" ? "downloading" : action == "pause" ? "paused" : "";
+                if (action == "download" && !title.empty())
+                    game_job_id_ = title;
+            }
         }
         std::string queue = ",\"queue\":[";
         for (std::size_t q = 0; q < game_queue_.size(); ++q)
@@ -760,10 +771,24 @@ http::Response Fixture::send(const http::Request &request)
         queue += "]";
         std::string job;
         if (!game_job_.empty())
-            job = ",\"job\":{\"titleId\":\"PPSA01341\",\"name\":\"Demon's Souls\",\"version\":\"01.007.000\","
+            job = ",\"job\":{\"titleId\":\"" + game_job_id_ + "\",\"name\":\"Demon's Souls\",\"version\":\"01.007.000\","
                   "\"phase\":\"" + game_job_ + "\",\"active\":" + (game_job_ == "downloading" ? "true" : "false") +
                   ",\"done\":1850000000,\"total\":4509715660,\"speed\":18900000,\"piece\":1,\"pieces\":1,"
                   "\"installPercent\":0,\"error\":\"\",\"detail\":\"\"}";
+        // DLC of installed games that the NAS lists and the console does not have yet.
+        const std::string dlc =
+            mode_ != FixtureMode::dlc
+                ? ""
+                : std::string(",\"dlcCount\":3,\"dlc\":["
+                  "{\"titleId\":\"PPSA20397/LIMITEDPACK00000\",\"baseId\":\"PPSA20397\",\"name\":\"Limited Pack\","
+                  "\"gameName\":\"Assassin's Creed Shadows\",\"label\":\"LIMITEDPACK00000\",\"state\":\"available\","
+                  "\"size\":1288490188},"
+                  "{\"titleId\":\"PPSA01341/DELUXEPACK000000\",\"baseId\":\"PPSA01341\",\"name\":\"Digital Deluxe Pack\","
+                  "\"gameName\":\"Demon's Souls\",\"label\":\"DELUXEPACK000000\",\"state\":\"available\","
+                  "\"size\":734003200},"
+                  "{\"titleId\":\"CUSA00093/SEASONPASS000000\",\"baseId\":\"CUSA00093\",\"name\":\"Season Pass\","
+                  "\"gameName\":\"DRIVECLUB\",\"label\":\"SEASONPASS000000\",\"state\":\"available\","
+                  "\"size\":3221225472}]");
         response.body =
             "{\"supported\":true,\"checking\":false,\"checked\":1,\"failed\":0,\"error\":\"\",\"detail\":\"\",\"count\":3,"
             "\"games\":["
@@ -772,7 +797,7 @@ http::Response Fixture::send(const http::Request &request)
             "{\"titleId\":\"CUSA00093\",\"name\":\"DRIVECLUB\",\"installed\":\"01.00\",\"version\":\"01.28\","
             "\"state\":\"available\",\"size\":19187761152},"
             "{\"titleId\":\"PPSA20397\",\"name\":\"Assassin's Creed Shadows\",\"installed\":\"01.019.076\","
-            "\"version\":\"01.021.023\",\"state\":\"available\",\"size\":147382468608}]" + queue + job + "}";
+            "\"version\":\"01.021.023\",\"state\":\"available\",\"size\":147382468608}]" + dlc + queue + job + "}";
         return response;
     }
     if (path == "/api/v1/catalog/updates")

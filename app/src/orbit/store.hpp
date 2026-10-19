@@ -82,6 +82,7 @@ struct Snapshot
     // Installed games that have an update waiting. It decides whether the Updates tab shows and the
     // number beside its name. Filled from the console's game-update check; 0 when it has none.
     int game_updates = 0;
+    int game_dlc = 0; // DLC on the NAS an installed game does not have yet
     bool have_game_updates = false;
     GameUpdateStatus game_update_status;
 

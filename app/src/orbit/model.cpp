@@ -494,6 +494,18 @@ GameUpdateStatus parse_game_update_status(const json::Value &value)
         if (!item.title_id.empty() && !item.blocked)
             status.games.push_back(std::move(item));
     }
+    for (const json::Value &entry : value["dlc"].items())
+    {
+        GameUpdateItem item;
+        item.title_id = entry.text("titleId");
+        item.base_id = entry.text("baseId");
+        item.name = entry.text("name");
+        item.game_name = entry.text("gameName");
+        item.label = entry.text("label");
+        item.size = entry.number("size");
+        if (!item.title_id.empty())
+            status.dlc.push_back(std::move(item));
+    }
     for (const json::Value &entry : value["queue"].items())
         if (!entry.as_string().empty())
             status.queue.push_back(entry.as_string());

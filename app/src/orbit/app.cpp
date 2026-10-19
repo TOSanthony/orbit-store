@@ -46,13 +46,13 @@ float beta_width(const ui::Type &type)
     return type.semibold.measure(tr("BETA"), 13.0f) + 4.0f + 2.0f * 7.6f;
 }
 
-// Apps come from My NAS folders only: without that source their tab goes away. DLC and Updates no
-// longer list what the NAS hosts. The DLC tab stays hidden, and Updates shows only while an
-// installed game has an update waiting, then goes away again once they are all done.
+// Apps come from My NAS folders only: without that source their tab goes away. DLC and Updates do not
+// list what the NAS hosts. Updates shows only while an installed game has an update waiting, and DLC
+// only while the NAS has a DLC an installed game lacks; each goes away again once they are all done.
 bool tab_hidden(const Snapshot &state, int index)
 {
     if (index == tab::dlc)
-        return true;
+        return state.game_dlc <= 0;
     if (index == tab::updates)
         return state.game_updates <= 0;
     if (index != tab::apps)
@@ -88,10 +88,12 @@ ui::Rect tab_rect(const ui::Type &type, const Snapshot &state, int index)
     for (int i = 0; i < index; ++i)
         if (!tab_hidden(state, i))
             x += type.regular.measure(tr(kTabs[i]), kTabSize) + 2.0f * kTabPad + kTabGap +
-                 (i == tab::updates ? 10.0f + badge_width(type, state.game_updates) : 0.0f);
+                 (i == tab::updates ? 10.0f + badge_width(type, state.game_updates)
+                 : i == tab::dlc ? 10.0f + badge_width(type, state.game_dlc) : 0.0f);
     return {x, kTopY - kTabHeight * 0.5f,
             type.regular.measure(tr(kTabs[index]), kTabSize) + 2.0f * kTabPad +
-                (index == tab::updates ? 10.0f + badge_width(type, state.game_updates) : 0.0f),
+                (index == tab::updates ? 10.0f + badge_width(type, state.game_updates)
+                 : index == tab::dlc ? 10.0f + badge_width(type, state.game_dlc) : 0.0f),
             kTabHeight};
 }
 
@@ -114,7 +116,7 @@ int active_jobs(const Snapshot &state)
 } // namespace
 
 App::App(Context &context)
-    : ctx_(context), discover_(context), browse_(context), apps_(context, Category::apps), dlc_(context, Category::dlc),
+    : ctx_(context), discover_(context), browse_(context), apps_(context, Category::apps), dlc_(context, true),
       updates_(context), library_(context), downloads_(context),
       game_(context), settings_(context)
 {
@@ -239,8 +241,6 @@ void App::handle_intent(const Intent &intent, Feedback &feedback)
             browse_.return_to(game_.game_id());
         else if (tab_ == tab::apps)
             apps_.return_to(game_.game_id());
-        else if (tab_ == tab::dlc)
-            dlc_.return_to(game_.game_id());
         break;
     case Intent::Kind::show_job:
         game_open_ = false;
@@ -603,8 +603,10 @@ void App::draw_top_bar(hui::gfx::DrawList &list) const
         if (tab_hidden(state, i))
             continue;
         ui::Rect r = tab_rect(type, state, i);
-        // Downloads counts its running jobs, Updates the installed games with an update waiting.
-        const int number = i == tab::downloads ? active : i == tab::updates ? state.game_updates : 0;
+        // Downloads counts its running jobs, Updates the installed games with an update waiting, DLC the packs to install.
+        const int number = i == tab::downloads ? active
+                           : i == tab::updates ? state.game_updates
+                           : i == tab::dlc ? state.game_dlc : 0;
         const bool counted = number > 0;
         const float count_width = badge_width(type, number);
         char count[16];

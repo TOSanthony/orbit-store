@@ -302,6 +302,13 @@ std::vector<Scenario> scenarios()
          tap(Action::confirm), pause(0.5f, "browse-platform-menu"), move(Direction::down), move(Direction::down),
          tap(Action::confirm), move(Direction::down), pause(0.8f, "browse-ps4"),
          tap(Action::confirm), pause(0.8f, "browse-ps4-details")}});
+    list.push_back({"game-dlc",
+                    Mode::dlc,
+                    false,
+                    {run(2.0f, [](orbit::App &app) { app.show_tab(orbit::tab::dlc); }),
+                     pause(1.5f, "game-dlc"), tap(Action::confirm), pause(1.5f, "game-dlc-downloading"),
+                     move(Direction::right), pause(0.8f, "game-dlc-cancel-focus"), move(Direction::left), move(Direction::down),
+                     tap(Action::west), pause(1.2f, "game-dlc-queue")}});
     list.push_back({"game-updates",
                     Mode::normal,
                     false,

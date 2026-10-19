@@ -256,12 +256,17 @@ export default function App() {
   const active = orbit.jobs.filter((j) =>
     ["queued", "downloading", "retrying", "verifying", "inspecting", "extracting"].includes(j.status),
   ).length;
-  // DLC never has a tab. Updates shows only while an installed game has an update waiting, with the
-  // number beside its name, and goes away once they are all done.
+  // Updates shows only while an installed game has an update waiting, DLC only while the NAS has a DLC
+  // an installed game lacks, each with its number beside its name; both go away once all is done.
   const gameUpdates = orbit.gameUpdates;
+  const gameDlc = orbit.gameDlc;
   useEffect(() => {
-    if (tab === "DLC" || (tab === "Updates" && gameUpdates <= 0)) setTab("Browse");
-  }, [tab, gameUpdates]);
+    if (
+      (tab === "DLC" && gameDlc <= 0) ||
+      (tab === "Updates" && gameUpdates <= 0)
+    )
+      setTab("Browse");
+  }, [tab, gameUpdates, gameDlc]);
   // Start with the first rail so the hero and highlighted tile agree.
   const focused =
     storeGames.find((g) => g.id === focusedId) ||
@@ -400,12 +405,14 @@ export default function App() {
                   "Discover",
                   "Browse",
                   "Apps",
+                  "DLC",
                   "Updates",
                   "Library",
                   "Downloads",
                 ] as const
               )
                 .filter((name) => name !== "Updates" || gameUpdates > 0)
+                .filter((name) => name !== "DLC" || gameDlc > 0)
                 .map(
                 (name) => (
                   <button
@@ -420,6 +427,9 @@ export default function App() {
                     )}
                     {name === "Updates" && gameUpdates > 0 && (
                       <span className="queue-count">{gameUpdates}</span>
+                    )}
+                    {name === "DLC" && gameDlc > 0 && (
+                      <span className="queue-count">{gameDlc}</span>
                     )}
                   </button>
                 ),
@@ -717,6 +727,17 @@ export default function App() {
               )}
             </div>
           )
+        ) : tab === "DLC" ? (
+          <GameUpdates
+            dlc
+            games={orbit.gameDlcList}
+            checking={orbit.gameChecking}
+            check={orbit.checkGameUpdates}
+            job={orbit.gameJob}
+            queue={orbit.gameQueue}
+            catalogue={orbit.games}
+            act={orbit.gameUpdateAction}
+          />
         ) : tab === "Updates" ? (
           <GameUpdates
             games={orbit.gameUpdateList}
@@ -727,7 +748,7 @@ export default function App() {
             catalogue={orbit.games}
             act={orbit.gameUpdateAction}
           />
-        ) : tab === "Browse" || tab === "Apps" || tab === "DLC" ? (
+        ) : tab === "Browse" || tab === "Apps" ? (
           <section className="page browse">
             <div className="page-heading">
               <h1>{tabLabels[tab]}</h1>
@@ -1002,7 +1023,7 @@ export default function App() {
             <b>×</b>
             {!game && tab !== "Downloads" ? t("Open game") : t("Select")}
           </span>
-          {!game && (tab === "Browse" || tab === "Apps" || tab === "DLC") && (
+          {!game && (tab === "Browse" || tab === "Apps") && (
             <button onClick={showSearch}>
               <b>△</b>
               {t("Search")}
