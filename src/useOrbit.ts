@@ -15,10 +15,86 @@ import type {
   Storage,
   System,
 } from "./types";
+// A running, paused or queued update/DLC leaves the Updates and DLC tabs and shows in Downloads instead.
+function taken(
+  key: string,
+  job: GameUpdateJob | null,
+  queue: string[],
+): boolean {
+  return (
+    queue.includes(key) ||
+    (!!job &&
+      job.titleId === key &&
+      (job.active ||
+        ["paused", "installing", "installed"].includes(job.phase)))
+  );
+}
+
+function gameJobs(
+  updates: GameUpdate[],
+  dlc: GameUpdate[],
+  jobs: (GameUpdateJob | null)[],
+  queue: string[],
+): Job[] {
+  const find = (key: string) =>
+    updates.find((g) => g.titleId === key) ?? dlc.find((g) => g.titleId === key);
+  const make = (key: string, running: GameUpdateJob | null): Job => {
+    const item = find(key);
+    const isDlc = key.includes("/");
+    const base = isDlc ? key.split("/")[0] : key;
+    const name = item?.name || running?.name || key;
+    const version = running?.version || item?.version || "";
+    return {
+      id: `gu:${key}`,
+      titleId: base,
+      gameId: "",
+      releaseId: "",
+      storageId: "",
+      filename: "",
+      path: "",
+      format: isDlc ? "DLC" : "Update",
+      title: isDlc
+        ? `${name} · ${item?.gameName || base}`
+        : `${name} · ${t("Update")}${version ? ` ${version}` : ""}`,
+      order: -1,
+      status: "queued",
+      received: 0,
+      total: item?.size ?? 0,
+      speed: 0,
+      retryAt: 0,
+      error: "",
+      verification: "",
+    };
+  };
+  const out: Job[] = [];
+  for (const running of jobs) {
+    if (!running || !running.titleId || running.phase === "cancelled") continue;
+    const job = make(running.titleId, running);
+    job.received = running.done;
+    job.total = running.total > 0 ? running.total : job.total;
+    job.speed = running.speed;
+    if (running.phase === "paused") job.status = "paused";
+    else if (running.phase === "verifying") job.status = "verifying";
+    else if (running.phase === "failed") {
+      job.status = "error";
+      job.error = running.error;
+    } else if (["installing", "installed", "downloaded"].includes(running.phase)) {
+      job.status = "complete";
+      job.received = job.total;
+      job.verification = "sha256";
+      if (running.phase === "installing") job.installState = "installing";
+    } else job.status = "downloading";
+    out.push(job);
+  }
+  for (const key of queue)
+    if (!out.some((j) => j.id === `gu:${key}`)) out.push(make(key, null));
+  return out;
+}
+
 export function useOrbit() {
   const [games, setGames] = useState<Game[]>([]),
     [favorites, setFavorites] = useSnapshot<string[]>([]),
-    [jobs, setJobs] = useSnapshot<Job[]>([]),
+    [serviceJobs, setJobs] = useSnapshot<Job[]>([]),
     [storage, setStorage] = useSnapshot<Storage[]>([]);
   const [ready, setReady] = useState(false);
   const [gameUpdateList, setGameUpdateList] = useState<GameUpdate[]>([]);
@@ -229,15 +305,46 @@ export function useOrbit() {
     catalogKey.current = "";
     await refresh();
   };
-  // Installed games with an update waiting: decides whether the Updates tab shows.
-  const gameUpdates = gameUpdateList.filter(
-    (g) => g.state === "available",
-  ).length;
+  // What is still to start: the Updates and DLC tabs show only this. Decides whether they show.
+  const pendingUpdates = gameUpdateList.filter(
+    (g) =>
+      g.state === "available" && !taken(g.titleId, gameJob, gameQueue),
+  );
+  const pendingDlc = gameDlcList.filter(
+    (g) => !taken(g.titleId, gameDlcJob, gameQueue),
+  );
+  const jobs = [
+    ...gameJobs(gameUpdateList, gameDlcList, [gameJob, gameDlcJob], gameQueue),
+    ...serviceJobs,
+  ];
+  const jobAction = async (
+    id: string,
+    name: string,
+    deletePartial = false,
+    password?: string,
+  ) => {
+    if (!id.startsWith("gu:"))
+      return action(id, name, deletePartial, password);
+    // An update or DLC: the game update downloader handles it.
+    const key = id.slice(3);
+    const act =
+      name === "pause"
+        ? "pause"
+        : name === "resume" || name === "retry"
+          ? "download"
+          : name === "cancel"
+            ? gameQueue.includes(key)
+              ? "dequeue"
+              : "cancel"
+            : "";
+    if (act) await api("/game-updates", { action: act, titleId: key });
+    await refresh();
+  };
   return {
-    gameUpdates,
-    gameDlc: gameDlcList.length,
-    gameDlcList,
-    gameUpdateList,
+    gameUpdates: pendingUpdates.length,
+    gameDlc: pendingDlc.length,
+    gameDlcList: pendingDlc,
+    gameUpdateList: pendingUpdates,
     gameChecking,
     gameJob,
     gameDlcJob,
@@ -284,7 +391,7 @@ export function useOrbit() {
     refresh,
     pair,
     download,
-    action,
+    action: jobAction,
     saveSources,
   };
 }

@@ -151,6 +151,20 @@ void Store::download(const std::string &release_id, const std::string &storage_i
 
 void Store::job_action(const std::string &job_id, const std::string &action, bool delete_partial, const std::string &password)
 {
+    if (is_game_update_job(job_id))
+    {
+        // An update or a DLC: the game update downloader handles it, not the download service.
+        const std::string key = job_id.substr(3);
+        const auto &queue = state_.game_update_status.queue;
+        const bool waiting = std::find(queue.begin(), queue.end(), key) != queue.end();
+        if (action == "pause")
+            game_update_job("pause", key);
+        else if (action == "resume" || action == "retry")
+            game_update_job("download", key);
+        else if (action == "cancel")
+            game_update_job(waiting ? "dequeue" : "cancel", key);
+        return;
+    }
     ++pending_actions_;
     action_.busy = true;
     action_.error.clear();
@@ -621,12 +635,22 @@ void Store::start_if_needed(bool refused)
     }
 }
 
+// The updates and DLC being downloaded sit in the same list as the other downloads, first.
+void Store::merge_jobs()
+{
+    state_.jobs = game_update_jobs(state_.game_update_status);
+    state_.jobs.insert(state_.jobs.end(), service_jobs_.begin(), service_jobs_.end());
+    state_.game_updates = static_cast<int>(pending_game_items(state_.game_update_status, false).size());
+    state_.game_dlc = static_cast<int>(pending_game_items(state_.game_update_status, true).size());
+}
+
 void Store::post_queue(std::vector<Job> jobs, std::vector<Drive> drives, bool have_drives)
 {
     inbox_.post(
         [this, jobs = std::move(jobs), drives = std::move(drives), have_drives]() mutable
         {
-            state_.jobs = std::move(jobs);
+            service_jobs_ = std::move(jobs);
+            merge_jobs();
             if (have_drives)
                 state_.drives = std::move(drives);
             state_.have_queue = true;
@@ -885,10 +909,9 @@ void Store::poll_game_updates()
         {
             if (!game_updates.ok())
                 return;
-            state_.game_updates = game_updates.value.count;
-            state_.game_dlc = static_cast<int>(game_updates.value.dlc.size());
             state_.game_update_status = std::move(game_updates.value);
             state_.have_game_updates = true;
+            merge_jobs();
             ++state_.serial;
         });
 }
@@ -911,10 +934,9 @@ void Store::poll_settings()
             // A service without the check answers 404: the count stays 0 and the tab hidden.
             if (game_updates.ok())
             {
-                state_.game_updates = game_updates.value.count;
-                state_.game_dlc = static_cast<int>(game_updates.value.dlc.size());
                 state_.game_update_status = std::move(game_updates.value);
                 state_.have_game_updates = true;
+                merge_jobs();
             }
             if (catalogue.ok())
             {
@@ -1129,10 +1151,9 @@ void Store::run_setting(Command &command)
             inbox_.post(
                 [this, status = std::move(result.value)]() mutable
                 {
-                    state_.game_updates = status.count;
-                    state_.game_dlc = static_cast<int>(status.dlc.size());
                     state_.game_update_status = std::move(status);
                     state_.have_game_updates = true;
+                    merge_jobs();
                     ++state_.serial;
                 });
         break;

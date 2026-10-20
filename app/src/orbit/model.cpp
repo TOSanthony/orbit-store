@@ -518,6 +518,8 @@ GameUpdateStatus parse_game_update_status(const json::Value &value)
         out.present = true;
         out.active = job.flag("active");
         out.title_id = job.text("titleId");
+        out.name = job.text("name");
+        out.version = job.text("version");
         out.phase = job.text("phase");
         out.done = job.number("done");
         out.total = job.number("total");
@@ -895,6 +897,111 @@ std::vector<std::string> format_choices(const std::vector<Game> &games)
         }
     }
     return choices;
+}
+
+bool is_game_update_job(const std::string &job_id)
+{
+    return job_id.rfind("gu:", 0) == 0;
+}
+
+namespace
+{
+// A job (or a queued item) of this slot takes the item out of the Updates and DLC tabs while it runs.
+bool taken(const GameUpdateStatus &status, const GameUpdateJob &job, const std::string &key)
+{
+    if (std::find(status.queue.begin(), status.queue.end(), key) != status.queue.end())
+        return true;
+    return job.present && job.title_id == key &&
+           (job.active || job.phase == "paused" || job.phase == "installing" || job.phase == "installed");
+}
+} // namespace
+
+std::vector<GameUpdateItem> pending_game_items(const GameUpdateStatus &status, bool dlc)
+{
+    std::vector<GameUpdateItem> out;
+    for (const GameUpdateItem &item : dlc ? status.dlc : status.games)
+        if (!taken(status, dlc ? status.dlc_job : status.job, item.title_id))
+            out.push_back(item);
+    return out;
+}
+
+std::vector<Job> game_update_jobs(const GameUpdateStatus &status)
+{
+    std::vector<Job> out;
+    const auto find = [&](const std::string &key) -> const GameUpdateItem *
+    {
+        for (const GameUpdateItem &item : status.games)
+            if (item.title_id == key)
+                return &item;
+        for (const GameUpdateItem &item : status.dlc)
+            if (item.title_id == key)
+                return &item;
+        return nullptr;
+    };
+    const auto make = [&](const std::string &key, const GameUpdateJob *running) -> Job
+    {
+        const GameUpdateItem *item = find(key);
+        const std::size_t slash = key.find('/');
+        const bool dlc = slash != std::string::npos;
+        const std::string base = dlc ? key.substr(0, slash) : key;
+        const std::string label = dlc ? key.substr(slash + 1) : std::string();
+        const std::string name = item != nullptr && !item->name.empty() ? item->name
+                                 : running != nullptr && !running->name.empty() ? running->name : key;
+        const std::string game = item != nullptr && !item->game_name.empty() ? item->game_name : base;
+        const std::string version = running != nullptr && !running->version.empty() ? running->version
+                                    : item != nullptr ? item->version : std::string();
+        Job job;
+        job.id = "gu:" + key;
+        job.title_id = base;
+        job.game_id = dlc ? "local-dlc-" + base + "-" + label : "local-" + base; // the console's own icon
+        job.title = dlc ? name + " \xC2\xB7 " + game
+                        : name + " \xC2\xB7 " + tr("Update") + (version.empty() ? "" : " " + version);
+        job.format = dlc ? "DLC" : "Update";
+        job.total = item != nullptr ? item->size : 0.0;
+        job.status = "queued";
+        job.order = -1;
+        return job;
+    };
+    for (int k = 0; k < 2; ++k)
+    {
+        const GameUpdateJob &running = k == 0 ? status.job : status.dlc_job;
+        if (!running.present || running.title_id.empty() || running.phase.empty() || running.phase == "cancelled")
+            continue;
+        Job job = make(running.title_id, &running);
+        const std::string &phase = running.phase;
+        job.received = running.done;
+        job.total = running.total > 0.0 ? running.total : job.total;
+        job.speed = running.speed;
+        if (phase == "paused")
+            job.status = "paused";
+        else if (phase == "verifying")
+            job.status = "verifying";
+        else if (phase == "failed")
+        {
+            job.status = "error";
+            job.error = std::string(tr(running.error)) + (running.detail.empty() ? "" : " (" + running.detail + ")");
+        }
+        else if (phase == "installing" || phase == "installed" || phase == "downloaded")
+        {
+            job.status = "complete";
+            job.received = job.total;
+            job.verification = "sha256";
+            job.install_state = phase == "installing" ? "installing" : phase == "installed" ? "installed" : "";
+            job.install_progress = running.waiting ? 100.0 : running.install_percent;
+        }
+        else
+            job.status = "downloading"; // preparing, downloading
+        out.push_back(std::move(job));
+    }
+    for (const std::string &key : status.queue)
+    {
+        bool shown = false;
+        for (const Job &job : out)
+            shown = shown || job.id == "gu:" + key;
+        if (!shown)
+            out.push_back(make(key, nullptr));
+    }
+    return out;
 }
 
 bool job_active(const Job &job)

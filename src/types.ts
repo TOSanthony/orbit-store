@@ -151,6 +151,7 @@ export interface Job {
   error: string;
   verification: string;
   canRefreshLink?: boolean;
+  installState?: string; // an update or DLC: "installing" while the console installs it
   compression?: string;
   canEnterArchivePassword?: boolean;
   extracted?: number;

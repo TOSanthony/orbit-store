@@ -327,6 +327,7 @@ struct GameUpdateJob
     bool present = false;
     bool active = false;
     std::string title_id;
+    std::string name, version;
     std::string phase; // preparing, downloading, verifying, paused, installing, installed, downloaded, failed, cancelled
     double done = 0.0;
     double total = 0.0;
@@ -512,6 +513,10 @@ std::vector<int> newly_added_games(const std::vector<Game> &games);
 bool contains(const std::vector<std::string> &values, std::string_view value);
 
 // Statuses, as the web storefront words them.
+// Game updates and DLC shown in Downloads like any other download, and what is left for the Updates and DLC tabs.
+std::vector<Job> game_update_jobs(const GameUpdateStatus &status);
+std::vector<GameUpdateItem> pending_game_items(const GameUpdateStatus &status, bool dlc);
+bool is_game_update_job(const std::string &job_id); // "gu:<title id or DLC key>"
 bool job_active(const Job &job);   // queued, downloading, retrying, verifying
 bool job_inactive(const Job &job); // complete or cancelled
 const char *status_label(std::string_view status);

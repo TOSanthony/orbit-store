@@ -315,6 +315,8 @@ class Store
     void continue_restart(bool unreachable);
 
     void worker();
+    std::vector<Job> service_jobs_; // the service's own downloads; state_.jobs adds the updates and DLC
+    void merge_jobs();
     void post_queue(std::vector<Job> jobs, std::vector<Drive> drives, bool have_drives);
     void post_failure(const std::string &error, bool unreachable);
     void post_start(Starting starting, std::string detail);

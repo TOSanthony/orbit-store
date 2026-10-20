@@ -65,7 +65,7 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
     if (!focused)
         return intent;
     const GameUpdateStatus &status = ctx_.store.state().game_update_status;
-    const std::vector<GameUpdateItem> &games = dlc_mode_ ? status.dlc : status.games;
+    const std::vector<GameUpdateItem> games = pending_game_items(status, dlc_mode_);
     const int count = static_cast<int>(games.size());
     // A refused request (another update running, nothing to install) is told once.
     const SettingResult &result = ctx_.store.setting_result();
@@ -257,7 +257,7 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
 std::vector<hui::ui::Hint> GameUpdatesScreen::hints() const
 {
     const GameUpdateStatus &status = ctx_.store.state().game_update_status;
-    const std::vector<GameUpdateItem> &listed = dlc_mode_ ? status.dlc : status.games;
+    const std::vector<GameUpdateItem> listed = pending_game_items(status, dlc_mode_);
     std::vector<hui::ui::Hint> items;
     if (bar_ >= 0)
     {
@@ -302,7 +302,7 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
     const Snapshot &state = ctx_.store.state();
     const ui::Type &type = ctx_.type;
     const GameUpdateStatus &status = state.game_update_status;
-    const std::vector<GameUpdateItem> &games = dlc_mode_ ? status.dlc : status.games;
+    const std::vector<GameUpdateItem> games = pending_game_items(status, dlc_mode_);
 
     const float title = ui::text(list, type.semibold, dlc_mode_ ? tr("Add-on content") : tr("Updates"),
                                  ui::kGutter, kTitleBaseline, 60.0f, ui::color::text);

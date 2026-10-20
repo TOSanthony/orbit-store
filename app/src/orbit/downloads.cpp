@@ -537,6 +537,13 @@ void DownloadsScreen::draw(Frame &frame, bool focused) const
         const ui::Rect cover{row.x + kRowPad, row.y + kRowPad, kCover, kCover};
         if (game != nullptr)
             draw_cover(ctx_, list, *game, cover, 12.0f);
+        else if (is_game_update_job(job.id))
+        {
+            Game local; // the console's own icon of the game, or of the DLC
+            local.id = job.game_id;
+            local.title = job.title;
+            draw_cover(ctx_, list, local, cover, 12.0f);
+        }
         else
             ui::cover_placeholder(list, type, cover, job.title.empty() ? job.filename : job.title,
                                   12.0f);
@@ -573,11 +580,15 @@ void DownloadsScreen::draw(Frame &frame, bool focused) const
         std::string meta;
         if (release != nullptr)
             meta = release->provider + " \xC2\xB7 " + format_label(*release) + " \xC2\xB7 ";
-        meta += drive != nullptr ? i18n::place(drive->label) : job.storage_id;
+        const bool from_updates = is_game_update_job(job.id); // an update or DLC: no drive of its own to name
+        if (from_updates)
+            meta = job.title_id + " \xC2\xB7 " + (job.format == "DLC" ? std::string("DLC") : std::string(tr("Update")));
+        else
+            meta += drive != nullptr ? i18n::place(drive->label) : job.storage_id;
         if (job.delivery == "torbox")
             meta += std::string(" \xC2\xB7 ") + tr("via TorBox");
         if(job.delivery=="zero") meta += " / Orbit Zero";
-        if (drive == nullptr && job.status != "complete")
+        if (drive == nullptr && !from_updates && job.status != "complete")
             meta += std::string(" \xC2\xB7 ") + tr("Reconnect this drive");
         ui::text_fit(list, type.regular, meta, tx, row.y + kRowPad + 51.0f, 16.0f, info_width,
                      ui::color::text3);

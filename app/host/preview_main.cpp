@@ -309,6 +309,13 @@ std::vector<Scenario> scenarios()
                      pause(1.5f, "game-dlc"), tap(Action::confirm), pause(1.5f, "game-dlc-downloading"),
                      move(Direction::right), pause(0.8f, "game-dlc-cancel-focus"), move(Direction::left), move(Direction::down),
                      tap(Action::west), pause(1.2f, "game-dlc-queue")}});
+    list.push_back({"game-updates-in-downloads",
+                    Mode::dlc,
+                    false,
+                    {run(2.0f, [](orbit::App &app) { app.show_tab(orbit::tab::dlc); }),
+                     tap(Action::confirm), pause(1.5f, "gu-dlc-after"),
+                     run(0.5f, [](orbit::App &app) { app.show_tab(orbit::tab::downloads); }),
+                     pause(1.5f, "gu-downloads")}});
     list.push_back({"game-updates",
                     Mode::normal,
                     false,

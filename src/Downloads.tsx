@@ -230,9 +230,12 @@ export function Downloads({
       ) : (
         <div className="queue">
           {groups[view].map((j) => {
-            const g = gameByRelease.get(j.releaseId),
-              r = g?.releases.find((r) => r.id === j.releaseId);
-            const title = g?.title || j.title || j.filename;
+            const fromUpdates = j.id.startsWith("gu:"); // an update or DLC
+            const g = fromUpdates
+                ? games.find((x) => x.releases.some((r) => r.titleId === j.titleId))
+                : gameByRelease.get(j.releaseId),
+              r = fromUpdates ? undefined : g?.releases.find((r) => r.id === j.releaseId);
+            const title = fromUpdates ? j.title : g?.title || j.title || j.filename;
             const active = [
               "queued",
               "downloading",
@@ -276,14 +279,20 @@ export function Downloads({
                     <h2>{title}</h2>
                     <span className={`status ${j.status}`}>
                       {j.status === "complete" && <Icon name="check" />}{" "}
-                      {t(statusLabels[j.status] || j.status)}
+                      {j.installState === "installing"
+                        ? t("Installing")
+                        : t(statusLabels[j.status] || j.status)}
                     </span>
                   </div>
                   <p>
                     {r && `${r.provider} · ${formatLabel(r)} · `}
                     {j.delivery === "torbox" && `${t("via TorBox")} · `}
-                    {drive ? placeName(drive.label) : j.storageId}
-                    {!drive && j.status !== "complete"
+                    {fromUpdates
+                      ? `${j.titleId} · ${j.format === "DLC" ? "DLC" : t("Update")}`
+                      : drive
+                        ? placeName(drive.label)
+                        : j.storageId}
+                    {!drive && !fromUpdates && j.status !== "complete"
                       ? ` · ${t("Reconnect this drive")}`
                       : ""}
                   </p>
