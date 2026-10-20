@@ -264,7 +264,7 @@ static void wait_seconds(unsigned seconds) {
  * into slices; each connection takes the next slice, so one connection's speed limit no longer caps the
  * download. What is kept for a resume is the contiguous part from the start, as before: a slice that
  * finished beyond a gap is fetched again, which costs at most the slices that were in flight. */
-#define PARALLEL_STREAMS 4
+#define PARALLEL_STREAMS 8
 #define SLICE_BYTES (4LL * 1024 * 1024)
 #define SLICE_RETRIES 3
 
