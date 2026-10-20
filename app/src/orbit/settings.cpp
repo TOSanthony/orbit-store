@@ -712,7 +712,7 @@ void SettingsScreen::build_sources(Pane &pane) const
         const float f = pane.amount();
         ui::state_fill(*pane.list, box, 16.0f, f, draft_acknowledged_);
         const float mx = box.x + 26.0f + 16.0f;
-        const float my = box.y + 22.0f + 16.0f;
+        const float my = box.cy(); // centred in the row, whatever the number of text lines
         if (draft_acknowledged_)
         {
             pane.list->circle(mx, my, 16.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
