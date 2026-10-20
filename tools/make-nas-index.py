@@ -821,6 +821,14 @@ def main() -> int:
     except (OSError, ValueError):
         pr_cache = {}
     pr_cache = pr_cache if isinstance(pr_cache, dict) else {}
+    # What was read inside each .pkg, by path, so an unchanged file (same size and date) is not opened again.
+    pkg_path = root / ".pkg-cache.json"
+    try:
+        pkg_cache = json.loads(pkg_path.read_text("utf-8")) if pkg_path.is_file() else {}
+    except (OSError, ValueError):
+        pkg_cache = {}
+    pkg_cache = pkg_cache if isinstance(pkg_cache, dict) else {}
+    pkg_dirty = False
     pr_dirty, pr_calls, pr_done, pr_images, pr_errors, pr_fail = False, 0, 0, 0, [], 0
     pr_left = set()
 
@@ -931,9 +939,10 @@ def main() -> int:
         return 1
     def save_caches():
         """Write .ai-cache.json / .prospero-cache.json when they changed (also on a stop or a crash)."""
-        nonlocal cache_dirty, pr_dirty
+        nonlocal cache_dirty, pr_dirty, pkg_dirty
         for name, data, target, dirty in ((".ai-cache.json", cache, cache_path, cache_dirty),
-                                          (".prospero-cache.json", pr_cache, pr_path, pr_dirty)):
+                                          (".prospero-cache.json", pr_cache, pr_path, pr_dirty),
+                                          (".pkg-cache.json", pkg_cache, pkg_path, pkg_dirty)):
             if not dirty:
                 continue
             try:
@@ -975,7 +984,22 @@ def main() -> int:
         key = relative.as_posix()
         extra = overrides.get(key, {})
         param = read_param(path) if suffix == ".zip" and not args.no_param else None
-        pkg = read_pkg(path) if suffix == ".pkg" and not args.no_param else None
+        pkg = None
+        if suffix == ".pkg" and not args.no_param:
+            try:
+                stat = path.stat()
+            except OSError:
+                stat = None
+            hit = pkg_cache.get(key)
+            if (stat and isinstance(hit, dict) and isinstance(hit.get("info"), dict) and not args.refresh_covers
+                    and hit.get("size") == stat.st_size and hit.get("mtime") == stat.st_mtime_ns):
+                pkg = {**hit["info"], "icon": None, "cached": True}
+            else:
+                pkg = read_pkg(path)
+                if pkg and stat:
+                    pkg_cache[key] = {"size": stat.st_size, "mtime": stat.st_mtime_ns, "hadIcon": pkg["icon"] is not None,
+                                      "info": {k: v for k, v in pkg.items() if k != "icon"}}
+                    pkg_dirty = True
         if pkg and not param and (pkg["title"] or pkg["titleId"]):
             # A package says the same things as a .zip's param.json: title, title ID and (PS5) version.
             version = pkg["version"] if re.fullmatch(r"\d+(\.\d+){1,3}", pkg["version"]) and (pkg["titleId"] or "").startswith("PPSA") else ""
@@ -1082,6 +1106,11 @@ def main() -> int:
         if suffix == ".zip" and not args.no_extract:
             for kind in extract_art(path, title_id, root, args.covers, images, args.refresh_covers):
                 extracted.append(f"{title_id}_{kind}.png")
+        if pkg and pkg.get("cached") and pkg_cache.get(key, {}).get("hadIcon") and pack != "UPDATES" and not args.no_extract:
+            if not (custom_art(root, images, art_id, "icon0") or f"{art_id}_icon0.png".lower() in images):
+                fresh = read_pkg(path)         # the cover file was removed: read the package again for its icon
+                if fresh:
+                    pkg["icon"] = fresh["icon"]
         if pkg and pkg["icon"] and pack != "UPDATES" and not args.no_extract and (pkg["titleId"] in ("", title_id)):
             if store_icon(pkg["icon"], art_id, root, args.covers, images, args.refresh_covers):
                 extracted.append(f"{art_id}_icon0.png")
