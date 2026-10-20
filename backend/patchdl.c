@@ -887,6 +887,20 @@ int patchdl_pause(const char *title_id, char *error, size_t cap) {
 }
 
 /* Cancel: stops a running update, or discards a paused one together with what it had downloaded. */
+void patchdl_dismiss(const char *title_id) {
+    Slot *slot = slot_for(title_id);
+    pthread_mutex_lock(&slot->mutex);
+    if (!slot->active && strcmp(slot->title_id, title_id) == 0 &&
+        (!strcmp(slot->phase, "installed") || !strcmp(slot->phase, "downloaded") || !strcmp(slot->phase, "failed"))) {
+        slot->phase[0] = 0;
+        slot->error[0] = 0;
+        slot->detail[0] = 0;
+        slot->done = 0;
+        slot->waiting = false;
+    }
+    pthread_mutex_unlock(&slot->mutex);
+}
+
 void patchdl_cancel(const char *title_id) {
     cur = slot_for(title_id);
     pthread_mutex_lock(&pd.mutex);

@@ -244,6 +244,10 @@ with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as dri
     s = run(root, "10200000", "PPSA00001", drive)
     check("the next run finishes it", s.get("phase") == "downloaded" and open(final, "rb").read() == payload)
     check("and does not download the finished pieces again", "PPSA00001-piece0.pkg" not in LOG and "PPSA00001-piece1.pkg" not in LOG)
+    # a finished update leaves the downloads list when the person removes it
+    s = run(root, "10200000", "PPSA00001", drive, pause="dismiss")
+    check("removing a finished update clears it from the list", not s.get("phase"))
+    check("and keeps the file", os.path.exists(final))
     # a game with no offer is refused
     s = run(root, "10200000", "PPSA09999", drive)
     check("a game without an update is refused", s.get("startRefused") == 404)

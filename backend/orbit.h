@@ -266,6 +266,8 @@ void patchdl_queue_pump(void);
 cJSON *patchdl_queue_json(void);
 bool gameupdates_check_ok(void);
 void patchdl_cancel(const char *title_id);
+/* Removes a finished update or DLC (installed, downloaded, failed) from the downloads list. */
+void patchdl_dismiss(const char *title_id);
 void patchdl_stop(void);
 cJSON *patchdl_status(bool dlc);
 int updates_start(void);

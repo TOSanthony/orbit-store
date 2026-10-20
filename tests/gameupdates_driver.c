@@ -346,7 +346,7 @@ int main(int argc, char **argv) {
                 return 0;
             }
             const char *mode = getenv("ORBIT_TEST_PAUSE");
-            if (mode) {
+            if (mode && strcmp(mode, "dismiss")) {
                 /* Stop the download part-way (the fake server stalls on one piece), then act on it. */
                 usleep(1200000);
                 if (!strcmp(mode, "cancel-active"))
@@ -359,6 +359,14 @@ int main(int argc, char **argv) {
                 }
             }
             wait_inactive(true);
+            if (mode && !strcmp(mode, "dismiss")) {
+                patchdl_dismiss(argv[3]);
+                cJSON *now = gameupdates_status();
+                char *text = cJSON_Print(cJSON_GetObjectItemCaseSensitive(now, job_key()));
+                puts(text);
+                free(text);
+                cJSON_Delete(now);
+            }
             if (mode && !strcmp(mode, "cancel")) {
                 patchdl_cancel(argv[3]);
                 cJSON *now = gameupdates_status();

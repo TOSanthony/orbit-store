@@ -786,6 +786,10 @@ int gameupdates_action(const cJSON *input, char *error, size_t cap) {
         patchdl_cancel(json_text(input, "titleId"));
         return 202;
     }
+    if (!strcmp(action, "dismiss")) {
+        patchdl_dismiss(json_text(input, "titleId"));
+        return 202;
+    }
     if (strcmp(action, "refresh")) {
         copy_text(error, cap, "Expected refresh action.");
         return 400;

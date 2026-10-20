@@ -163,6 +163,8 @@ void Store::job_action(const std::string &job_id, const std::string &action, boo
             game_update_job("download", key);
         else if (action == "cancel")
             game_update_job(waiting ? "dequeue" : "cancel", key);
+        else if (action == "remove" || action == "forget")
+            game_update_job("dismiss", key); // a finished update or DLC leaves the list
         return;
     }
     ++pending_actions_;
