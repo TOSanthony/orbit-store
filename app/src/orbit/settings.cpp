@@ -594,42 +594,59 @@ void SettingsScreen::build_sources(Pane &pane) const
     pane.body(tr("Select your download sources. You can change them anytime."));
     pane.gap(8.0f);
 
-    // .source-card: a check and the source's name.
-    float cx = pane.x;
-    const float cy = pane.y;
+    // The sources as the keyboard choice: three cards to a row, the rest aligned to the left.
+    constexpr float kGap = 12.0f;
+    constexpr float kCardH = 76.0f;
+    const float card_w = (pane.width - 2.0f * kGap) / 3.0f;
     bool browser_only_source = false;
-    for (int i = 0; i < static_cast<int>(state.sources.options.size()); ++i)
+    const int total = static_cast<int>(state.sources.options.size());
+    // A fixed order: Vikingfile, Archive.org, AkiraBox, DataNodes, My NAS; any other source follows.
+    std::vector<int> shown(static_cast<std::size_t>(total));
+    for (int i = 0; i < total; ++i)
+        shown[static_cast<std::size_t>(i)] = i;
+    const auto rank = [&](int i)
     {
+        static const char *const order[] = {"vikingfile", "archive", "akirabox", "datanodes", "nas"};
+        const std::string &id = state.sources.options[static_cast<std::size_t>(i)].id;
+        for (int k = 0; k < 5; ++k)
+            if (id == order[k])
+                return k;
+        return 5;
+    };
+    std::stable_sort(shown.begin(), shown.end(), [&](int a, int b) { return rank(a) < rank(b); });
+    for (int slot = 0; slot < total; ++slot)
+    {
+        const int i = shown[static_cast<std::size_t>(slot)]; // the option's own index is what a press reports
         const SourceOption &option = state.sources.options[static_cast<std::size_t>(i)];
         const bool on = contains(draft_, option.id);
         browser_only_source = browser_only_source || option.id == "vikingfile" || option.id == "akirabox" || option.id == "datanodes";
-        const float w = type.medium.measure(option.label, 21.0f) + 104.0f;
-        const ui::Rect r{cx, cy, w, 60.0f};
+        const int line = slot / 3, col = slot % 3;
+        if (col == 0 && slot > 0)
+            ++pane.row;
+        const ui::Rect r{pane.x + static_cast<float>(col) * (card_w + kGap),
+                         pane.y + static_cast<float>(line) * (kCardH + 10.0f), card_w, kCardH};
         if (pane.list != nullptr)
         {
+            ui::DrawList &list = *pane.list;
             const float f = pane.amount();
-            ui::state_fill(*pane.list, r, 30.0f, f, on);
-            const float mx = r.x + 22.0f + 13.0f;
+            ui::state_fill(list, r, kCardRadius, f, on);
+            const float mx = r.x + 24.0f + 14.0f;
             if (on)
             {
-                pane.list->circle(mx, r.cy(), 13.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
-                ui::icon_check(*pane.list, mx, r.cy(), 15.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.4f);
+                list.circle(mx, r.cy(), 14.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
+                ui::icon_check(list, mx, r.cy(), 16.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.4f);
             }
             else
-            {
-                pane.list->ring(mx, r.cy(), 12.0f, 2.0f,
-                                f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::Color::rgb(0xffffff, 0.55f));
-            }
-            ui::text(*pane.list, type.medium, option.label, mx + 13.0f + 18.0f, r.cy() + 7.5f,
-                     21.0f, ui::state_ink(f, on));
+                list.ring(mx, r.cy(), 13.5f, 1.0f, f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::color::text3);
+            ui::text_fit(list, type.medium, option.label, mx + 34.0f, r.cy() + 7.0f, 21.0f, card_w - 90.0f,
+                         ui::state_ink(f, on));
         }
         pane.add(Kind::source, i, r, !saving);
-        cx += w + 14.0f;
     }
-    if (!state.sources.options.empty())
+    if (total > 0)
     {
         ++pane.row;
-        pane.y = cy + 60.0f + 18.0f;
+        pane.y += static_cast<float>((total + 2) / 3) * (kCardH + 10.0f) + 8.0f;
     }
     if (browser_only_source)
     {
