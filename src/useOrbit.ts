@@ -54,7 +54,7 @@ function gameJobs(
       path: "",
       format: isDlc ? "DLC" : "Update",
       title: isDlc
-        ? `${name} · ${item?.gameName || base}`
+        ? name
         : `${name} · ${t("Update")}${version ? ` ${version}` : ""}`,
       order: -1,
       status: "queued",

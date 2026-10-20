@@ -954,7 +954,7 @@ std::vector<Job> game_update_jobs(const GameUpdateStatus &status)
         job.id = "gu:" + key;
         job.title_id = base;
         job.game_id = dlc ? "local-dlc-" + base + "-" + label : "local-" + base; // the console's own icon
-        job.title = dlc ? name + " \xC2\xB7 " + game
+        job.title = dlc ? name
                         : name + " \xC2\xB7 " + tr("Update") + (version.empty() ? "" : " " + version);
         job.format = dlc ? "DLC" : "Update";
         job.total = item != nullptr ? item->size : 0.0;

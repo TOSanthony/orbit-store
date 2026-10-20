@@ -474,8 +474,8 @@ static void add_dlc(const appdb_game *games, size_t total, Entry *found, size_t 
             copy_text(e->base, sizeof e->base, id);
             copy_text(e->label, sizeof e->label, label);
             copy_text(e->game_name, sizeof e->game_name, games[i].title_name);
-            /* The index names a DLC by its game's id unless titles.json says better; the label is clearer then. */
-            copy_text(e->name, sizeof e->name, strcmp(r->title, id) ? r->title : name[0] ? name : label);
+            /* The DLC's own name from its package; else the index's title (the game's, unless titles.json says better), else the label. */
+            copy_text(e->name, sizeof e->name, name[0] ? name : strcmp(r->title, id) ? r->title : label);
             snprintf(e->manifest, sizeof e->manifest, "nas:%s", r->id);
             e->size = r->size;
         }

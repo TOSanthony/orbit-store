@@ -148,23 +148,20 @@ export function GameUpdates({
                   <strong>{game.name || game.titleId}</strong>
                   <span>{game.baseId || game.titleId}</span>
                 </div>
-                <p>
-                  {dlc ? (
-                    <>
-                      {game.gameName ? `${game.gameName} · ` : ""}
-                      {game.label}
-                    </>
-                  ) : (
-                    <>
-                      {t("Installed {version}", {
-                        version: game.installed || "?",
-                      })}
-                      {" → "}
-                      {t("Available {version}", { version: game.version })}
-                    </>
-                  )}
-                  {game.size ? ` · ${bytes(game.size)}` : ""}
-                </p>
+                {!dlc && (
+                  <p>
+                    {t("Installed {version}", {
+                      version: game.installed || "?",
+                    })}
+                    {" → "}
+                    {t("Available {version}", { version: game.version })}
+                  </p>
+                )}
+                {game.size ? (
+                  <span className="update-size">
+                    <Icon name="storage" /> {bytes(game.size)}
+                  </span>
+                ) : null}
                 {queue.includes(game.titleId) && (
                   <p>
                     {t("Waiting")} · #{queue.indexOf(game.titleId) + 1}

@@ -21,7 +21,7 @@ constexpr float kTitleBaseline = 176.0f; // as the Games, Library and Downloads 
 constexpr float kListTop = 308.0f; // as the grid of Games, under the filter row
 constexpr float kBarY = 216.0f;    // the filter row of Games and Applications
 constexpr float kBarGap = 14.0f;
-constexpr float kRowHeight = 210.0f; // as a download
+constexpr float kRowHeight = 174.0f; // the cover and its padding
 constexpr float kRowGap = 8.0f;
 constexpr float kRowWidth = 1920.0f - 2.0f * ui::kGutter; // as the grid of Games and Applications
 constexpr float kRowLeft = (1920.0f - kRowWidth) * 0.5f; // the list sits in the middle of the screen
@@ -382,10 +382,6 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         const bool paused = this_job && job.phase == "paused";
         const bool running = this_job && job.active && job.phase != "installing";
         const bool installing = this_job && job.phase == "installing";
-        const double fraction =
-            this_job && job.total > 0.0 ? std::clamp(job.done / job.total, 0.0, 1.0) : 0.0;
-        const float progress = installing ? static_cast<float>(job.install_percent) / 100.0f
-                                          : static_cast<float>(fraction);
 
         std::string state = place > 0 ? std::string(tr("Waiting")) + " \xC2\xB7 #" + std::to_string(place)
                                       : std::string(dlc_mode_ ? tr("DLC available") : tr("Update available"));
@@ -423,8 +419,7 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         ui::text_fit(list, type.medium, game.name.empty() ? game.title_id : game.name, tx,
                      row.y + kRowPad + 22.0f, 23.0f, info_width - state_width - 24.0f, ui::color::text);
         const std::string versions =
-            dlc_mode_ ? game.base_id + " \xC2\xB7 " + (game.game_name.empty() ? std::string() : game.game_name + " \xC2\xB7 ") +
-                            game.label
+            dlc_mode_ ? game.base_id
                       :
             game.title_id + " \xC2\xB7 " +
             tr("Installed {version}", {{"version", game.installed.empty() ? std::string("?") : game.installed}}) +
@@ -432,43 +427,19 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         ui::text_fit(list, type.regular, versions, tx, row.y + kRowPad + 51.0f, 16.0f, info_width,
                      ui::color::text3);
 
-        const ui::Rect bar{tx, row.y + kRowPad + 74.0f, info_width, 6.0f};
-        if (installing && job.waiting)
-            ui::progress_bar_busy(list, bar, ctx_.clock, ui::color::action);
-        else
-            ui::progress_bar(list, bar, progress,
-                             job.phase == "failed" && this_job ? ui::color::bad
-                             : job.phase == "installed" && this_job ? ui::color::ok
-                                                                    : ui::color::action);
-        const double received = this_job ? job.done : 0.0;
+        // The size to download, with the storage icon, on the line of the buttons; a failure shows its message there instead.
         const double total_bytes = this_job && job.total > 0.0 ? job.total : game.size;
-        const std::string left =
-            installing && job.waiting ? std::string(tr("Installing\xE2\x80\xA6 waiting for the console"))
-            : installing ? std::string(tr("Installing")) + " \xC2\xB7 " + std::to_string(job.install_percent) + "%"
-                       : format_bytes(received) + " / " + format_bytes(total_bytes) + " \xC2\xB7 " +
-                             i18n::percent(fraction * 100.0);
-        const float transfer_y = row.y + kRowPad + 104.0f;
-        ui::text(list, type.regular, left, tx, transfer_y, 16.0f, ui::color::text3);
-        std::string right;
+        const float button_y = row.y + kRowPad + 90.0f;
         if (this_job && (job.phase == "failed" || (job.phase == "downloaded" && !job.error.empty())))
-        {
-            ui::text_fit(list, type.regular, explained(job), right_edge, transfer_y, 16.0f, 620.0f,
+            ui::text_fit(list, type.regular, explained(job), right_edge, button_y + 25.0f, 16.0f, 620.0f,
                          ui::color::bad, ui::Align::right);
-        }
-        else if (!installing)
+        else if (total_bytes > 0.0)
         {
-            if (running && job.speed > 0.0)
-            {
-                const double minutes = std::ceil((job.total - job.done) / job.speed / 60.0);
-                right = tr("{speed}/s \xC2\xB7 {minutes} min remaining",
-                           {{"speed", format_bytes(job.speed)}, {"minutes", i18n::count(static_cast<long>(minutes))}});
-            }
-            else
-            {
-                right = tr("{size} remaining", {{"size", format_bytes(std::max(0.0, total_bytes - received))}});
-            }
-            ui::text(list, type.regular, right, right_edge, transfer_y, 16.0f, ui::color::text3,
+            const std::string size_text = format_bytes(total_bytes);
+            ui::text(list, type.regular, size_text, right_edge, button_y + 25.0f, 18.0f, ui::color::text2,
                      ui::Align::right);
+            ui::icon_storage(list, right_edge - type.regular.measure(size_text, 18.0f) - 22.0f, button_y + 19.0f,
+                             20.0f, ui::color::text2);
         }
 
         // Small buttons, always shown; the first one of the focused row rings.
@@ -486,7 +457,7 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         {
             const float width = type.medium.measure(actions[a], 16.0f) + 2.0f * 22.0f;
             const bool on = focused && bar_ < 0 && i == row_ && a == static_cast<std::size_t>(button_);
-            ui::button(list, type, {ax, row.y + kRowPad + 128.0f, width, 38.0f}, actions[a],
+            ui::button(list, type, {ax, button_y, width, 38.0f}, actions[a],
                        on ? ui::ButtonKind::primary : ui::ButtonKind::secondary, on ? 1.0f : 0.0f, true, 16.0f);
             ax += width + 12.0f;
         }

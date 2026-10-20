@@ -736,6 +736,16 @@ html:not(.pointer) .search-field input:focus {
   justify-content: space-between;
   gap: 1rem;
 }
+.game-updates .update-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--dim, #9aa);
+}
+.game-updates .update-size svg {
+  width: 16px;
+  height: 16px;
+}
 .game-updates .update-body > .update-actions {
   justify-content: flex-start;
   gap: 0.6rem;
