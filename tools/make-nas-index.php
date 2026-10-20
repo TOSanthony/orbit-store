@@ -920,6 +920,7 @@ main{padding:0 0 3rem}
 .art{aspect-ratio:1;border-radius:.75rem;overflow:hidden;background:linear-gradient(135deg,var(--panel2),var(--panel));display:grid;place-items:center;position:relative}
 .art img{width:100%;height:100%;object-fit:cover;display:block}
 .art svg{width:38%;opacity:.35}
+.badge.upd{left:auto;right:.4rem;background:#1f8f4e}
 .plat{position:absolute;left:.4rem;top:.4rem;font-size:.7rem;font-weight:700;padding:.12rem .5rem;border-radius:999px;background:#1f5fe0;color:#fff;letter-spacing:.04em;box-shadow:0 1px 4px #0006}
 .badge{position:absolute;left:.4rem;bottom:.4rem;font-size:.7rem;padding:.12rem .45rem;border-radius:999px;background:#000a;color:#fff;letter-spacing:.02em}
 .name{margin-top:.55rem;font-weight:600;font-size:.95rem;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
@@ -1138,6 +1139,13 @@ summary{cursor:pointer;font-weight:600}
     else box.append(mark());
     if (g.platform === 'ps4') { const p = el('span', 'plat', 'PS4'); p.title = 'Jeu PS4'; box.append(p); }
     if (badge) box.append(el('span', 'badge', g.files.length > 1 ? plural(g.files.length, 'fichier', 'fichiers') : g.formats.join(' · ')));
+    // Une mise à jour ajoutée au jeu avec son SHA-256 (c'est ce qui permet de la vérifier au téléchargement).
+    const updates = g.files.filter((f) => catOf(f.tagline) === 'updates' && f.sha256);
+    if (badge && g.cat === 'game' && updates.length) {
+      const u = el('span', 'badge upd', 'Update');
+      u.title = 'Mise à jour avec SHA-256 : ' + updates.map((f) => f.version ? 'v' + f.version : f.filename).join(', ');
+      box.append(u);
+    }
     return box;
   };
   const firstGenre = (g) => (g.genre || '').split('/')[0].trim();
