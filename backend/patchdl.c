@@ -34,6 +34,8 @@ typedef struct {
     bool present;
     Storage drive;
     char part[96], state[96];
+    bool pkg;          /* the finished package is on the drive (a failed install leaves it there) */
+    char pkg_name[64];
 } Kept;
 
 typedef struct Slot {
@@ -723,6 +725,11 @@ static void run(const char *manifest_url) {
 
     char path[900];
     snprintf(path, sizeof path, "%s/homebrew/%s", drive.root, job.final_name);
+    pthread_mutex_lock(&pd.mutex);
+    kept.pkg = true;
+    kept.drive = drive;
+    copy_text(kept.pkg_name, sizeof kept.pkg_name, job.final_name);
+    pthread_mutex_unlock(&pd.mutex);
     if (!install_service_available()) {
         return finish_d("downloaded", "Downloaded. Install the file from the console's Game Library.", job.final_name);
     }
@@ -831,6 +838,7 @@ int patchdl_start(const char *title_id, char *error, size_t cap) {
     atomic_store(&pd.cancel, false);
     atomic_store(&pd.pause, false);
     kept.present = false;
+    kept.pkg = false;
     pd.active = true;
     copy_text(pd.title_id, sizeof pd.title_id, title_id);
     copy_text(pd.name, sizeof pd.name, name);
@@ -889,6 +897,29 @@ void patchdl_cancel(const char *title_id) {
         return;
     }
     bool paused = !strcmp(pd.phase, "paused");
+    if (!paused && kept.pkg && (!strcmp(pd.phase, "failed") || !strcmp(pd.phase, "downloaded"))) {
+        /* The install failed (or never ran): cancelling removes the package and the row. */
+        Job *place = calloc(1, sizeof *place);
+        char name[64];
+        copy_text(name, sizeof name, kept.pkg_name);
+        if (place) {
+            copy_text(place->storage_id, sizeof place->storage_id, kept.drive.id);
+            copy_text(place->root, sizeof place->root, kept.drive.root);
+            place->device = kept.drive.device;
+            place->inode = kept.drive.inode;
+            int dir = storage_open(place);
+            free(place);
+            if (dir >= 0) {
+                unlinkat(dir, name, 0);
+                close(dir);
+            }
+        }
+        kept.pkg = false;
+        copy_text(pd.phase, sizeof pd.phase, "cancelled");
+        pd.done = 0;
+        pthread_mutex_unlock(&pd.mutex);
+        return;
+    }
     bool had_files = paused && kept.present;
     Storage drive = kept.drive;
     char part[96], state[96];
