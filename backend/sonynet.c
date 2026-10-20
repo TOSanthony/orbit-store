@@ -50,7 +50,7 @@ typedef struct {
     int64_t position; /* where the next byte goes, relative to file_offset */
     int64_t file_offset;
     int64_t limit;    /* bytes still wanted */
-    volatile int64_t *received;
+    _Atomic int64_t *received;
     int64_t base;
     bool disk_error;
     sony_stop_fn stop;
@@ -104,7 +104,7 @@ static size_t store(char *data, size_t a, size_t b, void *context) {
     w->position += (int64_t)n;
     w->limit -= (int64_t)n;
     if (w->received)
-        *w->received = w->base + w->position;
+        atomic_store_explicit(w->received, w->base + w->position, memory_order_relaxed);
     return a * b;
 }
 typedef struct {
@@ -278,7 +278,7 @@ void sony_range_close(void) {
     }
 }
 static sony_range_result range(const char *url, int64_t start, int64_t end, int fd, int64_t file_offset,
-                               volatile int64_t *received, sony_stop_fn stop, bool nas, char *why, size_t why_cap) {
+                               _Atomic int64_t *received, sony_stop_fn stop, bool nas, char *why, size_t why_cap) {
     char address[2100];
     bool local;
     if (start < 0 || end <= start) {
@@ -334,7 +334,7 @@ static sony_range_result range(const char *url, int64_t start, int64_t end, int 
     route_free(&route);
     free(storage);
     if (received)
-        *received = w.position;
+        atomic_store_explicit(received, w.position, memory_order_relaxed);
     if (w.disk_error) {
         snprintf(why, why_cap, "could not write to the drive");
         return SONY_RANGE_DISK;
@@ -360,10 +360,10 @@ static sony_range_result range(const char *url, int64_t start, int64_t end, int 
 }
 
 sony_range_result sony_range(const char *url, int64_t start, int64_t end, int fd, int64_t file_offset,
-                             volatile int64_t *received, sony_stop_fn stop, char *why, size_t why_cap) {
+                             _Atomic int64_t *received, sony_stop_fn stop, char *why, size_t why_cap) {
     return range(url, start, end, fd, file_offset, received, stop, false, why, why_cap);
 }
 sony_range_result nas_range(const char *url, int64_t start, int64_t end, int fd, int64_t file_offset,
-                            volatile int64_t *received, sony_stop_fn stop, char *why, size_t why_cap) {
+                            _Atomic int64_t *received, sony_stop_fn stop, char *why, size_t why_cap) {
     return range(url, start, end, fd, file_offset, received, stop, true, why, why_cap);
 }

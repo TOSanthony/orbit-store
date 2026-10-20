@@ -8,6 +8,7 @@
  * transfer runs; returning true aborts it. `why` receives a short English reason on failure. */
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdatomic.h>
 #include <stdint.h>
 
 typedef struct {
@@ -32,12 +33,12 @@ typedef enum {
 /* Downloads bytes [start, end) of `url` and writes them at `file_offset + position` of `fd`.
  * *received is the position reached inside the piece (it starts at `start`), updated as data arrives. */
 sony_range_result sony_range(const char *url, int64_t start, int64_t end, int fd, int64_t file_offset,
-                             volatile int64_t *received, sony_stop_fn stop, char *why, size_t why_cap);
+                             _Atomic int64_t *received, sony_stop_fn stop, char *why, size_t why_cap);
 /* Closes the connection sony_range / nas_range keep between calls. Call it when a download ends. */
 void sony_range_close(void);
 
 /* The same, from a file on the person's own NAS (its address must be on the NAS origin saved in Sources,
  * over HTTPS; private addresses are refused). Used for updates listed in the NAS index. */
 sony_range_result nas_range(const char *url, int64_t start, int64_t end, int fd, int64_t file_offset,
-                            volatile int64_t *received, sony_stop_fn stop, char *why, size_t why_cap);
+                            _Atomic int64_t *received, sony_stop_fn stop, char *why, size_t why_cap);
 #endif

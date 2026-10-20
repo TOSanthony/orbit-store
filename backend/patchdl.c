@@ -65,7 +65,7 @@ static Slot *slot_for(const char *title_id) {
 
 /* The updates waiting for their turn, in order. Kept in game-update-queue.json so a restart
  * keeps it; each one is checked against the current offers when its turn comes. */
-#define QUEUE_MAX 32
+#define QUEUE_MAX 128
 #define QUEUE_FILE "game-update-queue.json"
 static struct {
     pthread_mutex_t mutex;
@@ -277,7 +277,7 @@ typedef struct {
     const patchmanifest_piece *piece;
     int64_t base;                   /* where the first slice starts inside the piece */
     size_t slices;
-    volatile int64_t *reached;      /* per slice: the position reached inside the piece */
+    _Atomic int64_t *reached;      /* per slice: the position reached inside the piece */
     atomic_bool *finished;          /* per slice */
     atomic_size_t next;
     atomic_int alive;
@@ -316,11 +316,11 @@ static void *fan_worker(void *context) {
             break;
         unsigned tries = 0;
         for (;;) {
-            volatile int64_t *position = &fan->reached[k];
+            _Atomic int64_t *position = &fan->reached[k];
             sony_range_result r =
-                job->nas ? nas_range(job->nas_url, *position, slice_end(fan, k), job->fd, fan->piece->offset,
+                job->nas ? nas_range(job->nas_url, atomic_load_explicit(position, memory_order_relaxed), slice_end(fan, k), job->fd, fan->piece->offset,
                                      position, fan_stop, why, sizeof why)
-                         : sony_range(fan->piece->url, *position, slice_end(fan, k), job->fd, fan->piece->offset,
+                         : sony_range(fan->piece->url, atomic_load_explicit(position, memory_order_relaxed), slice_end(fan, k), job->fd, fan->piece->offset,
                                       position, fan_stop, why, sizeof why);
             if (r == SONY_RANGE_OK) {
                 atomic_store(&fan->finished[k], true);
@@ -349,13 +349,13 @@ static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, c
     fan.reached = calloc(fan.slices, sizeof *fan.reached);
     fan.finished = calloc(fan.slices, sizeof *fan.finished);
     if (!fan.reached || !fan.finished) {
-        free((void *)fan.reached);
+        free(fan.reached);
         free(fan.finished);
         snprintf(why, why_cap, "not enough memory");
         return SONY_RANGE_FAILED;
     }
     for (size_t k = 0; k < fan.slices; k++)
-        fan.reached[k] = slice_start(&fan, k);
+        atomic_store_explicit(&fan.reached[k], slice_start(&fan, k), memory_order_relaxed);
     atomic_store(&fan.next, 0);
     atomic_store(&cur->fan_failed, false);
     pthread_mutex_init(&fan.mutex, NULL);
@@ -383,7 +383,7 @@ static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, c
         int64_t prefix = fan.base, received = 0;
         bool gap = false;
         for (size_t k = 0; k < fan.slices; k++) {
-            int64_t reached = atomic_load(&fan.finished[k]) ? slice_end(&fan, k) : fan.reached[k];
+            int64_t reached = atomic_load(&fan.finished[k]) ? slice_end(&fan, k) : atomic_load_explicit(&fan.reached[k], memory_order_relaxed);
             received += reached - slice_start(&fan, k);
             if (!gap) {
                 prefix = reached;
@@ -407,7 +407,7 @@ static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, c
     int64_t prefix = fan.base;
     bool gap = false;
     for (size_t k = 0; k < fan.slices && !gap; k++) {
-        int64_t reached = atomic_load(&fan.finished[k]) ? slice_end(&fan, k) : fan.reached[k];
+        int64_t reached = atomic_load(&fan.finished[k]) ? slice_end(&fan, k) : atomic_load_explicit(&fan.reached[k], memory_order_relaxed);
         prefix = reached;
         gap = reached < slice_end(&fan, k);
     }
@@ -418,7 +418,7 @@ static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, c
     if (r != SONY_RANGE_OK)
         snprintf(why, why_cap, "%s", fan.why[0] ? fan.why : "the download was interrupted");
     pthread_mutex_destroy(&fan.mutex);
-    free((void *)fan.reached);
+    free(fan.reached);
     free(fan.finished);
     atomic_store(&cur->fan_failed, false);
     if (r == SONY_RANGE_OK) {
@@ -961,7 +961,7 @@ void patchdl_queue_load(void) {
     int fd = openat(orbit.state_fd, QUEUE_FILE, O_RDONLY | O_NOFOLLOW);
     if (fd < 0)
         return;
-    char buffer[2048];
+    char buffer[8192];
     ssize_t n = read(fd, buffer, sizeof buffer - 1);
     close(fd);
     if (n <= 0)

@@ -240,7 +240,7 @@ static bool sfo_title(const unsigned char *d, size_t n, char *out, size_t cap) {
     for (uint32_t i = 0; i < count && 20 + (size_t)(i + 1) * 16 <= n; i++) {
         const unsigned char *e = d + 20 + (size_t)i * 16;
         uint32_t key = keys + (uint32_t)(e[0] | e[1] << 8), at = data + le32(e + 12), len = le32(e + 4);
-        if (key >= n || at >= n || strncmp((const char *)d + key, "TITLE", 6))
+        if (key >= n || at >= n || n - key < 6 || memcmp(d + key, "TITLE", 6))
             continue;
         if (len > n - at)
             len = (uint32_t)(n - at);
@@ -278,7 +278,7 @@ static bool pkg_read(const Release *r, int fd, int64_t start, size_t len, unsign
         snprintf(why, why_cap, "outside the file");
         return false;
     }
-    volatile int64_t at = start;
+    _Atomic int64_t at = start;
     if (nas_range(r->url, start, start + (int64_t)len, fd, -start, &at, stopping, why, why_cap) != SONY_RANGE_OK)
         return false;
     return pread(fd, buf, len, 0) == (ssize_t)len;
@@ -757,11 +757,11 @@ int gameupdates_action(const cJSON *input, char *error, size_t cap) {
         return 202;
     }
     if (!strcmp(action, "queueAll") || !strcmp(action, "queueAllDlc")) {
-        char ids[64][32];
+        char ids[128][32];
         size_t n = 0;
         const bool want_dlc = !strcmp(action, "queueAllDlc");
         pthread_mutex_lock(&gu.mutex);
-        for (size_t i = 0; i < gu.count && n < 64; i++)
+        for (size_t i = 0; i < gu.count && n < 128; i++)
             if (!gu.entries[i].blocked && gu.entries[i].dlc == want_dlc)
                 copy_text(ids[n++], sizeof ids[0], gu.entries[i].title_id);
         pthread_mutex_unlock(&gu.mutex);
