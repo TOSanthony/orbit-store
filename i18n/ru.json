@@ -1392,5 +1392,19 @@
   "Connect a USB drive to download updates and add-ons.": "Подключите USB-накопитель, чтобы загружать обновления и дополнения.",
   "Not enough free space on the USB drives. Free some space and try again.": "Недостаточно свободного места на USB-накопителях. Освободите место и повторите попытку.",
   "No USB drive": "Нет USB-накопителя",
-  "Connect a USB drive to download this PS4 game.": "Подключите USB-накопитель, чтобы загрузить эту игру для PS4."
+  "Connect a USB drive to download this PS4 game.": "Подключите USB-накопитель, чтобы загрузить эту игру для PS4.",
+  "Install after download": "Устанавливать после загрузки",
+  "Don’t install after download": "Не устанавливать после загрузки",
+  "Installed once Orbit has checked it": "Устанавливается, когда Orbit его проверит",
+  "Stays in the homebrew folder": "Остаётся в папке homebrew",
+  "Keep after installing": "Оставлять после установки",
+  "The .pkg stays in the homebrew folder": "Файл .pkg остаётся в папке homebrew",
+  "Delete after installing": "Удалять после установки",
+  "Removed once your PS5 has installed it": "Удаляется, когда PS5 его установит",
+  "Deleting only applies to packages Orbit installs.": "Удаление касается только пакетов, которые устанавливает Orbit.",
+  "ZIP, 7z and RAR downloads are extracted on the drive. Choose what happens to the archive afterwards.": "Загрузки ZIP, 7z и RAR распаковываются на диске. Выберите, что делать с архивом потом.",
+  "Keep after extracting": "Оставлять после распаковки",
+  "The archive stays next to its files": "Архив остаётся рядом со своими файлами",
+  "Delete after extracting": "Удалять после распаковки",
+  "Removed once its files are in place": "Удаляется, когда файлы на месте"
 }

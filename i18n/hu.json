@@ -1372,5 +1372,19 @@
   "Connect a USB drive to download updates and add-ons.": "Csatlakoztass egy USB-meghajtót a frissítések és kiegészítők letöltéséhez.",
   "Not enough free space on the USB drives. Free some space and try again.": "Nincs elég szabad hely az USB-meghajtókon. Szabadíts fel helyet, és próbáld újra.",
   "No USB drive": "Nincs USB-meghajtó",
-  "Connect a USB drive to download this PS4 game.": "Csatlakoztass egy USB-meghajtót a PS4-játék letöltéséhez."
+  "Connect a USB drive to download this PS4 game.": "Csatlakoztass egy USB-meghajtót a PS4-játék letöltéséhez.",
+  "Install after download": "Telepítés letöltés után",
+  "Don’t install after download": "Ne telepítse letöltés után",
+  "Installed once Orbit has checked it": "Telepítve, amint az Orbit ellenőrizte",
+  "Stays in the homebrew folder": "A homebrew mappában marad",
+  "Keep after installing": "Megtartás telepítés után",
+  "The .pkg stays in the homebrew folder": "A .pkg a homebrew mappában marad",
+  "Delete after installing": "Törlés telepítés után",
+  "Removed once your PS5 has installed it": "Törlődik, amint a PS5 telepítette",
+  "Deleting only applies to packages Orbit installs.": "A törlés csak az Orbit által telepített csomagokra vonatkozik.",
+  "ZIP, 7z and RAR downloads are extracted on the drive. Choose what happens to the archive afterwards.": "A ZIP, 7z és RAR letöltések a meghajtón kicsomagolódnak. Válaszd ki, mi legyen utána az archívummal.",
+  "Keep after extracting": "Megtartás kicsomagolás után",
+  "The archive stays next to its files": "Az archívum a fájljai mellett marad",
+  "Delete after extracting": "Törlés kicsomagolás után",
+  "Removed once its files are in place": "Törlődik, ha a fájlok a helyükön vannak"
 }

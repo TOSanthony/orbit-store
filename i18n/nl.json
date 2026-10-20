@@ -1372,5 +1372,19 @@
   "Connect a USB drive to download updates and add-ons.": "Sluit een USB-schijf aan om updates en add-ons te downloaden.",
   "Not enough free space on the USB drives. Free some space and try again.": "Onvoldoende vrije ruimte op de USB-schijven. Maak ruimte vrij en probeer het opnieuw.",
   "No USB drive": "Geen USB-schijf",
-  "Connect a USB drive to download this PS4 game.": "Sluit een USB-schijf aan om deze PS4-game te downloaden."
+  "Connect a USB drive to download this PS4 game.": "Sluit een USB-schijf aan om deze PS4-game te downloaden.",
+  "Install after download": "Installeren na het downloaden",
+  "Don’t install after download": "Niet installeren na het downloaden",
+  "Installed once Orbit has checked it": "Geïnstalleerd zodra Orbit het heeft gecontroleerd",
+  "Stays in the homebrew folder": "Blijft in de map homebrew",
+  "Keep after installing": "Bewaren na installatie",
+  "The .pkg stays in the homebrew folder": "De .pkg blijft in de map homebrew",
+  "Delete after installing": "Verwijderen na installatie",
+  "Removed once your PS5 has installed it": "Verwijderd zodra je PS5 het heeft geïnstalleerd",
+  "Deleting only applies to packages Orbit installs.": "Verwijderen geldt alleen voor pakketten die Orbit installeert.",
+  "ZIP, 7z and RAR downloads are extracted on the drive. Choose what happens to the archive afterwards.": "ZIP-, 7z- en RAR-downloads worden op de schijf uitgepakt. Kies wat er daarna met het archief gebeurt.",
+  "Keep after extracting": "Bewaren na uitpakken",
+  "The archive stays next to its files": "Het archief blijft naast zijn bestanden staan",
+  "Delete after extracting": "Verwijderen na uitpakken",
+  "Removed once its files are in place": "Verwijderd zodra de bestanden op hun plaats staan"
 }

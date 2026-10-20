@@ -829,44 +829,71 @@ void SettingsScreen::build_storage(Pane &pane) const
     pane.gap(6.0f);
     pane.rule();
     pane.gap(6.0f);
+    // Two options side by side, the chosen one ringed with a check, like the default drive.
+    struct Choice { std::string title, detail; bool chosen; };
+    const auto pair = [&](Kind kind, const Choice &left, const Choice &right, bool enabled)
+    {
+        const float gap = 12.0f;
+        const float w = (pane.width - gap) * 0.5f;
+        const Choice *both[2] = {&left, &right};
+        for (int i = 0; i < 2; ++i)
+        {
+            const Choice &c = *both[i];
+            const ui::Rect r{pane.x + static_cast<float>(i) * (w + gap), pane.y, w, 92.0f};
+            if (pane.list != nullptr)
+            {
+                ui::DrawList &list = *pane.list;
+                const float f = pane.amount();
+                ui::state_fill(list, r, kCardRadius, f, c.chosen);
+                const float mx = r.x + 24.0f + 14.0f;
+                if (c.chosen)
+                {
+                    list.circle(mx, r.cy(), 14.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
+                    ui::icon_check(list, mx, r.cy(), 16.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.4f);
+                }
+                else
+                {
+                    list.ring(mx, r.cy(), 13.5f, 1.0f, f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::color::text3);
+                }
+                const float tx = mx + 14.0f + 20.0f;
+                const float fit = r.x + r.w - 24.0f - tx;
+                ui::text_fit(list, type.medium, c.title, tx, r.cy() - 6.0f, 21.0f, fit, ui::state_ink(f, c.chosen));
+                ui::text_fit(list, type.regular, c.detail, tx, r.cy() + 22.0f, 16.0f, fit, ui::state_ink_dim(f));
+            }
+            pane.add(kind, i, r, enabled);
+        }
+        ++pane.row;
+        pane.y += 92.0f + 12.0f;
+    };
     part(tr("Compressed downloads"));
-    pane.body(state.system.delete_archives
-                  ? tr("ZIP, 7z and RAR downloads are extracted on the drive. The archive is deleted once its files are in place.")
-                  : tr("ZIP, 7z and RAR downloads are extracted on the drive. The archive is kept next to its files."),
+    pane.body(tr("ZIP, 7z and RAR downloads are extracted on the drive. Choose what happens to the archive afterwards."),
               19.0f);
     const bool archives_saving = result.busy && result.setting == Setting::archives;
-    pane.buttons({{Kind::archives_toggle,
-                   state.system.delete_archives ? tr("Keep archives after extracting")
-                                                : tr("Delete archives after extracting"),
-                   ui::ButtonKind::secondary, !archives_saving}});
+    pair(Kind::archives_choice,
+         {tr("Keep after extracting"), tr("The archive stays next to its files"), !state.system.delete_archives},
+         {tr("Delete after extracting"), tr("Removed once its files are in place"), state.system.delete_archives},
+         !archives_saving);
     if (result.setting == Setting::archives && !result.error.empty())
         pane.error(result.error);
     pane.end_card();
     pane.gap(12.0f);
     pane.begin_card(tr("Packages"),
                     tr("Install a downloaded .pkg on your PS5, and choose what happens to the file afterwards."));
-    pane.body(state.system.install_pkgs
-                  ? tr("A downloaded .pkg is installed on your PS5 once Orbit has checked it.")
-                  : tr("A downloaded .pkg stays in the homebrew folder. Orbit does not install it."),
-              19.0f);
     const bool install_saving = result.busy && result.setting == Setting::install_pkgs;
-    pane.buttons({{Kind::install_pkgs_toggle,
-                   state.system.install_pkgs ? tr("Stop installing packages after download")
-                                             : tr("Install packages after download"),
-                   ui::ButtonKind::secondary, !install_saving}});
+    pair(Kind::install_pkgs_choice,
+         {tr("Install after download"), tr("Installed once Orbit has checked it"), state.system.install_pkgs},
+         {tr("Don\xE2\x80\x99t install after download"), tr("Stays in the homebrew folder"), !state.system.install_pkgs},
+         !install_saving);
     if (result.setting == Setting::install_pkgs && !result.error.empty())
         pane.error(result.error);
-    pane.gap(10.0f);
+    pane.gap(6.0f);
     pane.rule();
-    pane.body(state.system.delete_pkgs
-                  ? tr("A .pkg is deleted once your PS5 has installed it. This only applies to packages Orbit installs.")
-                  : tr("A .pkg is kept in the homebrew folder after your PS5 has installed it."),
-              19.0f);
     const bool pkgs_saving = result.busy && result.setting == Setting::delete_pkgs;
-    pane.buttons({{Kind::delete_pkgs_toggle,
-                   state.system.delete_pkgs ? tr("Keep packages after installing")
-                                            : tr("Delete packages after installing"),
-                   ui::ButtonKind::secondary, !pkgs_saving}});
+    pair(Kind::delete_pkgs_choice,
+         {tr("Keep after installing"), tr("The .pkg stays in the homebrew folder"), !state.system.delete_pkgs},
+         {tr("Delete after installing"), tr("Removed once your PS5 has installed it"), state.system.delete_pkgs},
+         !pkgs_saving);
+    pane.fine(tr("Deleting only applies to packages Orbit installs."));
     if (result.setting == Setting::delete_pkgs && !result.error.empty())
         pane.error(result.error);
     pane.end_card();
@@ -1528,17 +1555,20 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
         error_.clear();
         ctx_.store.set_ps4_hidden(!state.system.ps4_hidden);
         break;
-    case Kind::install_pkgs_toggle:
+    case Kind::install_pkgs_choice:
         error_.clear();
-        ctx_.store.set_install_pkgs(!state.system.install_pkgs);
+        if (state.system.install_pkgs != (control.index == 0))
+            ctx_.store.set_install_pkgs(control.index == 0);
         break;
-    case Kind::delete_pkgs_toggle:
+    case Kind::delete_pkgs_choice:
         error_.clear();
-        ctx_.store.set_delete_pkgs(!state.system.delete_pkgs);
+        if (state.system.delete_pkgs != (control.index == 1))
+            ctx_.store.set_delete_pkgs(control.index == 1);
         break;
-    case Kind::archives_toggle:
+    case Kind::archives_choice:
         error_.clear();
-        ctx_.store.set_delete_archives(!state.system.delete_archives);
+        if (state.system.delete_archives != (control.index == 1))
+            ctx_.store.set_delete_archives(control.index == 1);
         break;
     case Kind::source:
     {

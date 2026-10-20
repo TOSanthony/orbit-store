@@ -1372,5 +1372,19 @@
   "Connect a USB drive to download updates and add-ons.": "Güncellemeleri ve ek içerikleri indirmek için bir USB sürücü bağlayın.",
   "Not enough free space on the USB drives. Free some space and try again.": "USB sürücülerde yeterli boş alan yok. Yer açın ve yeniden deneyin.",
   "No USB drive": "USB sürücü yok",
-  "Connect a USB drive to download this PS4 game.": "Bu PS4 oyununu indirmek için bir USB sürücü bağlayın."
+  "Connect a USB drive to download this PS4 game.": "Bu PS4 oyununu indirmek için bir USB sürücü bağlayın.",
+  "Install after download": "İndirdikten sonra yükle",
+  "Don’t install after download": "İndirdikten sonra yükleme",
+  "Installed once Orbit has checked it": "Orbit kontrol ettikten sonra yüklenir",
+  "Stays in the homebrew folder": "homebrew klasöründe kalır",
+  "Keep after installing": "Yükledikten sonra sakla",
+  "The .pkg stays in the homebrew folder": "Paket (.pkg) homebrew klasöründe kalır",
+  "Delete after installing": "Yükledikten sonra sil",
+  "Removed once your PS5 has installed it": "PS5 yükledikten sonra silinir",
+  "Deleting only applies to packages Orbit installs.": "Silme yalnızca Orbit'in yüklediği paketler için geçerlidir.",
+  "ZIP, 7z and RAR downloads are extracted on the drive. Choose what happens to the archive afterwards.": "ZIP, 7z ve RAR indirmeleri sürücüde açılır. Arşive sonra ne olacağını seçin.",
+  "Keep after extracting": "Açtıktan sonra sakla",
+  "The archive stays next to its files": "Arşiv dosyalarının yanında kalır",
+  "Delete after extracting": "Açtıktan sonra sil",
+  "Removed once its files are in place": "Dosyalar yerine geçince silinir"
 }

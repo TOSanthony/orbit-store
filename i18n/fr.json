@@ -1382,5 +1382,19 @@
   "Connect a USB drive to download updates and add-ons.": "Branchez un disque USB pour télécharger les mises à jour et les DLC.",
   "Not enough free space on the USB drives. Free some space and try again.": "Pas assez d’espace libre sur les disques USB. Libérez de la place et réessayez.",
   "No USB drive": "Aucun disque USB",
-  "Connect a USB drive to download this PS4 game.": "Branchez un disque USB pour télécharger ce jeu PS4."
+  "Connect a USB drive to download this PS4 game.": "Branchez un disque USB pour télécharger ce jeu PS4.",
+  "Install after download": "Installer après le téléchargement",
+  "Don’t install after download": "Ne pas installer après le téléchargement",
+  "Installed once Orbit has checked it": "Installé une fois qu’Orbit l’a vérifié",
+  "Stays in the homebrew folder": "Reste dans le dossier homebrew",
+  "Keep after installing": "Conserver après l’installation",
+  "The .pkg stays in the homebrew folder": "Le .pkg reste dans le dossier homebrew",
+  "Delete after installing": "Supprimer après l’installation",
+  "Removed once your PS5 has installed it": "Supprimé une fois installé par votre PS5",
+  "Deleting only applies to packages Orbit installs.": "La suppression ne concerne que les paquets installés par Orbit.",
+  "ZIP, 7z and RAR downloads are extracted on the drive. Choose what happens to the archive afterwards.": "Les téléchargements ZIP, 7z et RAR sont extraits sur le disque. Choisissez ce qu’il advient de l’archive ensuite.",
+  "Keep after extracting": "Conserver après l’extraction",
+  "The archive stays next to its files": "L’archive reste à côté de ses fichiers",
+  "Delete after extracting": "Supprimer après l’extraction",
+  "Removed once its files are in place": "Supprimée une fois ses fichiers en place"
 }

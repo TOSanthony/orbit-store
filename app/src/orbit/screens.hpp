@@ -612,9 +612,9 @@ class SettingsScreen final : public Screen
         restart_retry,
         open_browser,
         zero_toggle,
-        archives_toggle,
-        install_pkgs_toggle,
-        delete_pkgs_toggle,
+        archives_choice, // index 0 keeps the archive after extracting, 1 deletes it
+        install_pkgs_choice, // index 0 installs after download, 1 does not
+        delete_pkgs_choice,  // index 0 keeps the package after installing, 1 deletes it
         download_limit_select,
         appearance, // index of a background preset
         keyboard,   // 0 follows the language, 1 QWERTY, 2 AZERTY

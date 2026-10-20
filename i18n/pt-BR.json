@@ -1382,5 +1382,19 @@
   "Connect a USB drive to download updates and add-ons.": "Conecte um disco USB para baixar atualizações e conteúdo adicional.",
   "Not enough free space on the USB drives. Free some space and try again.": "Não há espaço livre suficiente nos discos USB. Libere espaço e tente novamente.",
   "No USB drive": "Nenhum disco USB",
-  "Connect a USB drive to download this PS4 game.": "Conecte um disco USB para baixar este jogo de PS4."
+  "Connect a USB drive to download this PS4 game.": "Conecte um disco USB para baixar este jogo de PS4.",
+  "Install after download": "Instalar após o download",
+  "Don’t install after download": "Não instalar após o download",
+  "Installed once Orbit has checked it": "Instalado quando o Orbit o verificar",
+  "Stays in the homebrew folder": "Fica na pasta homebrew",
+  "Keep after installing": "Manter após instalar",
+  "The .pkg stays in the homebrew folder": "O .pkg fica na pasta homebrew",
+  "Delete after installing": "Excluir após instalar",
+  "Removed once your PS5 has installed it": "Excluído quando o PS5 o instalar",
+  "Deleting only applies to packages Orbit installs.": "Excluir só vale para pacotes instalados pelo Orbit.",
+  "ZIP, 7z and RAR downloads are extracted on the drive. Choose what happens to the archive afterwards.": "Downloads ZIP, 7z e RAR são extraídos no disco. Escolha o que acontece com o arquivo depois.",
+  "Keep after extracting": "Manter após extrair",
+  "The archive stays next to its files": "O arquivo fica ao lado dos seus arquivos",
+  "Delete after extracting": "Excluir após extrair",
+  "Removed once its files are in place": "Excluído quando os arquivos estiverem no lugar"
 }
