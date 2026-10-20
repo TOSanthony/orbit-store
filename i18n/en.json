@@ -1370,5 +1370,7 @@
   "This update needs a newer firmware than this console has.": "This update needs a newer firmware than this console has.",
   "Update failed: {error}": "Update failed: {error}",
   "Connect a USB drive to download updates and add-ons.": "Connect a USB drive to download updates and add-ons.",
-  "Not enough free space on the USB drives. Free some space and try again.": "Not enough free space on the USB drives. Free some space and try again."
+  "Not enough free space on the USB drives. Free some space and try again.": "Not enough free space on the USB drives. Free some space and try again.",
+  "No USB drive": "No USB drive",
+  "Connect a USB drive to download this PS4 game.": "Connect a USB drive to download this PS4 game."
 }

@@ -530,7 +530,8 @@ class GamePage final : public Screen
     bool choosing(const Game &game) const;
     Intent activate(const Control &control, const Game &game, const Release &release,
                     const Offer &offer, Feedback &feedback);
-    const Drive *drive() const;
+    // The drive a download goes to. A PS4 release (given) is always put on a USB drive with room.
+    const Drive *drive(const Release *release = nullptr) const;
     std::string delivery_note(const Release &release) const;
     std::string game_id_;
     int option_ = 0;

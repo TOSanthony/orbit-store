@@ -1370,5 +1370,7 @@
   "This update needs a newer firmware than this console has.": "Deze update vereist nieuwere firmware dan deze console heeft.",
   "Update failed: {error}": "Update mislukt: {error}",
   "Connect a USB drive to download updates and add-ons.": "Sluit een USB-schijf aan om updates en add-ons te downloaden.",
-  "Not enough free space on the USB drives. Free some space and try again.": "Onvoldoende vrije ruimte op de USB-schijven. Maak ruimte vrij en probeer het opnieuw."
+  "Not enough free space on the USB drives. Free some space and try again.": "Onvoldoende vrije ruimte op de USB-schijven. Maak ruimte vrij en probeer het opnieuw.",
+  "No USB drive": "Geen USB-schijf",
+  "Connect a USB drive to download this PS4 game.": "Sluit een USB-schijf aan om deze PS4-game te downloaden."
 }

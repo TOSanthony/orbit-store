@@ -1370,5 +1370,7 @@
   "This update needs a newer firmware than this console has.": "Bu güncelleme, konsolun sahip olduğundan daha yeni bir yazılım gerektiriyor.",
   "Update failed: {error}": "Güncelleme başarısız: {error}",
   "Connect a USB drive to download updates and add-ons.": "Güncellemeleri ve ek içerikleri indirmek için bir USB sürücü bağlayın.",
-  "Not enough free space on the USB drives. Free some space and try again.": "USB sürücülerde yeterli boş alan yok. Yer açın ve yeniden deneyin."
+  "Not enough free space on the USB drives. Free some space and try again.": "USB sürücülerde yeterli boş alan yok. Yer açın ve yeniden deneyin.",
+  "No USB drive": "USB sürücü yok",
+  "Connect a USB drive to download this PS4 game.": "Bu PS4 oyununu indirmek için bir USB sürücü bağlayın."
 }

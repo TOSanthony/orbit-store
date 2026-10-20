@@ -1390,5 +1390,7 @@
   "This update needs a newer firmware than this console has.": "Для этого обновления нужна более новая прошивка, чем на этой консоли.",
   "Update failed: {error}": "Сбой обновления: {error}",
   "Connect a USB drive to download updates and add-ons.": "Подключите USB-накопитель, чтобы загружать обновления и дополнения.",
-  "Not enough free space on the USB drives. Free some space and try again.": "Недостаточно свободного места на USB-накопителях. Освободите место и повторите попытку."
+  "Not enough free space on the USB drives. Free some space and try again.": "Недостаточно свободного места на USB-накопителях. Освободите место и повторите попытку.",
+  "No USB drive": "Нет USB-накопителя",
+  "Connect a USB drive to download this PS4 game.": "Подключите USB-накопитель, чтобы загрузить эту игру для PS4."
 }

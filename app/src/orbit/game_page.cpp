@@ -232,9 +232,22 @@ void GamePage::open(const std::string &game_id)
     drive_id_ = at >= 0 ? state.drives[static_cast<std::size_t>(at)].id : std::string();
 }
 
-const Drive *GamePage::drive() const
+const Drive *GamePage::drive(const Release *release) const
 {
     const auto &state = ctx_.store.state();
+    if (release != nullptr && release->platform == "ps4")
+    {
+        // A PS4 game is a package the console installs from a USB drive: the first one with room
+        // (usb0, then usb1...), never chosen by the person and never the console's own drive.
+        const Drive *first = nullptr;
+        for (const auto &d : state.drives)
+        {
+            if (d.id.compare(0, 3, "usb") != 0) continue;
+            if (first == nullptr) first = &d;
+            if (plan_space(*release, d, state.jobs).enough) return &d;
+        }
+        return first;
+    }
     for (const auto &d : state.drives) if (d.id == drive_id_) return &d;
     // A disconnected destination must be chosen explicitly, never substituted.
     if (!drive_id_.empty()) return nullptr;
@@ -249,7 +262,7 @@ GamePage::Offer GamePage::offer(const Release &release) const
     out.collection = release_state(release, state.jobs, state.library_games());
     out.show_download = download_again_ || out.collection.kind == CollectionState::Kind::none ||
                         out.collection.kind == CollectionState::Kind::related;
-    out.drive = drive();
+    out.drive = drive(&release);
     if (out.drive != nullptr) out.plan = plan_space(release, *out.drive, state.jobs);
     return out;
 }
@@ -259,7 +272,7 @@ Release GamePage::target(const Game &game, const Release &chosen) const
     if (!all_ || !choosing(game)) return chosen;
     // Everything not already queued on this drive, added up: that is what the drive must hold.
     const auto &state = ctx_.store.state();
-    const Drive *to = drive();
+    const Drive *to = drive(&chosen);
     Release sum = chosen;
     sum.id.clear();
     sum.size_bytes = 0;
@@ -515,11 +528,11 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         // The game's title sits above the cover; everything else is lowered to match.
         constexpr float top = 96;
         float ry = top;
-        const auto setting = [&](Slot slot,FactIcon icon,const std::string &label,const std::string &value,const std::string &note)
+        const auto setting = [&](Slot slot,FactIcon icon,const std::string &label,const std::string &value,const std::string &note,bool pick=true)
         {
             const ui::Rect r{nx,ry,rw,76};
-            const float f = focused && static_cast<int>(out.controls.size()) == focus_ ? 1 : 0;
-            out.controls.push_back({slot,0,r,!waiting_,false});
+            const float f = pick && focused && static_cast<int>(out.controls.size()) == focus_ ? 1 : 0;
+            if(pick)out.controls.push_back({slot,0,r,!waiting_,false});
             if (list)
             {
                 ui::state_fill(*list,r,20,f);
@@ -532,8 +545,11 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                 if (!note.empty() && rw-160-value_w-14 > 120)
                     ui::text_fit(*list,type.regular,note,nx+92+value_w+14,ry+60,17,rw-160-value_w-14,dim);
                 const float cx = nx + rw - 34;
-                list->line(cx-5,ry+31,cx+3,ry+38,2,dim);
-                list->line(cx+3,ry+38,cx-5,ry+45,2,dim);
+                if(pick)
+                {
+                    list->line(cx-5,ry+31,cx+3,ry+38,2,dim);
+                    list->line(cx+3,ry+38,cx-5,ry+45,2,dim);
+                }
             }
             ry += 86;
         };
@@ -547,8 +563,10 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         {
             setting(Slot::delivery,FactIcon::download,tr("Download using"),state.system.zero_enabled ? "Orbit Zero" : torbox_ ? "TorBox" : tr("{provider} directly",{{"provider",release.provider}}),
                     state.system.zero_enabled ? "Uses your computer preference" : state.debrid.supports(release) && !torbox_ ? tr("TorBox available") : "");
-            setting(Slot::drive,FactIcon::disk,tr("Save to"),now.drive ? i18n::place(now.drive->label) : tr("Select storage"),
-                    now.drive ? tr("{size} free",{{"size",format_bytes(now.drive->free_bytes)}}) : "");
+            // A PS4 game always goes to a USB drive, chosen by the console: the row only says which.
+            const bool usb_only=release.platform=="ps4";
+            setting(Slot::drive,FactIcon::disk,tr("Save to"),now.drive ? i18n::place(now.drive->label) : usb_only ? tr("No USB drive") : tr("Select storage"),
+                    now.drive ? tr("{size} free",{{"size",format_bytes(now.drive->free_bytes)}}) : "",!usb_only);
         }
         else if (now.collection.job && now.collection.job->status == "complete")
             // A finished download offers a second copy as a row of its own, under Source.
@@ -730,7 +748,9 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         { paragraph(one_per_line(tr("Download history records a completed transfer. Find it in Library to check its current location.")),nx,y,width_notes,20);y+=16; }
         if (now.show_download && (!now.drive || !now.plan.enough))
         {
-            paragraph(!now.drive ? tr("Connect a writable drive to your PS5.") :
+            const bool usb_only=release.platform=="ps4";
+            paragraph(!now.drive ? (usb_only ? tr("Connect a USB drive to download this PS4 game.") : tr("Connect a writable drive to your PS5.")) :
+                usb_only ? tr("Not enough free space on the USB drives. Free some space and try again.") :
                 tr("Not enough space after unfinished downloads. Free space or cancel an item in Downloads."),nx,y,width_notes);
             y+=16;
         }

@@ -1390,5 +1390,7 @@
   "This update needs a newer firmware than this console has.": "Ta aktualizacja wymaga nowszego firmware’u niż ma ta konsola.",
   "Update failed: {error}": "Aktualizacja nie powiodła się: {error}",
   "Connect a USB drive to download updates and add-ons.": "Podłącz dysk USB, aby pobierać aktualizacje i dodatki.",
-  "Not enough free space on the USB drives. Free some space and try again.": "Za mało wolnego miejsca na dyskach USB. Zwolnij miejsce i spróbuj ponownie."
+  "Not enough free space on the USB drives. Free some space and try again.": "Za mało wolnego miejsca na dyskach USB. Zwolnij miejsce i spróbuj ponownie.",
+  "No USB drive": "Brak dysku USB",
+  "Connect a USB drive to download this PS4 game.": "Podłącz dysk USB, aby pobrać tę grę na PS4."
 }
