@@ -1139,11 +1139,14 @@ summary{cursor:pointer;font-weight:600}
     else box.append(mark());
     if (g.platform === 'ps4') { const p = el('span', 'plat', 'PS4'); p.title = 'Jeu PS4'; box.append(p); }
     if (badge) box.append(el('span', 'badge', g.files.length > 1 ? plural(g.files.length, 'fichier', 'fichiers') : g.formats.join(' · ')));
-    // Une mise à jour ajoutée au jeu avec son SHA-256 (c'est ce qui permet de la vérifier au téléchargement).
-    const updates = g.files.filter((f) => catOf(f.tagline) === 'updates' && f.sha256);
-    if (badge && g.cat === 'game' && updates.length) {
+    // Une mise à jour est ajoutée au jeu : un .pkg dans updates/, ou une version enregistrée avec son lien Sony.
+    const files = g.files.filter((f) => catOf(f.tagline) === 'updates');
+    const saved = (typeof SAVED !== 'undefined' && SAVED[g.titleId]) || {};
+    const sony = saved.version && saved.link;
+    if (badge && g.cat === 'game' && (files.length || sony)) {
       const u = el('span', 'badge upd', 'Update');
-      u.title = 'Mise à jour avec SHA-256 : ' + updates.map((f) => f.version ? 'v' + f.version : f.filename).join(', ');
+      u.title = [files.length && 'Sur le NAS : ' + files.map((f) => f.version ? 'v' + f.version : f.filename).join(', '),
+        sony && 'Lien Sony enregistré : v' + saved.version].filter(Boolean).join(' · ');
       box.append(u);
     }
     return box;
