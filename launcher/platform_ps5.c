@@ -61,6 +61,20 @@ static int unregister_title(void) {
     return result ? -1 : 0;
 }
 
+int orbit_uninstall_title(const char *title_id) {
+    typedef int (*uninstall_fn)(const char *);
+    uninstall_fn uninstall = (uninstall_fn)dlsym(RTLD_DEFAULT, "sceAppInstUtilAppUnInstall");
+    if (!uninstall)
+        return -1;
+    int result = sceAppInstUtilInitialize();
+    if (result)
+        return result;
+    result = uninstall(title_id);
+    sceAppInstUtilTerminate();
+    printf("Orbit uninstall of %s: 0x%x\n", title_id, (unsigned)result);
+    return result;
+}
+
 int orbit_launcher_remove(int state_fd) {
     registration_method = "not-needed";
     int result = orbit_launcher_remove_at(state_fd, "/user/app", prepare, unregister_title);

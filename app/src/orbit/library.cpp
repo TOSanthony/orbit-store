@@ -1542,7 +1542,7 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                 ui::paragraph(
                     overlay, type.regular,
                     mode_ == 1   ? tr("Close the game on your PS5 before unmounting its source.")
-                    : mode_ == 4 ? tr("This removes the game's source files from the drive. This cannot be undone.")
+                    : mode_ == 4 ? tr("This uninstalls the game from the console and removes its source files from the drive. This cannot be undone.")
                     : mode_ == 3 ? tr("Move the source to another location. The original is removed "
                                    "only after the move succeeds.")
                                  : tr("Create a second copy on the selected drive. The original stays "

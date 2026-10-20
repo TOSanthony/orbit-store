@@ -1,4 +1,7 @@
 #include "orbit.h"
+#ifdef ORBIT_INSTALL_LAUNCHER
+#include "install.h"
+#endif
 #include <ctype.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -575,8 +578,19 @@ static void execute_command(cJSON *input) {
                 copy_text(error, sizeof error, "This source is missing or does not support that action."); goto done;
             }
             if (mounted) { copy_text(error, sizeof error, "Unmount this game before deleting it."); goto done; }
+            /* The console's own installation (what ShadowMount registered when it found the game) goes first:
+             * if it cannot be removed, nothing has been deleted and the person can try again. */
+            bool uninstalled = false;
+#ifdef ORBIT_INSTALL_LAUNCHER
+            if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(g, "installed"))) {
+                if (orbit_uninstall_title(id) != 0) {
+                    copy_text(error, sizeof error, "The console could not uninstall this game. Nothing was deleted."); goto done;
+                }
+                uninstalled = true;
+            }
+#endif
             if (!delete_source(json_text(g, "path"), error, sizeof error)) goto done;
-            copy_text(ok, sizeof ok, "Game deleted.");
+            copy_text(ok, sizeof ok, uninstalled ? "Game uninstalled and deleted." : "Game deleted.");
             goto succeeded;
         }
         body = cJSON_CreateObject();
