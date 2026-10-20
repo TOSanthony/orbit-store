@@ -731,7 +731,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         exit;
     }
     if ($action === 'refresh') {
-        $err = start_background_refresh(!empty($_POST['sha256']), !empty($_POST['refresh_covers']), !empty($_POST['param']), !empty($_POST['ai']), !empty($_POST['prospero']));
+        $err = start_background_refresh(!empty($_POST['sha256']), !empty($_POST['refresh_covers']), true, !empty($_POST['ai']), true); /* param.json/.pkg et prosperopatches.com : toujours actifs */
         if ($err !== '') $_SESSION['flash'] = ['ok' => false, 'log' => $err, 'at' => time()];
         header('Location: ' . strtok((string)($_SERVER['REQUEST_URI'] ?? ''), '?'));
         exit;
@@ -1019,10 +1019,9 @@ summary{cursor:pointer;font-weight:600}
   </form>
   <?php endif; ?>
   <h3>Index des jeux</h3>
-  <form class="sform" method="post" id="refreshForm">
+  <form class="sform" method="post" id="refreshForm" autocomplete="off">
     <input type="hidden" name="action" value="refresh"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-    <label><input type="checkbox" name="param" value="1" checked> Lire le param.json des .zip PS5 et l'intérieur des .pkg (titre, identifiant, version, icône, DLC)</label>
-    <label><input type="checkbox" name="prospero" value="1" checked> Récupérer titre, éditeur, région, icône et fond sur prosperopatches.com (tes propres images de covers/ restent prioritaires)</label>
+    <p class="muted">Toujours actif : lecture du param.json des .zip PS5 et de l'intérieur des .pkg (titre, identifiant, version, icône, DLC), et récupération du titre, de l'éditeur, de la région, de l'icône et du fond sur prosperopatches.com (tes propres images de covers/ restent prioritaires).</p>
 <?php if (!empty(array_filter((array)$GEMINI_KEYS))): ?>
     <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (Gemini) les infos manquantes (description, éditeur, genre, accroche, date de sortie)</label>
 <?php endif; ?>
