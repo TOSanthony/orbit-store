@@ -1,5 +1,9 @@
 #include "orbit.h"
 #include <ctype.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <unistd.h>
 #include <curl/curl.h>
 #include <math.h>
 #include <openssl/sha.h>
@@ -432,7 +436,7 @@ static const char *capability(const char *action) {
     return !strcmp(action, "scan") ? "rescan" : !strcmp(action, "mount") ? "mount_game" :
         !strcmp(action, "unmount") ? "unmount_game" : !strcmp(action, "copy") ? "copy_game_source" :
         !strcmp(action, "move") ? "move_game_source" : !strcmp(action, "cancel") ? "storage_job_cancel" :
-        !strcmp(action, "measure") ? "list_games" : "";
+        !strcmp(action, "measure") || !strcmp(action, "delete") ? "list_games" : "";
 }
 static bool moving_downloads(void) {
     bool active = false;
@@ -468,6 +472,36 @@ static void preserve_sizes(cJSON *next) {
             }
         }
     }
+}
+/* Removes one game's source: a file, a symlink (the link only) or a folder with everything in it. */
+static bool remove_tree(int parent, const char *name, int depth) {
+    struct stat st;
+    if (fstatat(parent, name, &st, AT_SYMLINK_NOFOLLOW)) return false;
+    if (!S_ISDIR(st.st_mode)) return unlinkat(parent, name, 0) == 0;
+    if (depth > 24) return false;
+    int fd = openat(parent, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    DIR *dir = fd >= 0 ? fdopendir(fd) : NULL;
+    if (!dir) { if (fd >= 0) close(fd); return false; }
+    bool ok = true;
+    struct dirent *entry;
+    while (ok && (entry = readdir(dir)))
+        if (strcmp(entry->d_name, ".") && strcmp(entry->d_name, ".."))
+            ok = remove_tree(fd, entry->d_name, depth + 1);
+    closedir(dir);
+    return ok && unlinkat(parent, name, AT_REMOVEDIR) == 0;
+}
+static bool delete_source(const char *path, char *error, size_t cap) {
+    size_t length = strlen(path), parts = 0;
+    bool plain = path[0] == '/' && length < PATH_MAX && !strstr(path, "/../") && !strstr(path, "//") &&
+                 (length < 3 || strcmp(path + length - 3, "/..")) && path[length - 1] != '/';
+    for (const char *p = path; plain && *p; p++) parts += *p == '/';
+    /* /mnt/usb0/homebrew/Game is four parts; a drive's root or a scan folder itself is never one game. */
+    if (!plain || parts < 3) { copy_text(error, cap, "This game's source cannot be deleted safely."); return false; }
+    struct stat st;
+    if (lstat(path, &st)) { copy_text(error, cap, "This source is missing or does not support that action."); return false; }
+    (void)st;
+    if (!remove_tree(AT_FDCWD, path, 0)) { copy_text(error, cap, "The game could not be fully deleted."); return false; }
+    return true;
 }
 static void execute_command(cJSON *input) {
     const char *action = json_text(input, "action"), *id = json_text(input, "titleId");
@@ -535,6 +569,15 @@ static void execute_command(cJSON *input) {
         bool mounted = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(g, "mounted"));
         if ((!strcmp(action, "mount") && mounted) || (!strcmp(action, "unmount") && !mounted)) {
             copy_text(ok, sizeof ok, mounted ? "Already mounted." : "Already unmounted."); goto succeeded;
+        }
+        if (!strcmp(action, "delete")) {
+            if (!cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(g, "canManageSource"))) {
+                copy_text(error, sizeof error, "This source is missing or does not support that action."); goto done;
+            }
+            if (mounted) { copy_text(error, sizeof error, "Unmount this game before deleting it."); goto done; }
+            if (!delete_source(json_text(g, "path"), error, sizeof error)) goto done;
+            copy_text(ok, sizeof ok, "Game deleted.");
+            goto succeeded;
         }
         body = cJSON_CreateObject();
         cJSON_AddStringToObject(body, "title_id", id);
@@ -813,7 +856,7 @@ int library_action(const cJSON *input, char *error, size_t cap) {
         (!strcmp(action, "cancel") && (!number(input, "jobId") || json_int(input, "jobId") <= 0))) {
         copy_text(error, cap, "Expected a supported action and its current Library identifiers."); return 400;
     }
-    if ((!strcmp(action, "scan") || !strcmp(action, "move") || !strcmp(action, "unmount")) &&
+    if ((!strcmp(action, "scan") || !strcmp(action, "move") || !strcmp(action, "unmount") || !strcmp(action, "delete")) &&
         !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(input, "confirmed"))) {
         copy_text(error, cap, "Confirm this action first."); return 400;
     }

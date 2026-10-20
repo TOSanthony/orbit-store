@@ -484,6 +484,17 @@ void glyph(DrawList &list, Glyph which, float cx, float cy, float size, Color in
                   ink);
         break;
     }
+    case Glyph::trash:
+    {
+        // A bin: lid and handle over a body with two slots.
+        const Color none{0, 0, 0, 0};
+        list.line(cx - size * 0.4f, cy - size * 0.22f, cx + size * 0.4f, cy - size * 0.22f, t, ink);
+        list.line(cx - size * 0.14f, cy - size * 0.36f, cx + size * 0.14f, cy - size * 0.36f, t, ink);
+        list.bordered_rect({cx - size * 0.3f, cy - size * 0.2f, size * 0.6f, size * 0.58f}, 3.0f, none, t, ink);
+        list.line(cx - size * 0.1f, cy - size * 0.02f, cx - size * 0.1f, cy + size * 0.26f, t, ink);
+        list.line(cx + size * 0.1f, cy - size * 0.02f, cx + size * 0.1f, cy + size * 0.26f, t, ink);
+        break;
+    }
     }
 }
 

@@ -226,7 +226,7 @@ LibraryScreen::LibraryScreen(Context &context) : Screen(context)
 void LibraryScreen::focus()
 {
     refilter();
-    ctx_.store.want_library_storage(section_ == 1 || mode_ >= 2);
+    ctx_.store.want_library_storage(section_ == 1 || (mode_ == 2 || mode_ == 3));
 }
 
 void LibraryScreen::blur()
@@ -522,17 +522,33 @@ std::vector<LibraryScreen::Control> LibraryScreen::panel_controls() const
                                  ui::Glyph::move);
             out.push_back({Kind::action, 2, 0, {x, y, w, 48.0f}});
         }
+        // The buttons share the width of the facts table below them, side by side.
+        if (!out.empty())
+        {
+            const float gap = 12.0f, row_width = kPanelWidth - 112.0f;
+            const float each = (row_width - gap * static_cast<float>(out.size() - 1)) / static_cast<float>(out.size());
+            for (std::size_t k = 0; k < out.size(); ++k)
+                out[k].rect = {left + static_cast<float>(k) * (each + gap), y, each, 48.0f};
+        }
+        if (transfer)
+        {
+            // Under the facts table, centred between its last line and the note at the bottom.
+            const float w =
+                ui::button_width(type, tr("Delete game"), 18.0f, ui::ButtonKind::secondary, ui::Glyph::trash);
+            out.push_back({Kind::action, 3, 1, {960.0f - w * 0.5f, 821.0f, w, 48.0f}});
+        }
         return out;
     }
     // In the confirmation box: the destination (copy, move), then the buttons.
     float cy = y + 150.0f;
-    if (mode_ >= 2)
+    if ((mode_ == 2 || mode_ == 3))
     {
         out.push_back({Kind::destination, 0, 0, {left, y + 168.0f, 640.0f, ui::kFieldHeight}});
         cy = y + 340.0f;
     }
     const char *confirm = mode_ == 1   ? tr("Confirm unmount")
                           : mode_ == 2 ? tr("Start copy")
+                          : mode_ == 4 ? tr("Confirm deletion")
                                        : tr("Confirm move");
     const float cw = ui::button_width(type, confirm, 18.0f);
     out.push_back({Kind::confirm, 0, 1, {left, cy, cw, 48.0f}});
@@ -738,11 +754,11 @@ Intent LibraryScreen::update(const InputFrame &input, float dt, Feedback &feedba
                     }
                     else
                     {
-                        mode_ = panel_index_ == 0 ? 1 : panel_index_ == 1 ? 2 : 3;
+                        mode_ = panel_index_ == 0 ? 1 : panel_index_ == 1 ? 2 : panel_index_ == 2 ? 3 : 4;
                         destination_id_.clear();
-                        panel_kind_ = mode_ >= 2 ? Kind::destination : Kind::confirm;
+                        panel_kind_ = (mode_ == 2 || mode_ == 3) ? Kind::destination : Kind::confirm;
                         panel_index_ = 0;
-                        if (mode_ >= 2)
+                        if ((mode_ == 2 || mode_ == 3))
                             ctx_.store.want_library_storage(true, true);
                         feedback.play(hui::audio::Cue::modal_open);
                     }
@@ -757,13 +773,14 @@ Intent LibraryScreen::update(const InputFrame &input, float dt, Feedback &feedba
                     break;
                 }
                 case Kind::confirm:
-                    if (blocked || (mode_ >= 2 && destination_id_.empty()))
+                    if (blocked || ((mode_ == 2 || mode_ == 3) && destination_id_.empty()))
                         refuse(feedback, input);
                     else
                         run(mode_ == 1   ? "unmount"
                             : mode_ == 2 ? "copy"
+                            : mode_ == 4 ? "delete"
                                          : "move",
-                            true, game, mode_ >= 2 ? destination_id_ : std::string(), 0);
+                            true, game, (mode_ == 2 || mode_ == 3) ? destination_id_ : std::string(), 0);
                     break;
                 case Kind::back:
                     mode_ = 0;
@@ -1436,7 +1453,7 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                          left, note_y + 20.0f, 17.0f, ui::Color::rgb(0xd0d0d0));
             if (mode_ == 0)
             {
-                static const char *const kActions[] = {nullptr, /* i18n */ "Copy to drive", /* i18n */ "Move to drive"};
+                static const char *const kActions[] = {nullptr, /* i18n */ "Copy to drive", /* i18n */ "Move to drive", /* i18n */ "Delete game"};
                 for (const Control &c : buttons)
                 {
                     const char *text = c.index == 0
@@ -1452,7 +1469,8 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                                18.0f, false,
                                c.index == 0 ? (game->mounted ? ui::Glyph::unmount : ui::Glyph::mount)
                                : c.index == 1 ? ui::Glyph::copy
-                                              : ui::Glyph::move);
+                               : c.index == 2 ? ui::Glyph::move
+                                              : ui::Glyph::trash);
                 }
                 float fy = 400.0f + 80.0f;
                 if (game->managed && game->can_manage_source && game->on_drive && game->mounted)
@@ -1513,9 +1531,10 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
             {
                 // .library-action-confirm
                 const ui::Rect box{left - 20.0f, 380.0f, panel.w - 72.0f,
-                                   mode_ == 1 ? 260.0f : 450.0f};
+                                   (mode_ == 1 || mode_ == 4) ? 260.0f : 450.0f};
                 const std::string heading =
                     mode_ == 1   ? std::string(tr("Unmount this game?"))
+                    : mode_ == 4 ? tr("Delete {title}?", {{"title", game->title}})
                     : mode_ == 2 ? tr("Copy {title}", {{"title", game->title}})
                                  : tr("Move {title}", {{"title", game->title}});
                 ui::text_fit(overlay, type.medium, heading, left, box.y + 44.0f, 22.0f,
@@ -1523,12 +1542,13 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                 ui::paragraph(
                     overlay, type.regular,
                     mode_ == 1   ? tr("Close the game on your PS5 before unmounting its source.")
+                    : mode_ == 4 ? tr("This removes the game's source files from the drive. This cannot be undone.")
                     : mode_ == 3 ? tr("Move the source to another location. The original is removed "
                                    "only after the move succeeds.")
                                  : tr("Create a second copy on the selected drive. The original stays "
                                    "in place."),
                     left, box.y + 80.0f, 18.0f, box.w - 40.0f, 28.0f, ui::color::text2, 2);
-                if (mode_ >= 2)
+                if ((mode_ == 2 || mode_ == 3))
                 {
                     ui::text_fit(overlay, type.regular, tr("From {path}", {{"path", game->path}}), left,
                                  box.y + 140.0f,
@@ -1589,11 +1609,12 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                     {
                         const char *text = ctx_.store.library_action().busy ? tr("Starting\xE2\x80\xA6")
                                            : mode_ == 1                     ? tr("Confirm unmount")
+                                           : mode_ == 4                     ? tr("Confirm deletion")
                                            : mode_ == 2                     ? tr("Start copy")
                                                                             : tr("Confirm move");
                         ui::button(overlay, type, c.rect, text, ui::ButtonKind::primary,
                                    panel_focus(Kind::confirm, 0),
-                                   !library.working() && (mode_ == 1 || !destination_id_.empty()),
+                                   !library.working() && (mode_ == 1 || mode_ == 4 || !destination_id_.empty()),
                                    18.0f);
                     }
                     else if (c.kind == Kind::back)

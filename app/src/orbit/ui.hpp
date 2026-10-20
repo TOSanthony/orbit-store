@@ -106,6 +106,7 @@ enum class Glyph
     unmount, // eject
     copy,    // two sheets
     move,    // an arrow to a bar
+    trash,   // a bin
 };
 void glyph(DrawList &list, Glyph which, float cx, float cy, float size, Color ink);
 float button_width(const Type &type, std::string_view label, float size = 20.0f,
