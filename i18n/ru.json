@@ -1376,7 +1376,6 @@
   "Downloading {percent}% · {speed}": "Загрузка {percent}% · {speed}",
   "Game updates can only be downloaded on the console.": "Обновления игр можно скачивать только на консоли.",
   "Installing {percent}%": "Установка {percent}%",
-  "Not enough free space on any drive for this update.": "Ни на одном диске нет достаточно места для этого обновления.",
   "Orbit could not start the download.": "Orbit не смог начать загрузку.",
   "Preparing the download…": "Подготовка загрузки…",
   "Sony refused the download. The link may have expired.": "Sony отклонила загрузку. Возможно, срок действия ссылки истёк.",
@@ -1389,5 +1388,7 @@
   "The finished file could not be saved.": "Не удалось сохранить готовый файл.",
   "This game has no update this console can install.": "Для этой игры нет обновления, которое может установить эта консоль.",
   "This update needs a newer firmware than this console has.": "Для этого обновления нужна более новая прошивка, чем на этой консоли.",
-  "Update failed: {error}": "Сбой обновления: {error}"
+  "Update failed: {error}": "Сбой обновления: {error}",
+  "Connect a USB drive to download updates and add-ons.": "Подключите USB-накопитель, чтобы загружать обновления и дополнения.",
+  "Not enough free space on the USB drives. Free some space and try again.": "Недостаточно свободного места на USB-накопителях. Освободите место и повторите попытку."
 }

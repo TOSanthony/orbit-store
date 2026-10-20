@@ -1356,7 +1356,6 @@
   "Downloading {percent}% · {speed}": "Letöltés {percent}% · {speed}",
   "Game updates can only be downloaded on the console.": "A játékfrissítések csak a konzolon tölthetők le.",
   "Installing {percent}%": "Telepítés {percent}%",
-  "Not enough free space on any drive for this update.": "Egyik meghajtón sincs elég szabad hely ehhez a frissítéshez.",
   "Orbit could not start the download.": "Az Orbit nem tudta elindítani a letöltést.",
   "Preparing the download…": "Letöltés előkészítése…",
   "Sony refused the download. The link may have expired.": "A Sony elutasította a letöltést. A hivatkozás lehet, hogy lejárt.",
@@ -1369,5 +1368,7 @@
   "The finished file could not be saved.": "A kész fájlt nem sikerült menteni.",
   "This game has no update this console can install.": "Ehhez a játékhoz nincs olyan frissítés, amelyet ez a konzol telepíteni tud.",
   "This update needs a newer firmware than this console has.": "Ehhez a frissítéshez újabb firmware szükséges, mint amilyen ezen a konzolon van.",
-  "Update failed: {error}": "A frissítés sikertelen: {error}"
+  "Update failed: {error}": "A frissítés sikertelen: {error}",
+  "Connect a USB drive to download updates and add-ons.": "Csatlakoztass egy USB-meghajtót a frissítések és kiegészítők letöltéséhez.",
+  "Not enough free space on the USB drives. Free some space and try again.": "Nincs elég szabad hely az USB-meghajtókon. Szabadíts fel helyet, és próbáld újra."
 }

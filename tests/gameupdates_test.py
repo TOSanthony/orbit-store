@@ -73,12 +73,13 @@ def build(root, rows, params):
         os.makedirs(d)
         json.dump({"contentVersion": ver}, open(d + "/param.json", "w"))
 
-def run(root, firmware, download=None, storage=None, patches=None, nas=None, pause=None, queue=None, second=None):
+def run(root, firmware, download=None, storage=None, patches=None, nas=None, pause=None, queue=None, second=None, usbs=None):
     env = dict(os.environ, ORBIT_TEST_GAMEUPDATES_BASE="http://127.0.0.1:%d" % server.server_port)
     if pause: env["ORBIT_TEST_PAUSE"] = pause
     if queue: env["ORBIT_TEST_QUEUE"] = queue
     if second: env["ORBIT_TEST_QUEUE_SECOND"] = second
     if storage: env["ORBIT_TEST_STORAGE"] = storage
+    if usbs: env["ORBIT_TEST_USBS"] = usbs
     if patches: env["ORBIT_TEST_GAME_PATCHES"] = patches
     if nas: env["ORBIT_TEST_NAS_UPDATE"] = nas
     args = [driver, root, firmware] + ([download] if download else [])
@@ -248,7 +249,16 @@ with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as dri
     check("a game without an update is refused", s.get("startRefused") == 404)
     # the console without a drive
     s = run(root, "10200000", "PPSA00001", None)
-    check("no drive with room fails cleanly", s.get("phase") == "failed" and "space" in s.get("error", ""))
+    check("no USB drive asks to connect one", s.get("phase") == "failed" and "USB drive" in s.get("error", ""))
+    # a full usb0 falls through to usb1; two full drives ask for space
+    with tempfile.TemporaryDirectory() as u0, tempfile.TemporaryDirectory() as u1:
+        s = run(root, "10200000", "PPSA00001", None, usbs="%s:1000,%s:%d" % (u0, u1, 1 << 40))
+        check("a full usb0 falls through to usb1", s.get("phase") == "downloaded" and os.path.exists(u1 + "/homebrew/PPSA00001-v06.005.000.pkg") and not os.path.exists(u0 + "/homebrew"))
+        os.remove(u1 + "/homebrew/PPSA00001-v06.005.000.pkg")
+        s = run(root, "10200000", "PPSA00001", None, usbs="%s:1000,%s:2000" % (u0, u1))
+        check("two full USB drives ask to free some space", s.get("phase") == "failed" and "Free some space" in s.get("error", ""))
+        s = run(root, "10200000", "PPSA00001", None, usbs="%s:%d,%s:%d" % (u0, 1 << 40, u1, 1 << 40))
+        check("usb0 is used first when it has room", s.get("phase") == "downloaded" and os.path.exists(u0 + "/homebrew/PPSA00001-v06.005.000.pkg") and not os.path.exists(u1 + "/homebrew/PPSA00001-v06.005.000.pkg"))
 
 # ---- pieces larger than one slice are fetched over several connections ----
 with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as drive:

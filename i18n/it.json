@@ -1366,7 +1366,6 @@
   "Downloading {percent}% · {speed}": "Download {percent}% · {speed}",
   "Game updates can only be downloaded on the console.": "Gli aggiornamenti dei giochi si possono scaricare solo sulla console.",
   "Installing {percent}%": "Installazione {percent}%",
-  "Not enough free space on any drive for this update.": "Nessun disco ha abbastanza spazio libero per questo aggiornamento.",
   "Orbit could not start the download.": "Orbit non è riuscito ad avviare il download.",
   "Preparing the download…": "Preparazione del download…",
   "Sony refused the download. The link may have expired.": "Sony ha rifiutato il download. Il link potrebbe essere scaduto.",
@@ -1379,5 +1378,7 @@
   "The finished file could not be saved.": "Impossibile salvare il file completato.",
   "This game has no update this console can install.": "Questo gioco non ha aggiornamenti che questa console possa installare.",
   "This update needs a newer firmware than this console has.": "Questo aggiornamento richiede un firmware più recente di quello di questa console.",
-  "Update failed: {error}": "Aggiornamento non riuscito: {error}"
+  "Update failed: {error}": "Aggiornamento non riuscito: {error}",
+  "Connect a USB drive to download updates and add-ons.": "Collega un'unità USB per scaricare aggiornamenti e contenuti aggiuntivi.",
+  "Not enough free space on the USB drives. Free some space and try again.": "Spazio libero insufficiente sulle unità USB. Libera dello spazio e riprova."
 }

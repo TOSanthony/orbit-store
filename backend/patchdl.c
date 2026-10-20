@@ -533,26 +533,23 @@ static void installed_progress(unsigned percent, void *context) {
     pthread_mutex_unlock(&pd.mutex);
 }
 
-/* The drive that receives the file: the person's default one if it has room, else any with room.
- * The console's own drive also receives the installed copy, so it needs room for both. */
-static bool choose_drive(int64_t total, Storage *chosen) {
+/* Updates and DLC download to a USB drive, never to the console's own drive: the first one (usb0,
+ * then usb1...) with room for the file. Returns 1 when one was chosen, 0 when the drives are full,
+ * -1 when no USB drive is connected. */
+static int choose_drive(int64_t total, Storage *chosen) {
     Storage drives[ORBIT_MAX_STORAGE];
     size_t count = storage_list(drives);
-    char preferred[24];
-    pthread_mutex_lock(&orbit.mutex);
-    copy_text(preferred, sizeof preferred, orbit.preferred_storage);
-    pthread_mutex_unlock(&orbit.mutex);
-    for (int pass = 0; pass < 2; pass++)
-        for (size_t i = 0; i < count; i++) {
-            uint64_t need = (uint64_t)total + (256ULL << 20);
-            if (!strcmp(drives[i].id, "internal") || !strcmp(drives[i].id, "desktop"))
-                need = 2 * (uint64_t)total + (1ULL << 30);
-            if (drives[i].free_bytes < need || (pass == 0 && strcmp(drives[i].id, preferred)))
-                continue;
-            *chosen = drives[i];
-            return true;
-        }
-    return false;
+    bool any = false;
+    for (size_t i = 0; i < count; i++) {
+        if (strncmp(drives[i].id, "usb", 3) && strcmp(drives[i].id, "desktop"))
+            continue;
+        any = true;
+        if (drives[i].free_bytes < (uint64_t)total + (256ULL << 20))
+            continue;
+        *chosen = drives[i];
+        return 1;
+    }
+    return any ? 0 : -1;
 }
 
 static void run(const char *manifest_url) {
@@ -595,9 +592,11 @@ static void run(const char *manifest_url) {
         }
     }
     Storage drive;
-    if (!choose_drive(job.manifest.total, &drive)) {
+    int found = choose_drive(job.manifest.total, &drive);
+    if (found != 1) {
         patchmanifest_free(&job.manifest);
-        return finish("failed", "Not enough free space on any drive for this update.");
+        return finish("failed", found < 0 ? "Connect a USB drive to download updates and add-ons."
+                                           : "Not enough free space on the USB drives. Free some space and try again.");
     }
     Job *place = calloc(1, sizeof *place);
     if (place) {

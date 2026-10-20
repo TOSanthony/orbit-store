@@ -40,6 +40,27 @@ int read_regular_file(const char *path, size_t max, unsigned char **data, size_t
 
 /* Stand-ins for the console pieces the downloader uses. The "drive" is a folder from the environment. */
 size_t storage_list(Storage *out) {
+    /* ORBIT_TEST_USBS="folder:free,folder:free": usb0, usb1 with that much free space. */
+    const char *usbs = getenv("ORBIT_TEST_USBS");
+    if (usbs) {
+        size_t n = 0;
+        char copy[1024];
+        snprintf(copy, sizeof copy, "%s", usbs);
+        for (char *item = strtok(copy, ","); item && n < 2; item = strtok(NULL, ","), n++) {
+            char *colon = strrchr(item, ':');
+            struct stat st;
+            if (!colon) break;
+            *colon = 0;
+            if (stat(item, &st)) continue;
+            memset(&out[n], 0, sizeof out[n]);
+            snprintf(out[n].id, sizeof out[n].id, "usb%zu", n);
+            snprintf(out[n].root, sizeof out[n].root, "%s", item);
+            out[n].free_bytes = strtoull(colon + 1, NULL, 10);
+            out[n].device = st.st_dev;
+            out[n].inode = st.st_ino;
+        }
+        return n;
+    }
     const char *root = getenv("ORBIT_TEST_STORAGE");
     struct stat st;
     if (!root || stat(root, &st))

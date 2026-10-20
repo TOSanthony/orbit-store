@@ -1356,7 +1356,6 @@
   "Downloading {percent}% · {speed}": "Downloaden {percent}% · {speed}",
   "Game updates can only be downloaded on the console.": "Game-updates kunnen alleen op de console worden gedownload.",
   "Installing {percent}%": "Installeren {percent}%",
-  "Not enough free space on any drive for this update.": "Geen enkele schijf heeft genoeg vrije ruimte voor deze update.",
   "Orbit could not start the download.": "Orbit kon de download niet starten.",
   "Preparing the download…": "Download voorbereiden…",
   "Sony refused the download. The link may have expired.": "Sony heeft de download geweigerd. De link is mogelijk verlopen.",
@@ -1369,5 +1368,7 @@
   "The finished file could not be saved.": "Het voltooide bestand kon niet worden opgeslagen.",
   "This game has no update this console can install.": "Deze game heeft geen update die deze console kan installeren.",
   "This update needs a newer firmware than this console has.": "Deze update vereist nieuwere firmware dan deze console heeft.",
-  "Update failed: {error}": "Update mislukt: {error}"
+  "Update failed: {error}": "Update mislukt: {error}",
+  "Connect a USB drive to download updates and add-ons.": "Sluit een USB-schijf aan om updates en add-ons te downloaden.",
+  "Not enough free space on the USB drives. Free some space and try again.": "Onvoldoende vrije ruimte op de USB-schijven. Maak ruimte vrij en probeer het opnieuw."
 }

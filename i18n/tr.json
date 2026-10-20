@@ -1356,7 +1356,6 @@
   "Downloading {percent}% · {speed}": "İndiriliyor %{percent} · {speed}",
   "Game updates can only be downloaded on the console.": "Oyun güncellemeleri yalnızca konsolda indirilebilir.",
   "Installing {percent}%": "Yükleniyor %{percent}",
-  "Not enough free space on any drive for this update.": "Hiçbir diskte bu güncelleme için yeterli boş alan yok.",
   "Orbit could not start the download.": "Orbit indirmeyi başlatamadı.",
   "Preparing the download…": "İndirme hazırlanıyor…",
   "Sony refused the download. The link may have expired.": "Sony indirmeyi reddetti. Bağlantının süresi dolmuş olabilir.",
@@ -1369,5 +1368,7 @@
   "The finished file could not be saved.": "Tamamlanan dosya kaydedilemedi.",
   "This game has no update this console can install.": "Bu oyunun bu konsolun yükleyebileceği bir güncellemesi yok.",
   "This update needs a newer firmware than this console has.": "Bu güncelleme, konsolun sahip olduğundan daha yeni bir yazılım gerektiriyor.",
-  "Update failed: {error}": "Güncelleme başarısız: {error}"
+  "Update failed: {error}": "Güncelleme başarısız: {error}",
+  "Connect a USB drive to download updates and add-ons.": "Güncellemeleri ve ek içerikleri indirmek için bir USB sürücü bağlayın.",
+  "Not enough free space on the USB drives. Free some space and try again.": "USB sürücülerde yeterli boş alan yok. Yer açın ve yeniden deneyin."
 }
