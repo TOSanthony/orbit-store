@@ -880,6 +880,9 @@ cJSON *gameupdates_status(void) {
     cJSON *dlc_job = patchdl_status(true);
     if (dlc_job)
         cJSON_AddItemToObject(o, "dlcJob", dlc_job);
+    cJSON *finished = patchdl_history_json();
+    if (finished)
+        cJSON_AddItemToObject(o, "history", finished);
     return o;
 }
 

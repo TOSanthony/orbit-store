@@ -352,6 +352,7 @@ struct GameUpdateStatus
     std::vector<GameUpdateItem> dlc; // DLC on the NAS that an installed game does not have yet
     GameUpdateJob job;     // the update being downloaded
     GameUpdateJob dlc_job; // the DLC being downloaded, at the same time
+    std::vector<GameUpdateJob> history; // updates and DLC that finished earlier, newest first
     std::vector<std::string> queue; // title IDs waiting for their turn, in order
 };
 

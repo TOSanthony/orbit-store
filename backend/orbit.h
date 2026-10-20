@@ -270,6 +270,8 @@ void patchdl_cancel(const char *title_id);
 void patchdl_dismiss(const char *title_id);
 void patchdl_stop(void);
 cJSON *patchdl_status(bool dlc);
+/* The updates and DLC that finished earlier, newest first (a JSON array). */
+cJSON *patchdl_history_json(void);
 int updates_start(void);
 void updates_stop(void);
 cJSON *updates_status(void);

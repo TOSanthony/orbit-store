@@ -529,6 +529,21 @@ GameUpdateStatus parse_game_update_status(const json::Value &value)
         out.error = job.text("error");
         out.detail = job.text("detail");
     }
+    for (const json::Value &entry : value["history"].items())
+    {
+        GameUpdateJob old;
+        old.present = true;
+        old.title_id = entry.text("titleId");
+        old.name = entry.text("name");
+        old.version = entry.text("version");
+        old.phase = entry.text("phase");
+        old.total = entry.number("total");
+        old.done = old.total;
+        old.error = entry.text("error");
+        old.detail = entry.text("detail");
+        if (!old.title_id.empty())
+            status.history.push_back(std::move(old));
+    }
     return status;
 }
 
@@ -962,9 +977,18 @@ std::vector<Job> game_update_jobs(const GameUpdateStatus &status)
         job.order = -1;
         return job;
     };
-    for (int k = 0; k < 2; ++k)
+    std::vector<const GameUpdateJob *> shown_jobs{&status.job, &status.dlc_job};
+    for (const GameUpdateJob &old : status.history) // the ones that finished before, a line each
     {
-        const GameUpdateJob &running = k == 0 ? status.job : status.dlc_job;
+        bool current = false;
+        for (const GameUpdateJob *now : shown_jobs)
+            current = current || (now->present && now->title_id == old.title_id);
+        if (!current)
+            shown_jobs.push_back(&old);
+    }
+    for (const GameUpdateJob *each : shown_jobs)
+    {
+        const GameUpdateJob &running = *each;
         if (!running.present || running.title_id.empty() || running.phase.empty() || running.phase == "cancelled")
             continue;
         Job job = make(running.title_id, &running);

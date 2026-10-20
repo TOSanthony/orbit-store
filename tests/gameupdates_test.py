@@ -454,6 +454,8 @@ with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as dri
     check("adding the same update again changes nothing", s["again"] == 200)
     check("the queued update starts by itself when the first ends", os.path.exists(f1) and os.path.exists(f2))
     check("and the queue is empty afterwards", s["queue"] == [] and s["job"]["titleId"] == "PPSA00002" and s["job"]["phase"] == "downloaded")
+    check("the first one finished stays in the history, not overwritten by the second",
+          [h["titleId"] for h in s["history"]] == ["PPSA00001"] and s["history"][0]["phase"] == "downloaded")
     for n in os.listdir(drive + "/homebrew"): os.remove(drive + "/homebrew/" + n)
     BEHAVE["PPSA00001-piece0.pkg"] = "hang-once"; LOG.clear()
     s = run(root, "10200000", "PPSA00001", drive, queue="dequeue", second="PPSA00002")

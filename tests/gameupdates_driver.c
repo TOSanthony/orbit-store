@@ -243,6 +243,7 @@ static void print_status(int first, int second, int again) {
     cJSON_AddNumberToObject(out, "again", again);
     cJSON_AddItemToObject(out, "job", cJSON_DetachItemFromObject(now, job_key()));
     cJSON_AddItemToObject(out, "queue", cJSON_DetachItemFromObject(now, "queue"));
+    cJSON_AddItemToObject(out, "history", cJSON_DetachItemFromObject(now, "history"));
     char *text = cJSON_Print(out);
     puts(text);
     free(text);

@@ -65,6 +65,86 @@ static Slot *slot_for(const char *title_id) {
     return title_id && strchr(title_id, '/') ? &slots[1] : &slots[0];
 }
 
+/* The updates and DLC that finished, one entry each, so a long list of DLC leaves a line per DLC in the
+ * downloads history rather than only the last one. Kept in memory, newest last. */
+#define HISTORY_MAX 64
+typedef struct {
+    char title_id[32], name[96], version[24], phase[16], error[200], detail[200];
+    int64_t total;
+    bool pkg; /* the package is still on the drive (an install that failed) */
+    Storage drive;
+    char pkg_name[64];
+} Finished;
+static struct {
+    pthread_mutex_t mutex;
+    Finished items[HISTORY_MAX];
+    size_t count;
+} history = {.mutex = PTHREAD_MUTEX_INITIALIZER};
+
+static bool finished_phase(const char *phase) {
+    return !strcmp(phase, "installed") || !strcmp(phase, "downloaded") || !strcmp(phase, "failed");
+}
+/* The caller holds the slot's mutex. */
+static void history_add(const Slot *s, bool pkg, const Storage *drive, const char *pkg_name) {
+    if (!s->title_id[0] || !finished_phase(s->phase))
+        return;
+    pthread_mutex_lock(&history.mutex);
+    for (size_t i = 0; i < history.count; i++)
+        if (!strcmp(history.items[i].title_id, s->title_id)) {
+            memmove(&history.items[i], &history.items[i + 1], (history.count - i - 1) * sizeof history.items[0]);
+            history.count--;
+            break;
+        }
+    if (history.count == HISTORY_MAX) {
+        memmove(&history.items[0], &history.items[1], (HISTORY_MAX - 1) * sizeof history.items[0]);
+        history.count--;
+    }
+    Finished *f = &history.items[history.count++];
+    memset(f, 0, sizeof *f);
+    copy_text(f->title_id, sizeof f->title_id, s->title_id);
+    copy_text(f->name, sizeof f->name, s->name);
+    copy_text(f->version, sizeof f->version, s->version);
+    copy_text(f->phase, sizeof f->phase, s->phase);
+    copy_text(f->error, sizeof f->error, s->error);
+    copy_text(f->detail, sizeof f->detail, s->detail);
+    f->total = s->total;
+    f->pkg = pkg;
+    f->drive = *drive;
+    copy_text(f->pkg_name, sizeof f->pkg_name, pkg_name);
+    pthread_mutex_unlock(&history.mutex);
+}
+/* Takes the entry out of the history; returns a copy when it was there. */
+static bool history_take(const char *title_id, Finished *out) {
+    bool found = false;
+    pthread_mutex_lock(&history.mutex);
+    for (size_t i = 0; i < history.count; i++)
+        if (!strcmp(history.items[i].title_id, title_id)) {
+            if (out)
+                *out = history.items[i];
+            memmove(&history.items[i], &history.items[i + 1], (history.count - i - 1) * sizeof history.items[0]);
+            history.count--;
+            found = true;
+            break;
+        }
+    pthread_mutex_unlock(&history.mutex);
+    return found;
+}
+static void remove_package(const Storage *drive, const char *name) {
+    Job *place = calloc(1, sizeof *place);
+    if (!place)
+        return;
+    copy_text(place->storage_id, sizeof place->storage_id, drive->id);
+    copy_text(place->root, sizeof place->root, drive->root);
+    place->device = drive->device;
+    place->inode = drive->inode;
+    int dir = storage_open(place);
+    free(place);
+    if (dir >= 0) {
+        unlinkat(dir, name, 0);
+        close(dir);
+    }
+}
+
 /* The updates waiting for their turn, in order. Kept in game-update-queue.json so a restart
  * keeps it; each one is checked against the current offers when its turn comes. */
 #define QUEUE_MAX 128
@@ -824,6 +904,8 @@ int patchdl_start(const char *title_id, char *error, size_t cap) {
         copy_text(error, cap, "Another game update is paused. Resume it or cancel it first.");
         return 409;
     }
+    history_add(cur, kept.pkg, &kept.drive, kept.pkg_name); /* what this slot finished before moves to the history */
+    history_take(title_id, NULL); /* starting this one again replaces its old line */
     char *url = strdup(manifest);
     Start *start = url ? malloc(sizeof *start) : NULL;
     if (start)
@@ -890,8 +972,8 @@ int patchdl_pause(const char *title_id, char *error, size_t cap) {
 void patchdl_dismiss(const char *title_id) {
     Slot *slot = slot_for(title_id);
     pthread_mutex_lock(&slot->mutex);
-    if (!slot->active && strcmp(slot->title_id, title_id) == 0 &&
-        (!strcmp(slot->phase, "installed") || !strcmp(slot->phase, "downloaded") || !strcmp(slot->phase, "failed"))) {
+    const bool mine = strcmp(slot->title_id, title_id) == 0;
+    if (mine && !slot->active && finished_phase(slot->phase)) {
         slot->phase[0] = 0;
         slot->error[0] = 0;
         slot->detail[0] = 0;
@@ -899,11 +981,21 @@ void patchdl_dismiss(const char *title_id) {
         slot->waiting = false;
     }
     pthread_mutex_unlock(&slot->mutex);
+    if (!mine)
+        history_take(title_id, NULL); /* an older finished line */
 }
 
 void patchdl_cancel(const char *title_id) {
     cur = slot_for(title_id);
     pthread_mutex_lock(&pd.mutex);
+    if (strcmp(pd.title_id, title_id) != 0) {
+        /* Not what this slot holds now: an older finished line. Its package goes with it. */
+        pthread_mutex_unlock(&pd.mutex);
+        Finished f;
+        if (history_take(title_id, &f) && f.pkg)
+            remove_package(&f.drive, f.pkg_name);
+        return;
+    }
     if (pd.active) {
         atomic_store(&pd.cancel, true);
         pthread_mutex_unlock(&pd.mutex);
@@ -1158,6 +1250,29 @@ void patchdl_stop(void) {
 }
 
 /* The update download (dlc = false) or the DLC download (dlc = true), NULL before the first one. */
+cJSON *patchdl_history_json(void) {
+    cJSON *list = cJSON_CreateArray();
+    if (!list)
+        return NULL;
+    pthread_mutex_lock(&history.mutex);
+    for (size_t i = history.count; i > 0; i--) { /* newest first */
+        const Finished *f = &history.items[i - 1];
+        cJSON *o = cJSON_CreateObject();
+        if (!o)
+            break;
+        cJSON_AddStringToObject(o, "titleId", f->title_id);
+        cJSON_AddStringToObject(o, "name", f->name);
+        cJSON_AddStringToObject(o, "version", f->version);
+        cJSON_AddStringToObject(o, "phase", f->phase);
+        cJSON_AddNumberToObject(o, "total", (double)f->total);
+        cJSON_AddStringToObject(o, "error", f->error);
+        cJSON_AddStringToObject(o, "detail", f->detail);
+        cJSON_AddItemToArray(list, o);
+    }
+    pthread_mutex_unlock(&history.mutex);
+    return list;
+}
+
 cJSON *patchdl_status(bool dlc) {
     cur = &slots[dlc ? 1 : 0];
     pthread_mutex_lock(&pd.mutex);
