@@ -464,6 +464,7 @@ class GameUpdatesScreen final : public Screen
     {
         return dlc_mode_ ? status.dlc_job : status.job;
     }
+    std::vector<std::string> open_; // DLC tab: the games whose DLC list is open
     int row_ = 0;
     int button_ = 0; // which of the focused row's buttons has the focus
     int bar_ = -1; // the button above the list that has the focus, -1 when the list has it

@@ -777,19 +777,12 @@ http::Response Fixture::send(const http::Request &request)
                   ",\"done\":1850000000,\"total\":4509715660,\"speed\":18900000,\"piece\":1,\"pieces\":1,"
                   "\"installPercent\":0,\"error\":\"\",\"detail\":\"\"}";
         // DLC of installed games that the NAS lists and the console does not have yet.
+        // DLC of installed games that the NAS lists and the console does not have yet.
         const std::string dlc =
             mode_ != FixtureMode::dlc
                 ? ""
-                : std::string(",\"dlcCount\":3,\"dlc\":["
-                  "{\"titleId\":\"PPSA20397/LIMITEDPACK00000\",\"baseId\":\"PPSA20397\",\"name\":\"Limited Pack\","
-                  "\"gameName\":\"Assassin's Creed Shadows\",\"label\":\"LIMITEDPACK00000\",\"state\":\"available\","
-                  "\"size\":1288490188},"
-                  "{\"titleId\":\"PPSA01341/DELUXEPACK000000\",\"baseId\":\"PPSA01341\",\"name\":\"Digital Deluxe Pack\","
-                  "\"gameName\":\"Demon's Souls\",\"label\":\"DELUXEPACK000000\",\"state\":\"available\","
-                  "\"size\":734003200},"
-                  "{\"titleId\":\"CUSA00093/SEASONPASS000000\",\"baseId\":\"CUSA00093\",\"name\":\"Season Pass\","
-                  "\"gameName\":\"DRIVECLUB\",\"label\":\"SEASONPASS000000\",\"state\":\"available\","
-                  "\"size\":3221225472}]");
+                : std::string(",\"dlcCount\":8,\"dlc\":[") +
+                  "{\"titleId\":\"PPSA20397/LIMITEDPACK00000\",\"baseId\":\"PPSA20397\",\"name\":\"Claws of Awaji - Assassin's Creed\xC2\xAE Shadows\",\"gameName\":\"Assassin's Creed\xC2\xAE Shadows\",\"label\":\"LIMITEDPACK00000\",\"state\":\"available\",\"size\":1288490188}" "," "{\"titleId\":\"PPSA20397/DELUXEPACK000000\",\"baseId\":\"PPSA20397\",\"name\":\"Assassin's Creed\xC2\xAE Shadows - Deluxe Pack\",\"gameName\":\"Assassin's Creed\xC2\xAE Shadows\",\"label\":\"DELUXEPACK000000\",\"state\":\"available\",\"size\":1288490188}" "," "{\"titleId\":\"PPSA20397/LIMITEDEDITION000\",\"baseId\":\"PPSA20397\",\"name\":\"Assassin's Creed\xC2\xAE Shadows - Limited Edition Pack\",\"gameName\":\"Assassin's Creed\xC2\xAE Shadows\",\"label\":\"LIMITEDEDITION000\",\"state\":\"available\",\"size\":1288490188}" "," "{\"titleId\":\"PPSA20397/PREMIUMSTARTER00\",\"baseId\":\"PPSA20397\",\"name\":\"Assassin's Creed\xC2\xAE Shadows - Premium Starter Pack Gear\",\"gameName\":\"Assassin's Creed\xC2\xAE Shadows\",\"label\":\"PREMIUMSTARTER00\",\"state\":\"available\",\"size\":1288490188}" "," "{\"titleId\":\"PPSA20397/SPECIALEDITION00\",\"baseId\":\"PPSA20397\",\"name\":\"Assassin's Creed\xC2\xAE Shadows - Special Edition Pack\",\"gameName\":\"Assassin's Creed\xC2\xAE Shadows\",\"label\":\"SPECIALEDITION00\",\"state\":\"available\",\"size\":1288490188}" "," "{\"titleId\":\"PPSA20397/THROWNTOTHEDOGS0\",\"baseId\":\"PPSA20397\",\"name\":\"Assassin's Creed\xC2\xAE Shadows - Thrown to the Dogs\",\"gameName\":\"Assassin's Creed\xC2\xAE Shadows\",\"label\":\"THROWNTOTHEDOGS0\",\"state\":\"available\",\"size\":1288490188}" "," "{\"titleId\":\"PPSA01341/DELUXEPACK000000\",\"baseId\":\"PPSA01341\",\"name\":\"Digital Deluxe Pack\",\"gameName\":\"Demon's Souls\",\"label\":\"DELUXEPACK000000\",\"state\":\"available\",\"size\":734003200}" "," "{\"titleId\":\"CUSA00093/DCXTOURXXXXXX001\",\"baseId\":\"CUSA00093\",\"name\":\"Driveclub Ignition\",\"gameName\":\"DRIVECLUB\",\"label\":\"DCXTOURXXXXXX001\",\"state\":\"available\",\"size\":131072}" + "]";
         response.body =
             "{\"supported\":true,\"checking\":false,\"checked\":1,\"failed\":0,\"error\":\"\",\"detail\":\"\",\"count\":3,"
             "\"games\":["
