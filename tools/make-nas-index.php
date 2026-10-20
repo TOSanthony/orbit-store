@@ -18,7 +18,7 @@
  *     <?php return ['PASSWORD_HASH' => '...', 'PYTHON' => '/usr/bin/python3'];
  * pour que la mise à jour de ce fichier ne les écrase pas.
  *
- * Ligne de commande : `php make-nas-index.php hash` | `php make-nas-index.php refresh [--ai]`.
+ * Ligne de commande : `php make-nas-index.php hash` | `php make-nas-index.php refresh [--no-param] [--no-prospero] [--ai]` (param.json/.pkg et prosperopatches.com sont actifs par défaut).
  */
 declare(strict_types=1);
 
@@ -64,7 +64,7 @@ const IMAGE_TYPES = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'ima
  * Prépare la commande Python.
  * @return array{0:?array,1:array,2:string} [commande, environnement, erreur]
  */
-function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $ai, bool $prospero = false): array
+function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $ai, bool $prospero = true): array
 {
     global $GAMES_DIR, $SCRIPT, $PYTHON, $GEMINI_KEYS, $GEMINI_MODEL, $AI_MAX, $AI_LANG;
     if (!is_file($SCRIPT)) return [null, [], "make-nas-index.py introuvable : $SCRIPT"];
@@ -91,7 +91,7 @@ function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $a
 }
 
 /** @return array{0:int,1:string} code de sortie et sortie texte (ligne de commande : on attend la fin) */
-function run_refresh(bool $sha256, bool $refreshCovers, bool $param = true, bool $ai = false, bool $prospero = false): array
+function run_refresh(bool $sha256, bool $refreshCovers, bool $param = true, bool $ai = false, bool $prospero = true): array
 {
     global $TIMEOUT;
     [$cmd, $env, $err] = refresh_command($sha256, $refreshCovers, $param, $ai, $prospero);
@@ -156,7 +156,7 @@ function job_state(bool $consume = false): array
 }
 
 /** @return string message d'erreur, vide si lancé */
-function start_background_refresh(bool $sha256, bool $refreshCovers, bool $param, bool $ai, bool $prospero = false): string
+function start_background_refresh(bool $sha256, bool $refreshCovers, bool $param, bool $ai, bool $prospero = true): string
 {
     global $TIMEOUT;
     if (job_state()['state'] === 'running') return 'Une actualisation est déjà en cours.';
@@ -406,11 +406,11 @@ if (PHP_SAPI === 'cli') {
         exit(0);
     }
     if ($cmd === 'refresh') {
-        [$code, $text] = run_refresh(in_array('--sha256', $argv, true), in_array('--refresh-covers', $argv, true), !in_array('--no-param', $argv, true), in_array('--ai', $argv, true), in_array('--prospero', $argv, true));
+        [$code, $text] = run_refresh(in_array('--sha256', $argv, true), in_array('--refresh-covers', $argv, true), !in_array('--no-param', $argv, true), in_array('--ai', $argv, true), !in_array('--no-prospero', $argv, true));
         echo ($code === 0 ? "OK\n" : "ERREUR ($code)\n") . $text . "\n";
         exit($code === 0 ? 0 : 1);
     }
-    fwrite(STDERR, "Usage : php make-nas-index.php hash [motdepasse] | refresh [--sha256] [--refresh-covers] [--no-param] [--ai]\n");
+    fwrite(STDERR, "Usage : php make-nas-index.php hash [motdepasse] | refresh [--sha256] [--refresh-covers] [--no-param] [--no-prospero] [--ai]\n");
     exit(2);
 }
 
