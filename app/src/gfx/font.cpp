@@ -157,7 +157,15 @@ float Font::measure(std::string_view text, float size, float tracking) const
         const ff::Glyph *glyph = find(codepoint);
         if (glyph == nullptr)
         {
-            codepoint = '?';
+            // Names from game packages use odd spaces (no-break, thin...) the font lacks: show a plain space,
+            // and nothing for zero-width marks, rather than a "?".
+            if (codepoint == 0xA0 || (codepoint >= 0x2000 && codepoint <= 0x200A) || codepoint == 0x202F ||
+                codepoint == 0x205F || codepoint == 0x3000)
+                codepoint = ' ';
+            else if ((codepoint >= 0x200B && codepoint <= 0x200F) || codepoint == 0x2060 || codepoint == 0xFEFF)
+                continue;
+            else
+                codepoint = '?';
             glyph = find(codepoint);
             if (glyph == nullptr)
                 continue;
@@ -190,7 +198,15 @@ float Font::layout(std::string_view text, float x, float y, float size, Align al
         const ff::Glyph *glyph = find(codepoint);
         if (glyph == nullptr)
         {
-            codepoint = '?';
+            // Names from game packages use odd spaces (no-break, thin...) the font lacks: show a plain space,
+            // and nothing for zero-width marks, rather than a "?".
+            if (codepoint == 0xA0 || (codepoint >= 0x2000 && codepoint <= 0x200A) || codepoint == 0x202F ||
+                codepoint == 0x205F || codepoint == 0x3000)
+                codepoint = ' ';
+            else if ((codepoint >= 0x200B && codepoint <= 0x200F) || codepoint == 0x2060 || codepoint == 0xFEFF)
+                continue;
+            else
+                codepoint = '?';
             glyph = find(codepoint);
             if (glyph == nullptr)
                 continue;
