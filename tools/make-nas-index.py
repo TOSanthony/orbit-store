@@ -663,14 +663,21 @@ def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list, lang: st
     """Ask the AI for the game's name, description and publisher; None when it cannot say.
     provider "gemini": Google Gemini. provider "openai": your own AI, any server with an OpenAI-style
     /chat/completions API (Ollama, LM Studio, llama.cpp, vLLM, OpenAI, OpenRouter...) at `base`."""
-    custom = provider == "openai"
+    ollama = provider == "ollama"
+    custom = provider in ("openai", "ollama")
     if custom:
-        base = (base or os.environ.get("AI_BASE", "")).rstrip("/")
+        base = (base or os.environ.get("AI_BASE", "")).strip().rstrip("/")
         if not re.match(r"https?://[^\s/]+", base):
             errors.append("AI_BASE must be an http(s) address (e.g. http://192.168.1.20:11434/v1)")
             return None
-        url = f"{base}/chat/completions"
-        body = json.dumps({
+        if ollama:
+            base = re.sub(r"/api(?:/(?:generate|chat))?$", "", base)          # the host is enough; a full /api/generate address works too
+            url = f"{base}/api/generate"
+            body = json.dumps({"model": model, "prompt": ai_prompt(title_id, hint, lang), "stream": False, "format": "json",
+                               "options": {"temperature": 0.2}}).encode("utf-8")
+        else:
+            url = f"{base}/chat/completions"
+        body = body if ollama else json.dumps({
             "model": model,
             "messages": [{"role": "user", "content": ai_prompt(title_id, hint, lang)}],
             "temperature": 0.2,
@@ -709,7 +716,7 @@ def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list, lang: st
             continue
         try:
             if custom:
-                text = payload["choices"][0]["message"]["content"]
+                text = payload["response"] if ollama else payload["choices"][0]["message"]["content"]
                 text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)       # reasoning models
                 found = re.search(r"\{.*\}", text, re.S)
                 text = found.group(0) if found else text
@@ -776,7 +783,7 @@ def main() -> int:
     parser.add_argument("--ai-lang", default=os.environ.get("GEMINI_LANG", "English"), help="language of the generated description (default English, like the signed catalogue)")
     parser.add_argument("--no-assets", action="store_true", help="do not create assets/coverFallback.png and assets/heroFallback.png")
     parser.add_argument("--ai-model", default=os.environ.get("AI_MODEL") or os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"))
-    parser.add_argument("--ai-provider", choices=("gemini", "openai"), default=os.environ.get("AI_PROVIDER", "gemini"), help="gemini (default) or openai: your own AI, any server with an OpenAI-style /chat/completions API (Ollama, LM Studio, OpenAI, OpenRouter...)")
+    parser.add_argument("--ai-provider", choices=("gemini", "openai", "ollama"), default=os.environ.get("AI_PROVIDER", "gemini"), help="gemini (default), ollama (your Ollama server, native /api/generate) or openai: your own AI, any server with an OpenAI-style /chat/completions API (Ollama, LM Studio, OpenAI, OpenRouter...)")
     parser.add_argument("--ai-base", default=os.environ.get("AI_BASE", ""), help="with --ai-provider openai: the API address, e.g. http://192.168.1.20:11434/v1 (key, if any, in AI_API_KEYS)")
     parser.add_argument("--sha256", action="store_true", help="also record each file's SHA-256 (slow on large files)")
     args = parser.parse_args()
@@ -827,7 +834,7 @@ def main() -> int:
                 if (root / "assets" / f"{kind}Fallback.png").is_file()}
     rows, skipped, extracted, notes = [], [], [], []
     optimized = 0
-    own_ai = args.ai_provider == "openai"
+    own_ai = args.ai_provider in ("openai", "ollama")
     keys = [k.strip() for k in re.split(r"[,\s]+", os.environ.get("AI_API_KEYS" if own_ai else "GEMINI_API_KEYS", "")) if k.strip()]
     if own_ai and not keys:
         keys = [""]                                   # your own server: the key is optional

@@ -34,8 +34,8 @@ $MAX_FAILS     = 5;                                    // mots de passe faux ava
 $LOCK_MIN      = 15;                                   // durée du blocage (minutes)
 $GEMINI_KEYS   = [];                                   // clés API Gemini (option « Compléter avec l'IA »)
 $GEMINI_MODEL  = 'gemini-3.6-flash';
-$AI_PROVIDER   = 'gemini';                             // 'gemini', ou 'openai' = ta propre IA (Ollama, LM Studio, OpenAI, OpenRouter... API de type /chat/completions)
-$AI_BASE       = '';                                   // avec 'openai' : adresse de l'API, ex. 'http://192.168.1.20:11434/v1'
+$AI_PROVIDER   = 'gemini';                             // 'gemini', 'ollama' (API native /api/generate) ou 'openai' (API /chat/completions : LM Studio, OpenAI, OpenRouter...)
+$AI_BASE       = '';                                   // ollama : 'http://192.168.1.20:11434' (ou .../api/generate) ; openai : 'http://192.168.1.20:1234/v1'
 $AI_API_KEYS   = [];                                   // avec 'openai' : clés de l'API (facultatif pour un serveur local)
 $AI_MODEL      = '';                                   // avec 'openai' : nom du modèle, ex. 'llama3.1:8b' (sinon $GEMINI_MODEL)
 $AI_MAX        = 40;                                   // requêtes IA max par actualisation
@@ -68,13 +68,20 @@ const IMAGE_TYPES = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'ima
 function ai_ready(): bool
 {
     global $GEMINI_KEYS, $AI_PROVIDER, $AI_BASE;
-    if ($AI_PROVIDER === 'openai') return (bool)preg_match('~^https?://[^\s/]+~', trim((string)$AI_BASE));
+    if (ai_custom()) return (bool)preg_match('~^https?://[^\s/]+~', trim((string)$AI_BASE));
     return !empty(array_filter(array_map('trim', array_map('strval', (array)$GEMINI_KEYS))));
 }
-function ai_label(): string
+/** Fournisseur normalisé : 'gemini', 'openai' (API /chat/completions) ou 'ollama' (API native /api/generate) */
+function ai_provider(): string
 {
     global $AI_PROVIDER;
-    return $AI_PROVIDER === 'openai' ? 'ta propre IA' : 'Gemini';
+    $p = strtolower(trim((string)$AI_PROVIDER));
+    return $p === 'ollama' || $p === 'openai' ? $p : 'gemini';
+}
+function ai_custom(): bool { return ai_provider() !== 'gemini'; }
+function ai_label(): string
+{
+    return ai_custom() ? 'ta propre IA' : 'Gemini';
 }
 /**
  * Prépare la commande Python.
@@ -98,10 +105,10 @@ function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $a
     $keys = array_values(array_filter(array_map('strval', (array)$GEMINI_KEYS), static fn($k) => trim($k) !== ''));
     if ($ai && ai_ready()) {
         // Les clés passent par l'environnement, jamais par la ligne de commande.
-        if ($AI_PROVIDER === 'openai') {
+        if (ai_custom()) {
             $okeys = array_values(array_filter(array_map('strval', (array)$AI_API_KEYS), static fn($k) => trim($k) !== ''));
             $model = trim((string)$AI_MODEL) !== '' ? (string)$AI_MODEL : (string)$GEMINI_MODEL;
-            array_push($cmd, '--ai', '--ai-max', (string)max(1, (int)$AI_MAX), '--ai-model', $model, '--ai-provider', 'openai', '--ai-base', trim((string)$AI_BASE));
+            array_push($cmd, '--ai', '--ai-max', (string)max(1, (int)$AI_MAX), '--ai-model', $model, '--ai-provider', ai_provider(), '--ai-base', trim((string)$AI_BASE));
             $env['AI_API_KEYS'] = implode(',', array_map('trim', $okeys));
         } else {
             array_push($cmd, '--ai', '--ai-max', (string)max(1, (int)$AI_MAX), '--ai-model', (string)$GEMINI_MODEL);
