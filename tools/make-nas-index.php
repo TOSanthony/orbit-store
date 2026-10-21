@@ -300,7 +300,7 @@ function patch_saved_load(): array
     if (is_array($j)) {
         foreach ($j as $id => $v) {
             if (is_string($id) && preg_match('/^PPSA\d{5}$/', $id) && is_array($v)) {
-                $out[$id] = ['version' => (string)($v['version'] ?? ''), 'link' => (string)($v['link'] ?? '')];
+                $out[$id] = ['version' => (string)($v['version'] ?? ''), 'link' => (string)($v['link'] ?? ''), 'title' => substr(trim((string)($v['title'] ?? '')), 0, 80)];
             }
         }
     }
@@ -331,7 +331,7 @@ function patch_public_sync(): void
     if (@file_put_contents($tmp, $json, LOCK_EX) !== false) @rename($tmp, $file);
 }
 /** @return string message d'erreur, vide si enregistré */
-function patch_saved_set(string $id, string $version, string $link): string
+function patch_saved_set(string $id, string $version, string $link, ?string $title = null): string
 {
     if (!preg_match('/^PPSA\d{5}$/', $id)) return 'Identifiant du jeu invalide.';
     $version = trim($version);
@@ -344,7 +344,11 @@ function patch_saved_set(string $id, string $version, string $link): string
     $all = json_decode((string)stream_get_contents($fh), true);
     $all = is_array($all) ? $all : [];
     if ($version === '' && $link === '') unset($all[$id]);
-    else $all[$id] = ['version' => $version, 'link' => $link];
+    else {
+        // Le nom du jeu (facultatif) sert à l'afficher dans « Mises à jour » quand il n'est pas dans l'index.
+        $name = $title === null ? (string)($all[$id]['title'] ?? '') : substr(trim(preg_replace('/[\x00-\x1f\x7f]+/u', ' ', $title) ?? ''), 0, 80);
+        $all[$id] = ['version' => $version, 'link' => $link] + ($name !== '' ? ['title' => $name] : []);
+    }
     if (count($all) > 500) $all = array_slice($all, -500, null, true);
     ftruncate($fh, 0);
     rewind($fh);
@@ -742,7 +746,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $err = patch_start((string)($_POST['id'] ?? ''), (string)($_POST['version'] ?? ''), (string)($_POST['link'] ?? ''), !empty($_POST['force']));
             echo json_encode(['ok' => $err === '', 'error' => $err], JSON_UNESCAPED_UNICODE);
         } elseif ($action === 'patch_save') {
-            $err = patch_saved_set((string)($_POST['id'] ?? ''), (string)($_POST['version'] ?? ''), (string)($_POST['link'] ?? ''));
+            $err = patch_saved_set((string)($_POST['id'] ?? ''), (string)($_POST['version'] ?? ''), (string)($_POST['link'] ?? ''), isset($_POST['title']) ? (string)$_POST['title'] : null);
             echo json_encode(['ok' => $err === '', 'error' => $err], JSON_UNESCAPED_UNICODE);
         } elseif ($action === 'patch_cancel') {
             $st = patch_state();
@@ -1044,6 +1048,7 @@ summary{cursor:pointer;font-weight:600}
   <dl id="dList"></dl>
   <div id="dAdd" class="pbox" hidden>
     <label>Identifiant du jeu<input class="field" id="aId" size="11" maxlength="9" placeholder="PPSA01234" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
+    <label>Nom du jeu (facultatif)<input class="field" id="aName" maxlength="80" placeholder="Nom affiché dans la liste" autocomplete="off"></label>
     <p class="note">Pour un jeu que tu as sur disque Blu-ray : saisis son identifiant (PPSA suivi de 5 chiffres, visible sur la page du jeu sur prosperopatches.com), choisis le patch, colle son lien CRC et le fichier est téléchargé depuis les serveurs Sony.</p>
   </div>
   <div id="dPatch" hidden>
@@ -1114,6 +1119,21 @@ summary{cursor:pointer;font-weight:600}
     g.formats = [...new Set(g.files.map((f) => f.format))];
     g.search = (g.title + ' ' + g.titleId + ' ' + g.files.map((f) => f.filename + ' ' + f.packTitle + ' ' + f.label).join(' ')).toLowerCase();
   });
+  // Une mise à jour enregistrée (version + lien Sony) apparaît dans « Mises à jour » même sans fichier sur le NAS :
+  // elle est dans la base, et la console la télécharge elle-même depuis les serveurs Sony.
+  function syncSaved() {
+    for (let i = all.length - 1; i >= 0; i--) if (all[i].saved) all.splice(i, 1);
+    for (const [id, v] of Object.entries(SAVED)) {
+      if (!v || !v.version || !v.link) continue;
+      if (all.some((g) => g.cat === 'updates' && g.titleId === id)) continue;   // un .pkg est déjà sur le NAS
+      const base = all.find((g) => g.cat === 'game' && g.titleId === id) || {};
+      const title = base.title || v.title || id;
+      const f = { filename: 'v' + v.version, packTitle: '', label: '', format: 'Lien Sony', size: 0, version: v.version, path: '', tagline: 'UPDATES', saved: true };
+      all.push({ key: 'saved:' + id, saved: true, cat: 'updates', title, titleId: id, tagline: '', description: base.description || '', publisher: base.publisher || '',
+        genre: base.genre || '', region: base.region || '', releaseDate: base.releaseDate || '', platform: 'ps5', cover: base.cover || '', hero: base.hero || '',
+        coverReal: !!base.coverReal, heroReal: !!base.heroReal, added: 0, files: [f], size: 0, formats: ['Lien Sony'], search: (title + ' ' + id + ' ' + f.filename).toLowerCase() });
+    }
+  }
   const sortTitle = (a, b) => a.title.localeCompare(b.title, 'fr', { sensitivity: 'base' });
   // Plateformes affichées : les deux, PS5 seulement ou PS4 seulement (retenu dans ce navigateur).
   let platform = '';
@@ -1157,6 +1177,8 @@ summary{cursor:pointer;font-weight:600}
     return box;
   };
   const firstGenre = (g) => (g.genre || '').split('/')[0].trim();
+
+  syncSaved();
 
   // ---- Navigation par onglets (#discover, #games, #apps, #dlc, #updates) ----
   let tab = 'discover', page = 0, focused = null;
@@ -1328,7 +1350,7 @@ summary{cursor:pointer;font-weight:600}
     $('dHero').style.backgroundImage = '';
     $('dTitle').textContent = 'Ajouter une mise à jour';
     $('dSub').textContent = 'Jeu sur disque Blu-ray · patch de prosperopatches.com';
-    $('aId').value = '';
+    $('aId').value = ''; $('aName').value = '';
     startPatch('');
     dlg.showModal();
     $('aId').focus();
@@ -1348,7 +1370,7 @@ summary{cursor:pointer;font-weight:600}
         el('span', 'sz', [f.version && 'v' + f.version, bytes(f.size)].filter(Boolean).join(' · ')));
       return li;
     }));
-    const rows = [files.length > 1 ? ['Taille totale', bytes(g.size)] : ['Chemin', files[0].path], g.platform && ['Plateforme', g.platform.toUpperCase()], g.region && ['Région', g.region],
+    const rows = [files.length > 1 ? ['Taille totale', bytes(g.size)] : files[0].saved ? ['État', 'Enregistrée : la console la télécharge depuis les serveurs Sony'] : ['Chemin', files[0].path], g.platform && ['Plateforme', g.platform.toUpperCase()], g.region && ['Région', g.region],
       g.genre && ['Genre', g.genre], g.releaseDate && ['Sortie', g.releaseDate], files.length === 1 && files[0].sha256 && ['SHA-256', files[0].sha256],
       ['Icône', g.coverReal ? 'oui' : 'manquante'], ['Fond', g.heroReal ? 'oui' : 'manquant']].filter(Boolean);
     $('dList').replaceChildren(...rows.flatMap(([k, v]) => [el('dt', null, k), el('dd', null, v)]));
@@ -1391,7 +1413,7 @@ summary{cursor:pointer;font-weight:600}
     } catch (e) { patchTimer = setTimeout(pollPatch, 4000); }
   }
   function setupPatch(g) {
-    const on = PATCHES_ON && g.platform === 'ps5' && g.cat === 'game' && /^PPSA\d{5}$/.test(g.titleId || '');
+    const on = PATCHES_ON && g.platform === 'ps5' && (g.cat === 'game' || g.saved) && /^PPSA\d{5}$/.test(g.titleId || '');
     startPatch(on ? g.titleId : '');
   }
   function startPatch(id) {
@@ -1410,13 +1432,16 @@ summary{cursor:pointer;font-weight:600}
     const id = patchGame, version = $('pVer').value.trim(), link = $('pLink').value.trim();
     if (!id) return;
     if (!/^(\d{2}\.\d{3}\.\d{3})?$/.test(version) || !(link === '' || /^https?:\/\/\S+$/.test(link))) return;
-    SAVED[id] = { version, link };
+    const adding = !$('dAdd').hidden, title = adding ? $('aName').value.trim() : null;
+    SAVED[id] = { ...(SAVED[id] || {}), version, link };
+    if (adding) SAVED[id].title = title;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => pPost({ action: 'patch_save', id, version, link }).catch(() => {}), 400);
+    saveTimer = setTimeout(() => pPost(adding ? { action: 'patch_save', id, version, link, title } : { action: 'patch_save', id, version, link }).catch(() => {}), 400);
   }
+  $('aName').addEventListener('input', saveFields);
   $('aId').addEventListener('input', () => {
     const id = $('aId').value.trim().toUpperCase();
-    if (/^PPSA\d{5}$/.test(id)) { if (id !== patchGame) startPatch(id); } else startPatch('');
+    if (/^PPSA\d{5}$/.test(id)) { if (id !== patchGame) { startPatch(id); $('aName').value = (SAVED[id] || {}).title || ''; } } else startPatch('');
   });
   $('pVer').addEventListener('input', saveFields);
   $('pLink').addEventListener('input', saveFields);
@@ -1458,7 +1483,12 @@ summary{cursor:pointer;font-weight:600}
     try { await pPost({ action: 'patch_cancel' }); $('pMsg').textContent = 'Annulation…'; } catch (e) { /* on réessaiera */ }
     setTimeout(() => { $('pStop').disabled = false; }, 3000);
   });
-  dlg.addEventListener('close', () => clearTimeout(patchTimer));
+  let savedSig = JSON.stringify(SAVED);
+  dlg.addEventListener('close', () => {
+    clearTimeout(patchTimer);
+    const sig = JSON.stringify(SAVED);
+    if (sig !== savedSig) { savedSig = sig; syncSaved(); render(); }   // une mise à jour enregistrée apparaît dans la liste
+  });
 
   $('dClose').onclick = $('dOk').onclick = () => dlg.close();
   dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
