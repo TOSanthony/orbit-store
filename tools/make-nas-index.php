@@ -306,6 +306,41 @@ function patch_saved_load(): array
     }
     return $out;
 }
+/** Titre, éditeur et images (prosperopatches.com) des mises à jour enregistrées : .saved-info.json, écrit par make-nas-index.py. */
+function saved_info_load(): array
+{
+    global $GAMES_DIR;
+    $j = json_decode((string)@file_get_contents(rtrim((string)$GAMES_DIR, '/') . '/.saved-info.json'), true);
+    $out = [];
+    if (is_array($j)) {
+        foreach ($j as $id => $v) {
+            if (!is_string($id) || !preg_match('/^PPSA\d{5}$/', $id) || !is_array($v)) continue;
+            $out[$id] = [];
+            foreach (['title', 'publisher', 'region'] as $k) $out[$id][$k] = substr(trim((string)($v[$k] ?? '')), 0, 120);
+            foreach (['cover', 'hero'] as $k) $out[$id][$k] = art_url((string)($v[$k] ?? ''));
+        }
+    }
+    return $out;
+}
+/** Va chercher titre et images d'un jeu enregistré (une page + deux images ; quelques secondes). */
+function saved_info_fetch(string $id): void
+{
+    global $PYTHON, $SCRIPT, $GAMES_DIR;
+    if (!preg_match('/^PPSA\d{5}$/', $id) || !is_file((string)$SCRIPT) || !is_file((string)$PYTHON) || !function_exists('proc_open')) return;
+    $cmd = [$PYTHON, '-I', $SCRIPT, $GAMES_DIR, '--saved-art', '--saved-id', $id];
+    $env = ['LANG' => 'C.UTF-8', 'PYTHONIOENCODING' => 'utf-8', 'PATH' => '/usr/local/bin:/usr/bin:/bin'];
+    @set_time_limit(90);
+    $proc = @proc_open($cmd, [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes, null, $env);
+    if (!is_resource($proc)) return;
+    $start = time();
+    while (true) {
+        $st = proc_get_status($proc);
+        if (!$st['running']) break;
+        if (time() - $start > 60) { proc_terminate($proc, 9); break; }
+        usleep(200000);
+    }
+    proc_close($proc);
+}
 function patch_link_ok(string $link): bool
 {
     return (bool)preg_match('~^https?://[A-Za-z0-9.-]+/[A-Za-z0-9/._-]{1,400}$~', $link) && strpos($link, '..') === false;
@@ -746,8 +781,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $err = patch_start((string)($_POST['id'] ?? ''), (string)($_POST['version'] ?? ''), (string)($_POST['link'] ?? ''), !empty($_POST['force']));
             echo json_encode(['ok' => $err === '', 'error' => $err], JSON_UNESCAPED_UNICODE);
         } elseif ($action === 'patch_save') {
-            $err = patch_saved_set((string)($_POST['id'] ?? ''), (string)($_POST['version'] ?? ''), (string)($_POST['link'] ?? ''), isset($_POST['title']) ? (string)$_POST['title'] : null);
-            echo json_encode(['ok' => $err === '', 'error' => $err], JSON_UNESCAPED_UNICODE);
+            $sid = (string)($_POST['id'] ?? '');
+            $err = patch_saved_set($sid, (string)($_POST['version'] ?? ''), (string)($_POST['link'] ?? ''), isset($_POST['title']) ? (string)$_POST['title'] : null);
+            $info = null;
+            if ($err === '' && !empty($_POST['art']) && isset(patch_saved_load()[$sid])) {
+                if (!isset(saved_info_load()[$sid])) saved_info_fetch($sid);   // titre et images de prosperopatches.com
+                $info = saved_info_load()[$sid] ?? null;
+            }
+            echo json_encode(['ok' => $err === '', 'error' => $err, 'info' => $info], JSON_UNESCAPED_UNICODE);
         } elseif ($action === 'patch_cancel') {
             $st = patch_state();
             if ($st['state'] === 'running') @file_put_contents(patch_base() . '.cancel', '1');
@@ -837,7 +878,7 @@ if ($job['state'] === 'done') $flash = ['ok' => $job['ok'], 'log' => $job['log']
 $running = $job['state'] === 'running';
 $links = $ALLOW_LINKS ? link_list((string)$GAMES_DIR) : [];
 patch_public_sync();
-$data = json_encode(['games' => $games, 'indexTime' => $indexTime, 'today' => date('Y-m-d'), 'csrf' => $csrf, 'consoleFw' => (string)$CONSOLE_FW, 'patches' => is_file((string)$FETCH_SCRIPT), 'saved' => (object)patch_saved_load()], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+$data = json_encode(['games' => $games, 'indexTime' => $indexTime, 'today' => date('Y-m-d'), 'csrf' => $csrf, 'consoleFw' => (string)$CONSOLE_FW, 'patches' => is_file((string)$FETCH_SCRIPT), 'saved' => (object)patch_saved_load(), 'savedInfo' => (object)saved_info_load()], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 
 header('Content-Type: text/html; charset=utf-8');
 ?><!doctype html>
@@ -1074,7 +1115,7 @@ summary{cursor:pointer;font-weight:600}
 <script type="application/json" id="data"><?= $data ?></script>
 <script nonce="<?= h($nonce) ?>">
 (() => {
-  const { games: releases, indexTime, today, csrf: CSRF, consoleFw: CFG_FW, patches: PATCHES_ON, saved: SAVED } = JSON.parse(document.getElementById('data').textContent);
+  const { games: releases, indexTime, today, csrf: CSRF, consoleFw: CFG_FW, patches: PATCHES_ON, saved: SAVED, savedInfo: SAVED_INFO } = JSON.parse(document.getElementById('data').textContent);
   const $ = (id) => document.getElementById(id);
   const main = $('main'), tabsEl = $('tabs'), q = $('q');
   const SVG = 'http://www.w3.org/2000/svg';
@@ -1127,11 +1168,12 @@ summary{cursor:pointer;font-weight:600}
       if (!v || !v.version || !v.link) continue;
       if (all.some((g) => g.cat === 'updates' && g.titleId === id)) continue;   // un .pkg est déjà sur le NAS
       const base = all.find((g) => g.cat === 'game' && g.titleId === id) || {};
-      const title = base.title || v.title || id;
+      const si = SAVED_INFO[id] || {};
+      const title = base.title || v.title || si.title || id;
       const f = { filename: 'v' + v.version, packTitle: '', label: '', format: 'Lien Sony', size: 0, version: v.version, path: '', tagline: 'UPDATES', saved: true };
-      all.push({ key: 'saved:' + id, saved: true, cat: 'updates', title, titleId: id, tagline: '', description: base.description || '', publisher: base.publisher || '',
-        genre: base.genre || '', region: base.region || '', releaseDate: base.releaseDate || '', platform: 'ps5', cover: base.cover || '', hero: base.hero || '',
-        coverReal: !!base.coverReal, heroReal: !!base.heroReal, added: 0, files: [f], size: 0, formats: ['Lien Sony'], search: (title + ' ' + id + ' ' + f.filename).toLowerCase() });
+      all.push({ key: 'saved:' + id, saved: true, cat: 'updates', title, titleId: id, tagline: '', description: base.description || '', publisher: base.publisher || si.publisher || '',
+        genre: base.genre || '', region: base.region || si.region || '', releaseDate: base.releaseDate || '', platform: 'ps5', cover: base.cover || si.cover || '', hero: base.hero || si.hero || '',
+        coverReal: !!(base.coverReal || si.cover), heroReal: !!(base.heroReal || si.hero), added: 0, files: [f], size: 0, formats: ['Lien Sony'], search: (title + ' ' + id + ' ' + f.filename).toLowerCase() });
     }
   }
   const sortTitle = (a, b) => a.title.localeCompare(b.title, 'fr', { sensitivity: 'base' });
@@ -1428,6 +1470,7 @@ summary{cursor:pointer;font-weight:600}
     pollPatch();
   }
   let saveTimer = 0;
+  const artTried = new Set();
   function saveFields() {
     const id = patchGame, version = $('pVer').value.trim(), link = $('pLink').value.trim();
     if (!id) return;
@@ -1436,7 +1479,15 @@ summary{cursor:pointer;font-weight:600}
     SAVED[id] = { ...(SAVED[id] || {}), version, link };
     if (adding) SAVED[id].title = title;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => pPost(adding ? { action: 'patch_save', id, version, link, title } : { action: 'patch_save', id, version, link }).catch(() => {}), 400);
+    // Jeu absent de l'index : on récupère aussi son titre et ses images sur prosperopatches.com (une seule tentative par jeu).
+    const art = version && link && !SAVED_INFO[id] && !artTried.has(id) && !all.some((g) => g.cat === 'game' && g.titleId === id);
+    if (art) artTried.add(id);
+    const body = { action: 'patch_save', id, version, link };
+    if (adding) body.title = title;
+    if (art) body.art = '1';
+    saveTimer = setTimeout(() => pPost(body).then((r) => {
+      if (r && r.info) { SAVED_INFO[id] = r.info; if (adding && !$('aName').value.trim() && r.info.title) $('aName').placeholder = r.info.title; }
+    }).catch(() => {}), 400);
   }
   $('aName').addEventListener('input', saveFields);
   $('aId').addEventListener('input', () => {
@@ -1483,10 +1534,10 @@ summary{cursor:pointer;font-weight:600}
     try { await pPost({ action: 'patch_cancel' }); $('pMsg').textContent = 'Annulation…'; } catch (e) { /* on réessaiera */ }
     setTimeout(() => { $('pStop').disabled = false; }, 3000);
   });
-  let savedSig = JSON.stringify(SAVED);
+  let savedSig = JSON.stringify([SAVED, SAVED_INFO]);
   dlg.addEventListener('close', () => {
     clearTimeout(patchTimer);
-    const sig = JSON.stringify(SAVED);
+    const sig = JSON.stringify([SAVED, SAVED_INFO]);
     if (sig !== savedSig) { savedSig = sig; syncSaved(); render(); }   // une mise à jour enregistrée apparaît dans la liste
   });
 

@@ -742,6 +742,8 @@ def main() -> int:
     parser.add_argument("--ai", action="store_true", help="ask Gemini to fill missing description, publisher, genre, tagline and release date (needs GEMINI_API_KEYS)")
     parser.add_argument("--ai-max", type=int, default=40, help="most Gemini requests per run (default 40)")
     parser.add_argument("--prospero", action="store_true", help="fetch title, publisher, region and artwork from prosperopatches.com (PS5) and orbispatches.com (PS4) (cached in .prospero-cache.json)")
+    parser.add_argument("--saved-art", action="store_true", help="only fetch title and artwork from prosperopatches.com for the updates saved by the admin page (.nas-admin-patches.json), write .saved-info.json and stop")
+    parser.add_argument("--saved-id", default="", help="with --saved-art: only this title ID")
     parser.add_argument("--prospero-max", type=int, default=400, help="most pages fetched from prosperopatches.com / orbispatches.com per run (default 400)")
     parser.add_argument("--db", type=Path, help="game database (games-db.json, see make-game-db.py): fills genre, tagline, description, release date and region by title ID; default: <folder>/games-db.json if present")
     parser.add_argument("--ai-lang", default=os.environ.get("GEMINI_LANG", "English"), help="language of the generated description (default English, like the signed catalogue)")
@@ -959,6 +961,50 @@ def main() -> int:
                 pr_dirty = False
 
     _ON_EXIT.append(save_caches)
+
+    def saved_art():
+        """Title and artwork of the updates saved from the admin page (« + »), written to .saved-info.json."""
+        nonlocal pr_images
+        try:
+            saved = json.loads((root / ".nas-admin-patches.json").read_text("utf-8"))
+        except (OSError, ValueError):
+            saved = {}
+        info_path = root / ".saved-info.json"
+        try:
+            info = json.loads(info_path.read_text("utf-8"))
+        except (OSError, ValueError):
+            info = {}
+        info = info if isinstance(info, dict) else {}
+        ids = [i for i in (saved if isinstance(saved, dict) else {}) if re.fullmatch(r"PPSA\d{5}", i)]
+        if args.saved_id:
+            ids = [i for i in ids if i == args.saved_id]
+        for title_id in ids:
+            got = prospero_lookup(title_id)
+            if not got:
+                continue
+            row_info = {"title": got.get("name", ""), "publisher": got.get("publisher", ""), "region": got.get("region", "")}
+            for kind, source, key in (("icon0", "icon", "cover"), ("pic1", "hero", "hero")):
+                pr_images += prospero_art(title_id, kind, got.get(source, ""), got.get("heroAlt", "") if kind == "pic1" else "")
+                for ext in (".webp", ".png", ".jpg", ".jpeg"):
+                    have = images.get(f"{title_id}_{kind}{ext}".lower())
+                    if have:
+                        row_info[key] = have
+                        break
+            info[title_id] = row_info
+        for title_id in [i for i in info if i not in (saved if isinstance(saved, dict) else {})]:
+            del info[title_id]
+        try:
+            temporary = info_path.with_name(info_path.name + ".part")
+            temporary.write_text(json.dumps(info, ensure_ascii=False, indent=1), "utf-8")
+            temporary.replace(info_path)
+        except OSError:
+            print("  note: could not save .saved-info.json (folder not writable?)", file=sys.stderr)
+
+    if args.saved_art:
+        saved_art()
+        save_caches()
+        print(f"  saved updates: {pr_images} image(s) downloaded, {pr_calls} page(s) fetched")
+        return 0
     last_save = time.time()
     from_param = 0
     pack_rows = 0
@@ -1216,6 +1262,7 @@ def main() -> int:
     if game_db:
         print(f"  game database: {db_hits} game(s) found among {len(game_db)} entries")
     if args.prospero:
+        saved_art()
         print(f"  prosperopatches.com / orbispatches.com: {pr_done} game(s) completed, {pr_images} image(s) downloaded, {pr_calls} page(s) fetched this run"
               + (f" (problems: {'; '.join(list(dict.fromkeys(pr_errors))[-3:])})" if pr_errors else ""))
         if pr_left:
