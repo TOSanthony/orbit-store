@@ -440,6 +440,16 @@ with tempfile.TemporaryDirectory() as root:
     os.remove(root + "/user/appmeta/PPSA00007/param.json")
     s = run(root, "10200000")
     check("a game with no update address anywhere is named in the status", "PPSA00007" in s.get("noUpdateAddress", ""))
+    # ...but a version and Sony link saved on the NAS page still offer it an update (a Blu-ray game)
+    BIN["UP4001-PPSA00007_00-N.json"] = json.dumps({"originalFileSize": 2048, "pieces": [
+        {"url": "https://gs2.ww.prod.dl.playstation.net/x/n.pkg", "fileOffset": 0, "fileSize": 2048,
+         "hashValue": "0" * 64}]}).encode()
+    saved = root + "/game-patches.json"
+    json.dump({"PPSA00007": {"version": "02.000.000", "link": "https://sgst.prod.dl.playstation.net/sgst/prod/00/PPSA00007_00/app/info/9/f_ab/UP4001-PPSA00007_00-N.crc"}}, open(saved, "w"))
+    s = run(root, "10200000", patches=saved)
+    games = {g["titleId"]: g for g in s["games"]}
+    check("a game with no update address is offered the update saved on the NAS page",
+          games.get("PPSA00007", {}).get("version") == "02.000.000" and "PPSA00007" not in s.get("noUpdateAddress", ""))
 
 # ---- the queue ----
 with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as drive:

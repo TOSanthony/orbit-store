@@ -529,6 +529,7 @@ static void run_check(void) {
         /* PS5 titles: Sony's version.xml is the format patchfeed reads. PS4 titles have no such list
          * here; only an update .pkg on the person's NAS can offer them an update. */
         bool ps4 = !strncmp(game->title_id, "CUSA", 4);
+        bool no_list = false;
         if (ps4) {
             ps4_seen++;
             if (!patchfeed_app_version_valid(game->content_version)) {
@@ -544,55 +545,57 @@ static void run_check(void) {
             appdb_game fill = *game;
             read_param(game->title_id, &fill);
             if (!*fill.version_file_uri) {
-                size_t used = strlen(no_uri);
-                snprintf(no_uri + used, sizeof no_uri - used, "%s%s", used ? " " : "", game->title_id);
-                continue;
-            }
-            copy_text(game->version_file_uri, sizeof game->version_file_uri, fill.version_file_uri);
+                /* No Sony list for it (a disc game, say). A version and link saved on the NAS page, or an
+                 * update .pkg on the NAS, can still offer it an update: only the Sony list is skipped. */
+                no_list = true;
+            } else
+                copy_text(game->version_file_uri, sizeof game->version_file_uri, fill.version_file_uri);
         }
         char installed[16];
         installed_version(game->title_id, game->content_version, installed, sizeof installed);
         Entry *e = NULL;
         if (!ps4) {
-            SonyBody body = {0};
-            char why[160] = "";
-            if (!sony_get(game->version_file_uri, MAX_XML, &body, stopping, why, sizeof why)) {
-                if (!failed)
-                    snprintf(first_failure, sizeof first_failure, "%s: %s", game->title_id, why);
-                failed++;
-                continue;
-            }
-            patchfeed_package list[PATCHFEED_MAX];
-            int n = patchfeed_parse(body.data, body.size, list, PATCHFEED_MAX);
-            free(body.data);
-            if (n < 0) {
-                if (!failed)
-                    snprintf(first_failure, sizeof first_failure, "%s: not a Sony update list", game->title_id);
-                failed++;
-                continue;
-            }
-            {
-                char newest[16] = "-";
-                for (int k = 0; k < n; k++)
-                    if (strcmp(list[k].version, newest) > 0 || newest[0] == '-')
-                        copy_text(newest, sizeof newest, list[k].version);
-                size_t used = strlen(seen);
-                snprintf(seen + used, sizeof seen - used, "%s%s %s>%s(%d)", used ? "; " : "", game->title_id,
-                         installed[0] ? installed : "?", newest, n);
-            }
-            patchfeed_choice choice = patchfeed_choose(list, (size_t)n,
-                                                       patchfeed_version_valid(installed) ? installed : "",
-                                                       orbit.firmware);
-            if (choice.state != PATCHFEED_UP_TO_DATE && choice.offer) {
-                e = &found[count++];
-                copy_text(e->title_id, sizeof e->title_id, game->title_id);
-                copy_text(e->name, sizeof e->name, game->title_name);
-                copy_text(e->installed, sizeof e->installed, installed);
-                copy_text(e->available, sizeof e->available, choice.offer->version);
-                copy_text(e->manifest, sizeof e->manifest, choice.offer->manifest_url);
-                e->blocked = choice.state == PATCHFEED_NEEDS_NEWER_FW;
-                if (e->blocked)
-                    patchfeed_firmware_text(choice.offer->system_ver, e->needs, sizeof e->needs);
+            if (!no_list) {
+                SonyBody body = {0};
+                char why[160] = "";
+                if (!sony_get(game->version_file_uri, MAX_XML, &body, stopping, why, sizeof why)) {
+                    if (!failed)
+                        snprintf(first_failure, sizeof first_failure, "%s: %s", game->title_id, why);
+                    failed++;
+                    continue;
+                }
+                patchfeed_package list[PATCHFEED_MAX];
+                int n = patchfeed_parse(body.data, body.size, list, PATCHFEED_MAX);
+                free(body.data);
+                if (n < 0) {
+                    if (!failed)
+                        snprintf(first_failure, sizeof first_failure, "%s: not a Sony update list", game->title_id);
+                    failed++;
+                    continue;
+                }
+                {
+                    char newest[16] = "-";
+                    for (int k = 0; k < n; k++)
+                        if (strcmp(list[k].version, newest) > 0 || newest[0] == '-')
+                            copy_text(newest, sizeof newest, list[k].version);
+                    size_t used = strlen(seen);
+                    snprintf(seen + used, sizeof seen - used, "%s%s %s>%s(%d)", used ? "; " : "", game->title_id,
+                             installed[0] ? installed : "?", newest, n);
+                }
+                patchfeed_choice choice = patchfeed_choose(list, (size_t)n,
+                                                           patchfeed_version_valid(installed) ? installed : "",
+                                                           orbit.firmware);
+                if (choice.state != PATCHFEED_UP_TO_DATE && choice.offer) {
+                    e = &found[count++];
+                    copy_text(e->title_id, sizeof e->title_id, game->title_id);
+                    copy_text(e->name, sizeof e->name, game->title_name);
+                    copy_text(e->installed, sizeof e->installed, installed);
+                    copy_text(e->available, sizeof e->available, choice.offer->version);
+                    copy_text(e->manifest, sizeof e->manifest, choice.offer->manifest_url);
+                    e->blocked = choice.state == PATCHFEED_NEEDS_NEWER_FW;
+                    if (e->blocked)
+                        patchfeed_firmware_text(choice.offer->system_ver, e->needs, sizeof e->needs);
+                }
             }
             /* A version and Sony link saved on the person's NAS page wins when it is newer than what
              * is installed and than anything Sony offers this console. */
@@ -634,6 +637,10 @@ static void run_check(void) {
             e->size = nas_size;
             if (ps4)
                 ps4_offered++;
+        }
+        if (no_list && !e) {
+            size_t used = strlen(no_uri);
+            snprintf(no_uri + used, sizeof no_uri - used, "%s%s", used ? " " : "", game->title_id);
         }
         if (e && !e->blocked && strncmp(e->manifest, "nas:", 4)) {
             /* The size is only in the manifest; a failure here just leaves the size out. */
