@@ -20,7 +20,7 @@ sce_sys/) are copied there automatically; use --no-extract to skip this and
 --refresh-covers to replace images extracted earlier. Images you placed yourself are kept.
 
 For a .zip holding a PS5 game, sce_sys/param.json gives the title, title ID and version
-(--no-param to skip). A .pkg (PS4 or PS5) is read the same way: its title, content ID, DLC label, version and icon0.png go into the index and covers/ With --ai, Gemini fills what is still missing for every game: description
+(--no-param to skip). A .pkg (PS4 or PS5) is read the same way: its title, content ID, DLC label, version and icon0.png go into the index and covers/ With --ai, Gemini (or your own AI with --ai-provider openai) fills what is still missing for every game: description
 (French), publisher, genre, tagline and release date; it only renames games whose title came from
 the file name. Results are kept in .ai-cache.json and the key comes from the GEMINI_API_KEYS
 environment variable (comma separated). The title ID and the title are sent to Google. Never put
@@ -659,24 +659,45 @@ def ai_prompt(title_id: str, hint: str, lang: str) -> str:
     )
 
 
-def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list, lang: str = "English", dead=None):
-    """Ask Gemini for the game's name, description and publisher; None when it cannot say."""
-    base = os.environ.get("GEMINI_BASE", GEMINI_BASE).rstrip("/")
-    if not (base.startswith("https://") or base.startswith("http://127.0.0.1")):
-        errors.append("GEMINI_BASE must be https")
-        return None
-    url = f"{base}/models/{model}:generateContent"
-    body = json.dumps({
-        "contents": [{"parts": [{"text": ai_prompt(title_id, hint, lang)}]}],
-        "generationConfig": {"responseMimeType": "application/json"},
-    }).encode("utf-8")
+def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list, lang: str = "English", dead=None, provider: str = "gemini", base: str = ""):
+    """Ask the AI for the game's name, description and publisher; None when it cannot say.
+    provider "gemini": Google Gemini. provider "openai": your own AI, any server with an OpenAI-style
+    /chat/completions API (Ollama, LM Studio, llama.cpp, vLLM, OpenAI, OpenRouter...) at `base`."""
+    custom = provider == "openai"
+    if custom:
+        base = (base or os.environ.get("AI_BASE", "")).rstrip("/")
+        if not re.match(r"https?://[^\s/]+", base):
+            errors.append("AI_BASE must be an http(s) address (e.g. http://192.168.1.20:11434/v1)")
+            return None
+        url = f"{base}/chat/completions"
+        body = json.dumps({
+            "model": model,
+            "messages": [{"role": "user", "content": ai_prompt(title_id, hint, lang)}],
+            "temperature": 0.2,
+        }).encode("utf-8")
+    else:
+        base = os.environ.get("GEMINI_BASE", GEMINI_BASE).rstrip("/")
+        if not (base.startswith("https://") or base.startswith("http://127.0.0.1")):
+            errors.append("GEMINI_BASE must be https")
+            return None
+        url = f"{base}/models/{model}:generateContent"
+        body = json.dumps({
+            "contents": [{"parts": [{"text": ai_prompt(title_id, hint, lang)}]}],
+            "generationConfig": {"responseMimeType": "application/json"},
+        }).encode("utf-8")
     dead = dead if dead is not None else set()
     for key in keys:
         if key in dead:
             continue                              # quota used up or refused earlier in this run
-        request = urllib.request.Request(url, body, {"Content-Type": "application/json", "x-goog-api-key": key})
+        headers = {"Content-Type": "application/json"}
+        if custom:
+            if key:
+                headers["Authorization"] = f"Bearer {key}"    # a local server often needs no key
+        else:
+            headers["x-goog-api-key"] = key
+        request = urllib.request.Request(url, body, headers)
         try:
-            with urllib.request.urlopen(request, timeout=25) as reply:
+            with urllib.request.urlopen(request, timeout=120 if custom else 25) as reply:
                 payload = json.loads(reply.read(1 << 20).decode("utf-8"))
         except urllib.error.HTTPError as problem:
             errors.append(f"HTTP {problem.code}")
@@ -687,7 +708,13 @@ def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list, lang: st
             errors.append(type(problem).__name__)
             continue
         try:
-            text = payload["candidates"][0]["content"]["parts"][0]["text"]
+            if custom:
+                text = payload["choices"][0]["message"]["content"]
+                text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)       # reasoning models
+                found = re.search(r"\{.*\}", text, re.S)
+                text = found.group(0) if found else text
+            else:
+                text = payload["candidates"][0]["content"]["parts"][0]["text"]
             data = json.loads(re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.IGNORECASE))
         except (KeyError, IndexError, TypeError, ValueError):
             errors.append("unreadable answer")
@@ -748,7 +775,9 @@ def main() -> int:
     parser.add_argument("--db", type=Path, help="game database (games-db.json, see make-game-db.py): fills genre, tagline, description, release date and region by title ID; default: <folder>/games-db.json if present")
     parser.add_argument("--ai-lang", default=os.environ.get("GEMINI_LANG", "English"), help="language of the generated description (default English, like the signed catalogue)")
     parser.add_argument("--no-assets", action="store_true", help="do not create assets/coverFallback.png and assets/heroFallback.png")
-    parser.add_argument("--ai-model", default=os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"))
+    parser.add_argument("--ai-model", default=os.environ.get("AI_MODEL") or os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"))
+    parser.add_argument("--ai-provider", choices=("gemini", "openai"), default=os.environ.get("AI_PROVIDER", "gemini"), help="gemini (default) or openai: your own AI, any server with an OpenAI-style /chat/completions API (Ollama, LM Studio, OpenAI, OpenRouter...)")
+    parser.add_argument("--ai-base", default=os.environ.get("AI_BASE", ""), help="with --ai-provider openai: the API address, e.g. http://192.168.1.20:11434/v1 (key, if any, in AI_API_KEYS)")
     parser.add_argument("--sha256", action="store_true", help="also record each file's SHA-256 (slow on large files)")
     args = parser.parse_args()
 
@@ -798,8 +827,14 @@ def main() -> int:
                 if (root / "assets" / f"{kind}Fallback.png").is_file()}
     rows, skipped, extracted, notes = [], [], [], []
     optimized = 0
-    keys = [k.strip() for k in re.split(r"[,\s]+", os.environ.get("GEMINI_API_KEYS", "")) if k.strip()]
-    if args.ai and not keys:
+    own_ai = args.ai_provider == "openai"
+    keys = [k.strip() for k in re.split(r"[,\s]+", os.environ.get("AI_API_KEYS" if own_ai else "GEMINI_API_KEYS", "")) if k.strip()]
+    if own_ai and not keys:
+        keys = [""]                                   # your own server: the key is optional
+    if args.ai and own_ai and not args.ai_base:
+        keys = []
+        notes.append("--ai: no address in AI_BASE / --ai-base, AI step skipped")
+    elif args.ai and not keys:
         notes.append("--ai: no key in GEMINI_API_KEYS, AI step skipped")
     cache_path = root / ".ai-cache.json"
     try:
@@ -1186,7 +1221,7 @@ def main() -> int:
             if info is None and ai_calls < args.ai_max and len(dead_keys) < len(keys) and len(ai_errors) < 3 * len(keys):
                 ai_calls += 1
                 before = len(ai_errors)
-                found_info = ai_lookup(title_id, row["title"], keys, args.ai_model, ai_errors, args.ai_lang, dead_keys)
+                found_info = ai_lookup(title_id, row["title"], keys, args.ai_model, ai_errors, args.ai_lang, dead_keys, args.ai_provider, args.ai_base)
                 if found_info:
                     ai_errors.clear()
                     info = cache[title_id] = found_info
@@ -1270,7 +1305,7 @@ def main() -> int:
         if pr_fail >= 3:
             notes.append("prosperopatches.com / orbispatches.com refused 3 requests in a row; stopped for this run (blocked by the site's protection? try again later)")
     if args.ai and keys:
-        print(f"  AI: {ai_done} game(s) completed, {ai_calls} request(s) this run" + (f" (last problem: {ai_errors[-1]})" if ai_errors else "")
+        print(f"  AI ({'own AI' if own_ai else 'Gemini'}): {ai_done} game(s) completed, {ai_calls} request(s) this run" + (f" (last problem: {ai_errors[-1]})" if ai_errors else "")
               + (f"; {len(dead_keys)}/{len(keys)} key(s) refused or out of quota" if dead_keys else ""))
     for note in notes:
         print(f"  note: {note}")

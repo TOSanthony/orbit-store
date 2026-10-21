@@ -34,6 +34,10 @@ $MAX_FAILS     = 5;                                    // mots de passe faux ava
 $LOCK_MIN      = 15;                                   // durée du blocage (minutes)
 $GEMINI_KEYS   = [];                                   // clés API Gemini (option « Compléter avec l'IA »)
 $GEMINI_MODEL  = 'gemini-3.6-flash';
+$AI_PROVIDER   = 'gemini';                             // 'gemini', ou 'openai' = ta propre IA (Ollama, LM Studio, OpenAI, OpenRouter... API de type /chat/completions)
+$AI_BASE       = '';                                   // avec 'openai' : adresse de l'API, ex. 'http://192.168.1.20:11434/v1'
+$AI_API_KEYS   = [];                                   // avec 'openai' : clés de l'API (facultatif pour un serveur local)
+$AI_MODEL      = '';                                   // avec 'openai' : nom du modèle, ex. 'llama3.1:8b' (sinon $GEMINI_MODEL)
 $AI_MAX        = 40;                                   // requêtes IA max par actualisation
 $AI_LANG       = 'English';                            // langue des descriptions ('français', 'English'...)
 $UPDATE_REPO   = 'TOSanthony/orbit-store';              // dépôt GitHub dont on affiche les versions (Réglages)
@@ -50,7 +54,7 @@ if (is_file($extra)) {
     $cfg = require $extra;
     if (is_array($cfg)) {
         foreach ($cfg as $k => $v) {
-            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_MAX','AI_LANG','UPDATE_REPO','UPDATE_BRANCH','ALLOW_LINKS','LINK_ROOTS','FETCH_SCRIPT','PATCH_TIMEOUT','CONSOLE_FW'], true)) {
+            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_PROVIDER','AI_BASE','AI_API_KEYS','AI_MODEL','AI_MAX','AI_LANG','UPDATE_REPO','UPDATE_BRANCH','ALLOW_LINKS','LINK_ROOTS','FETCH_SCRIPT','PATCH_TIMEOUT','CONSOLE_FW'], true)) {
                 $$k = $v;
             }
         }
@@ -60,13 +64,25 @@ if (is_file($extra)) {
 const IMAGE_TYPES = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'webp' => 'image/webp'];
 
 // ---- Actualisation (partagée par le web et la ligne de commande) ------------
+/** L'option « Compléter avec l'IA » est-elle utilisable ? (Gemini : une clé ; ta propre IA : une adresse) */
+function ai_ready(): bool
+{
+    global $GEMINI_KEYS, $AI_PROVIDER, $AI_BASE;
+    if ($AI_PROVIDER === 'openai') return (bool)preg_match('~^https?://[^\s/]+~', trim((string)$AI_BASE));
+    return !empty(array_filter(array_map('trim', array_map('strval', (array)$GEMINI_KEYS))));
+}
+function ai_label(): string
+{
+    global $AI_PROVIDER;
+    return $AI_PROVIDER === 'openai' ? 'ta propre IA' : 'Gemini';
+}
 /**
  * Prépare la commande Python.
  * @return array{0:?array,1:array,2:string} [commande, environnement, erreur]
  */
 function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $ai, bool $prospero = true): array
 {
-    global $GAMES_DIR, $SCRIPT, $PYTHON, $GEMINI_KEYS, $GEMINI_MODEL, $AI_MAX, $AI_LANG;
+    global $GAMES_DIR, $SCRIPT, $PYTHON, $GEMINI_KEYS, $GEMINI_MODEL, $AI_MAX, $AI_LANG, $AI_PROVIDER, $AI_BASE, $AI_API_KEYS, $AI_MODEL;
     if (!is_file($SCRIPT)) return [null, [], "make-nas-index.py introuvable : $SCRIPT"];
     if (!is_file($PYTHON)) return [null, [], "Python 3 introuvable : $PYTHON (règle \$PYTHON)"];
     if (!is_dir($GAMES_DIR)) return [null, [], "Dossier des jeux introuvable : $GAMES_DIR"];
@@ -80,10 +96,17 @@ function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $a
     if ($prospero) $cmd[] = '--prospero';
     $env = ['LANG' => 'C.UTF-8', 'PYTHONIOENCODING' => 'utf-8', 'PATH' => '/usr/local/bin:/usr/bin:/bin'];
     $keys = array_values(array_filter(array_map('strval', (array)$GEMINI_KEYS), static fn($k) => trim($k) !== ''));
-    if ($ai && $keys) {
+    if ($ai && ai_ready()) {
         // Les clés passent par l'environnement, jamais par la ligne de commande.
-        array_push($cmd, '--ai', '--ai-max', (string)max(1, (int)$AI_MAX), '--ai-model', (string)$GEMINI_MODEL);
-        $env['GEMINI_API_KEYS'] = implode(',', array_map('trim', $keys));
+        if ($AI_PROVIDER === 'openai') {
+            $okeys = array_values(array_filter(array_map('strval', (array)$AI_API_KEYS), static fn($k) => trim($k) !== ''));
+            $model = trim((string)$AI_MODEL) !== '' ? (string)$AI_MODEL : (string)$GEMINI_MODEL;
+            array_push($cmd, '--ai', '--ai-max', (string)max(1, (int)$AI_MAX), '--ai-model', $model, '--ai-provider', 'openai', '--ai-base', trim((string)$AI_BASE));
+            $env['AI_API_KEYS'] = implode(',', array_map('trim', $okeys));
+        } else {
+            array_push($cmd, '--ai', '--ai-max', (string)max(1, (int)$AI_MAX), '--ai-model', (string)$GEMINI_MODEL);
+            $env['GEMINI_API_KEYS'] = implode(',', array_map('trim', $keys));
+        }
         $env['GEMINI_MODEL'] = (string)$GEMINI_MODEL;
         $env['GEMINI_LANG'] = (string)$AI_LANG;
     }
@@ -1069,8 +1092,8 @@ summary{cursor:pointer;font-weight:600}
   <form class="sform" method="post" id="refreshForm" autocomplete="off">
     <input type="hidden" name="action" value="refresh"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
     <p class="muted">Toujours actif : lecture du param.json des .zip PS5 et de l'intérieur des .pkg (titre, identifiant, version, icône, DLC), et récupération du titre, de l'éditeur, de la région, de l'icône et du fond sur prosperopatches.com (tes propres images de covers/ restent prioritaires).</p>
-<?php if (!empty(array_filter((array)$GEMINI_KEYS))): ?>
-    <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (Gemini) les infos manquantes (description, éditeur, genre, accroche, date de sortie)</label>
+<?php if (ai_ready()): ?>
+    <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (<?= h(ai_label()) ?>) les infos manquantes (description, éditeur, genre, accroche, date de sortie)</label>
 <?php endif; ?>
     <label><input type="checkbox" name="refresh_covers" value="1"> Remplacer les images déjà extraites des .zip</label>
     <label><input type="checkbox" name="sha256" value="1"> Calculer les SHA-256 (long sur de gros fichiers)</label>
