@@ -931,6 +931,7 @@ main{padding:0 0 3rem}
 /* Fiche d'un jeu */
 dialog{border:1px solid var(--line);border-radius:1.2rem;background:var(--panel);color:var(--text);padding:0;width:min(42rem,calc(100% - 2rem));max-height:calc(100% - 2rem);overflow:auto}
 dialog::backdrop{background:#030814cc;backdrop-filter:blur(4px)}
+[hidden]{display:none!important}
 .dhero{height:11rem;background:linear-gradient(135deg,#1b3a7a,var(--panel2)) center/cover;position:relative}
 .dhero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 40%,var(--panel))}
 .det{display:flex;gap:1.1rem;padding:0 1.4rem 1.4rem;margin-top:-4rem;position:relative;z-index:1}
@@ -1039,8 +1040,12 @@ summary{cursor:pointer;font-weight:600}
   <p class="desc" id="dDesc"></p>
   <h3 id="dFilesTitle">Fichiers</h3>
   <ul class="files" id="dFiles"></ul>
-  <h3>Informations</h3>
+  <h3 id="dInfoTitle">Informations</h3>
   <dl id="dList"></dl>
+  <div id="dAdd" class="pbox" hidden>
+    <label>Identifiant du jeu<input class="field" id="aId" size="11" maxlength="9" placeholder="PPSA01234" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
+    <p class="note">Pour un jeu que tu as sur disque Blu-ray : saisis son identifiant (PPSA suivi de 5 chiffres, visible sur la page du jeu sur prosperopatches.com), choisis le patch, colle son lien CRC et le fichier est téléchargé depuis les serveurs Sony.</p>
+  </div>
   <div id="dPatch" hidden>
     <h3>Patchs (PS5)</h3>
     <div class="pbox">
@@ -1079,7 +1084,7 @@ summary{cursor:pointer;font-weight:600}
     games: 'Aucun jeu pour l\'instant. Place tes jeux dans packages/ps5/games/… puis clique sur « Actualiser ».',
     apps: 'Aucune application. Place-les dans packages/ps5/apps/<extension>/<application> puis clique sur « Actualiser ».',
     dlc: 'Aucun DLC. Place les .pkg dans packages/ps5/dlc/<ID du jeu>/ puis clique sur « Actualiser ».',
-    updates: 'Aucune mise à jour. Place les .pkg dans packages/ps5/updates/<ID du jeu>/ puis clique sur « Actualiser ».',
+    updates: 'Aucune mise à jour. Place les .pkg dans packages/ps5/updates/<ID du jeu>/ puis clique sur « Actualiser », ou clique sur « + » pour en télécharger une depuis prosperopatches.com.',
   };
   const catOf = (tagline) => {
     const t = (tagline || '').trim().toUpperCase();
@@ -1267,6 +1272,13 @@ summary{cursor:pointer;font-weight:600}
     const items = pool(kind);
     const head = el('div', 'page-head');
     head.append(el('h1', null, TABS.find(([id]) => id === kind)[1]), el('span', 'note', plural(items.length, 'élément', 'éléments')));
+    if (kind === 'updates' && PATCHES_ON) {
+      // « + » : créer une mise à jour pour un jeu qui n'est pas dans l'index (jeu sur disque Blu-ray).
+      const add = el('button', 'btn primary', '＋'); add.type = 'button';
+      add.setAttribute('aria-label', 'Ajouter une mise à jour depuis prosperopatches.com'); add.title = 'Ajouter une mise à jour depuis prosperopatches.com';
+      add.addEventListener('click', openAdd);
+      head.append(add);
+    }
     if (!items.length) return [head, empty(kind)];
     const formats = [...new Set(items.flatMap((g) => g.formats))].sort();
     const genres = [...new Set(items.map(firstGenre).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr'));
@@ -1306,7 +1318,23 @@ summary{cursor:pointer;font-weight:600}
     span.append(f.packTitle, el('small', null, [f.label, f.filename].filter(Boolean).join(' · ')));
     return span;
   }
+  // Fiche « Ajouter une mise à jour » : les blocs d'un jeu sont masqués, on saisit l'identifiant.
+  function setAddMode(on) {
+    $('dAdd').hidden = !on;
+    for (const id of ['dArt', 'dDesc', 'dFilesTitle', 'dFiles', 'dInfoTitle', 'dList']) $(id).hidden = on;
+  }
+  function openAdd() {
+    setAddMode(true);
+    $('dHero').style.backgroundImage = '';
+    $('dTitle').textContent = 'Ajouter une mise à jour';
+    $('dSub').textContent = 'Jeu sur disque Blu-ray · patch de prosperopatches.com';
+    $('aId').value = '';
+    startPatch('');
+    dlg.showModal();
+    $('aId').focus();
+  }
   function openGame(g) {
+    setAddMode(false);
     $('dHero').style.backgroundImage = g.heroReal ? cssUrl(g.hero) : g.hero ? cssUrl(g.hero) : '';
     $('dArt').replaceWith(Object.assign(picture(g, false), { id: 'dArt' }));
     $('dTitle').textContent = g.title;
@@ -1364,13 +1392,16 @@ summary{cursor:pointer;font-weight:600}
   }
   function setupPatch(g) {
     const on = PATCHES_ON && g.platform === 'ps5' && g.cat === 'game' && /^PPSA\d{5}$/.test(g.titleId || '');
-    pbox.hidden = !on;
+    startPatch(on ? g.titleId : '');
+  }
+  function startPatch(id) {
+    pbox.hidden = !id;
     clearTimeout(patchTimer);
-    if (!on) return;
-    patchGame = g.titleId;
+    if (!id) { patchGame = ''; return; }
+    patchGame = id;
     $('pFw').value = lsGet('orbitFw') || CFG_FW || '';
-    $('pSite').href = 'https://prosperopatches.com/' + g.titleId;
-    $('pRows').replaceChildren(); $('pVer').value = (SAVED[g.titleId] || {}).version || ''; $('pLink').value = (SAVED[g.titleId] || {}).link || ''; $('pForce').checked = false;
+    $('pSite').href = 'https://prosperopatches.com/' + id;
+    $('pRows').replaceChildren(); $('pVer').value = (SAVED[id] || {}).version || ''; $('pLink').value = (SAVED[id] || {}).link || ''; $('pForce').checked = false;
     $('pMsg').textContent = ''; $('pBar').hidden = true; $('pStop').hidden = true; $('pGo').disabled = false;
     pollPatch();
   }
@@ -1383,6 +1414,10 @@ summary{cursor:pointer;font-weight:600}
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => pPost({ action: 'patch_save', id, version, link }).catch(() => {}), 400);
   }
+  $('aId').addEventListener('input', () => {
+    const id = $('aId').value.trim().toUpperCase();
+    if (/^PPSA\d{5}$/.test(id)) { if (id !== patchGame) startPatch(id); } else startPatch('');
+  });
   $('pVer').addEventListener('input', saveFields);
   $('pLink').addEventListener('input', saveFields);
   $('pFw').addEventListener('change', () => { if (fwOk()) lsSet('orbitFw', $('pFw').value.trim()); });
