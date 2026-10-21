@@ -20,7 +20,7 @@ sce_sys/) are copied there automatically; use --no-extract to skip this and
 --refresh-covers to replace images extracted earlier. Images you placed yourself are kept.
 
 For a .zip holding a PS5 game, sce_sys/param.json gives the title, title ID and version
-(--no-param to skip). A .pkg (PS4 or PS5) is read the same way: its title, content ID, DLC label, version and icon0.png go into the index and covers/ With --ai, Gemini (or your own AI with --ai-provider openai) fills what is still missing for every game: description
+(--no-param to skip). A .pkg (PS4 or PS5) is read the same way: its title, content ID, DLC label, version and icon0.png go into the index and covers/ With --ai, Gemini (or your own AI with --ai-provider ollama / openai) fills what is still missing for every game: description
 (French), publisher, genre, tagline and release date; it only renames games whose title came from
 the file name. Results are kept in .ai-cache.json and the key comes from the GEMINI_API_KEYS
 environment variable (comma separated). The title ID and the title are sent to Google. Never put
@@ -1218,7 +1218,7 @@ def main() -> int:
             row["tagline"] = pack
             pack_rows += 1
         wanted = [f for f in AI_FIELDS if not extra.get(f) and f not in pr_fields and f not in db_fields and not (pack and f == "tagline")]
-        if args.ai and keys and wanted:
+        if args.ai and keys and wanted and pack not in ("DLC", "UPDATES"):     # the AI is for games and apps only
             info = cache.get(title_id) if isinstance(cache.get(title_id), dict) else None
             if info and info.get("unknown"):
                 # Not recognised last time: ask again only after a week.

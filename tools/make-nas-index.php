@@ -1100,7 +1100,7 @@ summary{cursor:pointer;font-weight:600}
     <input type="hidden" name="action" value="refresh"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
     <p class="muted">Toujours actif : lecture du param.json des .zip PS5 et de l'intérieur des .pkg (titre, identifiant, version, icône, DLC), et récupération du titre, de l'éditeur, de la région, de l'icône et du fond sur prosperopatches.com (tes propres images de covers/ restent prioritaires).</p>
 <?php if (ai_ready()): ?>
-    <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (<?= h(ai_label()) ?>) les infos manquantes (description, éditeur, genre, accroche, date de sortie)</label>
+    <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (<?= h(ai_label()) ?>) les infos manquantes des jeux et applications (description, éditeur, genre, accroche, date de sortie)</label>
 <?php endif; ?>
     <label><input type="checkbox" name="refresh_covers" value="1"> Remplacer les images déjà extraites des .zip</label>
     <label><input type="checkbox" name="sha256" value="1"> Calculer les SHA-256 (long sur de gros fichiers)</label>
