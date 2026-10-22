@@ -450,6 +450,59 @@ def clean_text(value, limit: int) -> str:
     return re.sub(r"\s+", " ", text).strip()[:limit]
 
 
+DESC_TAIL = re.compile(r"\s*\n\s*(?:Region|Firmware|Credits|Updated)\s*:.*$", re.S | re.I)
+
+
+def load_descriptions(urls, cache_file: Path, notes: list):
+    """{titleId: description} from catalogue files (JSON with a "packages" list, e.g. https://pegasus-catalog.fly.dev/catalogs/pfs.json).
+    Only the title ID and the description are kept, without the trailing "Region: / Firmware: / Credits: / Updated:" lines.
+    The result is cached for a day in .descriptions-cache.json, so a refresh does not download the files again."""
+    urls = [u for u in urls if u]
+    if not urls:
+        return {}
+    cached = {}
+    try:
+        cached = json.loads(cache_file.read_text("utf-8"))
+    except (OSError, ValueError):
+        pass
+    cached = cached if isinstance(cached, dict) else {}
+    if cached.get("urls") == urls and isinstance(cached.get("d"), dict) and time.time() - float(cached.get("at", 0)) < 86400:
+        return cached["d"]
+    found = {}
+    for url in urls:
+        data, why = http_get(url, 96 << 20, "application/json")
+        if data is None:
+            notes.append(f"descriptions: {url} not downloaded ({why})")
+            continue
+        try:
+            doc = json.loads(data.decode("utf-8-sig"))
+        except ValueError:
+            notes.append(f"descriptions: {url} is not JSON")
+            continue
+        items = doc.get("packages") or doc.get("releases") or doc.get("games") or [] if isinstance(doc, dict) else doc
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict):
+                continue
+            title_id = str(item.get("titleId") or "").upper()
+            text = item.get("description")
+            if not re.fullmatch(r"(?:PPSA|CUSA)\d{5}", title_id) or not isinstance(text, str):
+                continue
+            text = clean_text(htmllib.unescape(DESC_TAIL.sub("", text)), 100000)
+            if len(text) > 1000:
+                text = text[:1000].rsplit(" ", 1)[0].rstrip(",;:-") + "…"
+            if len(text) > len(found.get(title_id, "")):
+                found[title_id] = text
+    if found:
+        try:
+            temporary = cache_file.with_name(cache_file.name + ".part")
+            temporary.write_text(json.dumps({"at": time.time(), "urls": urls, "d": found}, ensure_ascii=False), "utf-8")
+            temporary.replace(cache_file)
+        except OSError:
+            notes.append("could not save .descriptions-cache.json (folder not writable?)")
+        return found
+    return cached.get("d", {}) if isinstance(cached.get("d"), dict) else {}      # download failed: the last copy is better than nothing
+
+
 def read_param(zip_path: Path):
     """Title, title ID and version from sce_sys/param.json inside a PS5 .zip, or None."""
     try:
@@ -780,6 +833,7 @@ def main() -> int:
     parser.add_argument("--saved-id", default="", help="with --saved-art: only this title ID")
     parser.add_argument("--prospero-max", type=int, default=400, help="most pages fetched from prosperopatches.com / orbispatches.com per run (default 400)")
     parser.add_argument("--db", type=Path, help="game database (games-db.json, see make-game-db.py): fills genre, tagline, description, release date and region by title ID; default: <folder>/games-db.json if present")
+    parser.add_argument("--desc-url", action="append", default=[], help="catalogue JSON with titleId + description (e.g. https://pegasus-catalog.fly.dev/catalogs/pfs.json); used before the AI, for games and apps; can be repeated, or list them in DESC_URLS separated by commas")
     parser.add_argument("--ai-lang", default=os.environ.get("GEMINI_LANG", "English"), help="language of the generated description (default English, like the signed catalogue)")
     parser.add_argument("--no-assets", action="store_true", help="do not create assets/coverFallback.png and assets/heroFallback.png")
     parser.add_argument("--ai-model", default=os.environ.get("AI_MODEL") or os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"))
@@ -859,6 +913,9 @@ def main() -> int:
         return (os.environ.get("PROSPERO_BASE", "https://prosperopatches.com").rstrip("/"),
                 os.environ.get("PROSPERO_CDN", "https://cdn.prosperopatches.com").rstrip("/"))
 
+    desc_urls = args.desc_url or [u.strip() for u in os.environ.get("DESC_URLS", "").split(",") if u.strip()]
+    catalog_desc = load_descriptions(desc_urls, root / ".descriptions-cache.json", notes)
+    catalog_hits = 0
     pr_path = root / ".prospero-cache.json"
     try:
         pr_cache = json.loads(pr_path.read_text("utf-8")) if pr_path.is_file() else {}
@@ -1191,6 +1248,10 @@ def main() -> int:
             if entry.get("title") and not extra.get("title") and not (param or {}).get("title") and not pr_title and not own_title:
                 row["title"], pr_title = entry["title"], True
             db_hits += 1
+        if catalog_desc.get(title_id) and pack not in ("DLC", "UPDATES") and not extra.get("description") and "description" not in db_fields:
+            row["description"] = catalog_desc[title_id]            # the catalogue's own text: no AI request needed
+            db_fields.add("description")
+            catalog_hits += 1
         if suffix == ".zip" and not args.no_extract:
             for kind in extract_art(path, title_id, root, args.covers, images, args.refresh_covers):
                 extracted.append(f"{title_id}_{kind}.png")
@@ -1303,6 +1364,8 @@ def main() -> int:
         print(f"  {from_param} game(s) described by their param.json")
     if game_db:
         print(f"  game database: {db_hits} game(s) found among {len(game_db)} entries")
+    if desc_urls:
+        print(f"  descriptions: {len(catalog_desc)} in the catalogue(s), {catalog_hits} game(s) filled from them")
     if args.prospero:
         saved_art()
         print(f"  prosperopatches.com / orbispatches.com: {pr_done} game(s) completed, {pr_images} image(s) downloaded, {pr_calls} page(s) fetched this run"

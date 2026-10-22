@@ -38,6 +38,7 @@ $AI_PROVIDER   = 'gemini';                             // 'gemini', 'ollama' (AP
 $AI_BASE       = '';                                   // ollama : 'http://192.168.1.20:11434' (ou .../api/generate) ; openai : 'http://192.168.1.20:1234/v1'
 $AI_API_KEYS   = [];                                   // avec 'openai' : clés de l'API (facultatif pour un serveur local)
 $AI_MODEL      = '';                                   // avec 'openai' : nom du modèle, ex. 'llama3.1:8b' (sinon $GEMINI_MODEL)
+$DESC_URLS     = ['https://pegasus-catalog.fly.dev/catalogs/pfs.json', 'https://pegasus-catalog.fly.dev/catalogs/dlps.json'];  // catalogues (titleId + description) : le texte des jeux et applications, sans IA ni limite par passage ([] pour désactiver)
 $AI_MAX        = 40;                                   // requêtes IA max par actualisation
 $AI_LANG       = 'English';                            // langue des descriptions ('français', 'English'...)
 $UPDATE_REPO   = 'TOSanthony/orbit-store';              // dépôt GitHub dont on affiche les versions (Réglages)
@@ -54,7 +55,7 @@ if (is_file($extra)) {
     $cfg = require $extra;
     if (is_array($cfg)) {
         foreach ($cfg as $k => $v) {
-            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_PROVIDER','AI_BASE','AI_API_KEYS','AI_MODEL','AI_MAX','AI_LANG','UPDATE_REPO','UPDATE_BRANCH','ALLOW_LINKS','LINK_ROOTS','FETCH_SCRIPT','PATCH_TIMEOUT','CONSOLE_FW'], true)) {
+            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_PROVIDER','AI_BASE','AI_API_KEYS','AI_MODEL','DESC_URLS','AI_MAX','AI_LANG','UPDATE_REPO','UPDATE_BRANCH','ALLOW_LINKS','LINK_ROOTS','FETCH_SCRIPT','PATCH_TIMEOUT','CONSOLE_FW'], true)) {
                 $$k = $v;
             }
         }
@@ -89,7 +90,7 @@ function ai_label(): string
  */
 function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $ai, bool $prospero = true): array
 {
-    global $GAMES_DIR, $SCRIPT, $PYTHON, $GEMINI_KEYS, $GEMINI_MODEL, $AI_MAX, $AI_LANG, $AI_PROVIDER, $AI_BASE, $AI_API_KEYS, $AI_MODEL;
+    global $GAMES_DIR, $SCRIPT, $PYTHON, $GEMINI_KEYS, $GEMINI_MODEL, $AI_MAX, $AI_LANG, $AI_PROVIDER, $AI_BASE, $AI_API_KEYS, $AI_MODEL, $DESC_URLS;
     if (!is_file($SCRIPT)) return [null, [], "make-nas-index.py introuvable : $SCRIPT"];
     if (!is_file($PYTHON)) return [null, [], "Python 3 introuvable : $PYTHON (règle \$PYTHON)"];
     if (!is_dir($GAMES_DIR)) return [null, [], "Dossier des jeux introuvable : $GAMES_DIR"];
@@ -102,6 +103,8 @@ function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $a
     if (!$param) $cmd[] = '--no-param';
     if ($prospero) $cmd[] = '--prospero';
     $env = ['LANG' => 'C.UTF-8', 'PYTHONIOENCODING' => 'utf-8', 'PATH' => '/usr/local/bin:/usr/bin:/bin'];
+    $descs = array_values(array_filter(array_map('trim', array_map('strval', (array)$DESC_URLS)), static fn($u) => (bool)preg_match('~^https://[^\s,]+$~', $u)));
+    if ($descs) $env['DESC_URLS'] = implode(',', $descs);
     $keys = array_values(array_filter(array_map('strval', (array)$GEMINI_KEYS), static fn($k) => trim($k) !== ''));
     if ($ai && ai_ready()) {
         // Les clés passent par l'environnement, jamais par la ligne de commande.
