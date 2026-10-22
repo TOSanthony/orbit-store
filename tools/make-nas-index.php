@@ -32,7 +32,7 @@ $TIMEOUT       = 3600;                                 // secondes max pour une 
 $SESSION_MIN   = 120;                                  // déconnexion après N minutes d'inactivité
 $MAX_FAILS     = 5;                                    // mots de passe faux avant blocage
 $LOCK_MIN      = 15;                                   // durée du blocage (minutes)
-$GEMINI_KEYS   = [];                                   // clés API Gemini (option « Traduire avec l'IA »)
+$GEMINI_KEYS   = [];                                   // clés API Gemini (option « IA » : traduction et description manquante)
 $GEMINI_MODEL  = 'gemini-3.6-flash';
 $AI_PROVIDER   = 'gemini';                             // 'gemini', 'ollama' (API native /api/generate) ou 'openai' (API /chat/completions : LM Studio, OpenAI, OpenRouter...)
 $AI_BASE       = '';                                   // ollama : 'http://192.168.1.20:11434' (ou .../api/generate) ; openai : 'http://192.168.1.20:1234/v1'
@@ -1111,7 +1111,7 @@ summary{cursor:pointer;font-weight:600}
     <input type="hidden" name="action" value="refresh"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
     <p class="muted">Toujours actif : lecture du param.json des .zip PS5 et de l'intérieur des .pkg (titre, identifiant, version, icône, DLC), et récupération du titre, de l'éditeur, de la région, de l'icône et du fond sur prosperopatches.com (tes propres images de covers/ restent prioritaires).</p>
 <?php if (ai_ready()): ?>
-    <label><input type="checkbox" name="ai" value="1"> Traduire les descriptions avec l'IA (<?= h(ai_label()) ?>) (rien n'est inventé : seules les descriptions d'IGDB et du catalogue sont traduites)</label>
+    <label><input type="checkbox" name="ai" value="1"> IA (<?= h(ai_label()) ?>) : traduire les descriptions d'IGDB et du catalogue, et écrire la description des jeux qui n'en ont aucune (rien d'autre n'est généré)</label>
 <?php endif; ?>
     <label><input type="checkbox" name="refresh_covers" value="1"> Remplacer les images déjà extraites des .zip</label>
     <label><input type="checkbox" name="sha256" value="1"> Calculer les SHA-256 (long sur de gros fichiers)</label>
