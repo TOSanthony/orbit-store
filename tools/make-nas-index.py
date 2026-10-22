@@ -47,7 +47,9 @@ import subprocess
 import sys
 import time
 import zlib
+import unicodedata
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from datetime import datetime, timezone
@@ -503,6 +505,77 @@ def load_descriptions(urls, cache_file: Path, notes: list):
     return cached.get("d", {}) if isinstance(cached.get("d"), dict) else {}      # download failed: the last copy is better than nothing
 
 
+IGDB_GENRES = {"role-playing (rpg)": "Role Playing Games", "shooter": "Shooter", "racing": "Driving/Racing", "sport": "Sport", "simulator": "Simulation",
+               "puzzle": "Puzzle", "platform": "Platformer", "fighting": "Fighting", "strategy": "Strategy", "real time strategy (rts)": "Strategy",
+               "turn-based strategy (tbs)": "Strategy", "tactical": "Strategy", "adventure": "Adventure", "visual novel": "Adventure",
+               "point-and-click": "Adventure", "arcade": "Arcade", "pinball": "Arcade", "music": "Music/Rhythm", "quiz/trivia": "Casual",
+               "hack and slash/beat 'em up": "Action"}
+
+
+def igdb_token(client_id: str, secret: str, errors: list):
+    """An access token from the Twitch id and secret (IGDB belongs to Twitch); None when refused."""
+    base = os.environ.get("IGDB_AUTH", "https://id.twitch.tv/oauth2/token")
+    if not (base.startswith("https://") or base.startswith("http://127.0.0.1")):
+        return None
+    body = urllib.parse.urlencode({"client_id": client_id, "client_secret": secret, "grant_type": "client_credentials"}).encode()
+    try:
+        with urllib.request.urlopen(urllib.request.Request(base, body, {"User-Agent": PROSPERO_AGENT}), timeout=20) as reply:
+            return json.loads(reply.read(1 << 16).decode("utf-8")).get("access_token")
+    except (urllib.error.URLError, OSError, ValueError, AttributeError) as problem:
+        errors.append(f"IGDB token: {type(problem).__name__}")
+        return None
+
+
+def _igdb_key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", unicodedata.normalize("NFKD", str(name or "")).encode("ascii", "ignore").decode().lower())
+
+
+def igdb_query(title_id: str, name: str, client_id: str, token: str, errors: list):
+    """{name, summary, genres, date} from IGDB for a game (release date of the console of the title ID first), None when unknown or on error.
+    A string error is appended to `errors`; a 401 gives None and the caller stops asking."""
+    base = os.environ.get("IGDB_BASE", "https://api.igdb.com/v4").rstrip("/")
+    if not (base.startswith("https://") or base.startswith("http://127.0.0.1")):
+        errors.append("IGDB_BASE must be https")
+        return None
+    search = str(name).replace("\\", " ").replace('"', " ")
+    query = f'fields name, summary, release_dates.date, release_dates.platform.name, genres.name; search "{search}"; limit 5;'
+    request = urllib.request.Request(f"{base}/games", query.encode("utf-8"), {
+        "Client-ID": client_id, "Authorization": f"Bearer {token}", "Accept": "application/json", "User-Agent": PROSPERO_AGENT})
+    try:
+        with urllib.request.urlopen(request, timeout=20) as reply:
+            data = json.loads(reply.read(4 << 20).decode("utf-8"))
+    except urllib.error.HTTPError as problem:
+        errors.append(f"IGDB HTTP {problem.code}")
+        return None
+    except (urllib.error.URLError, OSError, ValueError) as problem:
+        errors.append(f"IGDB {type(problem).__name__}")
+        return None
+    if not isinstance(data, list) or not data:
+        return {}
+    wanted = _igdb_key(name)
+    game = next((g for g in data if isinstance(g, dict) and _igdb_key(g.get("name")) == wanted), None) or next((g for g in data if isinstance(g, dict)), {})
+    target = "PlayStation 5" if title_id.startswith("PPSA") else "PlayStation 4"
+    mine, other_ps, anywhere = [], [], []
+    for release in game.get("release_dates") or []:
+        if not isinstance(release, dict) or not isinstance(release.get("date"), (int, float)):
+            continue
+        day = time.strftime("%Y-%m-%d", time.gmtime(release["date"]))
+        platform = str((release.get("platform") or {}).get("name", "")) if isinstance(release.get("platform"), dict) else ""
+        anywhere.append(day)
+        if target in platform:
+            mine.append(day)
+        elif "PlayStation" in platform:
+            other_ps.append(day)
+    date = min(mine or other_ps or anywhere or [""])
+    genres = []
+    for item in game.get("genres") or []:
+        mapped = IGDB_GENRES.get(str((item or {}).get("name", "")).lower())
+        if mapped and mapped not in genres:
+            genres.append(mapped)
+    return {"name": clean_text(game.get("name"), 80), "summary": clean_text(game.get("summary"), 2000),
+            "genre": " / ".join(genres[:3]), "releaseDate": date}
+
+
 def read_param(zip_path: Path):
     """Title, title ID and version from sce_sys/param.json inside a PS5 .zip, or None."""
     try:
@@ -858,6 +931,7 @@ def main() -> int:
     parser.add_argument("--prospero-max", type=int, default=400, help="most pages fetched from prosperopatches.com / orbispatches.com per run (default 400)")
     parser.add_argument("--db", type=Path, help="game database (games-db.json, see make-game-db.py): fills genre, tagline, description, release date and region by title ID; default: <folder>/games-db.json if present")
     parser.add_argument("--desc-url", action="append", default=[], help="catalogue JSON with titleId + description (e.g. https://pegasus-catalog.fly.dev/catalogs/pfs.json); used before the AI, for games and apps; can be repeated, or list them in DESC_URLS separated by commas")
+    parser.add_argument("--igdb-max", type=int, default=400, help="most IGDB requests per run (default 400); IGDB is used when IGDB_CLIENT_ID and IGDB_ACCESS_TOKEN (or IGDB_CLIENT_SECRET) are set")
     parser.add_argument("--ai-lang", default=os.environ.get("GEMINI_LANG", "English"), help="language of the generated description (default English, like the signed catalogue)")
     parser.add_argument("--no-assets", action="store_true", help="do not create assets/coverFallback.png and assets/heroFallback.png")
     parser.add_argument("--ai-model", default=os.environ.get("AI_MODEL") or os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"))
@@ -940,6 +1014,64 @@ def main() -> int:
     desc_urls = args.desc_url or [u.strip() for u in os.environ.get("DESC_URLS", "").split(",") if u.strip()]
     catalog_desc = load_descriptions(desc_urls, root / ".descriptions-cache.json", notes)
     catalog_hits = 0
+    # IGDB (optional): genre, release date and, when the catalogue has none, the description. Cached in .igdb-cache.json.
+    igdb_id = os.environ.get("IGDB_CLIENT_ID", "").strip()
+    igdb_secret = os.environ.get("IGDB_CLIENT_SECRET", "").strip()
+    igdb_tok = os.environ.get("IGDB_ACCESS_TOKEN", "").strip()
+    igdb_on = bool(igdb_id and (igdb_tok or igdb_secret))
+    igdb_path = root / ".igdb-cache.json"
+    try:
+        igdb_cache = json.loads(igdb_path.read_text("utf-8")) if igdb_path.is_file() else {}
+    except (OSError, ValueError):
+        igdb_cache = {}
+    igdb_cache = igdb_cache if isinstance(igdb_cache, dict) else {}
+    igdb_dirty, igdb_calls, igdb_hits, igdb_errors, igdb_dead = False, 0, 0, [], False
+
+    def save_igdb():
+        nonlocal igdb_dirty
+        if not igdb_dirty:
+            return
+        try:
+            temporary = igdb_path.with_name(igdb_path.name + ".part")
+            temporary.write_text(json.dumps(igdb_cache, ensure_ascii=False), "utf-8")
+            temporary.replace(igdb_path)
+            igdb_dirty = False
+        except OSError:
+            notes.append("could not save .igdb-cache.json (folder not writable?)")
+
+    def igdb_lookup(title_id: str, name: str):
+        """Cached IGDB data for a game, asked now when needed (up to --igdb-max per run); unknown games are asked again after 30 days."""
+        nonlocal igdb_dirty, igdb_calls, igdb_tok, igdb_dead
+        hit = igdb_cache.get(title_id)
+        if isinstance(hit, dict) and hit.get("n") == name and (not hit.get("unknown") or time.time() - float(hit.get("at", 0)) < 30 * 86400):
+            return None if hit.get("unknown") else hit
+        if igdb_dead or igdb_calls >= args.igdb_max or len(igdb_errors) >= 3:
+            return None
+        if not igdb_tok:
+            igdb_tok = igdb_token(igdb_id, igdb_secret, igdb_errors) or ""
+            if not igdb_tok:
+                igdb_dead = True
+                return None
+        if igdb_calls:
+            time.sleep(0.3)                            # IGDB allows 4 requests per second
+        igdb_calls += 1
+        got = igdb_query(title_id, name, igdb_id, igdb_tok, igdb_errors)
+        if got is None:
+            if igdb_errors and igdb_errors[-1] == "IGDB HTTP 401":
+                igdb_dead = True                        # token refused or expired: stop for this run
+            return None
+        igdb_errors.clear()
+        if not got or not (got.get("summary") or got.get("genre") or got.get("releaseDate")):
+            igdb_cache[title_id] = {"unknown": True, "at": time.time(), "n": name}
+            igdb_dirty = True
+            return None
+        got.update({"at": time.time(), "n": name})
+        igdb_cache[title_id] = got
+        igdb_dirty = True
+        if igdb_calls % 20 == 0:
+            save_igdb()
+        return got
+
     tr_path = root / ".translations-cache.json"
     try:
         tr_cache = json.loads(tr_path.read_text("utf-8")) if tr_path.is_file() else {}
@@ -1127,6 +1259,7 @@ def main() -> int:
 
     _ON_EXIT.append(save_caches)
     _ON_EXIT.append(save_translations)
+    _ON_EXIT.append(save_igdb)
 
     def saved_art():
         """Title and artwork of the updates saved from the admin page (« + »), written to .saved-info.json."""
@@ -1319,6 +1452,18 @@ def main() -> int:
             row["description"] = translated(title_id, catalog_desc[title_id]) if translating else catalog_desc[title_id]   # the catalogue's own text, translated by your AI
             db_fields.add("description")
             catalog_hits += 1
+        if igdb_on and pack not in ("DLC", "UPDATES"):
+            wanted_igdb = [f for f in ("description", "genre", "releaseDate") if not extra.get(f) and f not in db_fields and f not in pr_fields]
+            got = igdb_lookup(title_id, row["title"]) if wanted_igdb else None
+            if got:
+                igdb_hits += 1
+                if "description" in wanted_igdb and got.get("summary"):
+                    row["description"] = translated(title_id, got["summary"]) if translating else got["summary"]
+                    db_fields.add("description")
+                for field in ("genre", "releaseDate"):
+                    if field in wanted_igdb and got.get(field):
+                        row[field] = got[field]
+                        db_fields.add(field)
         if suffix == ".zip" and not args.no_extract:
             for kind in extract_art(path, title_id, root, args.covers, images, args.refresh_covers):
                 extracted.append(f"{title_id}_{kind}.png")
@@ -1431,6 +1576,11 @@ def main() -> int:
         print(f"  {from_param} game(s) described by their param.json")
     if game_db:
         print(f"  game database: {db_hits} game(s) found among {len(game_db)} entries")
+    if igdb_on:
+        save_igdb()
+        print(f"  IGDB: {igdb_hits} game(s) completed, {igdb_calls} request(s) this run" + (f" (problem: {igdb_errors[-1]})" if igdb_errors else ""))
+        if igdb_calls >= args.igdb_max:
+            notes.append(f"IGDB limit of {args.igdb_max} requests per run reached; run the refresh again to continue")
     if desc_urls:
         print(f"  descriptions: {len(catalog_desc)} in the catalogue(s), {catalog_hits} game(s) filled from them")
         if translating:
