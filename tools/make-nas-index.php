@@ -191,7 +191,7 @@ function job_state(bool $consume = false): array
     $log = is_file("$b.log") ? (string)@file_get_contents("$b.log", false, null, 0, 20000) : '';
     $out['log'] .= trim($log);
     if ($out['state'] === 'done' && $consume) {
-        foreach (['start', 'code', 'log'] as $ext) @unlink("$b.$ext");
+        foreach (['start', 'code', 'log', 'cancel'] as $ext) @unlink("$b.$ext");
     }
     return $out;
 }
@@ -204,8 +204,10 @@ function start_background_refresh(bool $sha256, bool $refreshCovers, bool $param
     [$cmd, $env, $err] = refresh_command($sha256, $refreshCovers, $param, $ai, $prospero);
     if ($cmd === null) return $err;
     $b = job_base();
-    foreach (['code', 'log'] as $ext) @unlink("$b.$ext");
+    foreach (['code', 'log', 'cancel'] as $ext) @unlink("$b.$ext");
     @unlink("$b.start");
+    $cmd[] = '--cancel-file';                              // le bouton « Arrêter l'actualisation » crée ce fichier
+    $cmd[] = "$b.cancel";
     $mark = @fopen("$b.start", 'x');                       // création atomique : un seul lancement
     if (!$mark) return 'Une actualisation est déjà en cours.';
     fclose($mark);
@@ -620,7 +622,7 @@ if (isset($_GET['job'])) {
     session_write_close();
     $j = job_state();
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['state' => $j['state'], 'elapsed' => $j['elapsed']]);
+    echo json_encode(['state' => $j['state'], 'elapsed' => $j['elapsed'], 'stopping' => $j['state'] === 'running' && is_file(job_base() . '.cancel')]);
     exit;
 }
 
@@ -807,6 +809,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if ($action === 'logout') {
         $_SESSION = [];
         session_destroy();
+        header('Location: ' . strtok((string)($_SERVER['REQUEST_URI'] ?? ''), '?'));
+        exit;
+    }
+    if ($action === 'refresh_stop') {
+        if (job_state()['state'] === 'running') @file_put_contents(job_base() . '.cancel', '1');   // Python s'arrête proprement au prochain fichier
         header('Location: ' . strtok((string)($_SERVER['REQUEST_URI'] ?? ''), '?'));
         exit;
     }
@@ -1054,6 +1061,7 @@ dt{color:var(--dim)}dd{margin:0;word-break:break-all}
 .panel pre{margin:.6rem 0 0;white-space:pre-wrap;font:.82rem/1.5 ui-monospace,Menlo,Consolas,monospace;color:var(--dim);max-height:16rem;overflow:auto}
 .panel.ok summary{color:var(--ok)}.panel.bad summary{color:var(--bad)}
 .panel.first{margin-top:5.5rem}
+.stopform{display:inline;margin:0 0 0 .6rem}.stopform .btn{padding:.35rem .8rem}
 summary{cursor:pointer;font-weight:600}
 .spin{display:none;width:1rem;height:1rem;border:2px solid #04101f55;border-top-color:#04101f;border-radius:50%;animation:s 1s linear infinite;vertical-align:-.2rem;margin-right:.4rem}
 .busy .spin,.spin.on{display:inline-block}.panel .spin{border-color:#9db0d855;border-top-color:var(--accent);vertical-align:-.15rem}@keyframes s{to{transform:rotate(360deg)}}
@@ -1068,7 +1076,8 @@ summary{cursor:pointer;font-weight:600}
   <button class="btn gear" id="gear" type="button" aria-label="Réglages" title="Réglages"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M9.78 4.73 L10.40 1.93 L13.60 1.93 L14.22 4.73 L15.57 5.29 L18.00 3.75 L20.25 6.00 L18.71 8.43 L19.27 9.78 L22.07 10.40 L22.07 13.60 L19.27 14.22 L18.71 15.57 L20.25 18.00 L18.00 20.25 L15.57 18.71 L14.22 19.27 L13.60 22.07 L10.40 22.07 L9.78 19.27 L8.43 18.71 L6.00 20.25 L3.75 18.00 L5.29 15.57 L4.73 14.22 L1.93 13.60 L1.93 10.40 L4.73 9.78 L5.29 8.43 L3.75 6.00 L6.00 3.75 L8.43 5.29Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
 </header>
 <?php if ($running): ?>
-  <div class="panel first" id="running" role="status"><span class="spin on"></span> Actualisation en cours… <span id="elapsed"><?= (int)$job['elapsed'] ?></span> s — tu peux fermer cette page, elle continue en arrière-plan.</div>
+  <div class="panel first" id="running" role="status"><span class="spin on"></span> <span id="runLabel"><?= is_file(job_base() . '.cancel') ? 'Arrêt en cours (fin du fichier en cours de traitement)…' : 'Actualisation en cours…' ?></span> <span id="elapsed"><?= (int)$job['elapsed'] ?></span> s — tu peux fermer cette page, elle continue en arrière-plan.
+    <form method="post" class="stopform"><input type="hidden" name="action" value="refresh_stop"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><button class="btn" id="stopGo"<?= is_file(job_base() . '.cancel') ? ' disabled' : '' ?>>Arrêter l'actualisation</button></form></div>
 <?php endif; ?>
 <?php if ($flash): ?>
   <details class="panel first <?= $flash['ok'] ? 'ok' : 'bad' ?>" open><summary><?= h((string)($flash['title'] ?? ($flash['ok'] ? 'Index actualisé' : "Échec de l'actualisation"))) ?> — <?= h(date('d/m/Y H:i:s', (int)$flash['at'])) ?></summary><pre><?= h((string)$flash['log']) ?></pre></details>
@@ -1675,6 +1684,7 @@ summary{cursor:pointer;font-weight:600}
         const r = await fetch('?job=1', { cache: 'no-store', credentials: 'same-origin' });
         const j = await r.json();
         $('elapsed').textContent = j.elapsed;
+        if (j.stopping) { $('runLabel').textContent = 'Arrêt en cours (fin du fichier en cours de traitement)…'; $('stopGo').disabled = true; }
         if (j.state !== 'running') { location.reload(); return; }
       } catch (e) { /* réseau ou proxy occupé : on réessaie */ }
       setTimeout(tick, 2500);

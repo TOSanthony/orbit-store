@@ -930,6 +930,7 @@ def main() -> int:
     parser.add_argument("--db", type=Path, help="game database (games-db.json, see make-game-db.py): fills genre, tagline, description, release date and region by title ID; default: <folder>/games-db.json if present")
     parser.add_argument("--desc-url", action="append", default=[], help="catalogue JSON with titleId + description (e.g. https://pegasus-catalog.fly.dev/catalogs/pfs.json); used before the AI, for games and apps; can be repeated, or list them in DESC_URLS separated by commas")
     parser.add_argument("--igdb-max", type=int, default=400, help="most IGDB requests per run (default 400); IGDB is used when IGDB_CLIENT_ID and IGDB_ACCESS_TOKEN (or IGDB_CLIENT_SECRET) are set")
+    parser.add_argument("--cancel-file", type=Path, help="stop cleanly (caches saved, index.json untouched) as soon as this file exists; the admin page's « Arrêter » button creates it")
     parser.add_argument("--ai-lang", default=os.environ.get("GEMINI_LANG", "English"), help="language of the generated description (default English, like the signed catalogue)")
     parser.add_argument("--no-assets", action="store_true", help="do not create assets/coverFallback.png and assets/heroFallback.png")
     parser.add_argument("--ai-model", default=os.environ.get("AI_MODEL") or os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"))
@@ -1311,6 +1312,12 @@ def main() -> int:
     for path in sorted(walk_files(root)):
         if path.suffix.lower() in IMAGE_FORMATS or path.suffix.lower() in ARCHIVES:
             seen_count += 1
+            if args.cancel_file and args.cancel_file.exists():
+                save_caches()
+                save_translations()
+                save_igdb()
+                print(f"Stopped on request after {seen_count - 1}/{len(candidates)} file(s): index.json was not modified. What was learned is kept in the caches; run the refresh again to continue.")
+                return 0
             if seen_count == 1 or seen_count % 10 == 0:
                 print(f"  scan: {seen_count}/{len(candidates)} {path.name}")
             if (cache_dirty or pr_dirty) and time.time() - last_save > 60:
