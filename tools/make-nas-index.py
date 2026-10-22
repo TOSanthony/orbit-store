@@ -538,7 +538,7 @@ def igdb_query(title_id: str, name: str, client_id: str, token: str, errors: lis
         errors.append("IGDB_BASE must be https")
         return None
     search = str(name).replace("\\", " ").replace('"', " ")
-    query = f'fields name, summary, storyline, release_dates.date, release_dates.platform.name, genres.name; search "{search}"; limit 5;'
+    query = f'fields name, summary, storyline, release_dates.date, release_dates.platform.name, genres.name, involved_companies.publisher, involved_companies.developer, involved_companies.company.name; search "{search}"; limit 5;'
     request = urllib.request.Request(f"{base}/games", query.encode("utf-8"), {
         "Client-ID": client_id, "Authorization": f"Bearer {token}", "Accept": "application/json", "User-Agent": PROSPERO_AGENT})
     try:
@@ -572,7 +572,12 @@ def igdb_query(title_id: str, name: str, client_id: str, token: str, errors: lis
         mapped = IGDB_GENRES.get(str((item or {}).get("name", "")).lower())
         if mapped and mapped not in genres:
             genres.append(mapped)
-    return {"name": clean_text(game.get("name"), 80), "summary": clean_text(game.get("summary"), 2000), "story": clean_text(game.get("storyline"), 3000),
+    makers, publishers = [], []
+    for link in game.get("involved_companies") or []:
+        company = clean_text(((link or {}).get("company") or {}).get("name") if isinstance(link, dict) and isinstance(link.get("company"), dict) else "", 60)
+        if company:
+            (publishers if link.get("publisher") else makers).append(company)
+    return {"publisher": (publishers or makers or [""])[0], "name": clean_text(game.get("name"), 80), "summary": clean_text(game.get("summary"), 2000), "story": clean_text(game.get("storyline"), 3000),
             "genre": " / ".join(genres[:3]), "releaseDate": date}
 
 
@@ -1043,7 +1048,7 @@ def main() -> int:
         """Cached IGDB data for a game, asked now when needed (up to --igdb-max per run); unknown games are asked again after 30 days."""
         nonlocal igdb_dirty, igdb_calls, igdb_tok, igdb_dead
         hit = igdb_cache.get(title_id)
-        if isinstance(hit, dict) and hit.get("n") == name and hit.get("v") == 2 and (not hit.get("unknown") or time.time() - float(hit.get("at", 0)) < 30 * 86400):
+        if isinstance(hit, dict) and hit.get("n") == name and hit.get("v") == 3 and (not hit.get("unknown") or time.time() - float(hit.get("at", 0)) < 30 * 86400):
             return None if hit.get("unknown") else hit
         if igdb_dead or igdb_calls >= args.igdb_max or len(igdb_errors) >= 3:
             return None
@@ -1061,11 +1066,11 @@ def main() -> int:
                 igdb_dead = True                        # token refused or expired: stop for this run
             return None
         igdb_errors.clear()
-        if not got or not (got.get("summary") or got.get("story") or got.get("genre") or got.get("releaseDate")):
-            igdb_cache[title_id] = {"unknown": True, "at": time.time(), "n": name, "v": 2}
+        if not got or not (got.get("summary") or got.get("story") or got.get("genre") or got.get("releaseDate") or got.get("publisher")):
+            igdb_cache[title_id] = {"unknown": True, "at": time.time(), "n": name, "v": 3}
             igdb_dirty = True
             return None
-        got.update({"at": time.time(), "n": name, "v": 2})
+        got.update({"at": time.time(), "n": name, "v": 3})
         igdb_cache[title_id] = got
         igdb_dirty = True
         if igdb_calls % 20 == 0:
@@ -1453,7 +1458,7 @@ def main() -> int:
             db_fields.add("description")
             catalog_hits += 1
         if igdb_on and pack not in ("DLC", "UPDATES"):
-            wanted_igdb = [f for f in ("description", "genre", "releaseDate") if not extra.get(f) and f not in db_fields and f not in pr_fields]
+            wanted_igdb = [f for f in ("description", "genre", "releaseDate", "publisher") if not extra.get(f) and f not in db_fields and f not in pr_fields and not (f == "publisher" and row.get("publisher"))]
             got = igdb_lookup(title_id, row["title"]) if wanted_igdb else None
             if got:
                 igdb_hits += 1
@@ -1463,7 +1468,7 @@ def main() -> int:
                         text = text[:1500].rsplit(" ", 1)[0].rstrip(",;:-") + "…"
                     row["description"] = translated(title_id, text) if translating else text
                     db_fields.add("description")
-                for field in ("genre", "releaseDate"):
+                for field in ("genre", "releaseDate", "publisher"):
                     if field in wanted_igdb and got.get(field):
                         row[field] = got[field]
                         db_fields.add(field)
