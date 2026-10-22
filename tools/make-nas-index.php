@@ -11,12 +11,12 @@
  *      ou dans un autre dossier et règle $GAMES_DIR.
  *   2. Crée l'empreinte de ton mot de passe (en SSH, ou terminal du Synology) :
  *          php make-nas-index.php hash
- *      puis colle le résultat dans $PASSWORD_HASH ci-dessous (ou dans nas-admin.config.php).
+ *      puis colle le résultat dans $PASSWORD_HASH ci-dessous (ou dans config.php).
  *   3. Règle $PYTHON (commande `which python3`), ouvre https://ton.domaine/dossier/make-nas-index.php
  *
- * Les réglages peuvent aussi être placés dans nas-admin.config.php (à côté de ce fichier) :
+ * Tous les réglages ci-dessous peuvent être placés dans config.php (à côté de ce fichier ; modèle : make-nas-config.php) :
  *     <?php return ['PASSWORD_HASH' => '...', 'PYTHON' => '/usr/bin/python3'];
- * pour que la mise à jour de ce fichier ne les écrase pas.
+ * Les valeurs de config.php remplacent celles d'ici : remplacer make-nas-index.php et make-nas-index.py ne les écrase jamais.
  *
  * Ligne de commande : `php make-nas-index.php hash` | `php make-nas-index.php refresh [--no-param] [--no-prospero] [--ai]` (param.json/.pkg et prosperopatches.com sont actifs par défaut).
  */
@@ -53,17 +53,20 @@ $PATCH_TIMEOUT = 21600;                                 // secondes max pour un 
 $CONSOLE_FW    = '';                                    // firmware de ta PS5 (ex. '10.20') : sert à repérer les patchs compatibles
 // ---------------------------------------------------------------------------
 
-$extra = __DIR__ . '/nas-admin.config.php';
-if (is_file($extra)) {
+// Réglages personnels : config.php (à côté de ce fichier) puis, pour compatibilité, nas-admin.config.php.
+// Remplacer make-nas-index.php / make-nas-index.py ne touche jamais à ces fichiers.
+const CONFIG_KEYS = ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_PROVIDER','AI_BASE','AI_API_KEYS','AI_MODEL','DESC_URLS','IGDB_CLIENT_ID','IGDB_CLIENT_SECRET','IGDB_ACCESS_TOKEN','AI_MAX','AI_LANG','UPDATE_REPO','UPDATE_BRANCH','ALLOW_LINKS','LINK_ROOTS','FETCH_SCRIPT','PATCH_TIMEOUT','CONSOLE_FW'];
+foreach ([__DIR__ . '/nas-admin.config.php', __DIR__ . '/config.php'] as $extra) {
+    if (!is_file($extra)) continue;
     $cfg = require $extra;
-    if (is_array($cfg)) {
-        foreach ($cfg as $k => $v) {
-            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_PROVIDER','AI_BASE','AI_API_KEYS','AI_MODEL','DESC_URLS','IGDB_CLIENT_ID','IGDB_CLIENT_SECRET','IGDB_ACCESS_TOKEN','AI_MAX','AI_LANG','UPDATE_REPO','UPDATE_BRANCH','ALLOW_LINKS','LINK_ROOTS','FETCH_SCRIPT','PATCH_TIMEOUT','CONSOLE_FW'], true)) {
-                $$k = $v;
-            }
+    if (!is_array($cfg)) continue;
+    foreach ($cfg as $k => $v) {
+        if (in_array($k, CONFIG_KEYS, true)) {
+            $$k = $v;
         }
     }
 }
+unset($extra, $cfg, $k, $v);
 
 const IMAGE_TYPES = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'webp' => 'image/webp'];
 
@@ -698,7 +701,7 @@ if (isset($_GET['versions'])) {
 }
 
 // ---- Dossiers de jeux : navigation et liens symboliques ----------------------------------
-const LINK_RESERVED = ['index.json', 'covers', 'assets', 'make-nas-index.php', 'make-nas-index.py', 'nas-admin.config.php', 'titles.json'];
+const LINK_RESERVED = ['index.json', 'covers', 'assets', 'make-nas-index.php', 'make-nas-index.py', 'nas-admin.config.php', 'config.php', 'titles.json'];
 /** @return string[] racines réelles (ex. /volume2, /volume3) où la navigation est permise */
 function link_roots(): array
 {

@@ -173,6 +173,8 @@ def extract_art(zip_path: Path, title_id: str, root: Path, folder: str, images: 
     files are kept unless --refresh-covers is given, and an image of yours (.jpg / .webp in
     covers/) is never replaced. Returns the kinds that were written."""
     written = []
+    if not refresh and all(custom_art(root, images, title_id, kind) or f"{title_id}_{kind}.png".lower() in images for kind in ART_NAMES):
+        return written                                   # every picture is already there: the archive is not opened at all
     try:
         with zipfile.ZipFile(zip_path) as archive:
             for kind, wanted in ART_NAMES.items():
@@ -960,6 +962,7 @@ def main() -> int:
     parser.add_argument("--db", type=Path, help="game database (games-db.json, see make-game-db.py): fills genre, tagline, description, release date and region by title ID; default: <folder>/games-db.json if present")
     parser.add_argument("--desc-url", action="append", default=[], help="catalogue JSON with titleId + description (e.g. https://pegasus-catalog.fly.dev/catalogs/pfs.json); used before the AI, for games and apps; can be repeated, or list them in DESC_URLS separated by commas")
     parser.add_argument("--igdb-max", type=int, default=400, help="most IGDB requests per run (default 400); IGDB is used when IGDB_CLIENT_ID and IGDB_ACCESS_TOKEN (or IGDB_CLIENT_SECRET) are set")
+    parser.add_argument("--full", action="store_true", help="full scan: ignore .file-cache.json and read every archive again (by default a file that has not changed since the last scan is not opened again)")
     parser.add_argument("--cancel-file", type=Path, help="stop cleanly (caches saved, index.json untouched) as soon as this file exists; the admin page's « Arrêter » button creates it")
     parser.add_argument("--ai-lang", default=os.environ.get("GEMINI_LANG", "English"), help="language of the generated description (default English, like the signed catalogue)")
     parser.add_argument("--no-assets", action="store_true", help="do not create assets/coverFallback.png and assets/heroFallback.png")
@@ -1157,6 +1160,14 @@ def main() -> int:
         pkg_cache = {}
     pkg_cache = pkg_cache if isinstance(pkg_cache, dict) else {}
     pkg_dirty = False
+    # Incremental scan: what was read INSIDE a file (param.json, archive layout, SHA-256), by path, valid while its size and date are unchanged.
+    fc_path = root / ".file-cache.json"
+    try:
+        file_cache = json.loads(fc_path.read_text("utf-8")) if fc_path.is_file() else {}
+    except (OSError, ValueError):
+        file_cache = {}
+    file_cache = file_cache if isinstance(file_cache, dict) else {}
+    fc_dirty, fc_hits, fc_reads = False, 0, 0
     pr_dirty, pr_calls, pr_done, pr_images, pr_errors, pr_fail = False, 0, 0, 0, [], 0
     pr_left = set()
 
@@ -1267,10 +1278,11 @@ def main() -> int:
         return 1
     def save_caches():
         """Write .ai-cache.json / .prospero-cache.json when they changed (also on a stop or a crash)."""
-        nonlocal cache_dirty, pr_dirty, pkg_dirty
+        nonlocal cache_dirty, pr_dirty, pkg_dirty, fc_dirty
         for name, data, target, dirty in ((".ai-cache.json", cache, cache_path, cache_dirty),
                                           (".prospero-cache.json", pr_cache, pr_path, pr_dirty),
-                                          (".pkg-cache.json", pkg_cache, pkg_path, pkg_dirty)):
+                                          (".pkg-cache.json", pkg_cache, pkg_path, pkg_dirty),
+                                          (".file-cache.json", file_cache, fc_path, fc_dirty)):
             if not dirty:
                 continue
             try:
@@ -1283,8 +1295,12 @@ def main() -> int:
                 continue
             if target is cache_path:
                 cache_dirty = False
-            else:
+            elif target is pr_path:
                 pr_dirty = False
+            elif target is pkg_path:
+                pkg_dirty = False
+            else:
+                fc_dirty = False
 
     _ON_EXIT.append(save_caches)
     _ON_EXIT.append(save_translations)
@@ -1336,10 +1352,11 @@ def main() -> int:
     last_save = time.time()
     from_param = 0
     pack_rows = 0
-    candidates = [p for p in sorted(walk_files(root)) if p.suffix.lower() in IMAGE_FORMATS or p.suffix.lower() in ARCHIVES]
+    all_files = sorted(walk_files(root))                # the tree is walked once (slow on a network volume)
+    candidates = [p for p in all_files if p.suffix.lower() in IMAGE_FORMATS or p.suffix.lower() in ARCHIVES]
     print(f"scan: {len(candidates)} candidate file(s) in {root}")
     seen_count = 0
-    for path in sorted(walk_files(root)):
+    for path in all_files:
         if path.suffix.lower() in IMAGE_FORMATS or path.suffix.lower() in ARCHIVES:
             seen_count += 1
             if args.cancel_file and args.cancel_file.exists():
@@ -1363,7 +1380,22 @@ def main() -> int:
             continue
         key = relative.as_posix()
         extra = overrides.get(key, {})
-        param = read_param(path) if suffix == ".zip" and not args.no_param else None
+        try:
+            fstat = path.stat()
+            fstamp = {"size": fstat.st_size, "mtime": fstat.st_mtime_ns}
+        except OSError:
+            fstamp = None
+        fc = file_cache.get(key) if isinstance(file_cache.get(key), dict) else {}
+        fc_valid = bool(fstamp) and not (args.full or args.refresh_covers) and fc.get("size") == fstamp["size"] and fc.get("mtime") == fstamp["mtime"]
+        if not fc_valid:
+            fc = dict(fstamp or {})
+        param = None
+        if suffix == ".zip" and not args.no_param:
+            if fc_valid and "param" in fc:
+                param, fc_hits = fc["param"], fc_hits + 1
+            else:
+                param, fc_reads = read_param(path), fc_reads + 1
+                fc["param"] = param
         pkg = None
         if suffix == ".pkg" and not args.no_param:
             try:
@@ -1431,7 +1463,13 @@ def main() -> int:
                 own_title = bool(pkg["title"]) and not extra.get("title")
         if suffix in ARCHIVES:
             row["compression"] = ARCHIVES[suffix]
-            inner = inspect_zip(path) if suffix == ".zip" else None
+            inner = None
+            if suffix == ".zip":
+                if fc_valid and "inner" in fc:
+                    inner = tuple(fc["inner"]) if fc["inner"] else None
+                else:
+                    inner = inspect_zip(path)
+                    fc["inner"] = list(inner) if inner else None
             if extra.get("format"):
                 row["format"] = extra["format"]
             if inner:
@@ -1446,7 +1484,10 @@ def main() -> int:
         row["sha256"] = ""
         if args.sha256:
             try:
-                row["sha256"] = sha256_of(path)
+                if fc_valid and fc.get("sha256"):
+                    row["sha256"] = fc["sha256"]
+                else:
+                    row["sha256"] = fc["sha256"] = sha256_of(path)
             except OSError as problem:
                 skipped.append((key, f"cannot read it to compute its SHA-256 ({problem.strerror or type(problem).__name__})"))
                 continue
@@ -1568,6 +1609,9 @@ def main() -> int:
         row["consoleVerified"] = False
         row["browserAvailable"] = False
         row["directAvailable"] = True
+        if fstamp and file_cache.get(key) != fc:
+            file_cache[key] = fc
+            fc_dirty = True
         rows.append(row)
 
     # DLC / updates take the name (and missing details) of the game itself when it is in the same index,
@@ -1620,6 +1664,8 @@ def main() -> int:
         print(f"  IGDB: {igdb_hits} game(s) completed, {igdb_calls} request(s) this run" + (f" (problem: {igdb_errors[-1]})" if igdb_errors else ""))
         if igdb_calls >= args.igdb_max:
             notes.append(f"IGDB limit of {args.igdb_max} requests per run reached; run the refresh again to continue")
+    if fc_hits or fc_reads:
+        print(f"  incremental: {fc_hits} archive(s) unchanged since the last scan (not opened again), {fc_reads} read" + ("" if not args.full else " (full scan)"))
     if args.ai and keys:
         print(f"  AI descriptions ({'own AI' if own_ai else 'Gemini'}): {ai_done} written, {ai_calls} request(s) this run" + (f" (last problem: {ai_errors[-1]})" if ai_errors else ""))
     if translating:
