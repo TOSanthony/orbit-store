@@ -558,7 +558,10 @@ def igdb_query(title_id: str, name: str, client_id: str, token: str, errors: lis
     if data is None:
         # 2. By the game's name.
         time.sleep(0.3)
-        search = str(name).replace("\\", " ").replace('"', " ")
+        # "Gran Turismo®SPORT" -> "Gran Turismo SPORT", "Marvel™'s" -> "Marvel's": trademark and copyright signs never reach the search.
+        search = re.sub(r"(?<=\w)[\u00ae\u2122\u00a9\u2120\u2117]+(?=\w)", " ", str(name))      # between two words: a space
+        search = re.sub(r"[\u00ae\u2122\u00a9\u2120\u2117]+", "", search).replace("\\", " ").replace('"', " ")   # elsewhere: removed
+        search = " ".join(search.split())
         data, ok = post("games", f'{fields} search "{search}"; limit 5;')
         if not ok:
             return None
