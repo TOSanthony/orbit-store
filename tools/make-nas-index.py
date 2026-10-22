@@ -90,6 +90,16 @@ def title_from(name: str) -> str:
     return re.sub(r"\s+", " ", stem).strip(" -.") or Path(name).stem
 
 
+REGION_TAG = re.compile(r"\s*[\(\[]\s*(?:US|USA|EU|EUR|UK|FR|DE|ES|IT|JP|JPN|AS|ASIA|KR|CN|HK|PT|NL|RU|BR|AU|NA|WW|PAL|NTSC)"
+                        r"(?:\s*[,/&+-]\s*(?:US|USA|EU|EUR|UK|FR|DE|ES|IT|JP|JPN|AS|ASIA|KR|CN|HK|PT|NL|RU|BR|AU|NA|WW|PAL|NTSC))*\s*[\)\]]", re.I)
+
+
+def clean_title(title: str) -> str:
+    """The title without region tags such as "(US)", "(FR)", "[JP]" or "(EU/US)"; unchanged when nothing else would be left."""
+    cleaned = " ".join(REGION_TAG.sub(" ", str(title or "")).split()).strip(" -")
+    return cleaned or str(title or "")
+
+
 IMAGE_TYPES = (".jpg", ".png", ".jpeg", ".webp")   # the small optimised copy wins over the PNG
 
 
@@ -1474,7 +1484,7 @@ def main() -> int:
             db_hits += 1
         if igdb_on and pack not in ("DLC", "UPDATES"):
             wanted_igdb = [f for f in ("description", "releaseDate") if not extra.get(f) and f not in db_fields and f not in pr_fields]
-            got = igdb_lookup(title_id, row["title"])  # found by the game's code, else by its name if wanted_igdb else None
+            got = igdb_lookup(title_id, clean_title(row["title"]))  # found by the game's code, else by its name if wanted_igdb else None
             if got:
                 igdb_hits += 1
                 if "description" in wanted_igdb and got.get("summary"):
@@ -1538,6 +1548,8 @@ def main() -> int:
             if info and info.get("description"):
                 ai_done += 1
                 row["description"] = info["description"]
+        if not extra.get("title"):
+            row["title"] = clean_title(row["title"])          # "(US)", "(FR)", "(JP)"... are not part of the game's name
         if translating and to_translate and row.get("description") == to_translate:
             row["description"] = translated(title_id, to_translate)       # last step: your AI translates it (cached)
         try:
