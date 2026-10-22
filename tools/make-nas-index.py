@@ -879,8 +879,8 @@ def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list, lang: st
     return None
 
 
-DESC_TARGET = 350       # a long description is summarised to about this many characters, like the other games' texts
-DESC_LONG = 420         # a text up to this length is only translated
+DESC_TARGET = 450       # a long description is summarised to at most this many characters
+DESC_LONG = 450         # a text up to this length is only translated
 
 
 def ai_translate(text: str, lang: str, keys, model: str, errors: list, dead=None, provider: str = "gemini", base: str = ""):
@@ -888,7 +888,7 @@ def ai_translate(text: str, lang: str, keys, model: str, errors: list, dead=None
     None when the answer looks wrong (empty, cut short, much too long)."""
     summarise = len(text) > DESC_LONG
     if summarise:
-        prompt = (f"Summarise this PlayStation game description in {lang}, in 2 or 3 sentences and about {DESC_TARGET} characters at most. "
+        prompt = (f"Summarise this PlayStation game description in {lang}, in 3 or 4 sentences and {DESC_TARGET} characters at most. "
                   "Keep the game's name and its main features; no list, no introduction, no comment. Answer with the summary only.\n\n" + text)
     else:
         prompt = (f"Translate this PlayStation game description into {lang}. Keep the meaning, the names (game, characters, places) and the bullet points; "
@@ -898,9 +898,9 @@ def ai_translate(text: str, lang: str, keys, model: str, errors: list, dead=None
         return None
     answer = clean_text(re.sub(r"^```\w*\s*|\s*```$", "", answer.strip()), 2000).strip(" \"'")
     if summarise:
-        if len(answer) > DESC_TARGET + 100:
-            cut = max(answer.rfind(". ", 0, DESC_TARGET + 60), answer.rfind("! ", 0, DESC_TARGET + 60), answer.rfind("? ", 0, DESC_TARGET + 60))
-            answer = answer[:cut + 1] if cut >= 150 else ""
+        if len(answer) > DESC_TARGET:
+            cut = max(answer.rfind(". ", 0, DESC_TARGET), answer.rfind("! ", 0, DESC_TARGET), answer.rfind("? ", 0, DESC_TARGET))
+            answer = answer[:cut + 1] if cut >= 150 else ""               # cut after the last complete sentence that fits
         if len(answer) < 120:
             errors.append("summary rejected (wrong length)")
             return None
