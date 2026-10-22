@@ -497,7 +497,7 @@ def load_descriptions(urls, cache_file: Path, notes: list):
     if found:
         try:
             temporary = cache_file.with_name(cache_file.name + ".part")
-            temporary.write_text(json.dumps({"at": time.time(), "urls": urls, "d": found}, ensure_ascii=False), "utf-8")
+            temporary.write_text(json.dumps({"at": time.time(), "urls": urls, "d": found}, ensure_ascii=False, indent=1), "utf-8")
             temporary.replace(cache_file)
         except OSError:
             notes.append("could not save .descriptions-cache.json (folder not writable?)")
@@ -1028,7 +1028,7 @@ def main() -> int:
             return
         try:
             temporary = igdb_path.with_name(igdb_path.name + ".part")
-            temporary.write_text(json.dumps(igdb_cache, ensure_ascii=False), "utf-8")
+            temporary.write_text(json.dumps(igdb_cache, ensure_ascii=False, indent=1), "utf-8")
             temporary.replace(igdb_path)
             igdb_dirty = False
         except OSError:
@@ -1082,7 +1082,7 @@ def main() -> int:
             return
         try:
             temporary = tr_path.with_name(tr_path.name + ".part")
-            temporary.write_text(json.dumps(tr_cache, ensure_ascii=False), "utf-8")
+            temporary.write_text(json.dumps(tr_cache, ensure_ascii=False, indent=1), "utf-8")
             temporary.replace(tr_path)
             tr_dirty = False
         except OSError:

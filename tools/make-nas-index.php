@@ -428,7 +428,7 @@ function patch_saved_set(string $id, string $version, string $link, ?string $tit
     if (count($all) > 500) $all = array_slice($all, -500, null, true);
     ftruncate($fh, 0);
     rewind($fh);
-    fwrite($fh, json_encode($all, JSON_UNESCAPED_SLASHES));
+    fwrite($fh, json_encode($all, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
     fflush($fh);
     flock($fh, LOCK_UN);
     fclose($fh);
