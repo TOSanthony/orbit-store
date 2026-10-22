@@ -1418,7 +1418,7 @@ def main() -> int:
             "path": quote(key, safe="/"),
             "sizeBytes": size,
         }
-        pr_fields, pr_title = set(), False
+        pr_fields, pr_title, site_title = set(), False, False
         art_id = title_id                      # the picture's name: a DLC has its own icon, named by its label
         own_title = False                      # a DLC is named by its package, not by its game's page
         if pkg and pkg["contentId"] and pkg["titleId"] in ("", title_id):
@@ -1469,7 +1469,7 @@ def main() -> int:
                 for f in pr_fields:
                     row[f] = got[f]
                 if got.get("name") and not extra.get("title") and not own_title:      # apps, DLC and updates too: the site's name, as written
-                    row["title"], pr_title = got["name"], True
+                    row["title"], pr_title, site_title = got["name"], True, True
                 for kind, source in (("icon0", "icon"), ("pic1", "hero")):
                     pr_images += prospero_art(title_id, kind, got.get(source, ""), got.get("heroAlt", "") if kind == "pic1" else "")
         db_fields = set()
@@ -1550,8 +1550,8 @@ def main() -> int:
             if info and info.get("description"):
                 ai_done += 1
                 row["description"] = info["description"]
-        if not extra.get("title"):
-            row["title"] = clean_title(row["title"])          # "(US)", "(FR)", "(JP)"... are not part of the game's name
+        if not extra.get("title") and not site_title:
+            row["title"] = clean_title(row["title"])          # a title from a file, param.json or .pkg loses "(US)", "(FR)", ®, ™...; the site's title is kept exactly
         if translating and to_translate and row.get("description") == to_translate:
             row["description"] = translated(title_id, to_translate)       # last step: your AI translates it (cached)
         try:
