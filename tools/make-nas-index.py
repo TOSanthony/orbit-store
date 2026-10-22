@@ -529,19 +529,39 @@ def igdb_query(title_id: str, name: str, client_id: str, token: str, errors: lis
     if not (base.startswith("https://") or base.startswith("http://127.0.0.1")):
         errors.append("IGDB_BASE must be https")
         return None
-    search = str(name).replace("\\", " ").replace('"', " ")
-    query = f'fields name, summary, storyline, first_release_date; search "{search}"; limit 5;'
-    request = urllib.request.Request(f"{base}/games", query.encode("utf-8"), {
-        "Client-ID": client_id, "Authorization": f"Bearer {token}", "Accept": "application/json", "User-Agent": PROSPERO_AGENT})
-    try:
-        with urllib.request.urlopen(request, timeout=20) as reply:
-            data = json.loads(reply.read(4 << 20).decode("utf-8"))
-    except urllib.error.HTTPError as problem:
-        errors.append(f"IGDB HTTP {problem.code}")
-        return None
-    except (urllib.error.URLError, OSError, ValueError) as problem:
-        errors.append(f"IGDB {type(problem).__name__}")
-        return None
+    headers = {"Client-ID": client_id, "Authorization": f"Bearer {token}", "Accept": "application/json", "User-Agent": PROSPERO_AGENT}
+
+    def post(endpoint: str, query: str):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(f"{base}/{endpoint}", query.encode("utf-8"), headers), timeout=20) as reply:
+                return json.loads(reply.read(4 << 20).decode("utf-8")), True
+        except urllib.error.HTTPError as problem:
+            errors.append(f"IGDB HTTP {problem.code}")
+        except (urllib.error.URLError, OSError, ValueError) as problem:
+            errors.append(f"IGDB {type(problem).__name__}")
+        return None, False
+
+    fields = "fields name, summary, storyline, first_release_date;"
+    data = None
+    if re.fullmatch(r"(?:PPSA|CUSA)\d{5}", title_id):
+        # 1. By the game's code, when IGDB knows it (a store identifier containing the Title ID).
+        linked, ok = post("external_games", f'fields game; where uid ~ *"{title_id}"* & game != null; limit 1;')
+        if not ok:
+            return None
+        if isinstance(linked, list) and linked and isinstance(linked[0], dict) and isinstance(linked[0].get("game"), int):
+            time.sleep(0.3)
+            data, ok = post("games", f"{fields} where id = {linked[0]['game']};")
+            if not ok:
+                return None
+            if not data:
+                data = None
+    if data is None:
+        # 2. By the game's name.
+        time.sleep(0.3)
+        search = str(name).replace("\\", " ").replace('"', " ")
+        data, ok = post("games", f'{fields} search "{search}"; limit 5;')
+        if not ok:
+            return None
     if not isinstance(data, list) or not data:
         return {}
     wanted = _igdb_key(name)
@@ -1414,6 +1434,7 @@ def main() -> int:
                 for kind, source in (("icon0", "icon"), ("pic1", "hero")):
                     pr_images += prospero_art(title_id, kind, got.get(source, ""), got.get("heroAlt", "") if kind == "pic1" else "")
         db_fields = set()
+        to_translate = ""                      # a description from IGDB or the catalogue, in English: translated once everything else is known
         entry = game_db.get(title_id)
         if entry:
             # Game database: after titles.json / param.json / the site, before the AI. Remote cover/hero URLs are not used.
@@ -1424,25 +1445,25 @@ def main() -> int:
             if entry.get("title") and not extra.get("title") and not (param or {}).get("title") and not pr_title and not own_title:
                 row["title"], pr_title = entry["title"], True
             db_hits += 1
-        if catalog_desc.get(title_id) and pack not in ("DLC", "UPDATES") and not extra.get("description") and "description" not in db_fields:
-            row["description"] = translated(title_id, catalog_desc[title_id]) if translating else catalog_desc[title_id]   # the catalogue's own text, translated by your AI
-            db_fields.add("description")
-            catalog_hits += 1
         if igdb_on and pack not in ("DLC", "UPDATES"):
             wanted_igdb = [f for f in ("description", "releaseDate") if not extra.get(f) and f not in db_fields and f not in pr_fields]
-            got = igdb_lookup(title_id, row["title"]) if wanted_igdb else None
+            got = igdb_lookup(title_id, row["title"])  # found by the game's code, else by its name if wanted_igdb else None
             if got:
                 igdb_hits += 1
                 if "description" in wanted_igdb and (got.get("summary") or got.get("story")):
                     text = " ".join(x for x in (got.get("summary"), got.get("story")) if x)      # IGDB's summary, then its "Story" text
                     if len(text) > 1500:
                         text = text[:1500].rsplit(" ", 1)[0].rstrip(",;:-") + "…"
-                    row["description"] = translated(title_id, text) if translating else text
+                    row["description"] = to_translate = text            # translated at the end
                     db_fields.add("description")
                 for field in ("releaseDate",):
                     if field in wanted_igdb and got.get(field):
                         row[field] = got[field]
                         db_fields.add(field)
+        if catalog_desc.get(title_id) and pack not in ("DLC", "UPDATES") and not extra.get("description") and "description" not in db_fields:
+            row["description"] = to_translate = catalog_desc[title_id]     # the catalogue's own text, when IGDB had none; translated at the end
+            db_fields.add("description")
+            catalog_hits += 1
         if suffix == ".zip" and not args.no_extract:
             for kind in extract_art(path, title_id, root, args.covers, images, args.refresh_covers):
                 extracted.append(f"{title_id}_{kind}.png")
@@ -1494,6 +1515,8 @@ def main() -> int:
                 for field in AI_FIELDS:
                     if field in wanted and info.get(field):
                         row[field] = info[field]
+        if translating and to_translate and row.get("description") == to_translate:
+            row["description"] = translated(title_id, to_translate)       # last step: your AI translates it (cached)
         try:
             modified = path.stat().st_mtime
         except OSError:
