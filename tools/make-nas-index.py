@@ -95,8 +95,10 @@ REGION_TAG = re.compile(r"\s*[\(\[]\s*(?:US|USA|EU|EUR|UK|FR|DE|ES|IT|JP|JPN|AS|
 
 
 def clean_title(title: str) -> str:
-    """The title without region tags such as "(US)", "(FR)", "[JP]" or "(EU/US)"; unchanged when nothing else would be left."""
-    cleaned = " ".join(REGION_TAG.sub(" ", str(title or "")).split()).strip(" -")
+    """The title without ®, ™, © and region tags such as "(US)", "(FR)", "[JP]" or "(EU/US)"; unchanged when nothing else would be left."""
+    text = re.sub(r"(?<=\w)[\u00ae\u2122\u00a9\u2120\u2117]+(?=\w)", " ", str(title or ""))     # "LittleBigPlanet™3" -> "LittleBigPlanet 3"
+    text = re.sub(r"[\u00ae\u2122\u00a9\u2120\u2117]+", "", text)                              # elsewhere: removed
+    cleaned = " ".join(REGION_TAG.sub(" ", text).split()).strip(" -")
     return cleaned or str(title or "")
 
 
