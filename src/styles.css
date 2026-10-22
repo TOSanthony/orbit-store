@@ -1376,6 +1376,7 @@ html.pointer .source-acknowledgement:hover {
   flex-direction: column;
   gap: 0.4rem;
   max-width: 70rem;
+  margin: 0 auto; /* centred like the Updates and DLC lists (.game-updates) */
 }
 .queue-row {
   display: flex;
