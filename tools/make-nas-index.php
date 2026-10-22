@@ -40,7 +40,7 @@ $AI_API_KEYS   = [];                                   // avec 'openai' : clés 
 $AI_MODEL      = '';                                   // avec 'openai' : nom du modèle, ex. 'llama3.1:8b' (sinon $GEMINI_MODEL)
 $DESC_URLS     = ['https://pegasus-catalog.fly.dev/catalogs/pfs.json', 'https://pegasus-catalog.fly.dev/catalogs/dlps.json'];  // catalogues (titleId + description) : le texte des jeux et applications, sans IA ni limite par passage ([] pour désactiver)
 $AI_MAX        = 40;                                   // requêtes IA max par actualisation
-$AI_LANG       = 'English';                            // langue des descriptions ('français', 'English'...)
+$AI_LANG       = 'English';                            // langue des descriptions ; si ce n'est pas 'English', les descriptions du catalogue ($DESC_URLS) sont traduites par l'IA ('français'...)
 $UPDATE_REPO   = 'TOSanthony/orbit-store';              // dépôt GitHub dont on affiche les versions (Réglages)
 $UPDATE_BRANCH = 'updates';                             // branche qui porte payloads.json et tv-app.json
 $ALLOW_LINKS   = true;                                  // Réglages : choisir un dossier et créer un lien symbolique vers lui
@@ -1103,7 +1103,7 @@ summary{cursor:pointer;font-weight:600}
     <input type="hidden" name="action" value="refresh"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
     <p class="muted">Toujours actif : lecture du param.json des .zip PS5 et de l'intérieur des .pkg (titre, identifiant, version, icône, DLC), et récupération du titre, de l'éditeur, de la région, de l'icône et du fond sur prosperopatches.com (tes propres images de covers/ restent prioritaires).</p>
 <?php if (ai_ready()): ?>
-    <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (<?= h(ai_label()) ?>) les infos manquantes des jeux et applications (description, éditeur, genre, accroche, date de sortie)</label>
+    <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (<?= h(ai_label()) ?>) les infos manquantes des jeux et applications (description, éditeur, genre, accroche, date de sortie) et traduire les descriptions du catalogue</label>
 <?php endif; ?>
     <label><input type="checkbox" name="refresh_covers" value="1"> Remplacer les images déjà extraites des .zip</label>
     <label><input type="checkbox" name="sha256" value="1"> Calculer les SHA-256 (long sur de gros fichiers)</label>

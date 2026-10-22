@@ -712,10 +712,10 @@ def ai_prompt(title_id: str, hint: str, lang: str) -> str:
     )
 
 
-def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list, lang: str = "English", dead=None, provider: str = "gemini", base: str = ""):
-    """Ask the AI for the game's name, description and publisher; None when it cannot say.
-    provider "gemini": Google Gemini. provider "openai": your own AI, any server with an OpenAI-style
-    /chat/completions API (Ollama, LM Studio, llama.cpp, vLLM, OpenAI, OpenRouter...) at `base`."""
+def ai_call(prompt: str, keys, model: str, errors: list, dead=None, provider: str = "gemini", base: str = "", json_mode: bool = True):
+    """Send one prompt to the AI, return its text answer or None.
+    provider "gemini": Google Gemini. "ollama": your Ollama server (native /api/generate). "openai": any server with an
+    OpenAI-style /chat/completions API (LM Studio, llama.cpp, vLLM, OpenAI, OpenRouter...) at `base`."""
     ollama = provider == "ollama"
     custom = provider in ("openai", "ollama")
     if custom:
@@ -726,25 +726,22 @@ def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list, lang: st
         if ollama:
             base = re.sub(r"/api(?:/(?:generate|chat))?$", "", base)          # the host is enough; a full /api/generate address works too
             url = f"{base}/api/generate"
-            body = json.dumps({"model": model, "prompt": ai_prompt(title_id, hint, lang), "stream": False, "format": "json",
-                               "options": {"temperature": 0.2}}).encode("utf-8")
+            payload_out = {"model": model, "prompt": prompt, "stream": False, "options": {"temperature": 0.2}}
+            if json_mode:
+                payload_out["format"] = "json"
         else:
             url = f"{base}/chat/completions"
-        body = body if ollama else json.dumps({
-            "model": model,
-            "messages": [{"role": "user", "content": ai_prompt(title_id, hint, lang)}],
-            "temperature": 0.2,
-        }).encode("utf-8")
+            payload_out = {"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}
     else:
         base = os.environ.get("GEMINI_BASE", GEMINI_BASE).rstrip("/")
         if not (base.startswith("https://") or base.startswith("http://127.0.0.1")):
             errors.append("GEMINI_BASE must be https")
             return None
         url = f"{base}/models/{model}:generateContent"
-        body = json.dumps({
-            "contents": [{"parts": [{"text": ai_prompt(title_id, hint, lang)}]}],
-            "generationConfig": {"responseMimeType": "application/json"},
-        }).encode("utf-8")
+        payload_out = {"contents": [{"parts": [{"text": prompt}]}]}
+        if json_mode:
+            payload_out["generationConfig"] = {"responseMimeType": "application/json"}
+    body = json.dumps(payload_out).encode("utf-8")
     dead = dead if dead is not None else set()
     for key in keys:
         if key in dead:
@@ -771,31 +768,58 @@ def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list, lang: st
             if custom:
                 text = payload["response"] if ollama else payload["choices"][0]["message"]["content"]
                 text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)       # reasoning models
-                found = re.search(r"\{.*\}", text, re.S)
-                text = found.group(0) if found else text
             else:
                 text = payload["candidates"][0]["content"]["parts"][0]["text"]
-            data = json.loads(re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.IGNORECASE))
+            if isinstance(text, str):
+                return text
         except (KeyError, IndexError, TypeError, ValueError):
-            errors.append("unreadable answer")
-            continue
-        if isinstance(data, dict):
-            date = clean_text(data.get("releaseDate"), 10)
-            result = {
-                "v": 3,
-                "name": clean_text(data.get("name"), 60),
-                "description": clean_text(data.get("description"), 190),
-                "author": clean_text(data.get("author"), 60),
-                "genre": clean_text(data.get("genre"), 60),
-                "tagline": clean_text(data.get("tagline"), 60),
-                "region": clean_text(data.get("region"), 4).upper() if clean_text(data.get("region"), 4).upper() in REGIONS else "",
-                "releaseDate": date if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) else "",
-            }
-            if result["description"] or result["author"]:
-                return result
-            errors.append("game not recognised")
-            return None
+            pass
+        errors.append("unreadable answer")
     return None
+
+
+def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list, lang: str = "English", dead=None, provider: str = "gemini", base: str = ""):
+    """Ask the AI for the game's name, description and publisher; None when it cannot say."""
+    before = len(errors)
+    text = ai_call(ai_prompt(title_id, hint, lang), keys, model, errors, dead, provider, base)
+    if text is None:
+        return None
+    try:
+        found = re.search(r"\{.*\}", text, re.S) if provider != "gemini" else None
+        data = json.loads(re.sub(r"^```(?:json)?\s*|\s*```$", "", (found.group(0) if found else text).strip(), flags=re.IGNORECASE))
+    except ValueError:
+        errors.append("unreadable answer")
+        return None
+    if isinstance(data, dict):
+        date = clean_text(data.get("releaseDate"), 10)
+        result = {
+            "v": 3,
+            "name": clean_text(data.get("name"), 60),
+            "description": clean_text(data.get("description"), 190),
+            "author": clean_text(data.get("author"), 60),
+            "genre": clean_text(data.get("genre"), 60),
+            "tagline": clean_text(data.get("tagline"), 60),
+            "region": clean_text(data.get("region"), 4).upper() if clean_text(data.get("region"), 4).upper() in REGIONS else "",
+            "releaseDate": date if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) else "",
+        }
+        if result["description"] or result["author"]:
+            return result
+        errors.append("game not recognised")
+    return None
+
+
+def ai_translate(text: str, lang: str, keys, model: str, errors: list, dead=None, provider: str = "gemini", base: str = ""):
+    """The description translated into `lang` by the AI; None when the answer looks wrong (empty, cut short, much too long)."""
+    prompt = (f"Translate this PlayStation game description into {lang}. Keep the meaning, the names (game, characters, places) and the bullet points; "
+              "add nothing and explain nothing. Answer with the translation only.\n\n" + text)
+    answer = ai_call(prompt, keys, model, errors, dead, provider, base, json_mode=False)
+    if answer is None:
+        return None
+    answer = clean_text(re.sub(r"^```\w*\s*|\s*```$", "", answer.strip()), 2000).strip(" \"'")
+    if len(answer) < 0.4 * len(text) or len(answer) > 2.5 * len(text) + 40:
+        errors.append("translation rejected (wrong length)")
+        return None
+    return answer
 
 
 def inspect_zip(path: Path):
@@ -916,6 +940,48 @@ def main() -> int:
     desc_urls = args.desc_url or [u.strip() for u in os.environ.get("DESC_URLS", "").split(",") if u.strip()]
     catalog_desc = load_descriptions(desc_urls, root / ".descriptions-cache.json", notes)
     catalog_hits = 0
+    tr_path = root / ".translations-cache.json"
+    try:
+        tr_cache = json.loads(tr_path.read_text("utf-8")) if tr_path.is_file() else {}
+    except (OSError, ValueError):
+        tr_cache = {}
+    tr_cache = tr_cache if isinstance(tr_cache, dict) else {}
+    tr_dirty, tr_calls, tr_done, tr_errors = False, 0, 0, []
+    translating = bool(args.ai and keys and args.ai_lang.strip().lower() not in ("", "english", "en", "anglais"))
+
+    def save_translations():
+        nonlocal tr_dirty
+        if not tr_dirty:
+            return
+        try:
+            temporary = tr_path.with_name(tr_path.name + ".part")
+            temporary.write_text(json.dumps(tr_cache, ensure_ascii=False), "utf-8")
+            temporary.replace(tr_path)
+            tr_dirty = False
+        except OSError:
+            if "could not save .translations-cache.json (folder not writable?)" not in notes:
+                notes.append("could not save .translations-cache.json (folder not writable?)")
+
+    def translated(title_id: str, text: str) -> str:
+        """The catalogue's description in the AI language: from the cache, else asked now (up to --ai-max per run), else the original."""
+        nonlocal tr_dirty, tr_calls, tr_done
+        mark = hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
+        hit = tr_cache.get(title_id)
+        if isinstance(hit, dict) and hit.get("src") == mark and hit.get("lang") == args.ai_lang and hit.get("text"):
+            return hit["text"]
+        if tr_calls >= args.ai_max or len(dead_keys) >= len(keys) or len(tr_errors) >= 3 * len(keys):
+            return text
+        tr_calls += 1
+        result = ai_translate(text, args.ai_lang, keys, args.ai_model, tr_errors, dead_keys, args.ai_provider, args.ai_base)
+        if not result:
+            return text
+        tr_errors.clear()
+        tr_done += 1
+        tr_cache[title_id] = {"src": mark, "lang": args.ai_lang, "text": result}
+        tr_dirty = True
+        if tr_done % 10 == 0:
+            save_translations()
+        return result
     pr_path = root / ".prospero-cache.json"
     try:
         pr_cache = json.loads(pr_path.read_text("utf-8")) if pr_path.is_file() else {}
@@ -1060,6 +1126,7 @@ def main() -> int:
                 pr_dirty = False
 
     _ON_EXIT.append(save_caches)
+    _ON_EXIT.append(save_translations)
 
     def saved_art():
         """Title and artwork of the updates saved from the admin page (« + »), written to .saved-info.json."""
@@ -1249,7 +1316,7 @@ def main() -> int:
                 row["title"], pr_title = entry["title"], True
             db_hits += 1
         if catalog_desc.get(title_id) and pack not in ("DLC", "UPDATES") and not extra.get("description") and "description" not in db_fields:
-            row["description"] = catalog_desc[title_id]            # the catalogue's own text: no AI request needed
+            row["description"] = translated(title_id, catalog_desc[title_id]) if translating else catalog_desc[title_id]   # the catalogue's own text, translated by your AI
             db_fields.add("description")
             catalog_hits += 1
         if suffix == ".zip" and not args.no_extract:
@@ -1366,6 +1433,10 @@ def main() -> int:
         print(f"  game database: {db_hits} game(s) found among {len(game_db)} entries")
     if desc_urls:
         print(f"  descriptions: {len(catalog_desc)} in the catalogue(s), {catalog_hits} game(s) filled from them")
+        if translating:
+            save_translations()
+            print(f"  translations ({args.ai_lang}): {tr_done} done this run, {tr_calls} request(s)" + (f" (last problem: {tr_errors[-1]})" if tr_errors else "")
+                  + ("; the limit of --ai-max per run was reached, run the refresh again to continue" if tr_calls >= args.ai_max else ""))
     if args.prospero:
         saved_art()
         print(f"  prosperopatches.com / orbispatches.com: {pr_done} game(s) completed, {pr_images} image(s) downloaded, {pr_calls} page(s) fetched this run"
