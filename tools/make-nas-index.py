@@ -524,7 +524,7 @@ def _igdb_key(name: str) -> str:
 
 
 def igdb_query(title_id: str, name: str, client_id: str, token: str, errors: list):
-    """{name, summary, story, releaseDate} from IGDB (summary, storyline, first_release_date) for a game; {} when unknown, None on error."""
+    """{name, summary, releaseDate} from IGDB (summary, first_release_date) for a game; {} when unknown, None on error."""
     base = os.environ.get("IGDB_BASE", "https://api.igdb.com/v4").rstrip("/")
     if not (base.startswith("https://") or base.startswith("http://127.0.0.1")):
         errors.append("IGDB_BASE must be https")
@@ -541,7 +541,7 @@ def igdb_query(title_id: str, name: str, client_id: str, token: str, errors: lis
             errors.append(f"IGDB {type(problem).__name__}")
         return None, False
 
-    fields = "fields name, summary, storyline, first_release_date;"
+    fields = "fields name, summary, first_release_date;"
     data = None
     if re.fullmatch(r"(?:PPSA|CUSA)\d{5}", title_id):
         # 1. By the game's code, when IGDB knows it (a store identifier containing the Title ID).
@@ -568,8 +568,7 @@ def igdb_query(title_id: str, name: str, client_id: str, token: str, errors: lis
     game = next((g for g in data if isinstance(g, dict) and _igdb_key(g.get("name")) == wanted), None) or next((g for g in data if isinstance(g, dict)), {})
     stamp = game.get("first_release_date")
     date = time.strftime("%Y-%m-%d", time.gmtime(stamp)) if isinstance(stamp, (int, float)) else ""
-    return {"name": clean_text(game.get("name"), 80), "summary": clean_text(game.get("summary"), 2000),
-            "story": clean_text(game.get("storyline"), 3000), "releaseDate": date}
+    return {"name": clean_text(game.get("name"), 80), "summary": clean_text(game.get("summary"), 2000), "releaseDate": date}
 
 
 def read_param(zip_path: Path):
@@ -1010,7 +1009,7 @@ def main() -> int:
     desc_urls = args.desc_url or [u.strip() for u in os.environ.get("DESC_URLS", "").split(",") if u.strip()]
     catalog_desc = load_descriptions(desc_urls, root / ".descriptions-cache.json", notes)
     catalog_hits = 0
-    # IGDB (optional): release date (first_release_date) and, when the catalogue has none, the description (summary + storyline). Cached in .igdb-cache.json.
+    # IGDB (optional): release date (first_release_date) and, when the catalogue has none, the description (summary). Cached in .igdb-cache.json.
     igdb_id = os.environ.get("IGDB_CLIENT_ID", "").strip()
     igdb_secret = os.environ.get("IGDB_CLIENT_SECRET", "").strip()
     igdb_tok = os.environ.get("IGDB_ACCESS_TOKEN", "").strip()
@@ -1039,7 +1038,7 @@ def main() -> int:
         """Cached IGDB data for a game, asked now when needed (up to --igdb-max per run); unknown games are asked again after 30 days."""
         nonlocal igdb_dirty, igdb_calls, igdb_tok, igdb_dead
         hit = igdb_cache.get(title_id)
-        if isinstance(hit, dict) and hit.get("n") == name and hit.get("v") == 4 and (not hit.get("unknown") or time.time() - float(hit.get("at", 0)) < 30 * 86400):
+        if isinstance(hit, dict) and hit.get("n") == name and hit.get("v") == 5 and (not hit.get("unknown") or time.time() - float(hit.get("at", 0)) < 30 * 86400):
             return None if hit.get("unknown") else hit
         if igdb_dead or igdb_calls >= args.igdb_max or len(igdb_errors) >= 3:
             return None
@@ -1057,11 +1056,11 @@ def main() -> int:
                 igdb_dead = True                        # token refused or expired: stop for this run
             return None
         igdb_errors.clear()
-        if not got or not (got.get("summary") or got.get("story") or got.get("releaseDate")):
-            igdb_cache[title_id] = {"unknown": True, "at": time.time(), "n": name, "v": 4}
+        if not got or not (got.get("summary") or got.get("releaseDate")):
+            igdb_cache[title_id] = {"unknown": True, "at": time.time(), "n": name, "v": 5}
             igdb_dirty = True
             return None
-        got.update({"at": time.time(), "n": name, "v": 4})
+        got.update({"at": time.time(), "n": name, "v": 5})
         igdb_cache[title_id] = got
         igdb_dirty = True
         if igdb_calls % 20 == 0:
@@ -1450,10 +1449,8 @@ def main() -> int:
             got = igdb_lookup(title_id, row["title"])  # found by the game's code, else by its name if wanted_igdb else None
             if got:
                 igdb_hits += 1
-                if "description" in wanted_igdb and (got.get("summary") or got.get("story")):
-                    text = " ".join(x for x in (got.get("summary"), got.get("story")) if x)      # IGDB's summary, then its "Story" text
-                    if len(text) > 1500:
-                        text = text[:1500].rsplit(" ", 1)[0].rstrip(",;:-") + "…"
+                if "description" in wanted_igdb and got.get("summary"):
+                    text = got["summary"]                                  # IGDB's summary only
                     row["description"] = to_translate = text            # translated at the end
                     db_fields.add("description")
                 for field in ("releaseDate",):
