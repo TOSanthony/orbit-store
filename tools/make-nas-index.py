@@ -918,8 +918,8 @@ def main() -> int:
     parser.add_argument("--no-extract", action="store_true", help="do not take icon0.png / pic1.png out of .zip files")
     parser.add_argument("--refresh-covers", action="store_true", help="overwrite covers already extracted from a .zip")
     parser.add_argument("--no-param", action="store_true", help="do not read sce_sys/param.json from PS5 .zip files, nor the title, content ID and icon inside .pkg files")
-    parser.add_argument("--ai", action="store_true", help="ask Gemini to fill missing description, publisher, genre, tagline and release date (needs GEMINI_API_KEYS)")
-    parser.add_argument("--ai-max", type=int, default=40, help="most Gemini requests per run (default 40)")
+    parser.add_argument("--ai", action="store_true", help="translate the descriptions (from IGDB or the catalogue) into --ai-lang with Gemini or your own AI; nothing is invented")
+    parser.add_argument("--ai-max", type=int, default=40, help="most translation requests per run (default 40)")
     parser.add_argument("--prospero", action="store_true", help="fetch title, publisher, region and artwork from prosperopatches.com (PS5) and orbispatches.com (PS4) (cached in .prospero-cache.json)")
     parser.add_argument("--saved-art", action="store_true", help="only fetch title and artwork from prosperopatches.com for the updates saved by the admin page (.nas-admin-patches.json), write .saved-info.json and stop")
     parser.add_argument("--saved-id", default="", help="with --saved-art: only this title ID")
@@ -1487,31 +1487,6 @@ def main() -> int:
             row["id"] = f"{title_id.lower()}-{ {'DLC': 'dlc', 'UPDATES': 'upd', 'APPS': 'app'}[pack] }-{hashlib.sha1(key.encode('utf-8')).hexdigest()[:6]}"
             row["tagline"] = pack
             pack_rows += 1
-        wanted = [f for f in AI_FIELDS if not extra.get(f) and f not in pr_fields and f not in db_fields and not (pack and f == "tagline")]
-        if args.ai and keys and wanted and pack not in ("DLC", "UPDATES"):     # the AI is for games and apps only
-            info = cache.get(title_id) if isinstance(cache.get(title_id), dict) else None
-            if info and info.get("unknown"):
-                # Not recognised last time: ask again only after a week.
-                info = None if time.time() - float(info.get("at", 0)) > 7 * 86400 else {}
-            elif info is not None and info.get("v") != 3:
-                info = None                       # saved by an older version, fewer fields
-            if info is None and ai_calls < args.ai_max and len(dead_keys) < len(keys) and len(ai_errors) < 3 * len(keys):
-                ai_calls += 1
-                before = len(ai_errors)
-                found_info = ai_lookup(title_id, row["title"], keys, args.ai_model, ai_errors, args.ai_lang, dead_keys, args.ai_provider, args.ai_base)
-                if found_info:
-                    ai_errors.clear()
-                    info = cache[title_id] = found_info
-                    cache_dirty = True
-                elif ai_errors[before:] == ["game not recognised"]:
-                    ai_errors.pop()
-                    cache[title_id] = {"unknown": True, "at": time.time()}
-                    cache_dirty = True
-            if info:
-                ai_done += 1
-                for field in AI_FIELDS:
-                    if field in wanted and info.get(field):
-                        row[field] = info[field]
         if translating and to_translate and row.get("description") == to_translate:
             row["description"] = translated(title_id, to_translate)       # last step: your AI translates it (cached)
         try:
@@ -1580,12 +1555,12 @@ def main() -> int:
         print(f"  IGDB: {igdb_hits} game(s) completed, {igdb_calls} request(s) this run" + (f" (problem: {igdb_errors[-1]})" if igdb_errors else ""))
         if igdb_calls >= args.igdb_max:
             notes.append(f"IGDB limit of {args.igdb_max} requests per run reached; run the refresh again to continue")
+    if translating:
+        save_translations()
+        print(f"  translations ({args.ai_lang}): {tr_done} done this run, {tr_calls} request(s)" + (f" (last problem: {tr_errors[-1]})" if tr_errors else "")
+              + ("; the limit of --ai-max per run was reached, run the refresh again to continue" if tr_calls >= args.ai_max else ""))
     if desc_urls:
         print(f"  descriptions: {len(catalog_desc)} in the catalogue(s), {catalog_hits} game(s) filled from them")
-        if translating:
-            save_translations()
-            print(f"  translations ({args.ai_lang}): {tr_done} done this run, {tr_calls} request(s)" + (f" (last problem: {tr_errors[-1]})" if tr_errors else "")
-                  + ("; the limit of --ai-max per run was reached, run the refresh again to continue" if tr_calls >= args.ai_max else ""))
     if args.prospero:
         saved_art()
         print(f"  prosperopatches.com / orbispatches.com: {pr_done} game(s) completed, {pr_images} image(s) downloaded, {pr_calls} page(s) fetched this run"
@@ -1594,9 +1569,6 @@ def main() -> int:
             notes.append(f"{len(pr_left)} game(s) not looked up yet (limit of {args.prospero_max} pages per run); run the refresh again to continue")
         if pr_fail >= 3:
             notes.append("prosperopatches.com / orbispatches.com refused 3 requests in a row; stopped for this run (blocked by the site's protection? try again later)")
-    if args.ai and keys:
-        print(f"  AI ({'own AI' if own_ai else 'Gemini'}): {ai_done} game(s) completed, {ai_calls} request(s) this run" + (f" (last problem: {ai_errors[-1]})" if ai_errors else "")
-              + (f"; {len(dead_keys)}/{len(keys)} key(s) refused or out of quota" if dead_keys else ""))
     for note in notes:
         print(f"  note: {note}")
     if optimized:

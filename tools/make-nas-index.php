@@ -32,7 +32,7 @@ $TIMEOUT       = 3600;                                 // secondes max pour une 
 $SESSION_MIN   = 120;                                  // déconnexion après N minutes d'inactivité
 $MAX_FAILS     = 5;                                    // mots de passe faux avant blocage
 $LOCK_MIN      = 15;                                   // durée du blocage (minutes)
-$GEMINI_KEYS   = [];                                   // clés API Gemini (option « Compléter avec l'IA »)
+$GEMINI_KEYS   = [];                                   // clés API Gemini (option « Traduire avec l'IA »)
 $GEMINI_MODEL  = 'gemini-3.6-flash';
 $AI_PROVIDER   = 'gemini';                             // 'gemini', 'ollama' (API native /api/generate) ou 'openai' (API /chat/completions : LM Studio, OpenAI, OpenRouter...)
 $AI_BASE       = '';                                   // ollama : 'http://192.168.1.20:11434' (ou .../api/generate) ; openai : 'http://192.168.1.20:1234/v1'
@@ -42,7 +42,7 @@ $DESC_URLS     = ['https://pegasus-catalog.fly.dev/catalogs/pfs.json', 'https://
 $IGDB_CLIENT_ID     = '';                              // IGDB (compte Twitch) : date de sortie et, si le catalogue n'en a pas, description (summary)
 $IGDB_CLIENT_SECRET = '';                              // secret du client Twitch (le jeton d'accès est alors demandé tout seul)
 $IGDB_ACCESS_TOKEN  = '';                              // ou un jeton d'accès déjà obtenu (expire au bout de ~60 jours)
-$AI_MAX        = 40;                                   // requêtes IA max par actualisation
+$AI_MAX        = 40;                                   // traductions IA max par actualisation
 $AI_LANG       = 'English';                            // langue des descriptions ; si ce n'est pas 'English', les descriptions du catalogue ($DESC_URLS) sont traduites par l'IA ('français'...)
 $UPDATE_REPO   = 'TOSanthony/orbit-store';              // dépôt GitHub dont on affiche les versions (Réglages)
 $UPDATE_BRANCH = 'updates';                             // branche qui porte payloads.json et tv-app.json
@@ -1111,7 +1111,7 @@ summary{cursor:pointer;font-weight:600}
     <input type="hidden" name="action" value="refresh"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
     <p class="muted">Toujours actif : lecture du param.json des .zip PS5 et de l'intérieur des .pkg (titre, identifiant, version, icône, DLC), et récupération du titre, de l'éditeur, de la région, de l'icône et du fond sur prosperopatches.com (tes propres images de covers/ restent prioritaires).</p>
 <?php if (ai_ready()): ?>
-    <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (<?= h(ai_label()) ?>) les infos manquantes des jeux et applications (description, éditeur, genre, accroche, date de sortie) et traduire les descriptions du catalogue</label>
+    <label><input type="checkbox" name="ai" value="1"> Traduire les descriptions avec l'IA (<?= h(ai_label()) ?>) (rien n'est inventé : seules les descriptions d'IGDB et du catalogue sont traduites)</label>
 <?php endif; ?>
     <label><input type="checkbox" name="refresh_covers" value="1"> Remplacer les images déjà extraites des .zip</label>
     <label><input type="checkbox" name="sha256" value="1"> Calculer les SHA-256 (long sur de gros fichiers)</label>
