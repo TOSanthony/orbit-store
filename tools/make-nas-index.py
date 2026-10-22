@@ -505,13 +505,6 @@ def load_descriptions(urls, cache_file: Path, notes: list):
     return cached.get("d", {}) if isinstance(cached.get("d"), dict) else {}      # download failed: the last copy is better than nothing
 
 
-IGDB_GENRES = {"role-playing (rpg)": "Role Playing Games", "shooter": "Shooter", "racing": "Driving/Racing", "sport": "Sport", "simulator": "Simulation",
-               "puzzle": "Puzzle", "platform": "Platformer", "fighting": "Fighting", "strategy": "Strategy", "real time strategy (rts)": "Strategy",
-               "turn-based strategy (tbs)": "Strategy", "tactical": "Strategy", "adventure": "Adventure", "visual novel": "Adventure",
-               "point-and-click": "Adventure", "arcade": "Arcade", "pinball": "Arcade", "music": "Music/Rhythm", "quiz/trivia": "Casual",
-               "hack and slash/beat 'em up": "Action"}
-
-
 def igdb_token(client_id: str, secret: str, errors: list):
     """An access token from the Twitch id and secret (IGDB belongs to Twitch); None when refused."""
     base = os.environ.get("IGDB_AUTH", "https://id.twitch.tv/oauth2/token")
@@ -531,14 +524,13 @@ def _igdb_key(name: str) -> str:
 
 
 def igdb_query(title_id: str, name: str, client_id: str, token: str, errors: list):
-    """{name, summary, genres, date} from IGDB for a game (release date of the console of the title ID first), None when unknown or on error.
-    A string error is appended to `errors`; a 401 gives None and the caller stops asking."""
+    """{name, summary, story, releaseDate} from IGDB (summary, storyline, first_release_date) for a game; {} when unknown, None on error."""
     base = os.environ.get("IGDB_BASE", "https://api.igdb.com/v4").rstrip("/")
     if not (base.startswith("https://") or base.startswith("http://127.0.0.1")):
         errors.append("IGDB_BASE must be https")
         return None
     search = str(name).replace("\\", " ").replace('"', " ")
-    query = f'fields name, summary, storyline, release_dates.date, release_dates.platform.name, genres.name, involved_companies.publisher, involved_companies.developer, involved_companies.company.name; search "{search}"; limit 5;'
+    query = f'fields name, summary, storyline, first_release_date; search "{search}"; limit 5;'
     request = urllib.request.Request(f"{base}/games", query.encode("utf-8"), {
         "Client-ID": client_id, "Authorization": f"Bearer {token}", "Accept": "application/json", "User-Agent": PROSPERO_AGENT})
     try:
@@ -554,31 +546,10 @@ def igdb_query(title_id: str, name: str, client_id: str, token: str, errors: lis
         return {}
     wanted = _igdb_key(name)
     game = next((g for g in data if isinstance(g, dict) and _igdb_key(g.get("name")) == wanted), None) or next((g for g in data if isinstance(g, dict)), {})
-    target = "PlayStation 5" if title_id.startswith("PPSA") else "PlayStation 4"
-    mine, other_ps, anywhere = [], [], []
-    for release in game.get("release_dates") or []:
-        if not isinstance(release, dict) or not isinstance(release.get("date"), (int, float)):
-            continue
-        day = time.strftime("%Y-%m-%d", time.gmtime(release["date"]))
-        platform = str((release.get("platform") or {}).get("name", "")) if isinstance(release.get("platform"), dict) else ""
-        anywhere.append(day)
-        if target in platform:
-            mine.append(day)
-        elif "PlayStation" in platform:
-            other_ps.append(day)
-    date = min(mine or other_ps or anywhere or [""])
-    genres = []
-    for item in game.get("genres") or []:
-        mapped = IGDB_GENRES.get(str((item or {}).get("name", "")).lower())
-        if mapped and mapped not in genres:
-            genres.append(mapped)
-    makers, publishers = [], []
-    for link in game.get("involved_companies") or []:
-        company = clean_text(((link or {}).get("company") or {}).get("name") if isinstance(link, dict) and isinstance(link.get("company"), dict) else "", 60)
-        if company:
-            (publishers if link.get("publisher") else makers).append(company)
-    return {"publisher": (publishers or makers or [""])[0], "name": clean_text(game.get("name"), 80), "summary": clean_text(game.get("summary"), 2000), "story": clean_text(game.get("storyline"), 3000),
-            "genre": " / ".join(genres[:3]), "releaseDate": date}
+    stamp = game.get("first_release_date")
+    date = time.strftime("%Y-%m-%d", time.gmtime(stamp)) if isinstance(stamp, (int, float)) else ""
+    return {"name": clean_text(game.get("name"), 80), "summary": clean_text(game.get("summary"), 2000),
+            "story": clean_text(game.get("storyline"), 3000), "releaseDate": date}
 
 
 def read_param(zip_path: Path):
@@ -1019,7 +990,7 @@ def main() -> int:
     desc_urls = args.desc_url or [u.strip() for u in os.environ.get("DESC_URLS", "").split(",") if u.strip()]
     catalog_desc = load_descriptions(desc_urls, root / ".descriptions-cache.json", notes)
     catalog_hits = 0
-    # IGDB (optional): genre, release date and, when the catalogue has none, the description. Cached in .igdb-cache.json.
+    # IGDB (optional): release date (first_release_date) and, when the catalogue has none, the description (summary + storyline). Cached in .igdb-cache.json.
     igdb_id = os.environ.get("IGDB_CLIENT_ID", "").strip()
     igdb_secret = os.environ.get("IGDB_CLIENT_SECRET", "").strip()
     igdb_tok = os.environ.get("IGDB_ACCESS_TOKEN", "").strip()
@@ -1048,7 +1019,7 @@ def main() -> int:
         """Cached IGDB data for a game, asked now when needed (up to --igdb-max per run); unknown games are asked again after 30 days."""
         nonlocal igdb_dirty, igdb_calls, igdb_tok, igdb_dead
         hit = igdb_cache.get(title_id)
-        if isinstance(hit, dict) and hit.get("n") == name and hit.get("v") == 3 and (not hit.get("unknown") or time.time() - float(hit.get("at", 0)) < 30 * 86400):
+        if isinstance(hit, dict) and hit.get("n") == name and hit.get("v") == 4 and (not hit.get("unknown") or time.time() - float(hit.get("at", 0)) < 30 * 86400):
             return None if hit.get("unknown") else hit
         if igdb_dead or igdb_calls >= args.igdb_max or len(igdb_errors) >= 3:
             return None
@@ -1066,11 +1037,11 @@ def main() -> int:
                 igdb_dead = True                        # token refused or expired: stop for this run
             return None
         igdb_errors.clear()
-        if not got or not (got.get("summary") or got.get("story") or got.get("genre") or got.get("releaseDate") or got.get("publisher")):
-            igdb_cache[title_id] = {"unknown": True, "at": time.time(), "n": name, "v": 3}
+        if not got or not (got.get("summary") or got.get("story") or got.get("releaseDate")):
+            igdb_cache[title_id] = {"unknown": True, "at": time.time(), "n": name, "v": 4}
             igdb_dirty = True
             return None
-        got.update({"at": time.time(), "n": name, "v": 3})
+        got.update({"at": time.time(), "n": name, "v": 4})
         igdb_cache[title_id] = got
         igdb_dirty = True
         if igdb_calls % 20 == 0:
@@ -1458,7 +1429,7 @@ def main() -> int:
             db_fields.add("description")
             catalog_hits += 1
         if igdb_on and pack not in ("DLC", "UPDATES"):
-            wanted_igdb = [f for f in ("description", "genre", "releaseDate", "publisher") if not extra.get(f) and f not in db_fields and f not in pr_fields and not (f == "publisher" and row.get("publisher"))]
+            wanted_igdb = [f for f in ("description", "releaseDate") if not extra.get(f) and f not in db_fields and f not in pr_fields]
             got = igdb_lookup(title_id, row["title"]) if wanted_igdb else None
             if got:
                 igdb_hits += 1
@@ -1468,7 +1439,7 @@ def main() -> int:
                         text = text[:1500].rsplit(" ", 1)[0].rstrip(",;:-") + "…"
                     row["description"] = translated(title_id, text) if translating else text
                     db_fields.add("description")
-                for field in ("genre", "releaseDate", "publisher"):
+                for field in ("releaseDate",):
                     if field in wanted_igdb and got.get(field):
                         row[field] = got[field]
                         db_fields.add(field)
