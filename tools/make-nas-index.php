@@ -18,7 +18,7 @@
  *     <?php return ['PASSWORD_HASH' => '...', 'PYTHON' => '/usr/bin/python3'];
  * pour que la mise à jour de ce fichier ne les écrase pas.
  *
- * Ligne de commande : `php make-nas-index.php hash` | `php make-nas-index.php refresh [--ai]`.
+ * Ligne de commande : `php make-nas-index.php hash` | `php make-nas-index.php refresh [--no-param] [--no-prospero] [--ai]` (param.json/.pkg et prosperopatches.com sont actifs par défaut).
  */
 declare(strict_types=1);
 
@@ -32,14 +32,25 @@ $TIMEOUT       = 3600;                                 // secondes max pour une 
 $SESSION_MIN   = 120;                                  // déconnexion après N minutes d'inactivité
 $MAX_FAILS     = 5;                                    // mots de passe faux avant blocage
 $LOCK_MIN      = 15;                                   // durée du blocage (minutes)
-$GEMINI_KEYS   = [];                                   // clés API Gemini (option « Compléter avec l'IA »)
+$GEMINI_KEYS   = [];                                   // clés API Gemini (option « IA » : traduction et description manquante)
 $GEMINI_MODEL  = 'gemini-3.6-flash';
-$AI_MAX        = 40;                                   // requêtes IA max par actualisation
-$AI_LANG       = 'English';                            // langue des descriptions ('français', 'English'...)
+$AI_PROVIDER   = 'gemini';                             // 'gemini', 'ollama' (API native /api/generate) ou 'openai' (API /chat/completions : LM Studio, OpenAI, OpenRouter...)
+$AI_BASE       = '';                                   // ollama : 'http://192.168.1.20:11434' (ou .../api/generate) ; openai : 'http://192.168.1.20:1234/v1'
+$AI_API_KEYS   = [];                                   // avec 'openai' : clés de l'API (facultatif pour un serveur local)
+$AI_MODEL      = '';                                   // avec 'openai' : nom du modèle, ex. 'llama3.1:8b' (sinon $GEMINI_MODEL)
+$DESC_URLS     = ['https://pegasus-catalog.fly.dev/catalogs/pfs.json', 'https://pegasus-catalog.fly.dev/catalogs/dlps.json'];  // catalogues (titleId + description) : le texte des jeux et applications, sans IA ni limite par passage ([] pour désactiver)
+$IGDB_CLIENT_ID     = '';                              // IGDB (compte Twitch) : date de sortie et, si le catalogue n'en a pas, description (summary)
+$IGDB_CLIENT_SECRET = '';                              // secret du client Twitch (le jeton d'accès est alors demandé tout seul)
+$IGDB_ACCESS_TOKEN  = '';                              // ou un jeton d'accès déjà obtenu (expire au bout de ~60 jours)
+$AI_MAX        = 40;                                   // traductions IA max par actualisation
+$AI_LANG       = 'English';                            // langue des descriptions ; si ce n'est pas 'English', les descriptions du catalogue ($DESC_URLS) sont traduites par l'IA ('français'...)
 $UPDATE_REPO   = 'TOSanthony/orbit-store';              // dépôt GitHub dont on affiche les versions (Réglages)
 $UPDATE_BRANCH = 'updates';                             // branche qui porte payloads.json et tv-app.json
 $ALLOW_LINKS   = true;                                  // Réglages : choisir un dossier et créer un lien symbolique vers lui
 $LINK_ROOTS    = ['/volume*'];                          // où le sélecteur de dossier a le droit de naviguer (volumes du Synology)
+$FETCH_SCRIPT  = __DIR__ . '/fetch-patch.py';           // téléchargeur de patchs PS5 (serveurs Sony)
+$PATCH_TIMEOUT = 21600;                                 // secondes max pour un téléchargement de patch (6 h)
+$CONSOLE_FW    = '';                                    // firmware de ta PS5 (ex. '10.20') : sert à repérer les patchs compatibles
 // ---------------------------------------------------------------------------
 
 $extra = __DIR__ . '/nas-admin.config.php';
@@ -47,7 +58,7 @@ if (is_file($extra)) {
     $cfg = require $extra;
     if (is_array($cfg)) {
         foreach ($cfg as $k => $v) {
-            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_MAX','AI_LANG','UPDATE_REPO','UPDATE_BRANCH','ALLOW_LINKS','LINK_ROOTS'], true)) {
+            if (in_array($k, ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_PROVIDER','AI_BASE','AI_API_KEYS','AI_MODEL','DESC_URLS','IGDB_CLIENT_ID','IGDB_CLIENT_SECRET','IGDB_ACCESS_TOKEN','AI_MAX','AI_LANG','UPDATE_REPO','UPDATE_BRANCH','ALLOW_LINKS','LINK_ROOTS','FETCH_SCRIPT','PATCH_TIMEOUT','CONSOLE_FW'], true)) {
                 $$k = $v;
             }
         }
@@ -57,13 +68,32 @@ if (is_file($extra)) {
 const IMAGE_TYPES = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'webp' => 'image/webp'];
 
 // ---- Actualisation (partagée par le web et la ligne de commande) ------------
+/** L'option « Compléter avec l'IA » est-elle utilisable ? (Gemini : une clé ; ta propre IA : une adresse) */
+function ai_ready(): bool
+{
+    global $GEMINI_KEYS, $AI_PROVIDER, $AI_BASE;
+    if (ai_custom()) return (bool)preg_match('~^https?://[^\s/]+~', trim((string)$AI_BASE));
+    return !empty(array_filter(array_map('trim', array_map('strval', (array)$GEMINI_KEYS))));
+}
+/** Fournisseur normalisé : 'gemini', 'openai' (API /chat/completions) ou 'ollama' (API native /api/generate) */
+function ai_provider(): string
+{
+    global $AI_PROVIDER;
+    $p = strtolower(trim((string)$AI_PROVIDER));
+    return $p === 'ollama' || $p === 'openai' ? $p : 'gemini';
+}
+function ai_custom(): bool { return ai_provider() !== 'gemini'; }
+function ai_label(): string
+{
+    return ai_custom() ? 'ta propre IA' : 'Gemini';
+}
 /**
  * Prépare la commande Python.
  * @return array{0:?array,1:array,2:string} [commande, environnement, erreur]
  */
-function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $ai, bool $prospero = false): array
+function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $ai, bool $prospero = true): array
 {
-    global $GAMES_DIR, $SCRIPT, $PYTHON, $GEMINI_KEYS, $GEMINI_MODEL, $AI_MAX, $AI_LANG;
+    global $GAMES_DIR, $SCRIPT, $PYTHON, $GEMINI_KEYS, $GEMINI_MODEL, $AI_MAX, $AI_LANG, $AI_PROVIDER, $AI_BASE, $AI_API_KEYS, $AI_MODEL, $DESC_URLS, $IGDB_CLIENT_ID, $IGDB_CLIENT_SECRET, $IGDB_ACCESS_TOKEN;
     if (!is_file($SCRIPT)) return [null, [], "make-nas-index.py introuvable : $SCRIPT"];
     if (!is_file($PYTHON)) return [null, [], "Python 3 introuvable : $PYTHON (règle \$PYTHON)"];
     if (!is_dir($GAMES_DIR)) return [null, [], "Dossier des jeux introuvable : $GAMES_DIR"];
@@ -76,11 +106,25 @@ function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $a
     if (!$param) $cmd[] = '--no-param';
     if ($prospero) $cmd[] = '--prospero';
     $env = ['LANG' => 'C.UTF-8', 'PYTHONIOENCODING' => 'utf-8', 'PATH' => '/usr/local/bin:/usr/bin:/bin'];
+    $descs = array_values(array_filter(array_map('trim', array_map('strval', (array)$DESC_URLS)), static fn($u) => (bool)preg_match('~^https://[^\s,]+$~', $u)));
+    if ($descs) $env['DESC_URLS'] = implode(',', $descs);
+    if (trim((string)$IGDB_CLIENT_ID) !== '' && (trim((string)$IGDB_CLIENT_SECRET) !== '' || trim((string)$IGDB_ACCESS_TOKEN) !== '')) {
+        $env['IGDB_CLIENT_ID'] = trim((string)$IGDB_CLIENT_ID);
+        $env['IGDB_CLIENT_SECRET'] = trim((string)$IGDB_CLIENT_SECRET);
+        $env['IGDB_ACCESS_TOKEN'] = trim((string)$IGDB_ACCESS_TOKEN);
+    }
     $keys = array_values(array_filter(array_map('strval', (array)$GEMINI_KEYS), static fn($k) => trim($k) !== ''));
-    if ($ai && $keys) {
+    if ($ai && ai_ready()) {
         // Les clés passent par l'environnement, jamais par la ligne de commande.
-        array_push($cmd, '--ai', '--ai-max', (string)max(1, (int)$AI_MAX), '--ai-model', (string)$GEMINI_MODEL);
-        $env['GEMINI_API_KEYS'] = implode(',', array_map('trim', $keys));
+        if (ai_custom()) {
+            $okeys = array_values(array_filter(array_map('strval', (array)$AI_API_KEYS), static fn($k) => trim($k) !== ''));
+            $model = trim((string)$AI_MODEL) !== '' ? (string)$AI_MODEL : (string)$GEMINI_MODEL;
+            array_push($cmd, '--ai', '--ai-max', (string)max(1, (int)$AI_MAX), '--ai-model', $model, '--ai-provider', ai_provider(), '--ai-base', trim((string)$AI_BASE));
+            $env['AI_API_KEYS'] = implode(',', array_map('trim', $okeys));
+        } else {
+            array_push($cmd, '--ai', '--ai-max', (string)max(1, (int)$AI_MAX), '--ai-model', (string)$GEMINI_MODEL);
+            $env['GEMINI_API_KEYS'] = implode(',', array_map('trim', $keys));
+        }
         $env['GEMINI_MODEL'] = (string)$GEMINI_MODEL;
         $env['GEMINI_LANG'] = (string)$AI_LANG;
     }
@@ -88,7 +132,7 @@ function refresh_command(bool $sha256, bool $refreshCovers, bool $param, bool $a
 }
 
 /** @return array{0:int,1:string} code de sortie et sortie texte (ligne de commande : on attend la fin) */
-function run_refresh(bool $sha256, bool $refreshCovers, bool $param = true, bool $ai = false, bool $prospero = false): array
+function run_refresh(bool $sha256, bool $refreshCovers, bool $param = true, bool $ai = false, bool $prospero = true): array
 {
     global $TIMEOUT;
     [$cmd, $env, $err] = refresh_command($sha256, $refreshCovers, $param, $ai, $prospero);
@@ -147,21 +191,23 @@ function job_state(bool $consume = false): array
     $log = is_file("$b.log") ? (string)@file_get_contents("$b.log", false, null, 0, 20000) : '';
     $out['log'] .= trim($log);
     if ($out['state'] === 'done' && $consume) {
-        foreach (['start', 'code', 'log'] as $ext) @unlink("$b.$ext");
+        foreach (['start', 'code', 'log', 'cancel'] as $ext) @unlink("$b.$ext");
     }
     return $out;
 }
 
 /** @return string message d'erreur, vide si lancé */
-function start_background_refresh(bool $sha256, bool $refreshCovers, bool $param, bool $ai, bool $prospero = false): string
+function start_background_refresh(bool $sha256, bool $refreshCovers, bool $param, bool $ai, bool $prospero = true): string
 {
     global $TIMEOUT;
     if (job_state()['state'] === 'running') return 'Une actualisation est déjà en cours.';
     [$cmd, $env, $err] = refresh_command($sha256, $refreshCovers, $param, $ai, $prospero);
     if ($cmd === null) return $err;
     $b = job_base();
-    foreach (['code', 'log'] as $ext) @unlink("$b.$ext");
+    foreach (['code', 'log', 'cancel'] as $ext) @unlink("$b.$ext");
     @unlink("$b.start");
+    $cmd[] = '--cancel-file';                              // le bouton « Arrêter l'actualisation » crée ce fichier
+    $cmd[] = "$b.cancel";
     $mark = @fopen("$b.start", 'x');                       // création atomique : un seul lancement
     if (!$mark) return 'Une actualisation est déjà en cours.';
     fclose($mark);
@@ -170,6 +216,262 @@ function start_background_refresh(bool $sha256, bool $refreshCovers, bool $param
         . '$T ' . $line . ' > ' . escapeshellarg("$b.log") . ' 2>&1; echo $? > ' . escapeshellarg("$b.code");
     $launch = 'nohup sh -c ' . escapeshellarg($inner) . ' >/dev/null 2>&1 &';
     $proc = proc_open($launch, [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes, null, $env);
+    if (!is_resource($proc)) { @unlink("$b.start"); return 'Impossible de lancer Python.'; }
+    proc_close($proc);
+    return '';
+}
+
+// ---- Patchs PS5 (liste prosperopatches.com, téléchargement depuis les serveurs Sony) ----
+function fw_major_minor(string $v): ?array
+{
+    return preg_match('/^(\d{1,2})\.(\d{1,2})(?:\.\d{1,2}){0,2}$/', trim($v), $m) ? [(int)$m[1], (int)$m[2]] : null;
+}
+/** true si le firmware demandé par le patch est <= à celui de la console (compare majeur.mineur) ; null si inconnu */
+function fw_compatible(string $required, string $console): ?bool
+{
+    $r = fw_major_minor($required);
+    $c = fw_major_minor($console);
+    if ($r === null || $c === null) return null;
+    return $r <= $c;
+}
+/** firmware de la console : valeur saisie dans la fiche si valide, sinon réglage CONSOLE_FW */
+function console_fw(): string
+{
+    global $CONSOLE_FW;
+    $v = trim((string)($_POST['fw'] ?? $_GET['fw'] ?? ''));
+    return fw_major_minor($v) !== null ? $v : (string)$CONSOLE_FW;
+}
+function http_request(string $url, ?string $post = null, int $max = 2097152): ?string
+{
+    if (!function_exists('curl_init') || strncmp($url, 'https://prosperopatches.com/', 28) !== 0) return null;
+    $c = curl_init($url);
+    $opt = [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_CONNECTTIMEOUT => 6, CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_PROTOCOLS => CURLPROTO_HTTPS, CURLOPT_MAXFILESIZE => $max, CURLOPT_USERAGENT => 'Mozilla/5.0 (compatible; orbit-nas-admin)'];
+    if ($post !== null) {
+        $opt[CURLOPT_POST] = true;
+        $opt[CURLOPT_POSTFIELDS] = $post;
+        $opt[CURLOPT_HTTPHEADER] = ['Content-Type: application/x-www-form-urlencoded; charset=UTF-8'];
+    }
+    curl_setopt_array($c, $opt);
+    $body = curl_exec($c);
+    $code = (int)curl_getinfo($c, CURLINFO_RESPONSE_CODE);
+    curl_close($c);
+    return is_string($body) && $code === 200 ? $body : null;
+}
+/** @return array{error:string,patches:array} */
+function patch_list(string $id, string $consoleFw): array
+{
+    $out = ['error' => '', 'patches' => []];
+    if (!preg_match('/^PPSA\d{5}$/', $id)) { $out['error'] = 'Identifiant invalide.'; return $out; }
+    $cache = sys_get_temp_dir() . '/orbit-nas-patches-' . $id . '.json';
+    $raw = null;
+    if (is_file($cache) && time() - (int)@filemtime($cache) < 600) $raw = (string)@file_get_contents($cache);
+    if ($raw === null || $raw === '') {
+        $page = http_request("https://prosperopatches.com/$id");
+        if ($page === null || !preg_match('/data-key="([0-9a-f]{16,128})"/', $page, $m)) {
+            $out['error'] = 'La liste des patchs est inaccessible depuis le NAS (site indisponible ou bloqué). Saisis la version à la main.';
+            return $out;
+        }
+        $raw = http_request('https://prosperopatches.com/api/internal/loadpatches', json_encode(['titleid' => $id, 'key' => $m[1]]));
+        if ($raw === null) { $out['error'] = 'Le site n\'a pas répondu. Saisis la version à la main.'; return $out; }
+        @file_put_contents($cache, $raw, LOCK_EX);
+    }
+    $j = json_decode($raw, true);
+    if (!is_array($j) || empty($j['success']) || !is_array($j['patches'] ?? null)) {
+        $out['error'] = 'Réponse du site inattendue. Saisis la version à la main.';
+        return $out;
+    }
+    foreach (array_slice($j['patches'], 0, 60) as $p) {
+        $ver = (string)($p['content_ver'] ?? '');
+        if (!preg_match('/^\d{2}\.\d{3}\.\d{3}$/', $ver)) continue;
+        $fw = (string)($p['required_firmware'] ?? '');
+        $out['patches'][] = ['version' => $ver, 'size' => substr((string)($p['filesize'] ?? ''), 0, 20), 'fw' => substr($fw, 0, 16),
+            'date' => substr((string)($p['import_date'] ?? ''), 0, 10), 'latest' => !empty($p['is_latest']), 'ok' => fw_compatible($fw, $consoleFw)];
+    }
+    return $out;
+}
+
+function patch_base(): string { return job_base() . '-patch'; }
+/** @return array{state:string,elapsed:int,ok:bool,id:string,version:string,done:int,total:int,speed:int,piece:int,pieces:int,msg:string} */
+function patch_state(bool $consume = false): array
+{
+    global $PATCH_TIMEOUT;
+    $b = patch_base();
+    $o = ['state' => 'idle', 'elapsed' => 0, 'ok' => false, 'id' => '', 'version' => '', 'done' => 0, 'total' => 0, 'speed' => 0, 'piece' => 0, 'pieces' => 0, 'msg' => ''];
+    if (!is_file("$b.start")) return $o;
+    $meta = json_decode((string)@file_get_contents("$b.start"), true);
+    if (is_array($meta)) { $o['id'] = (string)($meta['id'] ?? ''); $o['version'] = (string)($meta['version'] ?? ''); }
+    $o['elapsed'] = max(0, time() - (int)@filemtime("$b.start"));
+    if (is_file("$b.code")) {
+        $o['state'] = 'done';
+        $o['ok'] = trim((string)@file_get_contents("$b.code")) === '0';
+    } elseif ($o['elapsed'] > (int)$PATCH_TIMEOUT + 120) {
+        $o['state'] = 'done';
+        $o['msg'] = 'Téléchargement interrompu (délai dépassé).';
+    } else {
+        $o['state'] = 'running';
+    }
+    $log = '';
+    if (is_file("$b.log")) {
+        $size = (int)@filesize("$b.log");
+        $log = (string)@file_get_contents("$b.log", false, null, max(0, $size - 4000));
+    }
+    $last = '';
+    foreach (preg_split('/\r?\n/', trim($log)) as $line) {
+        if (preg_match('/^progress: (\d+) (\d+) (\d+) (\d+) (\d+)/', $line, $m)) {
+            [$o['done'], $o['total'], $o['piece'], $o['pieces'], $o['speed']] = [(int)$m[1], (int)$m[2], (int)$m[3], (int)$m[4], (int)$m[5]];
+        } elseif ($line !== '') {
+            $last = $line;
+        }
+    }
+    if ($o['msg'] === '') $o['msg'] = substr($last, 0, 300);
+    if ($o['state'] === 'done' && $consume) {
+        foreach (['start', 'code', 'log', 'cancel'] as $ext) @unlink("$b.$ext");
+    }
+    return $o;
+}
+/** Version et lien CRC mémorisés par jeu (fichier caché du dossier des jeux, bloqué par nas.htaccess). */
+function patch_saved_file(): string
+{
+    global $GAMES_DIR;
+    return rtrim((string)$GAMES_DIR, '/') . '/.nas-admin-patches.json';
+}
+function patch_saved_load(): array
+{
+    $j = json_decode((string)@file_get_contents(patch_saved_file()), true);
+    $out = [];
+    if (is_array($j)) {
+        foreach ($j as $id => $v) {
+            if (is_string($id) && preg_match('/^PPSA\d{5}$/', $id) && is_array($v)) {
+                $out[$id] = ['version' => (string)($v['version'] ?? ''), 'link' => (string)($v['link'] ?? ''), 'title' => substr(trim((string)($v['title'] ?? '')), 0, 80)];
+            }
+        }
+    }
+    return $out;
+}
+/** Titre, éditeur et images (prosperopatches.com) des mises à jour enregistrées : .saved-info.json, écrit par make-nas-index.py. */
+function saved_info_load(): array
+{
+    global $GAMES_DIR;
+    $j = json_decode((string)@file_get_contents(rtrim((string)$GAMES_DIR, '/') . '/.saved-info.json'), true);
+    $out = [];
+    if (is_array($j)) {
+        foreach ($j as $id => $v) {
+            if (!is_string($id) || !preg_match('/^PPSA\d{5}$/', $id) || !is_array($v)) continue;
+            $out[$id] = [];
+            foreach (['title', 'publisher', 'region'] as $k) $out[$id][$k] = substr(trim((string)($v[$k] ?? '')), 0, 120);
+            foreach (['cover', 'hero'] as $k) $out[$id][$k] = art_url((string)($v[$k] ?? ''));
+        }
+    }
+    return $out;
+}
+/** Va chercher titre et images d'un jeu enregistré (une page + deux images ; quelques secondes). */
+function saved_info_fetch(string $id): void
+{
+    global $PYTHON, $SCRIPT, $GAMES_DIR;
+    if (!preg_match('/^PPSA\d{5}$/', $id) || !is_file((string)$SCRIPT) || !is_file((string)$PYTHON) || !function_exists('proc_open')) return;
+    $cmd = [$PYTHON, '-I', $SCRIPT, $GAMES_DIR, '--saved-art', '--saved-id', $id];
+    $env = ['LANG' => 'C.UTF-8', 'PYTHONIOENCODING' => 'utf-8', 'PATH' => '/usr/local/bin:/usr/bin:/bin'];
+    @set_time_limit(90);
+    $proc = @proc_open($cmd, [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes, null, $env);
+    if (!is_resource($proc)) return;
+    $start = time();
+    while (true) {
+        $st = proc_get_status($proc);
+        if (!$st['running']) break;
+        if (time() - $start > 60) { proc_terminate($proc, 9); break; }
+        usleep(200000);
+    }
+    proc_close($proc);
+}
+function patch_link_ok(string $link): bool
+{
+    return (bool)preg_match('~^https?://[A-Za-z0-9.-]+/[A-Za-z0-9/._-]{1,400}$~', $link) && strpos($link, '..') === false;
+}
+/**
+ * Publie, à côté d'index.json, game-patches.json : pour chaque jeu dont tu as enregistré une version
+ * ET un lien CRC, cette version et ce lien. Orbit le lit pour proposer la mise à jour dans l'onglet
+ * « Updates » (même chemin secret que l'index ; rien d'autre n'y figure).
+ */
+function patch_public_sync(): void
+{
+    global $GAMES_DIR;
+    $out = [];
+    foreach (patch_saved_load() as $id => $v) {
+        if ($v['version'] !== '' && $v['link'] !== '' && preg_match('/^\d{2}\.\d{3}\.\d{3}$/', $v['version']) && patch_link_ok($v['link'])) {
+            $out[$id] = ['version' => $v['version'], 'link' => $v['link']];
+        }
+    }
+    $file = rtrim((string)$GAMES_DIR, '/') . '/game-patches.json';
+    $json = json_encode((object)$out, JSON_UNESCAPED_SLASHES);
+    if ($json === false || (is_file($file) && @file_get_contents($file) === $json)) return;
+    $tmp = $file . '.tmp';
+    if (@file_put_contents($tmp, $json, LOCK_EX) !== false) @rename($tmp, $file);
+}
+/** @return string message d'erreur, vide si enregistré */
+function patch_saved_set(string $id, string $version, string $link, ?string $title = null): string
+{
+    if (!preg_match('/^PPSA\d{5}$/', $id)) return 'Identifiant du jeu invalide.';
+    $version = trim($version);
+    $link = trim($link);
+    if ($version !== '' && !preg_match('/^\d{2}\.\d{3}\.\d{3}$/', $version)) return 'Version invalide.';
+    if ($link !== '' && !patch_link_ok($link)) return 'Lien invalide.';
+    $fh = @fopen(patch_saved_file(), 'c+');
+    if (!$fh) return 'Enregistrement impossible (dossier non modifiable).';
+    flock($fh, LOCK_EX);
+    $all = json_decode((string)stream_get_contents($fh), true);
+    $all = is_array($all) ? $all : [];
+    if ($version === '' && $link === '') unset($all[$id]);
+    else {
+        // Le nom du jeu (facultatif) sert à l'afficher dans « Mises à jour » quand il n'est pas dans l'index.
+        $name = $title === null ? (string)($all[$id]['title'] ?? '') : substr(trim(preg_replace('/[\x00-\x1f\x7f]+/u', ' ', $title) ?? ''), 0, 80);
+        $all[$id] = ['version' => $version, 'link' => $link] + ($name !== '' ? ['title' => $name] : []);
+    }
+    if (count($all) > 500) $all = array_slice($all, -500, null, true);
+    ftruncate($fh, 0);
+    rewind($fh);
+    fwrite($fh, json_encode($all, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
+    patch_public_sync();
+    return '';
+}
+/** @return string message d'erreur, vide si lancé */
+function patch_start(string $id, string $version, string $link, bool $force): string
+{
+    global $PYTHON, $FETCH_SCRIPT, $GAMES_DIR, $PATCH_TIMEOUT;
+    $CONSOLE_FW = console_fw();
+    if (!preg_match('/^PPSA\d{5}$/', $id)) return 'Identifiant du jeu invalide.';
+    if (!preg_match('/^\d{2}\.\d{3}\.\d{3}$/', $version)) return 'Version invalide (attendu : 06.005.000).';
+    $link = trim($link);
+    if (!preg_match('~^https?://[A-Za-z0-9.-]+/[A-Za-z0-9/._-]{1,400}$~', $link) || strpos($link, '..') !== false) return 'Lien CRC invalide.';
+    if (!is_file($FETCH_SCRIPT)) return 'fetch-patch.py est introuvable à côté de cette page.';
+    if (patch_state()['state'] === 'running') return 'Un téléchargement est déjà en cours.';
+    $py = (string)$PYTHON;
+    if ($py === '' || !is_file($py)) return 'Python introuvable (réglage PYTHON).';
+    $required = '';
+    $list = patch_list($id, $CONSOLE_FW);
+    foreach ($list['patches'] as $p) if ($p['version'] === $version) $required = $p['fw'];
+    if ($required !== '' && fw_compatible($required, $CONSOLE_FW) === false && !$force) {
+        return "Ce patch demande le firmware $required, supérieur à celui de ta console ($CONSOLE_FW). Coche « Forcer » pour le télécharger quand même.";
+    }
+    $b = patch_base();
+    foreach (['code', 'log', 'cancel', 'start'] as $ext) @unlink("$b.$ext");
+    $mark = @fopen("$b.start", 'x');
+    if (!$mark) return 'Un téléchargement est déjà en cours.';
+    patch_saved_set($id, $version, $link);
+    fwrite($mark, json_encode(['id' => $id, 'version' => $version]));
+    fclose($mark);
+    $cmd = [$py, '-u', (string)$FETCH_SCRIPT, (string)$GAMES_DIR, $id, $version, $link, '--cancel-file', "$b.cancel"];
+    if ($required !== '') { $cmd[] = '--required-fw'; $cmd[] = $required; }
+    if ($CONSOLE_FW !== '') { $cmd[] = '--console-fw'; $cmd[] = $CONSOLE_FW; }
+    if ($force) $cmd[] = '--force';
+    $line = implode(' ', array_map('escapeshellarg', $cmd));
+    $inner = 'T=""; command -v timeout >/dev/null 2>&1 && T="timeout -k 10 ' . (int)$PATCH_TIMEOUT . '"; '
+        . '$T ' . $line . ' > ' . escapeshellarg("$b.log") . ' 2>&1; echo $? > ' . escapeshellarg("$b.code");
+    $launch = 'nohup sh -c ' . escapeshellarg($inner) . ' >/dev/null 2>&1 &';
+    $proc = proc_open($launch, [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);
     if (!is_resource($proc)) { @unlink("$b.start"); return 'Impossible de lancer Python.'; }
     proc_close($proc);
     return '';
@@ -186,11 +488,11 @@ if (PHP_SAPI === 'cli') {
         exit(0);
     }
     if ($cmd === 'refresh') {
-        [$code, $text] = run_refresh(in_array('--sha256', $argv, true), in_array('--refresh-covers', $argv, true), !in_array('--no-param', $argv, true), in_array('--ai', $argv, true), in_array('--prospero', $argv, true));
+        [$code, $text] = run_refresh(in_array('--sha256', $argv, true), in_array('--refresh-covers', $argv, true), !in_array('--no-param', $argv, true), in_array('--ai', $argv, true), !in_array('--no-prospero', $argv, true));
         echo ($code === 0 ? "OK\n" : "ERREUR ($code)\n") . $text . "\n";
         exit($code === 0 ? 0 : 1);
     }
-    fwrite(STDERR, "Usage : php make-nas-index.php hash [motdepasse] | refresh [--sha256] [--refresh-covers] [--no-param] [--ai]\n");
+    fwrite(STDERR, "Usage : php make-nas-index.php hash [motdepasse] | refresh [--sha256] [--refresh-covers] [--no-param] [--no-prospero] [--ai]\n");
     exit(2);
 }
 
@@ -320,7 +622,22 @@ if (isset($_GET['job'])) {
     session_write_close();
     $j = job_state();
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['state' => $j['state'], 'elapsed' => $j['elapsed']]);
+    echo json_encode(['state' => $j['state'], 'elapsed' => $j['elapsed'], 'stopping' => $j['state'] === 'running' && is_file(job_base() . '.cancel')]);
+    exit;
+}
+
+// ---- Patchs PS5 : liste et avancement (JSON, réservé aux connectés) ----------------
+if (isset($_GET['patches'])) {
+    session_write_close();
+    header('Content-Type: application/json; charset=utf-8');
+    $l = patch_list((string)$_GET['patches'], console_fw());
+    echo json_encode($l + ['consoleFw' => console_fw()], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+if (isset($_GET['patchjob'])) {
+    session_write_close();
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(patch_state(), JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -495,10 +812,39 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         header('Location: ' . strtok((string)($_SERVER['REQUEST_URI'] ?? ''), '?'));
         exit;
     }
+    if ($action === 'refresh_stop') {
+        if (job_state()['state'] === 'running') @file_put_contents(job_base() . '.cancel', '1');   // Python s'arrête proprement au prochain fichier
+        header('Location: ' . strtok((string)($_SERVER['REQUEST_URI'] ?? ''), '?'));
+        exit;
+    }
     if ($action === 'refresh') {
-        $err = start_background_refresh(!empty($_POST['sha256']), !empty($_POST['refresh_covers']), !empty($_POST['param']), !empty($_POST['ai']), !empty($_POST['prospero']));
+        $err = start_background_refresh(!empty($_POST['sha256']), !empty($_POST['refresh_covers']), true, !empty($_POST['ai']), true); /* param.json/.pkg et prosperopatches.com : toujours actifs */
         if ($err !== '') $_SESSION['flash'] = ['ok' => false, 'log' => $err, 'at' => time()];
         header('Location: ' . strtok((string)($_SERVER['REQUEST_URI'] ?? ''), '?'));
+        exit;
+    }
+    if ($action === 'patch_dl' || $action === 'patch_cancel' || $action === 'patch_ack' || $action === 'patch_save') {
+        header('Content-Type: application/json; charset=utf-8');
+        if ($action === 'patch_dl') {
+            $err = patch_start((string)($_POST['id'] ?? ''), (string)($_POST['version'] ?? ''), (string)($_POST['link'] ?? ''), !empty($_POST['force']));
+            echo json_encode(['ok' => $err === '', 'error' => $err], JSON_UNESCAPED_UNICODE);
+        } elseif ($action === 'patch_save') {
+            $sid = (string)($_POST['id'] ?? '');
+            $err = patch_saved_set($sid, (string)($_POST['version'] ?? ''), (string)($_POST['link'] ?? ''), isset($_POST['title']) ? (string)$_POST['title'] : null);
+            $info = null;
+            if ($err === '' && !empty($_POST['art']) && isset(patch_saved_load()[$sid])) {
+                if (!isset(saved_info_load()[$sid])) saved_info_fetch($sid);   // titre et images de prosperopatches.com
+                $info = saved_info_load()[$sid] ?? null;
+            }
+            echo json_encode(['ok' => $err === '', 'error' => $err, 'info' => $info], JSON_UNESCAPED_UNICODE);
+        } elseif ($action === 'patch_cancel') {
+            $st = patch_state();
+            if ($st['state'] === 'running') @file_put_contents(patch_base() . '.cancel', '1');
+            echo json_encode(['ok' => true, 'error' => '']);
+        } else {
+            patch_state(true);                         // efface un résultat déjà affiché
+            echo json_encode(['ok' => true, 'error' => '']);
+        }
         exit;
     }
     if ($action === 'link_create' || $action === 'link_delete') {
@@ -547,6 +893,8 @@ if (is_file($indexFile)) {
                 'title' => $s('title') ?: $s('filename'),
                 'titleId' => $s('titleId'),
                 'filename' => $s('filename'),
+                'packTitle' => $s('packTitle'),
+                'label' => $s('label'),
                 'path' => rawurldecode($s('path') ?: $s('url')),
                 'size' => (int)($r['sizeBytes'] ?? 0),
                 'format' => $s('format') ?: '—',
@@ -577,7 +925,8 @@ $job = job_state(true);                          // une actualisation terminée 
 if ($job['state'] === 'done') $flash = ['ok' => $job['ok'], 'log' => $job['log'] !== '' ? $job['log'] : '(aucune sortie)', 'at' => $job['at']];
 $running = $job['state'] === 'running';
 $links = $ALLOW_LINKS ? link_list((string)$GAMES_DIR) : [];
-$data = json_encode(['games' => $games, 'indexTime' => $indexTime, 'today' => date('Y-m-d')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+patch_public_sync();
+$data = json_encode(['games' => $games, 'indexTime' => $indexTime, 'today' => date('Y-m-d'), 'csrf' => $csrf, 'consoleFw' => (string)$CONSOLE_FW, 'patches' => is_file((string)$FETCH_SCRIPT), 'saved' => (object)patch_saved_load(), 'savedInfo' => (object)saved_info_load()], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 
 header('Content-Type: text/html; charset=utf-8');
 ?><!doctype html>
@@ -623,6 +972,7 @@ ul.files li:has(form.inl){grid-template-columns:auto 1fr auto}
 .field{padding:.55rem .9rem;border-radius:.7rem;border:1px solid var(--line);background:var(--panel);outline:none;min-width:0}
 .field:focus{border-color:var(--accent);box-shadow:0 0 0 3px #4fb3ff33}
 #q{width:min(15rem,30vw);flex:none}
+#plat{width:auto;flex:none}
 .btn{padding:.55rem 1rem;border-radius:.7rem;border:1px solid var(--line);background:var(--panel2);cursor:pointer;white-space:nowrap}
 .btn:hover{border-color:var(--accent)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#04101f;font-weight:600}
@@ -663,6 +1013,8 @@ main{padding:0 0 3rem}
 .art{aspect-ratio:1;border-radius:.75rem;overflow:hidden;background:linear-gradient(135deg,var(--panel2),var(--panel));display:grid;place-items:center;position:relative}
 .art img{width:100%;height:100%;object-fit:cover;display:block}
 .art svg{width:38%;opacity:.35}
+.badge.upd{left:auto;right:.4rem;background:#1f8f4e}
+.plat{position:absolute;left:.4rem;top:.4rem;font-size:.7rem;font-weight:700;padding:.12rem .5rem;border-radius:999px;background:#1f5fe0;color:#fff;letter-spacing:.04em;box-shadow:0 1px 4px #0006}
 .badge{position:absolute;left:.4rem;bottom:.4rem;font-size:.7rem;padding:.12rem .45rem;border-radius:999px;background:#000a;color:#fff;letter-spacing:.02em}
 .name{margin-top:.55rem;font-weight:600;font-size:.95rem;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .sub{color:var(--dim);font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -672,6 +1024,7 @@ main{padding:0 0 3rem}
 /* Fiche d'un jeu */
 dialog{border:1px solid var(--line);border-radius:1.2rem;background:var(--panel);color:var(--text);padding:0;width:min(42rem,calc(100% - 2rem));max-height:calc(100% - 2rem);overflow:auto}
 dialog::backdrop{background:#030814cc;backdrop-filter:blur(4px)}
+[hidden]{display:none!important}
 .dhero{height:11rem;background:linear-gradient(135deg,#1b3a7a,var(--panel2)) center/cover;position:relative}
 .dhero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 40%,var(--panel))}
 .det{display:flex;gap:1.1rem;padding:0 1.4rem 1.4rem;margin-top:-4rem;position:relative;z-index:1}
@@ -682,7 +1035,21 @@ h3{margin:1.2rem 1.4rem .5rem;font-size:.85rem;color:var(--dim);text-transform:u
 ul.files{list-style:none;margin:0 1.4rem;padding:0;display:grid;gap:.4rem}
 ul.files li{display:grid;grid-template-columns:auto 1fr auto;gap:.2rem .8rem;align-items:baseline;padding:.55rem .8rem;border-radius:.7rem;background:#ffffff0a;font-size:.88rem}
 ul.files .fmt{font-weight:600;color:var(--accent);white-space:nowrap}
+.pbox{margin:0 1.4rem;display:grid;gap:.6rem}
+.pbox label{display:grid;gap:.25rem;font-size:.85rem;color:var(--dim)}
+.pbox .row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end}
+.pbox a{color:var(--accent)}
+.prow{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;width:100%;text-align:left;padding:.45rem .7rem;border-radius:.6rem;border:1px solid var(--line);background:var(--panel2);cursor:pointer;color:inherit;font:inherit}
+.prow[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 2px #4fb3ff33}
+.prow b{font-variant-numeric:tabular-nums}.prow .m{color:var(--dim);font-size:.82rem}
+.prow .t{margin-left:auto;font-size:.75rem;font-weight:700;padding:.1rem .5rem;border-radius:999px}
+.t.ok{background:#14532d;color:#bbf7d0}.t.no{background:#7f1d1d;color:#fecaca}.t.unk{background:#334155;color:#cbd5e1}
+#pRows{display:grid;gap:.35rem;max-height:13rem;overflow:auto}
+.pbar{height:.7rem;border-radius:999px;background:var(--panel2);border:1px solid var(--line);overflow:hidden}
+.pbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .6s linear}
+.pbox .chk{display:flex;gap:.5rem;align-items:center}
 ul.files .fn{word-break:break-all}
+ul.files .fn small{display:block;color:var(--dim);font-size:.75rem}
 ul.files .sz{color:var(--dim);white-space:nowrap}
 dl{display:grid;grid-template-columns:max-content 1fr;gap:.35rem 1rem;margin:0 1.4rem;font-size:.9rem}
 dt{color:var(--dim)}dd{margin:0;word-break:break-all}
@@ -694,6 +1061,7 @@ dt{color:var(--dim)}dd{margin:0;word-break:break-all}
 .panel pre{margin:.6rem 0 0;white-space:pre-wrap;font:.82rem/1.5 ui-monospace,Menlo,Consolas,monospace;color:var(--dim);max-height:16rem;overflow:auto}
 .panel.ok summary{color:var(--ok)}.panel.bad summary{color:var(--bad)}
 .panel.first{margin-top:5.5rem}
+.stopform{display:inline;margin:0 0 0 .6rem}.stopform .btn{padding:.35rem .8rem}
 summary{cursor:pointer;font-weight:600}
 .spin{display:none;width:1rem;height:1rem;border:2px solid #04101f55;border-top-color:#04101f;border-radius:50%;animation:s 1s linear infinite;vertical-align:-.2rem;margin-right:.4rem}
 .busy .spin,.spin.on{display:inline-block}.panel .spin{border-color:#9db0d855;border-top-color:var(--accent);vertical-align:-.15rem}@keyframes s{to{transform:rotate(360deg)}}
@@ -704,10 +1072,12 @@ summary{cursor:pointer;font-weight:600}
   <div class="brand"><svg viewBox="0 0 64 64" aria-hidden="true"><g fill="none" stroke="#eaf0ff" stroke-width="4"><circle cx="32" cy="32" r="18"/><ellipse cx="32" cy="32" rx="30" ry="10" transform="rotate(-34 32 32)"/></g></svg><span><?= h($SITE_NAME) ?></span></div>
   <nav class="tabs" id="tabs" aria-label="Catégories"></nav>
   <input id="q" class="field" type="search" placeholder="Rechercher…" aria-label="Rechercher">
+  <select id="plat" class="field" aria-label="Plateformes affichées" title="Plateformes affichées"><option value="">PS5 + PS4</option><option value="ps5">PS5 seulement</option><option value="ps4">PS4 seulement</option></select>
   <button class="btn gear" id="gear" type="button" aria-label="Réglages" title="Réglages"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M9.78 4.73 L10.40 1.93 L13.60 1.93 L14.22 4.73 L15.57 5.29 L18.00 3.75 L20.25 6.00 L18.71 8.43 L19.27 9.78 L22.07 10.40 L22.07 13.60 L19.27 14.22 L18.71 15.57 L20.25 18.00 L18.00 20.25 L15.57 18.71 L14.22 19.27 L13.60 22.07 L10.40 22.07 L9.78 19.27 L8.43 18.71 L6.00 20.25 L3.75 18.00 L5.29 15.57 L4.73 14.22 L1.93 13.60 L1.93 10.40 L4.73 9.78 L5.29 8.43 L3.75 6.00 L6.00 3.75 L8.43 5.29Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
 </header>
 <?php if ($running): ?>
-  <div class="panel first" id="running" role="status"><span class="spin on"></span> Actualisation en cours… <span id="elapsed"><?= (int)$job['elapsed'] ?></span> s — tu peux fermer cette page, elle continue en arrière-plan.</div>
+  <div class="panel first" id="running" role="status"><span class="spin on"></span> <span id="runLabel"><?= is_file(job_base() . '.cancel') ? 'Arrêt en cours (fin du fichier en cours de traitement)…' : 'Actualisation en cours…' ?></span> <span id="elapsed"><?= (int)$job['elapsed'] ?></span> s — tu peux fermer cette page, elle continue en arrière-plan.
+    <form method="post" class="stopform"><input type="hidden" name="action" value="refresh_stop"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><button class="btn" id="stopGo"<?= is_file(job_base() . '.cancel') ? ' disabled' : '' ?>>Arrêter l'actualisation</button></form></div>
 <?php endif; ?>
 <?php if ($flash): ?>
   <details class="panel first <?= $flash['ok'] ? 'ok' : 'bad' ?>" open><summary><?= h((string)($flash['title'] ?? ($flash['ok'] ? 'Index actualisé' : "Échec de l'actualisation"))) ?> — <?= h(date('d/m/Y H:i:s', (int)$flash['at'])) ?></summary><pre><?= h((string)$flash['log']) ?></pre></details>
@@ -746,12 +1116,11 @@ summary{cursor:pointer;font-weight:600}
   </form>
   <?php endif; ?>
   <h3>Index des jeux</h3>
-  <form class="sform" method="post" id="refreshForm">
+  <form class="sform" method="post" id="refreshForm" autocomplete="off">
     <input type="hidden" name="action" value="refresh"><input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-    <label><input type="checkbox" name="param" value="1" checked> Lire le param.json des .zip PS5 (titre, identifiant, version)</label>
-    <label><input type="checkbox" name="prospero" value="1" checked> Récupérer titre, éditeur, région, icône et fond sur prosperopatches.com (tes propres images de covers/ restent prioritaires)</label>
-<?php if (!empty(array_filter((array)$GEMINI_KEYS))): ?>
-    <label><input type="checkbox" name="ai" value="1"> Compléter avec l'IA (Gemini) les infos manquantes (description, éditeur, genre, accroche, date de sortie)</label>
+    <p class="muted">Toujours actif : lecture du param.json des .zip PS5 et de l'intérieur des .pkg (titre, identifiant, version, icône, DLC), et récupération du titre, de l'éditeur, de la région, de l'icône et du fond sur prosperopatches.com (tes propres images de covers/ restent prioritaires).</p>
+<?php if (ai_ready()): ?>
+    <label><input type="checkbox" name="ai" value="1"> IA (<?= h(ai_label()) ?>) : traduire les descriptions d'IGDB et du catalogue, et écrire la description des jeux qui n'en ont aucune (rien d'autre n'est généré)</label>
 <?php endif; ?>
     <label><input type="checkbox" name="refresh_covers" value="1"> Remplacer les images déjà extraites des .zip</label>
     <label><input type="checkbox" name="sha256" value="1"> Calculer les SHA-256 (long sur de gros fichiers)</label>
@@ -766,14 +1135,37 @@ summary{cursor:pointer;font-weight:600}
   <p class="desc" id="dDesc"></p>
   <h3 id="dFilesTitle">Fichiers</h3>
   <ul class="files" id="dFiles"></ul>
-  <h3>Informations</h3>
+  <h3 id="dInfoTitle">Informations</h3>
   <dl id="dList"></dl>
+  <div id="dAdd" class="pbox" hidden>
+    <label>Identifiant du jeu<input class="field" id="aId" size="11" maxlength="9" placeholder="PPSA01234" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
+    <label>Nom du jeu (facultatif)<input class="field" id="aName" maxlength="80" placeholder="Nom affiché dans la liste" autocomplete="off"></label>
+    <p class="note">Pour un jeu que tu as sur disque Blu-ray : saisis son identifiant (PPSA suivi de 5 chiffres, visible sur la page du jeu sur prosperopatches.com), choisis le patch, colle son lien CRC et le fichier est téléchargé depuis les serveurs Sony.</p>
+  </div>
+  <div id="dPatch" hidden>
+    <h3>Patchs (PS5)</h3>
+    <div class="pbox">
+      <div class="row">
+        <label>Firmware de ta console<input class="field" id="pFw" size="7" maxlength="11" placeholder="10.20" autocomplete="off"></label>
+        <button class="btn small" id="pList" type="button">Chercher les patchs</button>
+        <a id="pSite" href="#" target="_blank" rel="noopener noreferrer">Page du jeu ↗</a>
+      </div>
+      <div id="pRows"></div>
+      <label>Version<input class="field" id="pVer" maxlength="10" placeholder="06.005.000" autocomplete="off"></label>
+      <label>Lien CRC du patch<input class="field" id="pLink" maxlength="500" placeholder="https://sgst.prod.dl.playstation.net/…/….crc" autocomplete="off"></label>
+      <p class="note">Sur la page du jeu, ouvre le patch, fais un clic droit sur « CRC » → copier l'adresse du lien, puis colle-la ici. Le fichier est téléchargé depuis les serveurs Sony dans <code>packages/ps5/updates/</code>.</p>
+      <label class="chk"><input type="checkbox" id="pForce"> Forcer même si le firmware de la console est trop ancien</label>
+      <div class="row"><button class="btn primary" id="pGo" type="button">Télécharger le patch</button><button class="btn" id="pStop" type="button" hidden>Annuler</button></div>
+      <div class="pbar" id="pBar" hidden><i id="pFill"></i></div>
+      <p class="note" id="pMsg" role="status"></p>
+    </div>
+  </div>
   <div class="actions"><button class="btn" id="dOk">Fermer</button></div>
 </dialog>
 <script type="application/json" id="data"><?= $data ?></script>
 <script nonce="<?= h($nonce) ?>">
 (() => {
-  const { games: releases, indexTime, today } = JSON.parse(document.getElementById('data').textContent);
+  const { games: releases, indexTime, today, csrf: CSRF, consoleFw: CFG_FW, patches: PATCHES_ON, saved: SAVED, savedInfo: SAVED_INFO } = JSON.parse(document.getElementById('data').textContent);
   const $ = (id) => document.getElementById(id);
   const main = $('main'), tabsEl = $('tabs'), q = $('q');
   const SVG = 'http://www.w3.org/2000/svg';
@@ -788,7 +1180,7 @@ summary{cursor:pointer;font-weight:600}
     games: 'Aucun jeu pour l\'instant. Place tes jeux dans packages/ps5/games/… puis clique sur « Actualiser ».',
     apps: 'Aucune application. Place-les dans packages/ps5/apps/<extension>/<application> puis clique sur « Actualiser ».',
     dlc: 'Aucun DLC. Place les .pkg dans packages/ps5/dlc/<ID du jeu>/ puis clique sur « Actualiser ».',
-    updates: 'Aucune mise à jour. Place les .pkg dans packages/ps5/updates/<ID du jeu>/ puis clique sur « Actualiser ».',
+    updates: 'Aucune mise à jour. Place les .pkg dans packages/ps5/updates/<ID du jeu>/ puis clique sur « Actualiser », ou clique sur « + » pour en télécharger une depuis prosperopatches.com.',
   };
   const catOf = (tagline) => {
     const t = (tagline || '').trim().toUpperCase();
@@ -816,11 +1208,32 @@ summary{cursor:pointer;font-weight:600}
   all.forEach((g) => {
     g.size = g.files.reduce((a, f) => a + f.size, 0);
     g.formats = [...new Set(g.files.map((f) => f.format))];
-    g.search = (g.title + ' ' + g.titleId + ' ' + g.files.map((f) => f.filename).join(' ')).toLowerCase();
+    g.search = (g.title + ' ' + g.titleId + ' ' + g.files.map((f) => f.filename + ' ' + f.packTitle + ' ' + f.label).join(' ')).toLowerCase();
   });
+  // Une mise à jour enregistrée (version + lien Sony) apparaît dans « Mises à jour » même sans fichier sur le NAS :
+  // elle est dans la base, et la console la télécharge elle-même depuis les serveurs Sony.
+  function syncSaved() {
+    for (let i = all.length - 1; i >= 0; i--) if (all[i].saved) all.splice(i, 1);
+    for (const [id, v] of Object.entries(SAVED)) {
+      if (!v || !v.version || !v.link) continue;
+      if (all.some((g) => g.cat === 'updates' && g.titleId === id)) continue;   // un .pkg est déjà sur le NAS
+      const base = all.find((g) => g.cat === 'game' && g.titleId === id) || {};
+      const si = SAVED_INFO[id] || {};
+      const title = base.title || v.title || si.title || id;
+      const f = { filename: 'v' + v.version, packTitle: '', label: '', format: 'Lien Sony', size: 0, version: v.version, path: '', tagline: 'UPDATES', saved: true };
+      all.push({ key: 'saved:' + id, saved: true, cat: 'updates', title, titleId: id, tagline: '', description: base.description || '', publisher: base.publisher || si.publisher || '',
+        genre: base.genre || '', region: base.region || si.region || '', releaseDate: base.releaseDate || '', platform: 'ps5', cover: base.cover || si.cover || '', hero: base.hero || si.hero || '',
+        coverReal: !!(base.coverReal || si.cover), heroReal: !!(base.heroReal || si.hero), added: 0, files: [f], size: 0, formats: ['Lien Sony'], search: (title + ' ' + id + ' ' + f.filename).toLowerCase() });
+    }
+  }
   const sortTitle = (a, b) => a.title.localeCompare(b.title, 'fr', { sensitivity: 'base' });
-  const pool = (tab) => tab === 'discover' ? all.filter((g) => g.cat === 'game' || g.cat === 'apps')
-    : all.filter((g) => g.cat === ({ games: 'game', apps: 'apps', dlc: 'dlc', updates: 'updates' })[tab]);
+  // Plateformes affichées : les deux, PS5 seulement ou PS4 seulement (retenu dans ce navigateur).
+  let platform = '';
+  try { platform = localStorage.getItem('orbit.nas.platform') || ''; } catch (e) { /* stockage indisponible */ }
+  if (platform !== 'ps5' && platform !== 'ps4') platform = '';
+  const onPlatform = (g) => !platform || (platform === 'ps4' ? g.platform === 'ps4' : g.platform !== 'ps4');
+  const pool = (tab) => (tab === 'discover' ? all.filter((g) => g.cat === 'game' || g.cat === 'apps')
+    : all.filter((g) => g.cat === ({ games: 'game', apps: 'apps', dlc: 'dlc', updates: 'updates' })[tab])).filter(onPlatform);
 
   // ---- Petits utilitaires ----
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -841,10 +1254,23 @@ summary{cursor:pointer;font-weight:600}
     const box = el('div', 'art');
     if (g.cover) { const i = new Image(); i.alt = ''; i.loading = 'lazy'; i.decoding = 'async'; i.src = g.cover; i.onerror = () => { i.remove(); box.prepend(mark()); }; box.append(i); }
     else box.append(mark());
+    if (g.platform === 'ps4') { const p = el('span', 'plat', 'PS4'); p.title = 'Jeu PS4'; box.append(p); }
     if (badge) box.append(el('span', 'badge', g.files.length > 1 ? plural(g.files.length, 'fichier', 'fichiers') : g.formats.join(' · ')));
+    // Une mise à jour est ajoutée au jeu : un .pkg dans updates/, ou une version enregistrée avec son lien Sony.
+    const files = g.files.filter((f) => catOf(f.tagline) === 'updates');
+    const saved = (typeof SAVED !== 'undefined' && SAVED[g.titleId]) || {};
+    const sony = saved.version && saved.link;
+    if (badge && g.cat === 'game' && (files.length || sony)) {
+      const u = el('span', 'badge upd', 'Update');
+      u.title = [files.length && 'Sur le NAS : ' + files.map((f) => f.version ? 'v' + f.version : f.filename).join(', '),
+        sony && 'Lien Sony enregistré : v' + saved.version].filter(Boolean).join(' · ');
+      box.append(u);
+    }
     return box;
   };
   const firstGenre = (g) => (g.genre || '').split('/')[0].trim();
+
+  syncSaved();
 
   // ---- Navigation par onglets (#discover, #games, #apps, #dlc, #updates) ----
   let tab = 'discover', page = 0, focused = null;
@@ -960,6 +1386,13 @@ summary{cursor:pointer;font-weight:600}
     const items = pool(kind);
     const head = el('div', 'page-head');
     head.append(el('h1', null, TABS.find(([id]) => id === kind)[1]), el('span', 'note', plural(items.length, 'élément', 'éléments')));
+    if (kind === 'updates' && PATCHES_ON) {
+      // « + » : créer une mise à jour pour un jeu qui n'est pas dans l'index (jeu sur disque Blu-ray).
+      const add = el('button', 'btn primary', '＋'); add.type = 'button';
+      add.setAttribute('aria-label', 'Ajouter une mise à jour depuis prosperopatches.com'); add.title = 'Ajouter une mise à jour depuis prosperopatches.com';
+      add.addEventListener('click', openAdd);
+      head.append(add);
+    }
     if (!items.length) return [head, empty(kind)];
     const formats = [...new Set(items.flatMap((g) => g.formats))].sort();
     const genres = [...new Set(items.map(firstGenre).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr'));
@@ -978,7 +1411,7 @@ summary{cursor:pointer;font-weight:600}
 
   // ---- Recherche : tous les types à la fois ----
   function results(term) {
-    const found = all.filter((g) => g.search.includes(term)).sort(sortTitle);
+    const found = all.filter((g) => onPlatform(g) && g.search.includes(term)).sort(sortTitle);
     const head = el('div', 'page-head');
     head.append(el('h1', null, 'Résultats'), el('span', 'note', plural(found.length, 'élément', 'éléments') + ' pour « ' + q.value.trim() + ' »'));
     return [head, found.length ? pagedGrid(found, true) : el('div', 'empty', 'Aucun résultat.')];
@@ -993,7 +1426,29 @@ summary{cursor:pointer;font-weight:600}
 
   // ---- Fiche ----
   const dlg = $('dlg');
+  function fileName(f) {
+    const span = el('span', 'fn');
+    if (!f.packTitle) { span.textContent = f.filename; return span; }
+    span.append(f.packTitle, el('small', null, [f.label, f.filename].filter(Boolean).join(' · ')));
+    return span;
+  }
+  // Fiche « Ajouter une mise à jour » : les blocs d'un jeu sont masqués, on saisit l'identifiant.
+  function setAddMode(on) {
+    $('dAdd').hidden = !on;
+    for (const id of ['dArt', 'dDesc', 'dFilesTitle', 'dFiles', 'dInfoTitle', 'dList']) $(id).hidden = on;
+  }
+  function openAdd() {
+    setAddMode(true);
+    $('dHero').style.backgroundImage = '';
+    $('dTitle').textContent = 'Ajouter une mise à jour';
+    $('dSub').textContent = 'Jeu sur disque Blu-ray · patch de prosperopatches.com';
+    $('aId').value = ''; $('aName').value = '';
+    startPatch('');
+    dlg.showModal();
+    $('aId').focus();
+  }
   function openGame(g) {
+    setAddMode(false);
     $('dHero').style.backgroundImage = g.heroReal ? cssUrl(g.hero) : g.hero ? cssUrl(g.hero) : '';
     $('dArt').replaceWith(Object.assign(picture(g, false), { id: 'dArt' }));
     $('dTitle').textContent = g.title;
@@ -1003,16 +1458,139 @@ summary{cursor:pointer;font-weight:600}
     $('dFilesTitle').textContent = files.length > 1 ? 'Fichiers (' + files.length + ')' : 'Fichier';
     $('dFiles').replaceChildren(...files.map((f) => {
       const li = el('li'); li.title = f.path;
-      li.append(el('span', 'fmt', f.format + (f.compression ? ' · ' + f.compression : '')), el('span', 'fn', f.filename),
+      li.append(el('span', 'fmt', f.format + (f.compression ? ' · ' + f.compression : '')), fileName(f),
         el('span', 'sz', [f.version && 'v' + f.version, bytes(f.size)].filter(Boolean).join(' · ')));
       return li;
     }));
-    const rows = [files.length > 1 ? ['Taille totale', bytes(g.size)] : ['Chemin', files[0].path], g.platform && ['Plateforme', g.platform.toUpperCase()], g.region && ['Région', g.region],
+    const rows = [files.length > 1 ? ['Taille totale', bytes(g.size)] : files[0].saved ? ['État', 'Enregistrée : la console la télécharge depuis les serveurs Sony'] : ['Chemin', files[0].path], g.platform && ['Plateforme', g.platform.toUpperCase()], g.region && ['Région', g.region],
       g.genre && ['Genre', g.genre], g.releaseDate && ['Sortie', g.releaseDate], files.length === 1 && files[0].sha256 && ['SHA-256', files[0].sha256],
       ['Icône', g.coverReal ? 'oui' : 'manquante'], ['Fond', g.heroReal ? 'oui' : 'manquant']].filter(Boolean);
     $('dList').replaceChildren(...rows.flatMap(([k, v]) => [el('dt', null, k), el('dd', null, v)]));
     dlg.showModal();
+    setupPatch(g);
   }
+  // ---- Patchs PS5 ----
+  const pbox = $('dPatch');
+  let patchGame = '', patchTimer = 0;
+  const lsGet = (k) => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* stockage indisponible */ } };
+  const fwOk = () => /^\d{1,2}\.\d{1,2}(\.\d{1,2}){0,2}$/.test($('pFw').value.trim());
+  const pPost = async (data) => {
+    const r = await fetch(location.pathname, { method: 'POST', credentials: 'same-origin', body: new URLSearchParams({ csrf: CSRF, ...data }) });
+    return r.json();
+  };
+  const hms = (s) => { const m = Math.floor(s / 60); return m + ' min ' + String(s % 60).padStart(2, '0') + ' s'; };
+  function showPatchState(st) {
+    const run = st.state === 'running';
+    $('pStop').hidden = !run;
+    $('pGo').disabled = run;
+    $('pBar').hidden = !(run || (st.state === 'done' && st.ok));
+    const pct = st.total ? Math.min(100, Math.floor(st.done * 100 / st.total)) : 0;
+    $('pFill').style.width = (st.state === 'done' && st.ok ? 100 : pct) + '%';
+    if (run) {
+      $('pMsg').textContent = st.id + ' v' + st.version + ' : ' + (st.total ? pct + ' % · ' + bytes(st.done) + ' / ' + bytes(st.total) + ' · morceau ' + Math.min(st.piece + 1, st.pieces) + '/' + st.pieces + (st.speed ? ' · ' + bytes(st.speed) + '/s' : '') : 'préparation…') + ' · ' + hms(st.elapsed);
+    } else if (st.state === 'done') {
+      $('pMsg').textContent = st.ok ? 'Terminé : ' + st.id + ' v' + st.version + '. Ferme cette fiche et clique sur « Actualiser » pour l\'ajouter à la liste.' : 'Échec : ' + (st.msg || 'erreur inconnue') + (st.msg && /cancel|annul/i.test(st.msg) ? ' (la reprise est possible : relance le téléchargement)' : '');
+    }
+  }
+  async function pollPatch() {
+    clearTimeout(patchTimer);
+    if (!dlg.open) return;
+    try {
+      const st = await (await fetch('?patchjob=1', { cache: 'no-store', credentials: 'same-origin' })).json();
+      if (st.state !== 'idle') showPatchState(st);
+      if (st.state === 'running') { patchTimer = setTimeout(pollPatch, 2000); return; }
+      if (st.state === 'done') pPost({ action: 'patch_ack' }).catch(() => {});
+      else { $('pGo').disabled = false; $('pStop').hidden = true; }
+    } catch (e) { patchTimer = setTimeout(pollPatch, 4000); }
+  }
+  function setupPatch(g) {
+    const on = PATCHES_ON && g.platform === 'ps5' && (g.cat === 'game' || g.saved) && /^PPSA\d{5}$/.test(g.titleId || '');
+    startPatch(on ? g.titleId : '');
+  }
+  function startPatch(id) {
+    pbox.hidden = !id;
+    clearTimeout(patchTimer);
+    if (!id) { patchGame = ''; return; }
+    patchGame = id;
+    $('pFw').value = lsGet('orbitFw') || CFG_FW || '';
+    $('pSite').href = 'https://prosperopatches.com/' + id;
+    $('pRows').replaceChildren(); $('pVer').value = (SAVED[id] || {}).version || ''; $('pLink').value = (SAVED[id] || {}).link || ''; $('pForce').checked = false;
+    $('pMsg').textContent = ''; $('pBar').hidden = true; $('pStop').hidden = true; $('pGo').disabled = false;
+    pollPatch();
+  }
+  let saveTimer = 0;
+  const artTried = new Set();
+  function saveFields() {
+    const id = patchGame, version = $('pVer').value.trim(), link = $('pLink').value.trim();
+    if (!id) return;
+    if (!/^(\d{2}\.\d{3}\.\d{3})?$/.test(version) || !(link === '' || /^https?:\/\/\S+$/.test(link))) return;
+    const adding = !$('dAdd').hidden, title = adding ? $('aName').value.trim() : null;
+    SAVED[id] = { ...(SAVED[id] || {}), version, link };
+    if (adding) SAVED[id].title = title;
+    clearTimeout(saveTimer);
+    // Jeu absent de l'index : on récupère aussi son titre et ses images sur prosperopatches.com (une seule tentative par jeu).
+    const art = version && link && !SAVED_INFO[id] && !artTried.has(id) && !all.some((g) => g.cat === 'game' && g.titleId === id);
+    if (art) artTried.add(id);
+    const body = { action: 'patch_save', id, version, link };
+    if (adding) body.title = title;
+    if (art) body.art = '1';
+    saveTimer = setTimeout(() => pPost(body).then((r) => {
+      if (r && r.info) { SAVED_INFO[id] = r.info; if (adding && !$('aName').value.trim() && r.info.title) $('aName').placeholder = r.info.title; }
+    }).catch(() => {}), 400);
+  }
+  $('aName').addEventListener('input', saveFields);
+  $('aId').addEventListener('input', () => {
+    const id = $('aId').value.trim().toUpperCase();
+    if (/^PPSA\d{5}$/.test(id)) { if (id !== patchGame) { startPatch(id); $('aName').value = (SAVED[id] || {}).title || ''; } } else startPatch('');
+  });
+  $('pVer').addEventListener('input', saveFields);
+  $('pLink').addEventListener('input', saveFields);
+  $('pFw').addEventListener('change', () => { if (fwOk()) lsSet('orbitFw', $('pFw').value.trim()); });
+  $('pList').addEventListener('click', async () => {
+    const id = patchGame; if (!id) return;
+    $('pMsg').textContent = 'Recherche des patchs…'; $('pRows').replaceChildren();
+    try {
+      const r = await fetch('?patches=' + encodeURIComponent(id) + (fwOk() ? '&fw=' + encodeURIComponent($('pFw').value.trim()) : ''), { cache: 'no-store', credentials: 'same-origin' });
+      const j = await r.json();
+      if (id !== patchGame) return;
+      $('pMsg').textContent = j.error || (j.patches.length ? '' : 'Aucun patch listé.');
+      const rows = j.patches.map((p) => {
+        const b = el('button', 'prow'); b.type = 'button'; b.setAttribute('aria-pressed', 'false');
+        const tag = p.ok === true ? ['ok', 'compatible'] : p.ok === false ? ['no', 'firmware trop récent'] : ['unk', 'firmware ?'];
+        b.append(el('b', null, 'v' + p.version), el('span', 'm', [p.latest && 'dernier', p.size, p.date, p.fw && 'FW ' + p.fw].filter(Boolean).join(' · ')), el('span', 't ' + tag[0], tag[1]));
+        b.onclick = () => { $('pVer').value = p.version; saveFields(); for (const x of $('pRows').children) x.setAttribute('aria-pressed', String(x === b)); };
+        return b;
+      });
+      $('pRows').replaceChildren(...rows);
+      const keep = j.patches.findIndex((p) => p.version === $('pVer').value.trim());
+      if (rows.length) rows[keep >= 0 ? keep : 0].click();
+    } catch (e) { $('pMsg').textContent = 'Impossible de contacter le serveur.'; }
+  });
+  $('pGo').addEventListener('click', async () => {
+    const version = $('pVer').value.trim(), link = $('pLink').value.trim();
+    if (!/^\d{2}\.\d{3}\.\d{3}$/.test(version)) { $('pMsg').textContent = 'Version attendue au format 06.005.000.'; return; }
+    if (!/^https?:\/\/\S+\.(crc|json)$/i.test(link)) { $('pMsg').textContent = 'Colle le lien CRC (qui finit par .crc).'; return; }
+    $('pGo').disabled = true; $('pMsg').textContent = 'Lancement…';
+    try {
+      const j = await pPost({ action: 'patch_dl', id: patchGame, version, link, force: $('pForce').checked ? '1' : '', fw: fwOk() ? $('pFw').value.trim() : '' });
+      if (!j.ok) { $('pMsg').textContent = j.error || 'Échec du lancement.'; $('pGo').disabled = false; return; }
+      showPatchState({ state: 'running', id: patchGame, version, elapsed: 0, done: 0, total: 0, piece: 0, pieces: 0, speed: 0 });
+      patchTimer = setTimeout(pollPatch, 1500);
+    } catch (e) { $('pMsg').textContent = 'Impossible de contacter le serveur.'; $('pGo').disabled = false; }
+  });
+  $('pStop').addEventListener('click', async () => {
+    $('pStop').disabled = true;
+    try { await pPost({ action: 'patch_cancel' }); $('pMsg').textContent = 'Annulation…'; } catch (e) { /* on réessaiera */ }
+    setTimeout(() => { $('pStop').disabled = false; }, 3000);
+  });
+  let savedSig = JSON.stringify([SAVED, SAVED_INFO]);
+  dlg.addEventListener('close', () => {
+    clearTimeout(patchTimer);
+    const sig = JSON.stringify([SAVED, SAVED_INFO]);
+    if (sig !== savedSig) { savedSig = sig; syncSaved(); render(); }   // une mise à jour enregistrée apparaît dans la liste
+  });
+
   $('dClose').onclick = $('dOk').onclick = () => dlg.close();
   dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
 
@@ -1092,6 +1670,13 @@ summary{cursor:pointer;font-weight:600}
   });
   if ($('running')) $('gear').classList.add('busy');
   tab = fromHash();
+  const platEl = $('plat');
+  platEl.value = platform;
+  platEl.addEventListener('input', () => {
+    platform = platEl.value;
+    try { localStorage.setItem('orbit.nas.platform', platform); } catch (e) { /* stockage indisponible */ }
+    page = 0; render();
+  });
   render();
   if ($('running')) {
     const tick = async () => {
@@ -1099,6 +1684,7 @@ summary{cursor:pointer;font-weight:600}
         const r = await fetch('?job=1', { cache: 'no-store', credentials: 'same-origin' });
         const j = await r.json();
         $('elapsed').textContent = j.elapsed;
+        if (j.stopping) { $('runLabel').textContent = 'Arrêt en cours (fin du fichier en cours de traitement)…'; $('stopGo').disabled = true; }
         if (j.state !== 'running') { location.reload(); return; }
       } catch (e) { /* réseau ou proxy occupé : on réessaie */ }
       setTimeout(tick, 2500);
