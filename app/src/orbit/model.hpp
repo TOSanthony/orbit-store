@@ -25,6 +25,7 @@ struct System
     int api_game_updates = 0; // API revisions; 0 when the service does not report them
     int api_artwork = 0;
     std::string instance_id;
+    std::string dns; // how the service looks up Sony's hosts (e.g. "DoH 1.1.1.1"); empty when not reported
     bool stopping = false;
     std::string platform; // "ps5", "desktop" or "fixture"
     bool paired = false;

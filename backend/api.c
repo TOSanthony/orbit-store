@@ -304,6 +304,7 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
         cJSON_AddStringToObject(o, "name", "Orbit Store");
         cJSON_AddStringToObject(o, "version", ORBIT_VERSION);
         cJSON_AddStringToObject(o, "instanceId", orbit.instance_id);
+        cJSON_AddStringToObject(o, "dns", ORBIT_DNS_LABEL);
         cJSON *apis = cJSON_AddObjectToObject(o, "apis");
         cJSON_AddNumberToObject(apis, "gameUpdates", ORBIT_API_GAME_UPDATES);
         cJSON_AddNumberToObject(apis, "artwork", ORBIT_API_ARTWORK);

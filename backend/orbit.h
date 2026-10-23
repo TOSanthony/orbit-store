@@ -22,6 +22,9 @@
 #define ORBIT_MAX_RANGES 8
 #endif
 #define ORBIT_VERSION "1.2.0"
+/* How Orbit looks up Sony's download hosts (see sonynet.c): shown in the TV app's More settings. */
+#define ORBIT_DNS_URL "https://1.1.1.1/dns-query"
+#define ORBIT_DNS_LABEL "DoH 1.1.1.1"
 /* API revisions: raise one by 1 whenever that API gains or changes an
  * endpoint, a field or a behaviour. Shown in the TV app's More settings. */
 #define ORBIT_API_GAME_UPDATES 8

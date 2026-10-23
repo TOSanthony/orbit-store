@@ -1516,6 +1516,7 @@ void SettingsScreen::build_more(Pane &pane) const
     pane.version_row(tr("Artwork API"), state.system.api_artwork > 0
                                             ? std::to_string(state.system.api_artwork)
                                             : tr("Unknown"));
+    pane.version_row(tr("Orbit DNS"), state.system.dns.empty() ? tr("Unknown") : state.system.dns);
 }
 
 // ---- input ----

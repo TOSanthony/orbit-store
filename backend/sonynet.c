@@ -157,7 +157,7 @@ static void route_apply(CURL *curl, char *address, size_t cap, Route *route) {
  * Orbit's CA list; if the resolver cannot be reached the network's own DNS is used. */
 static void own_dns(CURL *curl, bool local, bool nas) {
     if (!local && !nas)
-        curl_easy_setopt(curl, CURLOPT_DOH_URL, "https://1.1.1.1/dns-query");
+        curl_easy_setopt(curl, CURLOPT_DOH_URL, ORBIT_DNS_URL);
 }
 /* Sony's older servers (sgst.*) chain to a root from 2003 whose signatures use SHA-1, which OpenSSL
  * refuses at its default security level ("CA signature digest algorithm too weak"). Only after that

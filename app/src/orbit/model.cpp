@@ -135,6 +135,7 @@ System parse_system(const json::Value &value)
     system.name = value.text("name");
     system.version = value.text("version");
     system.instance_id = value.text("instanceId");
+    system.dns = value.text("dns");
     system.api_game_updates = static_cast<int>(value["apis"]["gameUpdates"].as_int());
     system.api_artwork = static_cast<int>(value["apis"]["artwork"].as_int());
     system.stopping = value.flag("stopping");
