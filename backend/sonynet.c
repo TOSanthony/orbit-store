@@ -150,12 +150,25 @@ static void route_apply(CURL *curl, char *address, size_t cap, Route *route) {
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, route->headers);
     curl_easy_setopt(curl, CURLOPT_CONNECT_TO, route->connect_to);
 }
+/* A DNS filter on the network (AdGuard, Pi-hole...) often blocks Sony's download hosts so the console cannot
+ * update itself, and Orbit's patch lookups and downloads are blocked with them. Orbit therefore resolves
+ * Sony's hosts itself, through DNS-over-HTTPS to Cloudflare's address (no DNS lookup needed to reach it),
+ * so the filter can stay as strict as you like for the console. TLS to the resolver is verified against
+ * Orbit's CA list; if the resolver cannot be reached the network's own DNS is used. */
+static void own_dns(CURL *curl, bool local, bool nas) {
+    if (!local && !nas)
+        curl_easy_setopt(curl, CURLOPT_DOH_URL, "https://1.1.1.1/dns-query");
+}
 /* Sony's older servers (sgst.*) chain to a root from 2003 whose signatures use SHA-1, which OpenSSL
  * refuses at its default security level ("CA signature digest algorithm too weak"). Only after that
  * exact refusal is the request repeated with that one rule relaxed: the chain must still end at Sony's
  * root, and the name and certificate are still checked. */
-static CURLcode perform(CURL *curl, const char *detail) {
+static CURLcode perform(CURL *curl, const char *detail, bool doh) {
     CURLcode result = curl_easy_perform(curl);
+    if (doh && (result == CURLE_COULDNT_RESOLVE_HOST || result == CURLE_COULDNT_RESOLVE_PROXY)) {
+        curl_easy_setopt(curl, CURLOPT_DOH_URL, NULL);   /* DNS-over-HTTPS unreachable: ask the network's own DNS after all */
+        result = curl_easy_perform(curl);
+    }
     if (result == CURLE_PEER_FAILED_VERIFICATION && strstr(detail, "too weak")) {
         curl_easy_setopt(curl, CURLOPT_SSL_CIPHER_LIST, "DEFAULT:@SECLEVEL=0");
         result = curl_easy_perform(curl);
@@ -244,12 +257,13 @@ bool sony_get(const char *url, size_t max, SonyBody *body, sony_stop_fn stop, ch
     route_apply(curl, address, sizeof address, &route);
     curl_easy_setopt(curl, CURLOPT_URL, address);
     common(curl, &ca, local, &watch);
+    own_dns(curl, local, false);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, collect);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &collected);
     char detail[CURL_ERROR_SIZE] = "";
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, detail);
-    CURLcode result = perform(curl, detail);
+    CURLcode result = perform(curl, detail, !local);
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
     curl_easy_cleanup(curl);
@@ -313,6 +327,7 @@ static sony_range_result range(const char *url, int64_t start, int64_t end, int 
     route_apply(curl, address, sizeof address, &route);
     curl_easy_setopt(curl, CURLOPT_URL, address);
     common(curl, &ca, local, &watch);
+    own_dns(curl, local, nas);
     if (nas && !local) {
         curl_easy_setopt(curl, CURLOPT_PROXY, "");
         curl_easy_setopt(curl, CURLOPT_OPENSOCKETFUNCTION, provider_open_socket);
@@ -326,7 +341,7 @@ static sony_range_result range(const char *url, int64_t start, int64_t end, int 
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &w);
     char detail[CURL_ERROR_SIZE] = "";
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, detail);
-    CURLcode result = perform(curl, detail);
+    CURLcode result = perform(curl, detail, !local && !nas);
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
     if (result != CURLE_OK)
