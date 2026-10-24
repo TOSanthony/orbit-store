@@ -17,7 +17,7 @@
 #include <strings.h>
 #include <time.h>
 
-#define NAS_INDEX_LIMIT (4 * 1024 * 1024)
+#define NAS_INDEX_LIMIT (12 * 1024 * 1024)
 #define NAS_REFRESH_SECONDS (30 * 60)
 #define NAS_RETRY_SECONDS (5 * 60)
 
@@ -272,10 +272,11 @@ static void merge_locked(const char *index_url, const cJSON *doc) {
         return;
     }
     if (cJSON_GetArraySize(entries) > ORBIT_NAS_MAX) {
-        copy_text(nas.error, sizeof nas.error, "The NAS index lists too many files (maximum 512).");
+        snprintf(nas.error, sizeof nas.error, "The NAS index lists too many files (maximum %d).", ORBIT_NAS_MAX);
         return;
     }
-    Release *parsed = calloc(ORBIT_NAS_MAX, sizeof *parsed);
+    int listed = cJSON_GetArraySize(entries);
+    Release *parsed = calloc(listed > 0 ? (size_t)listed : 1, sizeof *parsed);   /* only what the index lists, not the maximum */
     cJSON *catalog = cJSON_CreateArray();
     if (!parsed || !catalog) {
         free(parsed);
