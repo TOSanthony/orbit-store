@@ -15,6 +15,8 @@ Orbit orbit = {.mutex = PTHREAD_MUTEX_INITIALIZER,
                .port = ORBIT_HTTP_PORT,
                .state_fd = -1,
                .delete_archives = true,
+               .install_pkgs = true, /* a downloaded .pkg is installed, then removed (changeable in Settings) */
+               .delete_pkgs = true,
                .concurrent_downloads = ORBIT_DEFAULT_DOWNLOADS};
 void copy_text(char *to, size_t cap, const char *s) {
     if (cap)
