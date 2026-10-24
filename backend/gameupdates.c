@@ -20,7 +20,10 @@
 #include <unistd.h>
 
 #define APP_DB "/system_data/priv/mms/app.db"
-#define MAX_GAMES 512
+#define MAX_GAMES 512      /* installed games read from app.db */
+#define MAX_ENTRIES 4096   /* updates and DLC offered at once (a game such as DRIVECLUB has over a thousand DLC) */
+#define QUEUE_ALL_MAX 2048 /* same as the download queue in patchdl.c */
+#define DLC_PER_GAME 2048  /* DLC listed by the NAS for one game */
 #define MAX_XML (256 * 1024)
 #define FIRST_CHECK_DELAY 45
 #define CHECK_INTERVAL (6 * 60 * 60)
@@ -373,7 +376,7 @@ static struct {
     char id[24], base[16], label[24], name[96];
     unsigned char *icon;
     size_t icon_size;
-} dlc_meta[256];
+} dlc_meta[4096];
 static size_t dlc_meta_count, dlc_icon_bytes;
 static pthread_mutex_t dlc_meta_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -414,15 +417,15 @@ static void dlc_meta_free(void) {
 /* Adds an entry for each DLC the NAS lists for an installed game and the console does not have yet. */
 static void add_dlc(const appdb_game *games, size_t total, Entry *found, size_t *count, char *skipped,
                     size_t skipped_cap) {
-    Release *list = calloc(16, sizeof *list);
+    Release *list = calloc(DLC_PER_GAME, sizeof *list);
     if (!list)
         return;
     for (size_t i = 0; i < total && !stopping(); i++) {
         const char *id = games[i].title_id;
         if (strncmp(id, "PPSA", 4) && strncmp(id, "CUSA", 4))
             continue;
-        size_t n = nas_dlc_list(id, list, 16);
-        for (size_t k = 0; k < n && *count < MAX_GAMES; k++) {
+        size_t n = nas_dlc_list(id, list, DLC_PER_GAME);
+        for (size_t k = 0; k < n && *count < MAX_ENTRIES; k++) {
             const Release *r = &list[k];
             char label[24] = "", name[96] = "", why[120] = "";
             bool cached = false;
@@ -491,7 +494,7 @@ static void run_check(void) {
     char path[600], error[160] = "";
     snprintf(path, sizeof path, "%s%s", orbit.system_root, APP_DB);
     appdb_game *games = calloc(MAX_GAMES, sizeof *games);
-    Entry *found = calloc(MAX_GAMES, sizeof *found);
+    Entry *found = calloc(MAX_ENTRIES, sizeof *found);
     if (!games || !found) {
         free(games);
         free(found);
@@ -764,15 +767,20 @@ int gameupdates_action(const cJSON *input, char *error, size_t cap) {
         return 202;
     }
     if (!strcmp(action, "queueAll") || !strcmp(action, "queueAllDlc")) {
-        char ids[128][32];
+        char (*ids)[32] = calloc(QUEUE_ALL_MAX, sizeof *ids);
+        if (!ids) {
+            copy_text(error, cap, "Not enough memory.");
+            return 500;
+        }
         size_t n = 0;
         const bool want_dlc = !strcmp(action, "queueAllDlc");
         pthread_mutex_lock(&gu.mutex);
-        for (size_t i = 0; i < gu.count && n < 128; i++)
+        for (size_t i = 0; i < gu.count && n < QUEUE_ALL_MAX; i++)
             if (!gu.entries[i].blocked && gu.entries[i].dlc == want_dlc)
                 copy_text(ids[n++], sizeof ids[0], gu.entries[i].title_id);
         pthread_mutex_unlock(&gu.mutex);
         if (!n) {
+            free(ids);
             copy_text(error, cap, want_dlc ? "There is no DLC to install." : "There is no update this console can install.");
             return 409;
         }
@@ -783,6 +791,7 @@ int gameupdates_action(const cJSON *input, char *error, size_t cap) {
             if (code == 202 || code == 200)
                 accepted++;
         }
+        free(ids);
         if (!accepted) {
             copy_text(error, cap, want_dlc ? "Every DLC is already running or waiting." : "Every update is already running or waiting.");
             return 409;

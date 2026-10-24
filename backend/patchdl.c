@@ -147,7 +147,7 @@ static void remove_package(const Storage *drive, const char *name) {
 
 /* The updates waiting for their turn, in order. Kept in game-update-queue.json so a restart
  * keeps it; each one is checked against the current offers when its turn comes. */
-#define QUEUE_MAX 128
+#define QUEUE_MAX 2048   /* "install all DLC" of a game with over a thousand DLC */
 #define QUEUE_FILE "game-update-queue.json"
 static struct {
     pthread_mutex_t mutex;
