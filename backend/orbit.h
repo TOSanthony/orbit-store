@@ -105,7 +105,7 @@ typedef struct {
     size_t release_count;
     cJSON *catalog;
     /* The person's own NAS files. Kept apart from the signed catalogue so its revision checks are untouched. */
-    Release nas_releases[ORBIT_NAS_MAX];
+    Release *nas_releases; /* Heap array of nas_count entries: kept out of the static image so the payload stays small. */
     size_t nas_count;
     cJSON *nas_catalog;
     unsigned catalog_revision;

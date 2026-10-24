@@ -260,6 +260,8 @@ static bool entry(const char *index_url, const cJSON *x, Release *r, cJSON **vie
 static void clear_locked(void) {
     cJSON_Delete(orbit.nas_catalog);
     orbit.nas_catalog = NULL;
+    free(orbit.nas_releases);
+    orbit.nas_releases = NULL;
     orbit.nas_count = 0;
 }
 
@@ -309,10 +311,9 @@ static void merge_locked(const char *index_url, const cJSON *doc) {
         cJSON_AddItemToArray(catalog, view);
     }
     clear_locked();
-    memcpy(orbit.nas_releases, parsed, count * sizeof *parsed);
+    orbit.nas_releases = parsed;
     orbit.nas_count = count;
     orbit.nas_catalog = catalog;
-    free(parsed);
     if (rejected)
         snprintf(nas.error, sizeof nas.error,
                  "%zu entr%s skipped: invalid, duplicated or not on your NAS address.", rejected,
