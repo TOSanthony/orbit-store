@@ -547,6 +547,7 @@ class GamePage final : public Screen
     std::string error_;
     ui::Ease page_scroll_;
     ui::Ease sheet_scroll_;
+    float summary_clock_ = 0.0f; // seconds the summary has been shown: drives its automatic scrolling
 
 };
 

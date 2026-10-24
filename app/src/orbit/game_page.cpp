@@ -225,6 +225,7 @@ void GamePage::open(const std::string &game_id)
     error_.clear();
     page_scroll_.snap(0);
     sheet_scroll_.snap(0);
+    summary_clock_ = 0.0f;
     action_serial_ = ctx_.store.action().serial;
     favourite_serial_ = ctx_.store.favourite_action().serial;
     const auto &state = ctx_.store.state();
@@ -416,10 +417,46 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         if (list) ui::paragraph(*list, type.medium, title, kLeft, y + size * 0.85f, size,
                                width, size * 1.04f, ui::color::text, static_cast<int>(lines.size()));
         y += static_cast<float>(lines.size()) * size * 1.04f + 25;
+        // The slogan and the summary below it always sit at the same height, as if the title took two lines
+        // (a one-line title leaves the room empty); a title of three lines or more pushes them down.
+        y = std::max(y, 185.0f + 2.0f * 92.0f * 1.04f + 25.0f);
+        const float tagline_top = y;
         paragraph(game->tagline, kLeft, y, width, 25, ui::color::text);
         if (!game->tagline.empty()) y += 15;
-        paragraph(game->description, kLeft, y, std::min(width, type.regular.measure("0", 22) * 54), 22);
-        y += 24;
+        y = std::max(y, tagline_top + 25.0f * 1.45f + 15.0f);   // the room of a one-line slogan, even without one
+        // The summary always takes the same room (kSummaryLines lines) so nothing moves from game to game.
+        // A longer one scrolls by itself: a pause at the start, a slow scroll, a pause at the end, back to the top.
+        {
+            constexpr float kSize = 22.0f, kStep = kSize * 1.45f;
+            constexpr int kSummaryLines = 6;
+            const float box = kStep * kSummaryLines;
+            const float text_w = std::min(width, type.regular.measure("0", 22) * 54);
+            if (list && !game->description.empty())
+            {
+                const auto lines = type.regular.font->wrap(game->description, kSize, text_w);
+                const int count = static_cast<int>(lines.size());
+                const float overflow = std::max(0, count - kSummaryLines) * kStep;
+                float offset = 0.0f;
+                if (overflow > 0.0f)
+                {
+                    constexpr float kHold = 3.0f, kSpeed = 26.0f, kBack = 0.7f;
+                    const float run = overflow / kSpeed;
+                    const float cycle = kHold + run + kHold + kBack;
+                    const float t = std::fmod(summary_clock_, cycle);
+                    if (t < kHold) offset = 0.0f;
+                    else if (t < kHold + run) offset = (t - kHold) * kSpeed;
+                    else if (t < kHold + run + kHold) offset = overflow;
+                    else { const float k = (t - kHold - run - kHold) / kBack; offset = overflow * (1.0f - k * k * (3.0f - 2.0f * k)); }
+                }
+                list->push_clip({kLeft, y, text_w + 8, box});
+                list->push_transform(1, 0, 0, 0, -offset);
+                ui::paragraph(*list, type.regular, game->description, kLeft, y + kSize, kSize, text_w, kStep,
+                              ui::color::text2, count);
+                list->pop_transform();
+                list->pop_clip();
+            }
+            y += box;
+        }
         // Server, format, size and platform as pills shaped like the download button.
         {
             const FactIcon size_kind = size_icon(release);
@@ -988,6 +1025,7 @@ Intent GamePage::update(const InputFrame &input,float dt,Feedback &feedback,bool
         return intent;
     }
     option_=std::clamp(option_,0,static_cast<int>(game->releases.size())-1);
+    if(sheet_==Sheet::none)summary_clock_+=dt;
     if(waiting_ && ctx_.store.action().serial!=action_serial_ && !ctx_.store.action().busy)
     {
         waiting_=false;action_serial_=ctx_.store.action().serial;
