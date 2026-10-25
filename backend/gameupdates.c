@@ -200,7 +200,7 @@ static char addcont_note[1800];
 static pthread_mutex_t addcont_mutex = PTHREAD_MUTEX_INITIALIZER;
 /* What a database of the console holds, for the status: how many (game, name) pairs, its tables, and whether a journal sits beside it. */
 static void addcont_describe(const char *name, char *note, size_t cap, appdb_content **keep, size_t *kept) {
-    char path[600], schema[420] = "", error[96] = "", journal[640];
+    char path[600], schema[720] = "", error[96] = "", journal[640];
     snprintf(path, sizeof path, "%s/system_data/priv/mms/%s", orbit.system_root, name);
     appdb_content *list = calloc(ADDCONT_MAX, sizeof *list);
     size_t count = 0;
@@ -210,7 +210,7 @@ static void addcont_describe(const char *name, char *note, size_t cap, appdb_con
     long wal = !stat(journal, &st) ? (long)st.st_size : -1;
     size_t used = strlen(note);
     if (rc == 0)
-        snprintf(note + used, cap - used, "%s%s: %zu name(s), wal %ld; %.300s", used ? " | " : "", name, count, wal, schema);
+        snprintf(note + used, cap - used, "%s%s: %zu name(s), wal %ld; %.560s", used ? " | " : "", name, count, wal, schema);
     else
         snprintf(note + used, cap - used, "%s%s not read: %s", used ? " | " : "", name, list ? error : "not enough memory");
     if (rc == 0 && keep) {

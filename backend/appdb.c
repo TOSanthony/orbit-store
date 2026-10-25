@@ -400,6 +400,7 @@ static int tables_row(db *d, const column *cols, size_t count, void *context) {
 typedef struct {
     appdb_content *out;
     size_t cap, count;
+    size_t rows;                                                        /* rows visited in the current table */
 } content_collect;
 
 /* A title id inside a text: the whole text, or the part of a content id between '-' and '_'. */
@@ -428,6 +429,7 @@ static bool label_like(const unsigned char *text, size_t length) {
 static int content_row(db *d, const column *cols, size_t count, void *context) {
     (void)d;
     content_collect *c = context;
+    c->rows++;
     char id[10] = "";
     for (size_t i = 0; i < count && !id[0]; i++)
         if (cols[i].kind == COL_TEXT && !find_title_id(cols[i].text, cols[i].length, id)) id[0] = 0;
@@ -485,7 +487,9 @@ int appdb_addcont_read(const char *path, appdb_content *out, size_t cap, size_t 
     tables.tables = calloc(ADDCONT_TABLES, sizeof *tables.tables);
     if (!tables.tables) { fail(&d, "out of memory"); goto done; }
     if (walk(&d, 1, 0, tables_row, &tables) < 0) goto done;
-    content_collect c = {out, cap, 0};
+    content_collect c = {out, cap, 0, 0};
+    char stats[300] = "";
+    size_t stats_used = 0;
     size_t used = 0;
     for (size_t t = 0; t < tables.count; t++) {
         const table_info *info = &tables.tables[t];
@@ -496,7 +500,20 @@ int appdb_addcont_read(const char *path, appdb_content *out, size_t cap, size_t 
         }
         if (!strncmp(info->name, "sqlite_", 7)) continue;
         d.visited = 0;
-        if (walk(&d, info->root, 0, content_row, &c) < 0) { d.error[0] = 0; continue; }   /* one unreadable table does not hide the others */
+        c.rows = 0;
+        const size_t before = c.count;
+        const int walked = walk(&d, info->root, 0, content_row, &c);
+        if (stats_used + 1 < sizeof stats) {                               /* per table: rows seen, names found, why a walk stopped */
+            int w = snprintf(stats + stats_used, sizeof stats - stats_used, "%s%.30s rows=%zu names=%zu%s%.40s", stats_used ? ", " : "",
+                             info->name, c.rows, c.count - before, walked < 0 ? " err=" : "", walked < 0 ? d.error : "");
+            if (w > 0) stats_used += (size_t)w < sizeof stats - stats_used ? (size_t)w : sizeof stats - stats_used - 1;
+        }
+        if (walked < 0) d.error[0] = 0;                                    /* one unreadable table does not hide the others */
+    }
+    if (schema && schema_cap) {
+        char copy[1024];
+        snprintf(copy, sizeof copy, "%s", schema);
+        snprintf(schema, schema_cap, "[%s] %s", stats, copy);
     }
     *count = c.count;
     rc = 0;
