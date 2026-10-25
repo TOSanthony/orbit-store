@@ -410,13 +410,21 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
     if (sheet == Sheet::none)
     {
         const std::string title = heading(game->title);
-        const float size = game->title.size() > 34 ? 68.0f : 92.0f;
         const float width = 960;
         float y = 185;
+        // At most two lines: the type shrinks step by step until the title fits in two, and a title that is still
+        // too long at the smallest size ends with "...".
+        float size = 92.0f;
+        for (const float step : {92.0f, 84.0f, 76.0f, 68.0f, 60.0f, 54.0f, 48.0f})
+        {
+            size = step;
+            if (type.medium.font->wrap(title, size, width).size() <= 2) break;
+        }
         const auto lines = type.medium.font->wrap(title, size, width);
+        const int shown = static_cast<int>(std::min<std::size_t>(lines.size(), 2));
         if (list) ui::paragraph(*list, type.medium, title, kLeft, y + size * 0.85f, size,
-                               width, size * 1.04f, ui::color::text, static_cast<int>(lines.size()));
-        y += static_cast<float>(lines.size()) * size * 1.04f + 25;
+                               width, size * 1.04f, ui::color::text, shown);
+        y += static_cast<float>(shown) * size * 1.04f + 25;
         // The slogan and the summary below it always sit at the same height, as if the title took two lines
         // (a one-line title leaves the room empty); a title of three lines or more pushes them down.
         y = std::max(y, 185.0f + 2.0f * 92.0f * 1.04f + 25.0f);
