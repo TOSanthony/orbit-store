@@ -579,13 +579,22 @@ def igdb_query(title_id: str, name: str, client_id: str, token: str, errors: lis
         data, ok = post("games", f'{fields} search "{search}"; limit 5;')
         if not ok:
             return None
+        # "DIRT5" -> "DIRT 5": when the name as written finds no game of that name, the same name with a space between letters and digits is tried too.
+        spaced = " ".join(re.sub(r"(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])", " ", search).split())
+        if spaced != search and not any(isinstance(g, dict) and _igdb_key(g.get("name")) == _igdb_key(name) for g in data or []):
+            time.sleep(0.3)
+            more, ok = post("games", f'{fields} search "{spaced}"; limit 5;')
+            if not ok:
+                return None
+            if isinstance(more, list) and more and (not data or any(isinstance(g, dict) and _igdb_key(g.get("name")) == _igdb_key(name) for g in more)):
+                data = more
     if not isinstance(data, list) or not data:
         return {}
     wanted = _igdb_key(name)
     game = next((g for g in data if isinstance(g, dict) and _igdb_key(g.get("name")) == wanted), None) or next((g for g in data if isinstance(g, dict)), {})
     stamp = game.get("first_release_date")
     date = time.strftime("%Y-%m-%d", time.gmtime(stamp)) if isinstance(stamp, (int, float)) else ""
-    return {"name": clean_text(game.get("name"), 80), "summary": clean_text(game.get("summary"), 2000), "releaseDate": date}
+    return {"name": clean_text(game.get("name"), 80), "summary": clean_text(game.get("summary"), 4000), "releaseDate": date}
 
 
 def read_param(zip_path: Path):
@@ -893,36 +902,30 @@ def ai_lookup(title_id: str, hint: str, keys, model: str, errors: list, lang: st
     return None
 
 
-DESC_TARGET = 450       # a long description is summarised to at most this many characters
-DESC_LONG = 450         # a text up to this length is only translated
+DESC_MAX = 4000         # the longest description kept in index.json (the Orbit service ignores a text over 4096 characters)
+
+
+def fit_description(text: str) -> str:
+    """The text as it is; only one longer than DESC_MAX is cut after its last complete sentence (the TV app scrolls the rest)."""
+    if len(text) <= DESC_MAX:
+        return text
+    cut = max(text.rfind(". ", 0, DESC_MAX), text.rfind("! ", 0, DESC_MAX), text.rfind("? ", 0, DESC_MAX))
+    return text[:cut + 1] if cut >= DESC_MAX // 2 else text[:DESC_MAX].rstrip()
 
 
 def ai_translate(text: str, lang: str, keys, model: str, errors: list, dead=None, provider: str = "gemini", base: str = ""):
-    """The description in `lang`: translated as it is when it is short, summarised to about DESC_TARGET characters when it is long.
+    """The whole description in `lang`: translated as it is, never summarised or shortened (the TV app scrolls a long text).
     None when the answer looks wrong (empty, cut short, much too long)."""
-    summarise = len(text) > DESC_LONG
-    if summarise:
-        prompt = (f"Summarise this PlayStation game description in {lang}, in 3 or 4 sentences and {DESC_TARGET} characters at most. "
-                  "Keep the game's name and its main features; no list, no introduction, no comment. Answer with the summary only.\n\n" + text)
-    else:
-        prompt = (f"Translate this PlayStation game description into {lang}. Keep the meaning, the names (game, characters, places) and the bullet points; "
-                  "add nothing and explain nothing. Answer with the translation only.\n\n" + text)
+    prompt = (f"Translate this PlayStation game description into {lang}. Keep the meaning, the names (game, characters, places) and the bullet points; "
+              "add nothing, leave nothing out and explain nothing. Answer with the translation only.\n\n" + text)
     answer = ai_call(prompt, keys, model, errors, dead, provider, base, json_mode=False)
     if answer is None:
         return None
-    answer = clean_text(re.sub(r"^```\w*\s*|\s*```$", "", answer.strip()), 2000).strip(" \"'")
-    if summarise:
-        if len(answer) > DESC_TARGET:
-            cut = max(answer.rfind(". ", 0, DESC_TARGET), answer.rfind("! ", 0, DESC_TARGET), answer.rfind("? ", 0, DESC_TARGET))
-            answer = answer[:cut + 1] if cut >= 150 else ""               # cut after the last complete sentence that fits
-        if len(answer) < 120:
-            errors.append("summary rejected (wrong length)")
-            return None
-        return answer
+    answer = clean_text(re.sub(r"^```\w*\s*|\s*```$", "", answer.strip()), 2 * DESC_MAX).strip(" \"'")
     if len(answer) < 0.4 * len(text) or len(answer) > 2.5 * len(text) + 40:
         errors.append("translation rejected (wrong length)")
         return None
-    return answer
+    return fit_description(answer)
 
 
 def inspect_zip(path: Path):
@@ -1075,7 +1078,7 @@ def main() -> int:
         """Cached IGDB data for a game, asked now when needed (up to --igdb-max per run); unknown games are asked again after 30 days."""
         nonlocal igdb_dirty, igdb_calls, igdb_tok, igdb_dead
         hit = igdb_cache.get(title_id)
-        if isinstance(hit, dict) and hit.get("n") == name and hit.get("v") == 5 and (not hit.get("unknown") or time.time() - float(hit.get("at", 0)) < 30 * 86400):
+        if isinstance(hit, dict) and hit.get("n") == name and (hit.get("v") == 6 or (hit.get("v") == 5 and not hit.get("unknown"))) and (not hit.get("unknown") or time.time() - float(hit.get("at", 0)) < 30 * 86400):
             return None if hit.get("unknown") else hit
         if igdb_dead or igdb_calls >= args.igdb_max or len(igdb_errors) >= 3:
             return None
@@ -1094,10 +1097,10 @@ def main() -> int:
             return None
         igdb_errors.clear()
         if not got or not (got.get("summary") or got.get("releaseDate")):
-            igdb_cache[title_id] = {"unknown": True, "at": time.time(), "n": name, "v": 5}
+            igdb_cache[title_id] = {"unknown": True, "at": time.time(), "n": name, "v": 6}
             igdb_dirty = True
             return None
-        got.update({"at": time.time(), "n": name, "v": 5})
+        got.update({"at": time.time(), "n": name, "v": 6})
         igdb_cache[title_id] = got
         igdb_dirty = True
         if igdb_calls % 20 == 0:
@@ -1131,7 +1134,7 @@ def main() -> int:
         nonlocal tr_dirty, tr_calls, tr_done
         mark = hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
         hit = tr_cache.get(title_id)
-        if isinstance(hit, dict) and hit.get("src") == mark and hit.get("lang") == args.ai_lang and hit.get("v") == 2 and hit.get("text"):
+        if isinstance(hit, dict) and hit.get("src") == mark and hit.get("lang") == args.ai_lang and hit.get("v") == 3 and hit.get("text"):
             return hit["text"]
         if tr_calls >= args.ai_max or len(dead_keys) >= len(keys) or len(tr_errors) >= 3 * len(keys):
             return text
@@ -1141,7 +1144,7 @@ def main() -> int:
             return text
         tr_errors.clear()
         tr_done += 1
-        tr_cache[title_id] = {"src": mark, "lang": args.ai_lang, "v": 2, "text": result}
+        tr_cache[title_id] = {"src": mark, "lang": args.ai_lang, "v": 3, "text": result}
         tr_dirty = True
         if tr_done % 10 == 0:
             save_translations()
@@ -1532,14 +1535,14 @@ def main() -> int:
                 igdb_hits += 1
                 if "description" in wanted_igdb and got.get("summary"):
                     text = got["summary"]                                  # IGDB's summary only
-                    row["description"] = to_translate = text            # translated at the end
+                    row["description"] = to_translate = fit_description(text)            # translated at the end
                     db_fields.add("description")
                 for field in ("releaseDate",):
                     if field in wanted_igdb and got.get(field):
                         row[field] = got[field]
                         db_fields.add(field)
         if catalog_desc.get(title_id) and pack not in ("DLC", "UPDATES") and not extra.get("description") and "description" not in db_fields:
-            row["description"] = to_translate = catalog_desc[title_id]     # the catalogue's own text, when IGDB had none; translated at the end
+            row["description"] = to_translate = fit_description(catalog_desc[title_id])     # the catalogue's own text, when IGDB had none; translated at the end
             db_fields.add("description")
             catalog_hits += 1
         if suffix == ".zip" and not args.no_extract:
