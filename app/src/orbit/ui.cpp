@@ -571,8 +571,22 @@ float glyph_width(const Type &type, hui::ui::Button button)
 
 // The browser's hint glyph: the face button's symbol in a 1.5 px outlined
 // circle, in the label's colour; shoulder buttons as an outlined pill.
-float glyph(DrawList &list, const Type &type, hui::ui::Button button, float x, Color ink)
+// The DualSense face buttons' own colours, for the symbol inside the ring.
+Color symbol_ink(hui::ui::Button button, Color fallback)
 {
+    switch (button)
+    {
+    case hui::ui::Button::cross: return Color::rgb(0x7fa7ff);
+    case hui::ui::Button::circle: return Color::rgb(0xff6b7d);
+    case hui::ui::Button::square: return Color::rgb(0xe98fd8);
+    case hui::ui::Button::triangle: return Color::rgb(0x46d6b0);
+    default: return fallback;
+    }
+}
+
+float glyph(DrawList &list, const Type &type, hui::ui::Button button, float x, Color ring_ink)
+{
+    const Color ink = symbol_ink(button, ring_ink);
     const float width = glyph_width(type, button);
     const float cx = x + width * 0.5f;
     const float cy = kHintY;
@@ -582,7 +596,7 @@ float glyph(DrawList &list, const Type &type, hui::ui::Button button, float x, C
         orbit::ui::text(list, type.semibold, name, cx, cy + 4.7f, 13.0f, ink, Align::center);
         return width;
     }
-    list.ring(cx, cy, kHintGlyph * 0.5f - 0.75f, 1.5f, ink);
+    list.ring(cx, cy, kHintGlyph * 0.5f - 0.75f, 1.5f, ring_ink);
     const float s = 6.0f;
     switch (button)
     {
