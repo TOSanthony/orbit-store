@@ -302,17 +302,10 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
         {
             // Its newest patch needs a newer firmware: the version this console can install is picked on
             // prosperopatches.com, in the console's browser.
-            if (status.pick_state == "waiting")
-            {
-                refuse(feedback, input);
-                intent.toast = tr("Finish or cancel the current selection first.");
-            }
-            else
-            {
-                feedback.play(hui::audio::Cue::select);
-                ctx_.store.game_update_job("pickLink", game.title_id);
-                intent.toast = tr("Pick your version on prosperopatches.com, then select its CRC link.");
-            }
+            // A selection still waiting (its page was closed) is replaced by this one.
+            feedback.play(hui::audio::Cue::select);
+            ctx_.store.game_update_job("pickLink", game.title_id);
+            intent.toast = tr("Pick your version on prosperopatches.com, then select its CRC link.");
         }
         else if (queue_place(status, game.title_id) > 0)
         {

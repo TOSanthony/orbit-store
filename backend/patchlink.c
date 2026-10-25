@@ -171,6 +171,20 @@ int patchlink_action(const cJSON *input, char *error, size_t cap) {
     int code = 202;
     bool join = false;
     pthread_t old;
+    if (strcmp(action, "pickCancel")) {
+        /* A new selection replaces one still waiting (the person closed that page and opened another). */
+        bool replace = false;
+        pthread_mutex_lock(&orbit.mutex);
+        if (pl.busy && pl.started) {
+            atomic_store(&pl.cancel, true);
+            old = pl.thread;
+            pl.started = false;
+            replace = true;
+        }
+        pthread_mutex_unlock(&orbit.mutex);
+        if (replace)
+            pthread_join(old, NULL);
+    }
     pthread_mutex_lock(&orbit.mutex);
     if (!strcmp(action, "pickCancel")) {
         if (pl.busy)
