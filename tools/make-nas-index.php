@@ -1191,9 +1191,8 @@ summary{cursor:pointer;font-weight:600}
       <div id="pRows"></div>
       <label>Version<input class="field" id="pVer" maxlength="10" placeholder="06.005.000" autocomplete="off"></label>
       <label>Lien CRC du patch<input class="field" id="pLink" maxlength="500" placeholder="https://sgst.prod.dl.playstation.net/…/….crc" autocomplete="off"></label>
-      <label>Firmware minimum de ce patch (vide = toutes les consoles)<input class="field" id="pMin" size="7" maxlength="5" placeholder="13.20" autocomplete="off"></label>
       <div id="pMore"></div>
-      <div class="row"><button type="button" class="btn" id="pAddMore">+ Autre version pour un autre firmware</button></div>
+      <div class="row"><button type="button" class="btn" id="pAddMore">+ Ajouter une version pour un autre firmware</button></div>
       <p class="note">Sur la page du jeu, ouvre le patch, fais un clic droit sur « CRC » → copier l'adresse du lien, puis colle-la ici. Le fichier est téléchargé depuis les serveurs Sony dans <code>packages/ps5/updates/</code>.</p>
       <label class="chk"><input type="checkbox" id="pForce"> Forcer même si le firmware de la console est trop ancien</label>
       <div class="row"><button class="btn primary" id="pGo" type="button">Télécharger le patch</button><button class="btn" id="pStop" type="button" hidden>Annuler</button></div>
@@ -1554,9 +1553,9 @@ summary{cursor:pointer;font-weight:600}
     clearTimeout(patchTimer);
     if (!id) { patchGame = ''; return; }
     patchGame = id;
-    $('pFw').value = lsGet('orbitFw') || CFG_FW || '';
+    $('pFw').value = (SAVED[id] || {}).fw || lsGet('orbitFw') || CFG_FW || '';
     $('pSite').href = 'https://prosperopatches.com/' + id;
-    $('pRows').replaceChildren(); $('pVer').value = (SAVED[id] || {}).version || ''; $('pLink').value = (SAVED[id] || {}).link || ''; $('pMin').value = (SAVED[id] || {}).fw || ''; $('pForce').checked = false;
+    $('pRows').replaceChildren(); $('pVer').value = (SAVED[id] || {}).version || ''; $('pLink').value = (SAVED[id] || {}).link || ''; $('pForce').checked = false;
     $('pMore').replaceChildren(); for (const m of (SAVED[id] || {}).more || []) addMoreRow(m);
     $('pMsg').textContent = ''; $('pBar').hidden = true; $('pStop').hidden = true; $('pGo').disabled = false;
     pollPatch();
@@ -1567,14 +1566,12 @@ summary{cursor:pointer;font-weight:600}
     const id = patchGame, version = $('pVer').value.trim(), link = $('pLink').value.trim();
     if (!id) return;
     if (!/^(\d{2}\.\d{3}\.\d{3})?$/.test(version) || !(link === '' || /^https?:\/\/\S+$/.test(link))) return;
-    const fw = $('pMin').value.trim();
-    if (!/^(\d{1,2}\.\d{2})?$/.test(fw)) return;
+    const fw = fwMinor($('pFw').value);
     const more = [];
     for (const row of $('pMore').children) {
-      const [v, l, f] = row.querySelectorAll('input');
-      const mv = v.value.trim(), ml = l.value.trim(), mf = f.value.trim();
+      const mv = row.querySelector('.mVer').value.trim(), ml = row.querySelector('.mLink').value.trim(), mf = fwMinor(row.querySelector('.mFw').value);
       if (mv === '' && ml === '') continue;
-      if (!/^\d{2}\.\d{3}\.\d{3}$/.test(mv) || !(ml === '' || /^https?:\/\/\S+$/.test(ml)) || !/^(\d{1,2}\.\d{2})?$/.test(mf)) return;
+      if (!/^\d{2}\.\d{3}\.\d{3}$/.test(mv) || !(ml === '' || /^https?:\/\/\S+$/.test(ml))) return;
       more.push({ version: mv, link: ml, fw: mf });
     }
     const adding = !$('dAdd').hidden, title = adding ? $('aName').value.trim() : null;
@@ -1596,41 +1593,53 @@ summary{cursor:pointer;font-weight:600}
     const id = $('aId').value.trim().toUpperCase();
     if (/^PPSA\d{5}$/.test(id)) { if (id !== patchGame) { startPatch(id); $('aName').value = (SAVED[id] || {}).title || ''; } } else startPatch('');
   });
-  // Une ligne par autre version : version, lien CRC, firmware minimum, et le bouton pour la retirer.
-  function addMoreRow(m) {
-    const row = el('div', 'row');
-    const mk = (ph, val, size) => { const i = el('input', 'field'); i.placeholder = ph; i.value = val || ''; i.autocomplete = 'off'; if (size) i.size = size; i.addEventListener('input', saveFields); return i; };
-    const v = mk('06.006.000', m && m.version, 10), l = mk('https://…/….crc', m && m.link), f = mk('13.60', m && m.fw, 5);
-    l.style.flex = '1 1 18rem';
-    const rm = el('button', 'btn', 'Retirer'); rm.type = 'button';
-    rm.onclick = () => { row.remove(); saveFields(); };
-    row.append(v, l, f, rm);
-    $('pMore').append(row);
-  }
-  $('pAddMore').addEventListener('click', () => addMoreRow());
-  $('pMin').addEventListener('input', saveFields);
-  $('pVer').addEventListener('input', saveFields);
-  $('pLink').addEventListener('input', saveFields);
-  $('pFw').addEventListener('change', () => { if (fwOk()) lsSet('orbitFw', $('pFw').value.trim()); });
-  $('pList').addEventListener('click', async () => {
-    const id = patchGame; if (!id) return;
-    $('pMsg').textContent = 'Recherche des patchs…'; $('pRows').replaceChildren();
+  // « 13.20.00 » -> « 13.20 » (ce que la page et Orbit comparent) ; vide si ce n'est pas un firmware.
+  const fwMinor = (v) => { const m = /^(\d{1,2}\.\d{2})/.exec(String(v).trim()); return m ? m[1] : ''; };
+  // Cherche les patchs du jeu (prosperopatches.com) pour un firmware et les affiche dans `box` ; un clic choisit la version.
+  async function searchPatches(id, fwText, box, note, pick, current) {
+    note.textContent = 'Recherche des patchs…'; box.replaceChildren();
+    const fwq = /^\d{1,2}\.\d{1,2}(\.\d{1,2}){0,2}$/.test(fwText.trim()) ? '&fw=' + encodeURIComponent(fwText.trim()) : '';
     try {
-      const r = await fetch('?patches=' + encodeURIComponent(id) + (fwOk() ? '&fw=' + encodeURIComponent($('pFw').value.trim()) : ''), { cache: 'no-store', credentials: 'same-origin' });
+      const r = await fetch('?patches=' + encodeURIComponent(id) + fwq, { cache: 'no-store', credentials: 'same-origin' });
       const j = await r.json();
       if (id !== patchGame) return;
-      $('pMsg').textContent = j.error || (j.patches.length ? '' : 'Aucun patch listé.');
+      note.textContent = j.error || (j.patches.length ? '' : 'Aucun patch listé.');
       const rows = j.patches.map((p) => {
         const b = el('button', 'prow'); b.type = 'button'; b.setAttribute('aria-pressed', 'false');
         const tag = p.ok === true ? ['ok', 'compatible'] : p.ok === false ? ['no', 'firmware trop récent'] : ['unk', 'firmware ?'];
         b.append(el('b', null, 'v' + p.version), el('span', 'm', [p.latest && 'dernier', p.size, p.date, p.fw && 'FW ' + p.fw].filter(Boolean).join(' · ')), el('span', 't ' + tag[0], tag[1]));
-        b.onclick = () => { $('pVer').value = p.version; saveFields(); for (const x of $('pRows').children) x.setAttribute('aria-pressed', String(x === b)); };
+        b.onclick = () => { pick(p.version); for (const x of box.children) x.setAttribute('aria-pressed', String(x === b)); };
+        b.dataset.ok = String(p.ok === true); b.dataset.version = p.version;
         return b;
       });
-      $('pRows').replaceChildren(...rows);
-      const keep = j.patches.findIndex((p) => p.version === $('pVer').value.trim());
-      if (rows.length) rows[keep >= 0 ? keep : 0].click();
-    } catch (e) { $('pMsg').textContent = 'Impossible de contacter le serveur.'; }
+      box.replaceChildren(...rows);
+      // La version déjà choisie, sinon la plus récente que ce firmware peut installer.
+      const keep = rows.find((b) => b.dataset.version === current()) || rows.find((b) => b.dataset.ok === 'true') || rows[0];
+      if (keep) keep.click();
+    } catch (e) { note.textContent = 'Impossible de contacter le serveur.'; }
+  }
+  // Une ligne par autre firmware : sa console, la recherche des patchs, la version choisie et son lien CRC.
+  function addMoreRow(m) {
+    const row = el('div', 'pbox'); row.style.cssText = 'margin:0;padding-top:.8rem;border-top:1px solid var(--line)';
+    const mk = (cls, ph, val, size) => { const i = el('input', 'field ' + cls); i.placeholder = ph; i.value = val || ''; i.autocomplete = 'off'; if (size) i.size = size; i.addEventListener('input', saveFields); return i; };
+    const f = mk('mFw', '13.60', m && m.fw, 7), v = mk('mVer', '06.006.000', m && m.version, 10), l = mk('mLink', 'https://…/….crc', m && m.link);
+    l.maxLength = 500; v.maxLength = 10; f.maxLength = 11;
+    const box = el('div'), note = el('p', 'note');
+    const find = el('button', 'btn small', 'Chercher les patchs'); find.type = 'button';
+    find.onclick = () => searchPatches(patchGame, f.value, box, note, (ver) => { v.value = ver; saveFields(); }, () => v.value.trim());
+    const rm = el('button', 'btn small', 'Retirer cette version'); rm.type = 'button';
+    rm.onclick = () => { row.remove(); saveFields(); };
+    const lab = (t, x) => { const e = el('label', null, t); e.append(x); return e; };
+    const top = el('div', 'row'); top.append(lab('Firmware de la console', f), find, rm);
+    row.append(top, box, note, lab('Version', v), lab('Lien CRC du patch', l));
+    $('pMore').append(row);
+  }
+  $('pAddMore').addEventListener('click', () => addMoreRow());
+  $('pVer').addEventListener('input', saveFields);
+  $('pLink').addEventListener('input', saveFields);
+  $('pFw').addEventListener('change', () => { if (fwOk()) lsSet('orbitFw', $('pFw').value.trim()); saveFields(); });
+  $('pList').addEventListener('click', () => {
+    if (patchGame) searchPatches(patchGame, $('pFw').value, $('pRows'), $('pMsg'), (ver) => { $('pVer').value = ver; saveFields(); }, () => $('pVer').value.trim());
   });
   $('pGo').addEventListener('click', async () => {
     const version = $('pVer').value.trim(), link = $('pLink').value.trim();
