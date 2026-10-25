@@ -315,6 +315,7 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
         if (!state.system.appearance.empty())
             ctx_.appearance = appearance::find(state.system.appearance);
         ctx_.sounds_on = !state.system.sounds_off;
+        ctx_.sound_volume = std::clamp(state.system.sound_volume, 0, 100);
     }
     ctx_.store.set_fast(false);
     toast_time_ = std::max(0.0f, toast_time_ - dt);

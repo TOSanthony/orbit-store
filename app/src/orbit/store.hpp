@@ -138,6 +138,7 @@ enum class Setting : std::uint8_t
     language,
     keyboard,
     sounds,
+    sound_volume,
     ps4,
     install_pkgs,
     delete_pkgs,
@@ -254,6 +255,7 @@ class Store
     void set_zero(bool enabled) { send_setting(Setting::zero, {}, {}, enabled); }
     void set_download_limit(int limit) { send_setting(Setting::download_limit, std::to_string(limit)); }
     void set_sounds_off(bool off) { send_setting(Setting::sounds, {}, {}, off); }
+    void set_sound_volume(int percent) { send_setting(Setting::sound_volume, std::to_string(percent)); }
     void set_ps4_hidden(bool hidden) { send_setting(Setting::ps4, {}, {}, hidden); }
     void set_delete_pkgs(bool enabled) { send_setting(Setting::delete_pkgs, {}, {}, enabled); }
     void set_install_pkgs(bool enabled) { send_setting(Setting::install_pkgs, {}, {}, enabled); }

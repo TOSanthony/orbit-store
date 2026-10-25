@@ -118,6 +118,7 @@ typedef struct {
     char instance_id[33]; /* New per process; lets clients verify a service restart. */
     char preferred_storage[24];
     bool sounds_off; /* TV app sounds muted (default false = on). */
+    int sound_volume; /* TV app sound volume, 0-100 percent (default 50). */
     bool ps4_hidden; /* TV app hides PS4 titles (default false = shown). */
     bool delete_pkgs; /* Remove a .pkg once the console has installed it (default true; false = keep). */
     bool install_pkgs; /* Install a downloaded .pkg once it is verified (default true; false = off). */

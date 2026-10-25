@@ -332,6 +332,7 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
         cJSON_AddStringToObject(o, "language", orbit.language);
         cJSON_AddStringToObject(o, "keyboard", orbit.keyboard);
         cJSON_AddBoolToObject(o, "soundsOff", orbit.sounds_off);
+        cJSON_AddNumberToObject(o, "soundVolume", orbit.sound_volume);
         cJSON_AddBoolToObject(o, "ps4Hidden", orbit.ps4_hidden);
         cJSON_AddBoolToObject(o, "installPkgs", orbit.install_pkgs);
         cJSON_AddBoolToObject(o, "deletePkgs", orbit.delete_pkgs);
@@ -498,17 +499,26 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
         }
         if ((get || post) && !strcmp(url, "/api/v1/settings/sounds")) {
             const cJSON *value = cJSON_GetObjectItemCaseSensitive(input, "soundsOff");
-            if (post && !cJSON_IsBool(value)) {
+            const cJSON *volume = cJSON_GetObjectItemCaseSensitive(input, "soundVolume");
+            const bool has_off = cJSON_IsBool(value);
+            const bool has_volume = cJSON_IsNumber(volume) && volume->valuedouble >= 0 && volume->valuedouble <= 100;
+            if (post && !has_off && !has_volume) {
                 cJSON_Delete(input);
-                return error(c, 400, "Expected soundsOff.");
+                return error(c, 400, "Expected soundsOff or soundVolume (0-100).");
             }
             pthread_mutex_lock(&orbit.mutex);
             bool previous = orbit.sounds_off;
-            if (post) orbit.sounds_off = cJSON_IsTrue(value);
+            int previous_volume = orbit.sound_volume;
+            if (post && has_off) orbit.sounds_off = cJSON_IsTrue(value);
+            if (post && has_volume) orbit.sound_volume = (int)volume->valuedouble;
             int rc = post ? state_save_locked() : 0;
-            if (rc) orbit.sounds_off = previous;
+            if (rc) {
+                orbit.sounds_off = previous;
+                orbit.sound_volume = previous_volume;
+            }
             cJSON *o = cJSON_CreateObject();
             cJSON_AddBoolToObject(o, "soundsOff", orbit.sounds_off);
+            cJSON_AddNumberToObject(o, "soundVolume", orbit.sound_volume);
             pthread_mutex_unlock(&orbit.mutex);
             cJSON_Delete(input);
             if (rc) {

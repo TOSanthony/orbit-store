@@ -34,6 +34,7 @@ struct System
     std::int64_t catalogue_revision = 0;
     std::string preferred_storage;
     bool sounds_off = false; // the TV app's menu sounds are muted
+    int sound_volume = 50;   // their volume, 0-100 percent
     bool ps4_hidden = false; // the TV app leaves PS4 titles out of the catalogue
     bool delete_pkgs = false; // the service removes a .pkg once the console has installed it
     bool install_pkgs = false; // the service installs a downloaded .pkg once it is verified

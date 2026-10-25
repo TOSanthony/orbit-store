@@ -429,6 +429,29 @@ struct SettingsScreen::Pane
         card_tops.pop_back();
         y += 24.0f;
     }
+    // A volume bar: label and percentage on top, a track below. Left and right change it.
+    void volume_row(std::string_view label, int percent)
+    {
+        const ui::Rect r{x, y + 6.0f, width, 84.0f};
+        if (list != nullptr)
+        {
+            const float f = amount();
+            ui::state_fill(*list, r, 16.0f, f, false);
+            const ui::Color ink = ui::state_ink(f, false);
+            ui::text(*list, type.medium, label, r.x + 28.0f, r.y + 36.0f, 21.0f, ink);
+            ui::text(*list, type.medium, std::to_string(percent) + " %", r.x + r.w - 28.0f,
+                     r.y + 36.0f, 21.0f, ink, ui::Align::right);
+            const ui::Rect track{r.x + 28.0f, r.y + 54.0f, r.w - 56.0f, 8.0f};
+            list->rounded_rect(track, 4.0f, ui::Color::rgb(f > 0.5f ? 0x080808 : 0xffffff, 0.22f));
+            const float fill = track.w * static_cast<float>(percent) / 100.0f;
+            if (fill > 0.0f)
+                list->rounded_rect({track.x, track.y, fill, track.h}, 4.0f, ink);
+            list->circle(track.x + fill, track.cy(), 11.0f, ink);
+        }
+        add(Kind::sound_volume, 0, r, true);
+        ++row;
+        y += r.h + 18.0f;
+    }
     void error(std::string_view text)
     {
         if (text.empty())
@@ -1362,6 +1385,7 @@ void SettingsScreen::build_appearance(Pane &pane) const
     pane.subheading(tr("Sounds"));
     pane.body(ctx_.sounds_on ? tr("Menu sounds are on: you hear a sound when you move and select.")
                              : tr("Menu sounds are off. The app is silent."));
+    pane.volume_row(tr("Volume"), ctx_.sound_volume);
     pane.buttons({{Kind::sounds_toggle, ctx_.sounds_on ? tr("Turn off sounds") : tr("Turn on sounds"),
                    ui::ButtonKind::secondary}});
     if (ctx_.store.setting_result().setting == Setting::sounds)
@@ -1535,6 +1559,8 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
         nas_keyboard_.set_length(static_cast<int>(nas_url_.size()));
         feedback.play(hui::audio::Cue::modal_open);
         break;
+    case Kind::sound_volume:
+        break; // left and right change it
     case Kind::sounds_toggle:
         ctx_.sounds_on = !ctx_.sounds_on; // at once; the service keeps it for next time
         ctx_.store.set_sounds_off(!ctx_.sounds_on);
@@ -1873,6 +1899,21 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
                     in_content_ = false;
                 }
                 feedback.play(hui::audio::Cue::back);
+                return intent;
+            }
+            if (here.kind == Kind::sound_volume &&
+                (input.nav == Direction::left || input.nav == Direction::right))
+            {
+                const int step = input.nav == Direction::right ? 10 : -10;
+                const int volume = std::clamp(ctx_.sound_volume + step, 0, 100);
+                if (volume == ctx_.sound_volume)
+                    refuse(feedback, input);
+                else
+                {
+                    ctx_.sound_volume = volume;
+                    ctx_.store.set_sound_volume(volume);
+                    feedback.play(hui::audio::Cue::slider); // the new level, heard at once
+                }
                 return intent;
             }
             if (input.nav == Direction::left || input.nav == Direction::right)

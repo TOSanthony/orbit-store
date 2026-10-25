@@ -1032,6 +1032,18 @@ void Store::run_setting(Command &command)
                 });
         break;
     }
+    case Setting::sound_volume:
+    {
+        const api::Result<int> result = client_.set_sound_volume(std::atoi(command.a.c_str()));
+        if (result.ok())
+            inbox_.post(
+                [this, percent = result.value]()
+                {
+                    state_.system.sound_volume = percent;
+                    ++state_.serial;
+                });
+        break;
+    }
     case Setting::appearance:
     {
         const api::Result<std::string> result = client_.set_appearance(command.a);

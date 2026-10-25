@@ -149,6 +149,7 @@ System parse_system(const json::Value &value)
     system.language = value.text("language");
     system.keyboard = value.text("keyboard");
     system.sounds_off = value.flag("soundsOff", false);
+    system.sound_volume = static_cast<int>(value.number("soundVolume", 50.0));
     system.ps4_hidden = value.flag("ps4Hidden", false);
     system.install_pkgs = value.flag("installPkgs", false);
     system.delete_pkgs = value.flag("deletePkgs", false);

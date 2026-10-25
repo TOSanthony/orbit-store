@@ -403,6 +403,16 @@ std::vector<Scenario> scenarios()
           pause(0.8f, "settings-appearance"), move(Direction::down), move(Direction::down),
           move(Direction::down), move(Direction::down), move(Direction::down),
           move(Direction::down), tap(Action::confirm), pause(2.0f, "settings-appearance-aurora")}});
+    list.push_back(
+        {"volume",
+         Mode::updates,
+         false,
+         {pause(1.5f, "volume-start"),
+          run(0.5f, [](orbit::App &app)
+              { app.open_settings(orbit::SettingsScreen::Section::appearance, true); }),
+          pause(0.8f, "settings-volume"), move(Direction::right), move(Direction::right),
+          pause(0.6f, "settings-volume-70"), move(Direction::down),
+          pause(0.6f, "settings-volume-toggle")}});
     list.push_back({"language",
                     Mode::normal,
                     false,

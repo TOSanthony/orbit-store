@@ -576,6 +576,18 @@ Result<bool> Client::set_sounds_off(bool off)
     return result;
 }
 
+Result<int> Client::set_sound_volume(int percent)
+{
+    Result<int> result;
+    const http::Response response =
+        send("POST", "/api/v1/settings/sounds", "{\"soundVolume\":" + std::to_string(percent) + "}");
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    result.value = json::parse(response.body, &value) ? static_cast<int>(value.number("soundVolume", percent)) : percent;
+    return result;
+}
+
 Result<std::string> Client::set_appearance(const std::string &id)
 {
     Result<std::string> result;

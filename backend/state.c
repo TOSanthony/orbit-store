@@ -17,6 +17,7 @@ Orbit orbit = {.mutex = PTHREAD_MUTEX_INITIALIZER,
                .delete_archives = true,
                .install_pkgs = true, /* a downloaded .pkg is installed, then removed (changeable in Settings) */
                .delete_pkgs = true,
+               .sound_volume = 50,
                .concurrent_downloads = ORBIT_DEFAULT_DOWNLOADS};
 void copy_text(char *to, size_t cap, const char *s) {
     if (cap)
@@ -174,6 +175,7 @@ int state_save_locked(void) {
     cJSON_AddStringToObject(o, "language", orbit.language);
     cJSON_AddStringToObject(o, "keyboard", orbit.keyboard);
     cJSON_AddBoolToObject(o, "soundsOff", orbit.sounds_off);
+    cJSON_AddNumberToObject(o, "soundVolume", orbit.sound_volume);
     cJSON_AddBoolToObject(o, "ps4Hidden", orbit.ps4_hidden);
     cJSON_AddBoolToObject(o, "installPkgs", orbit.install_pkgs);
     cJSON_AddBoolToObject(o, "deletePkgs", orbit.delete_pkgs);
@@ -293,6 +295,9 @@ int state_load(void) {
     copy_text(orbit.keyboard, sizeof orbit.keyboard, json_text(o, "keyboard"));
     const cJSON *sounds_off = cJSON_GetObjectItemCaseSensitive(o, "soundsOff");
     if (cJSON_IsBool(sounds_off)) orbit.sounds_off = cJSON_IsTrue(sounds_off);
+    const cJSON *sound_volume = cJSON_GetObjectItemCaseSensitive(o, "soundVolume");
+    if (cJSON_IsNumber(sound_volume) && sound_volume->valuedouble >= 0 && sound_volume->valuedouble <= 100)
+        orbit.sound_volume = (int)sound_volume->valuedouble;
     const cJSON *ps4_hidden = cJSON_GetObjectItemCaseSensitive(o, "ps4Hidden");
     if (cJSON_IsBool(ps4_hidden)) orbit.ps4_hidden = cJSON_IsTrue(ps4_hidden);
     const cJSON *install_pkgs = cJSON_GetObjectItemCaseSensitive(o, "installPkgs");

@@ -74,6 +74,7 @@ struct Context
     std::function<bool(const BrowserSelection &)> open_download;
     float clock = 0.0f; // seconds since the app opened
     bool sounds_on = true;      // menu sounds; read by the main loop
+    int sound_volume = 50;      // menu sound volume, 0-100 percent
     std::size_t appearance = 0; // the chosen background (orbit::appearance preset)
     int system_language = 1;    // the console's language, for the automatic choice
     bool azerty = false;                  // the keyboards use the French letter order (set by the App)
@@ -621,6 +622,7 @@ class SettingsScreen final : public Screen
         keyboard,   // 0 follows the language, 1 QWERTY, 2 AZERTY
         language,   // 0 follows the console, then the catalogue languages in order
         sounds_toggle,
+        sound_volume, // the volume bar; left and right change it
         ps4_toggle,
         nas_url, // the My NAS index address field
     };

@@ -118,6 +118,7 @@ class Client
     Result<bool> set_delete_archives(bool enabled);
     // Keeps the TV app background (a preset id) in the service. A 404 means an older Orbit.
     Result<bool> set_sounds_off(bool off); // 404: an older Orbit
+    Result<int> set_sound_volume(int percent); // 404: an older Orbit
     Result<bool> set_ps4_hidden(bool hidden); // 404: an older Orbit
     Result<bool> set_delete_pkgs(bool enabled); // 404: an older Orbit
     Result<bool> set_install_pkgs(bool enabled); // 404: an older Orbit

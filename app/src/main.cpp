@@ -134,6 +134,7 @@ int main()
     ps5::AudioOut audio_out;
     audio_out.start(mixer);
     audio::SoundBank sounds;
+    int applied_volume = -1; // the volume last sent to the mixer
     const auto bank = sounds.load(std::string(kAssets) + "/audio/sfx");
     sys::log("[ORBIT] sounds files=%d rejected=%d", bank.files, bank.rejected);
     for (const std::string &problem : bank.errors)
@@ -198,6 +199,13 @@ int main()
                                                 static_cast<std::uint64_t>(now));
         feedback.clear();
         app.update(input, dt, feedback);
+        if (context.sound_volume != applied_volume) // the Settings volume bar
+        {
+            applied_volume = context.sound_volume;
+            const float level = static_cast<float>(applied_volume) / 100.0f;
+            mixer.set_bus_gain(audio::Bus::ui, level);
+            mixer.set_bus_gain(audio::Bus::sfx, level);
+        }
         if (context.sounds_on)
             for (const audio::CueEvent &event : feedback.cues)
                 sounds.play(mixer, audio::SoundSet::glass, event);
