@@ -226,11 +226,11 @@ void SoundBank::play(Mixer &mixer, SoundSet set, const CueEvent &event)
     Variations *variations = find(event.cue, set);
     if (variations != nullptr)
     {
-        // +-3 % pitch jitter keeps repeated sounds from feeling mechanical.
-        jitter_state_ = jitter_state_ * 1664525u + 1013904223u;
-        const float jitter = 0.97f + 0.06f * static_cast<float>(jitter_state_ >> 8) / 16777216.0f;
-        params.pitch = event.pitch * jitter;
-        params.gain = event.gain;
+        // A recording is played exactly as the file sounds in a media player: its own speed, level and
+        // centre position (no pitch jitter, no change of speed, volume or pan from the event).
+        params.pitch = 1.0f;
+        params.gain = 1.0f;
+        params.pan = 0.0f;
         const Sound &sound = *variations->sounds[variations->next % variations->sounds.size()];
         variations->next = (variations->next + 1) % variations->sounds.size();
         mixer.play_clip(&sound.clip, params);

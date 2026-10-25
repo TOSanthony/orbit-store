@@ -130,7 +130,7 @@ int main()
     pad.set_light_bar(0x2a, 0x6d, 0xf4);
     InputTracker tracker;
     audio::Mixer mixer;
-    mixer.set_bus_gain(audio::Bus::ui, 0.7f);
+    mixer.set_bus_gain(audio::Bus::ui, 1.0f); // the recordings play at their own level
     ps5::AudioOut audio_out;
     audio_out.start(mixer);
     audio::SoundBank sounds;

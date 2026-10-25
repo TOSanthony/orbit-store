@@ -139,7 +139,6 @@ class SoundBank
     Variations *find(Cue cue, SoundSet set);
 
     std::array<std::array<Variations, kCueCount>, kSoundSetCount> sets_;
-    std::uint32_t jitter_state_ = 0x2545f491u;
 };
 
 } // namespace hui::audio
