@@ -192,8 +192,39 @@ bool gameupdates_split_dlc(const char *key, char *base, size_t base_cap, char *l
     copy_text(label, label_cap, slash + 1);
     return true;
 }
-/* The console keeps each installed DLC in its own folder: /user/addcont/<game id>/<label>/. */
+/* The DLC the console says it has installed, read from its addcont.db at each check (see appdb.h). */
+#define ADDCONT_MAX 32768
+static appdb_content *addcont_list;
+static size_t addcont_count;
+static char addcont_note[600];
+static pthread_mutex_t addcont_mutex = PTHREAD_MUTEX_INITIALIZER;
+static void addcont_load(void) {
+    char path[600], schema[420] = "", error[96] = "";
+    snprintf(path, sizeof path, "%s/system_data/priv/mms/addcont.db", orbit.system_root);
+    appdb_content *list = calloc(ADDCONT_MAX, sizeof *list);
+    size_t count = 0;
+    int rc = list ? appdb_addcont_read(path, list, ADDCONT_MAX, &count, schema, sizeof schema, error, sizeof error) : -1;
+    pthread_mutex_lock(&addcont_mutex);
+    free(addcont_list);
+    addcont_list = rc == 0 ? list : NULL;
+    addcont_count = rc == 0 ? count : 0;
+    if (rc == 0)
+        snprintf(addcont_note, sizeof addcont_note, "addcont.db: %zu name(s) read; %s", count, schema);
+    else
+        snprintf(addcont_note, sizeof addcont_note, "addcont.db not read: %s", list ? error : "not enough memory");
+    pthread_mutex_unlock(&addcont_mutex);
+    if (rc != 0)
+        free(list);
+}
+/* Installed when the console lists it in addcont.db, or keeps it in its own folder: /user/addcont/<game id>/<label>/. */
 bool gameupdates_dlc_installed(const char *title_id, const char *label) {
+    bool listed = false;
+    pthread_mutex_lock(&addcont_mutex);
+    for (size_t i = 0; i < addcont_count && !listed; i++)
+        listed = !strcmp(addcont_list[i].title_id, title_id) && !strcmp(addcont_list[i].label, label);
+    pthread_mutex_unlock(&addcont_mutex);
+    if (listed)
+        return true;
     char path[1200];
     snprintf(path, sizeof path, "%s/user/addcont/%s/%s", orbit.system_root, title_id, label);
     struct stat st;
@@ -662,6 +693,7 @@ static void run_check(void) {
     cJSON_Delete(saved);
     size_t updates = count;
     char dlc_skipped[200] = "";
+    addcont_load();
     add_dlc(games, total, found, &count, dlc_skipped, sizeof dlc_skipped);
     free(games);
     if (stopping()) {
@@ -872,6 +904,9 @@ cJSON *gameupdates_status(void) {
     }
     cJSON_AddNumberToObject(o, "dlcCount", (double)gu.dlc_count);
     cJSON_AddStringToObject(o, "dlcSkipped", gu.dlc_skipped);
+    pthread_mutex_lock(&addcont_mutex);
+    cJSON_AddStringToObject(o, "installedDlcSource", addcont_note);
+    pthread_mutex_unlock(&addcont_mutex);
     if (dlc)
         cJSON_AddItemToObject(o, "dlc", dlc);
     cJSON_AddBoolToObject(o, "supported", gu.started);

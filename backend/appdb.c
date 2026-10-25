@@ -368,3 +368,141 @@ done:
     if (d.fd >= 0) close(d.fd);
     return rc;
 }
+
+/* ---- addcont.db: installed DLC, without assuming its layout --------------------------------------- */
+#define ADDCONT_TABLES 32
+typedef struct {
+    char name[48];
+    uint32_t root;
+    char sql[SCHEMA_SQL_MAX];
+} table_info;
+typedef struct {
+    table_info *tables;
+    size_t count;
+} table_list;
+
+static int tables_row(db *d, const column *cols, size_t count, void *context) {
+    (void)d;
+    table_list *t = context;
+    if (count < 5 || cols[0].kind != COL_TEXT || cols[1].kind != COL_TEXT || cols[3].kind != COL_INT || cols[4].kind != COL_TEXT) return 0;
+    if (cols[0].length != 5 || memcmp(cols[0].text, "table", 5)) return 0;
+    if (t->count >= ADDCONT_TABLES || cols[1].length >= sizeof t->tables[0].name || cols[4].length >= sizeof t->tables[0].sql) return 0;
+    if (cols[3].integer <= 0 || cols[3].integer > 0x7fffffff) return 0;
+    table_info *e = &t->tables[t->count++];
+    memcpy(e->name, cols[1].text, cols[1].length);
+    e->name[cols[1].length] = 0;
+    e->root = (uint32_t)cols[3].integer;
+    memcpy(e->sql, cols[4].text, cols[4].length);
+    e->sql[cols[4].length] = 0;
+    return 0;
+}
+
+typedef struct {
+    appdb_content *out;
+    size_t cap, count;
+} content_collect;
+
+/* A title id inside a text: the whole text, or the part of a content id between '-' and '_'. */
+static bool find_title_id(const unsigned char *text, size_t length, char id[10]) {
+    if (length == 9) {
+        memcpy(id, text, 9);
+        id[9] = 0;
+        return plausible_title(id);
+    }
+    for (size_t i = 1; i + 10 <= length && length <= 64; i++) {
+        if (text[i - 1] != '-' || text[i + 9] != '_') continue;
+        memcpy(id, text + i, 9);
+        id[9] = 0;
+        if (plausible_title(id)) return true;
+    }
+    return false;
+}
+
+static bool label_like(const unsigned char *text, size_t length) {
+    if (length < 1 || length > 24) return false;
+    for (size_t i = 0; i < length; i++)
+        if (!isalnum(text[i]) && text[i] != '_') return false;
+    return true;
+}
+
+static int content_row(db *d, const column *cols, size_t count, void *context) {
+    (void)d;
+    content_collect *c = context;
+    char id[10] = "";
+    for (size_t i = 0; i < count && !id[0]; i++)
+        if (cols[i].kind == COL_TEXT && !find_title_id(cols[i].text, cols[i].length, id)) id[0] = 0;
+    if (!id[0]) return 0;
+    for (size_t i = 0; i < count; i++) {
+        if (cols[i].kind != COL_TEXT) continue;
+        const unsigned char *text = cols[i].text;
+        size_t length = cols[i].length;
+        char label[32] = "";
+        if (length > 12 && length <= 64 && memchr(text, '-', length)) {
+            const unsigned char *dash = text + length;                 /* "EP0001-CUSA00093_00-LABEL": the end after the last '-' */
+            while (dash > text && dash[-1] != '-') dash--;
+            if (dash > text && label_like(dash, (size_t)(text + length - dash))) {
+                memcpy(label, dash, (size_t)(text + length - dash));
+                label[text + length - dash] = 0;
+            }
+        } else if (label_like(text, length) && !(length == 9 && !memcmp(text, id, 9))) {
+            memcpy(label, text, length);
+            label[length] = 0;
+        }
+        if (!label[0] || c->count >= c->cap) continue;
+        bool again = false;                                              /* a row names the same DLC in two columns: kept once */
+        for (size_t k = c->count > 4 ? c->count - 4 : 0; k < c->count && !again; k++)
+            again = !strcmp(c->out[k].title_id, id) && !strcmp(c->out[k].label, label);
+        if (again) continue;
+        appdb_content *e = &c->out[c->count++];
+        memcpy(e->title_id, id, 10);
+        memcpy(e->label, label, strlen(label) + 1);
+    }
+    return 0;
+}
+
+int appdb_addcont_read(const char *path, appdb_content *out, size_t cap, size_t *count, char *schema,
+                       size_t schema_cap, char *error, size_t error_cap) {
+    db d;
+    memset(&d, 0, sizeof d);
+    *count = 0;
+    if (schema && schema_cap) schema[0] = 0;
+    int rc = -1;
+    table_list tables = {NULL, 0};
+    unsigned char header[100];
+    d.fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (d.fd < 0) { snprintf(d.error, sizeof d.error, "cannot open the file (errno %d)", errno); goto done; }
+    ssize_t n = pread(d.fd, header, sizeof header, 0);
+    if (n != (ssize_t)sizeof header || memcmp(header, "SQLite format 3", 16)) { fail(&d, "not an SQLite file"); goto done; }
+    d.page_size = be16(header + 16);
+    if (d.page_size == 1) d.page_size = 65536;
+    if (d.page_size < 512 || (d.page_size & (d.page_size - 1))) { fail(&d, "bad page size"); goto done; }
+    d.usable = d.page_size - header[20];
+    if (d.usable < 480) { fail(&d, "bad reserved space"); goto done; }
+    if (be32(header + 56) != 1) { fail(&d, "unsupported text encoding"); goto done; }
+    off_t size = lseek(d.fd, 0, SEEK_END);
+    if (size < (off_t)d.page_size) { fail(&d, "file too small"); goto done; }
+    d.page_count = (uint32_t)(size / d.page_size);
+    tables.tables = calloc(ADDCONT_TABLES, sizeof *tables.tables);
+    if (!tables.tables) { fail(&d, "out of memory"); goto done; }
+    if (walk(&d, 1, 0, tables_row, &tables) < 0) goto done;
+    content_collect c = {out, cap, 0};
+    size_t used = 0;
+    for (size_t t = 0; t < tables.count; t++) {
+        const table_info *info = &tables.tables[t];
+        if (schema && schema_cap && used + 1 < schema_cap) {            /* "name(col, col)": the CREATE statement without its noise */
+            const char *open = strchr(info->sql, '(');
+            int w = snprintf(schema + used, schema_cap - used, "%s%s%s", used ? "; " : "", info->name, open ? open : "");
+            if (w > 0) used += (size_t)w < schema_cap - used ? (size_t)w : schema_cap - used - 1;
+        }
+        if (!strncmp(info->name, "sqlite_", 7)) continue;
+        d.visited = 0;
+        if (walk(&d, info->root, 0, content_row, &c) < 0) { d.error[0] = 0; continue; }   /* one unreadable table does not hide the others */
+    }
+    *count = c.count;
+    rc = 0;
+done:
+    free(tables.tables);
+    if (rc && error && error_cap) snprintf(error, error_cap, "%s", d.error[0] ? d.error : "read failed");
+    if (d.fd >= 0) close(d.fd);
+    return rc;
+}
