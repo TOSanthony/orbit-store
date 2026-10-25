@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 
 namespace hui::audio
 {
@@ -100,6 +101,23 @@ bool parse_file_name(std::string_view file, Cue *cue)
     return cue_from_name(stem, cue);
 }
 
+// A recording that starts with a stretch of silence would be heard late after the button press:
+// the silence (below about -60 dB) is cut, keeping 2 ms before the first audible sample.
+void trim_leading_silence(std::vector<float> *samples, std::size_t *frames)
+{
+    constexpr float kSilence = 0.001f;
+    constexpr std::size_t kKeep = kSampleRate / 500;
+    std::size_t first = 0;
+    while (first < *frames && std::fabs((*samples)[first * 2]) < kSilence &&
+           std::fabs((*samples)[first * 2 + 1]) < kSilence)
+        ++first;
+    if (first >= *frames || first <= kKeep)
+        return;
+    const std::size_t cut = first - kKeep;
+    samples->erase(samples->begin(), samples->begin() + static_cast<std::ptrdiff_t>(cut * 2));
+    *frames -= cut;
+}
+
 } // namespace
 
 const char *cue_name(Cue cue)
@@ -188,6 +206,7 @@ SoundBank::Stats SoundBank::load(const std::string &root)
                 stats.errors.push_back(name + ": " + wav.error);
                 continue;
             }
+            trim_leading_silence(&wav.samples, &wav.frames);
             add(set, cue, std::move(wav.samples), wav.frames);
             ++stats.files;
         }
