@@ -429,8 +429,7 @@ Intent BrowseScreen::update(const InputFrame &input, float dt, Feedback &feedbac
             }
             else if (input.is_pressed(Action::confirm))
             {
-                feedback.play(hui::audio::Cue::select);
-                intent.kind = Intent::Kind::open_game;
+                intent.kind = Intent::Kind::open_game; // the app plays the "open" sound
                 intent.id =
                     state
                         .games[static_cast<std::size_t>(results_[static_cast<std::size_t>(index_)])]

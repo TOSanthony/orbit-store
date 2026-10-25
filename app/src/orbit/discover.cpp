@@ -368,8 +368,7 @@ Intent DiscoverScreen::update(const InputFrame &input, float dt, Feedback &feedb
                         refuse(feedback, input);
                     return intent;
                 }
-                feedback.play(hui::audio::Cue::select);
-                intent.kind = Intent::Kind::open_game;
+                intent.kind = Intent::Kind::open_game; // the app plays the "open" sound
                 intent.id = game->id;
                 return intent;
             }
