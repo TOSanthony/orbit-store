@@ -235,10 +235,14 @@ bool SoundBank::has_recording(Cue cue, SoundSet set) const
     return !sets_[static_cast<std::size_t>(set)][static_cast<std::size_t>(cue)].sounds.empty();
 }
 
-void SoundBank::play(Mixer &mixer, SoundSet set, const CueEvent &event)
+void SoundBank::play(Mixer &mixer, SoundSet set, const CueEvent &requested)
 {
-    if (event.cue >= Cue::count || set >= SoundSet::count)
+    if (requested.cue >= Cue::count || set >= SoundSet::count)
         return;
+    // Moving around the screens sounds like moving along the top menu.
+    CueEvent event = requested;
+    if (event.cue == Cue::focus)
+        event.cue = Cue::tab;
     PlayParams params;
     params.bus = cue_bus(event.cue);
     params.pan = std::clamp(event.pan, -1.0f, 1.0f);
