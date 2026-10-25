@@ -79,6 +79,8 @@ def pack_kind(relative: Path) -> str:
 
 
 VERSION = re.compile(r"(?<![A-Za-z0-9])v(\d+(?:\.\d+)+)(?![A-Za-z0-9])", re.IGNORECASE)
+# "PPSA01317 Gran Turismo 7 (01.710.000).exfat": the game version written between brackets, as Sony numbers it.
+BRACKET_VERSION = re.compile(r"[\(\[]\s*v?(\d{2}\.\d{3}\.\d{3})\s*[\)\]]", re.IGNORECASE)
 
 
 def title_from(name: str) -> str:
@@ -1505,6 +1507,10 @@ def main() -> int:
             from_param += 1
             if param["version"]:
                 row["version"] = param["version"]
+        if suffix in (".exfat", ".ffpfsc"):
+            bracket = BRACKET_VERSION.search(path.name)       # the version the file name gives wins for disk images
+            if bracket:
+                row["version"] = bracket.group(1)
         if args.prospero:
             got = prospero_lookup(title_id)
             if got:
