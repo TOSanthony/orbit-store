@@ -136,6 +136,8 @@ int main()
     audio::SoundBank sounds;
     const auto bank = sounds.load(std::string(kAssets) + "/audio/sfx");
     sys::log("[ORBIT] sounds files=%d rejected=%d", bank.files, bank.rejected);
+    for (const std::string &problem : bank.errors)
+        sys::log("[ORBIT] sound rejected: %s", problem.c_str());
 
     orbit::http::SocketTransport transport(kBackend, kPort);
     orbit::http::SocketTransport art_transport(kBackend, kPort, 30000);

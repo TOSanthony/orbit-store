@@ -22,8 +22,8 @@ struct DecodedWav
     }
 };
 
-// Accepts 48 kHz PCM, 16- or 24-bit, mono (duplicated to both channels) or
-// stereo. Anything else is rejected with an error naming the problem.
+// Accepts PCM at 8-192 kHz (converted to 48 kHz), 16- or 24-bit, mono (duplicated to both
+// channels) or stereo. Anything else is rejected with an error naming the problem.
 DecodedWav decode_wav(std::string_view data);
 
 } // namespace hui::audio

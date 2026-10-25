@@ -6,8 +6,10 @@
 
 #include "audio/mixer.hpp"
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 namespace hui::audio
 {
@@ -40,6 +42,42 @@ float pcm(std::string_view data, std::size_t offset, int bits)
     if ((value & 0x800000) != 0)
         value -= 0x1000000;
     return static_cast<float>(value) / 8388608.0f;
+}
+
+// Converts interleaved stereo from `rate` to the mixer rate with a Hann-windowed sinc filter, so a
+// 44.1 kHz recording keeps its pitch, length and brightness.
+std::vector<float> resample(const std::vector<float> &in, std::size_t in_frames, std::uint32_t rate,
+                            std::size_t *out_frames)
+{
+    constexpr int kTaps = 16; // lobes on each side
+    const double ratio = static_cast<double>(kSampleRate) / static_cast<double>(rate);
+    const std::size_t frames = static_cast<std::size_t>(static_cast<double>(in_frames) * ratio);
+    const double cutoff = ratio < 1.0 ? ratio : 1.0; // low-pass when going down
+    const double pi = 3.14159265358979323846;
+    std::vector<float> out(frames * 2);
+    for (std::size_t n = 0; n < frames; ++n)
+    {
+        const double source = static_cast<double>(n) / ratio;
+        const long centre = static_cast<long>(std::floor(source));
+        double left = 0.0;
+        double right = 0.0;
+        for (long k = centre - kTaps + 1; k <= centre + kTaps; ++k)
+        {
+            if (k < 0 || static_cast<std::size_t>(k) >= in_frames)
+                continue;
+            const double x = source - static_cast<double>(k);
+            const double arg = pi * x * cutoff;
+            const double sinc = std::fabs(arg) < 1e-9 ? 1.0 : std::sin(arg) / arg;
+            const double window = 0.5 + 0.5 * std::cos(pi * x / kTaps);
+            const double weight = cutoff * sinc * window;
+            left += weight * in[static_cast<std::size_t>(k) * 2];
+            right += weight * in[static_cast<std::size_t>(k) * 2 + 1];
+        }
+        out[n * 2] = static_cast<float>(left);
+        out[n * 2 + 1] = static_cast<float>(right);
+    }
+    *out_frames = frames;
+    return out;
 }
 
 } // namespace
@@ -94,9 +132,9 @@ DecodedWav decode_wav(std::string_view data)
         result.error = "missing fmt or data chunk";
         return result;
     }
-    if (rate != static_cast<std::uint32_t>(kSampleRate))
+    if (rate < 8000 || rate > 192000)
     {
-        result.error = "sample rate must be 48000 Hz";
+        result.error = "sample rate must be between 8000 and 192000 Hz";
         return result;
     }
     if (channels != 1 && channels != 2)
@@ -120,6 +158,12 @@ DecodedWav decode_wav(std::string_view data)
         const float right = channels == 2 ? pcm(pcm_data, base + bytes_per_sample, bits) : left;
         result.samples[frame * 2] = left;
         result.samples[frame * 2 + 1] = right;
+    }
+    if (rate != static_cast<std::uint32_t>(kSampleRate))
+    {
+        std::size_t frames = 0;
+        result.samples = resample(result.samples, result.frames, rate, &frames);
+        result.frames = frames;
     }
     return result;
 }
