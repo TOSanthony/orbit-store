@@ -196,25 +196,41 @@ bool gameupdates_split_dlc(const char *key, char *base, size_t base_cap, char *l
 #define ADDCONT_MAX 32768
 static appdb_content *addcont_list;
 static size_t addcont_count;
-static char addcont_note[600];
+static char addcont_note[1800];
 static pthread_mutex_t addcont_mutex = PTHREAD_MUTEX_INITIALIZER;
-static void addcont_load(void) {
-    char path[600], schema[420] = "", error[96] = "";
-    snprintf(path, sizeof path, "%s/system_data/priv/mms/addcont.db", orbit.system_root);
+/* What a database of the console holds, for the status: how many (game, name) pairs, its tables, and whether a journal sits beside it. */
+static void addcont_describe(const char *name, char *note, size_t cap, appdb_content **keep, size_t *kept) {
+    char path[600], schema[420] = "", error[96] = "", journal[640];
+    snprintf(path, sizeof path, "%s/system_data/priv/mms/%s", orbit.system_root, name);
     appdb_content *list = calloc(ADDCONT_MAX, sizeof *list);
     size_t count = 0;
     int rc = list ? appdb_addcont_read(path, list, ADDCONT_MAX, &count, schema, sizeof schema, error, sizeof error) : -1;
+    struct stat st;
+    snprintf(journal, sizeof journal, "%s-wal", path);
+    long wal = !stat(journal, &st) ? (long)st.st_size : -1;
+    size_t used = strlen(note);
+    if (rc == 0)
+        snprintf(note + used, cap - used, "%s%s: %zu name(s), wal %ld; %.300s", used ? " | " : "", name, count, wal, schema);
+    else
+        snprintf(note + used, cap - used, "%s%s not read: %s", used ? " | " : "", name, list ? error : "not enough memory");
+    if (rc == 0 && keep) {
+        *keep = list;
+        *kept = count;
+    } else
+        free(list);
+}
+static void addcont_load(void) {
+    char note[sizeof addcont_note] = "";
+    appdb_content *list = NULL;
+    size_t count = 0;
+    addcont_describe("addcont.db", note, sizeof note, &list, &count);       /* decides which DLC are installed */
+    addcont_describe("av_content.db", note, sizeof note, NULL, NULL);        /* described only, until it is known what it lists */
     pthread_mutex_lock(&addcont_mutex);
     free(addcont_list);
-    addcont_list = rc == 0 ? list : NULL;
-    addcont_count = rc == 0 ? count : 0;
-    if (rc == 0)
-        snprintf(addcont_note, sizeof addcont_note, "addcont.db: %zu name(s) read; %s", count, schema);
-    else
-        snprintf(addcont_note, sizeof addcont_note, "addcont.db not read: %s", list ? error : "not enough memory");
+    addcont_list = list;
+    addcont_count = count;
+    copy_text(addcont_note, sizeof addcont_note, note);
     pthread_mutex_unlock(&addcont_mutex);
-    if (rc != 0)
-        free(list);
 }
 /* Installed when the console lists it in addcont.db, or keeps it in its own folder: /user/addcont/<game id>/<label>/. */
 bool gameupdates_dlc_installed(const char *title_id, const char *label) {

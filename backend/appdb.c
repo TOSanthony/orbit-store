@@ -13,7 +13,7 @@
 #define MAX_ROW_PAYLOAD (256u * 1024u)   /* a row larger than this is not an app entry: skipped */
 #define MAX_PAGES_VISITED 4000000u
 #define MAX_DEPTH 24
-#define MAX_COLUMNS 64
+#define MAX_COLUMNS 256
 #define SCHEMA_SQL_MAX 4096
 
 typedef struct {
