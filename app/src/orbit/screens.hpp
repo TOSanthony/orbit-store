@@ -470,6 +470,7 @@ class GameUpdatesScreen final : public Screen
     int button_ = 0; // which of the focused row's buttons has the focus
     int bar_ = -1; // the button above the list that has the focus, -1 when the list has it
     std::uint64_t result_serial_ = 0;
+    std::string pick_seen_; // the last state of picking a version that was told to the person
 };
 
 class GamePage final : public Screen

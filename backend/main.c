@@ -371,6 +371,7 @@ int main(int argc, char **argv) {
     debrid_stop();
     tvapp_stop();
     browser_stop();
+    patchlink_stop();
     library_stop();
     patchdl_stop();
     gameupdates_stop();

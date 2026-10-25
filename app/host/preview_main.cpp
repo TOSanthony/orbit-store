@@ -316,6 +316,12 @@ std::vector<Scenario> scenarios()
                      tap(Action::confirm), pause(1.5f, "gu-dlc-after"),
                      run(0.5f, [](orbit::App &app) { app.show_tab(orbit::tab::downloads); }),
                      pause(1.5f, "gu-downloads")}});
+    list.push_back({"game-updates-pick",
+                    Mode::normal,
+                    false,
+                    {run(2.0f, [](orbit::App &app) { app.show_tab(orbit::tab::updates); }),
+                     pause(1.0f, "pick-list"), move(Direction::down), move(Direction::down), move(Direction::down),
+                     pause(1.0f, "pick-blocked-row")}});
     list.push_back({"game-updates",
                     Mode::normal,
                     false,

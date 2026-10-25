@@ -791,7 +791,10 @@ http::Response Fixture::send(const http::Request &request)
             "{\"titleId\":\"CUSA00093\",\"name\":\"DRIVECLUB\",\"installed\":\"01.00\",\"version\":\"01.28\","
             "\"state\":\"available\",\"size\":19187761152},"
             "{\"titleId\":\"PPSA20397\",\"name\":\"Assassin's Creed Shadows\",\"installed\":\"01.019.076\","
-            "\"version\":\"01.021.023\",\"state\":\"available\",\"size\":147382468608}]" + dlc + queue + job + "}";
+            "\"version\":\"01.021.023\",\"state\":\"available\",\"size\":147382468608},"
+            "{\"titleId\":\"PPSA11386\",\"name\":\"Directive 8020\",\"installed\":\"01.010.000\","
+            "\"version\":\"01.021.000\",\"state\":\"needs-firmware\",\"firmware\":\"14.00\"}]" + dlc + queue + job +
+            ",\"pick\":{\"active\":false,\"state\":\"idle\",\"message\":\"\"}}";
         return response;
     }
     if (path == "/api/v1/catalog/updates")

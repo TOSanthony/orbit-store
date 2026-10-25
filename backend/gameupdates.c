@@ -57,6 +57,33 @@ static struct {
     char ps4_skipped[200]; /* PS4 games whose installed version could not be read, with what app.db holds */
 } gu = {.mutex = PTHREAD_MUTEX_INITIALIZER, .changed = PTHREAD_COND_INITIALIZER};
 
+/* An update the person picked on prosperopatches.com (see patchlink.c): its manifest, kept until the
+ * game's installed version changes. It stands in for what Sony's list offers for that game. */
+#define CHOSEN_MAX 16
+static struct {
+    char title_id[32], manifest[768], installed[16];
+} chosen[CHOSEN_MAX]; /* protected by gu.mutex */
+static int chosen_find_locked(const char *title_id) {
+    for (int i = 0; i < CHOSEN_MAX; i++)
+        if (chosen[i].title_id[0] && !strcmp(chosen[i].title_id, title_id))
+            return i;
+    return -1;
+}
+void gameupdates_choose(const char *title_id, const char *manifest) {
+    char installed[16] = "";
+    gameupdates_current_version(title_id, installed, sizeof installed);
+    pthread_mutex_lock(&gu.mutex);
+    int at = chosen_find_locked(title_id);
+    for (int i = 0; at < 0 && i < CHOSEN_MAX; i++)
+        if (!chosen[i].title_id[0])
+            at = i;
+    if (at < 0)
+        at = 0; /* full: the oldest slot is reused */
+    copy_text(chosen[at].title_id, sizeof chosen[at].title_id, title_id);
+    copy_text(chosen[at].manifest, sizeof chosen[at].manifest, manifest);
+    copy_text(chosen[at].installed, sizeof chosen[at].installed, installed);
+    pthread_mutex_unlock(&gu.mutex);
+}
 static bool stopping(void) {
     pthread_mutex_lock(&gu.mutex);
     bool stop = gu.stop;
@@ -635,6 +662,13 @@ static void run_check(void) {
         }
         char installed[16];
         installed_version(game->title_id, game->content_version, installed, sizeof installed);
+        pthread_mutex_lock(&gu.mutex);
+        {
+            int at = chosen_find_locked(game->title_id);
+            if (at >= 0 && strcmp(chosen[at].installed, installed))
+                chosen[at].title_id[0] = 0; /* it was installed: the choice is used up */
+        }
+        pthread_mutex_unlock(&gu.mutex);
         Entry *e = NULL;
         if (!ps4) {
             if (!no_list) {
@@ -916,7 +950,8 @@ cJSON *gameupdates_status(void) {
     /* Patches this console can install first, then those that need a newer firmware. */
     for (size_t n = 0; n < gu.count * 2; n++) {
         const Entry *e = &gu.entries[n % gu.count];
-        if (e->dlc || e->blocked != (n >= gu.count))
+        const bool picked = !e->dlc && chosen_find_locked(e->title_id) >= 0;
+        if (e->dlc || (e->blocked && !picked) != (n >= gu.count))
             continue;
         cJSON *g = cJSON_CreateObject();
         if (!g)
@@ -924,9 +959,11 @@ cJSON *gameupdates_status(void) {
         cJSON_AddStringToObject(g, "titleId", e->title_id);
         cJSON_AddStringToObject(g, "name", e->name);
         cJSON_AddStringToObject(g, "installed", e->installed);
-        cJSON_AddStringToObject(g, "version", e->available);
-        cJSON_AddStringToObject(g, "state", e->blocked ? "needs-firmware" : "available");
-        if (e->blocked)
+        cJSON_AddStringToObject(g, "version", picked ? "selected" : e->available);
+        cJSON_AddStringToObject(g, "state", e->blocked && !picked ? "needs-firmware" : "available");
+        if (picked)
+            cJSON_AddBoolToObject(g, "picked", true);
+        if (e->blocked && !picked)
             cJSON_AddStringToObject(g, "firmware", e->needs);
         else {
             cJSON_AddNumberToObject(g, "size", (double)e->size);
@@ -989,6 +1026,17 @@ bool gameupdates_offer(const char *title_id, char *name, size_t name_cap, char *
                        char *manifest, size_t manifest_cap) {
     bool found = false;
     pthread_mutex_lock(&gu.mutex);
+    const int pick = chosen_find_locked(title_id);
+    if (pick >= 0) {
+        copy_text(name, name_cap, title_id);
+        for (size_t i = 0; i < gu.count; i++)
+            if (!gu.entries[i].dlc && !strcmp(gu.entries[i].title_id, title_id))
+                copy_text(name, name_cap, gu.entries[i].name);
+        copy_text(version, version_cap, "selected");
+        copy_text(manifest, manifest_cap, chosen[pick].manifest);
+        pthread_mutex_unlock(&gu.mutex);
+        return true;
+    }
     for (size_t i = 0; i < gu.count; i++) {
         const Entry *e = &gu.entries[i];
         if (e->blocked || strcmp(e->title_id, title_id))

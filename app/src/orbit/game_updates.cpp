@@ -119,7 +119,7 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
     if (!focused)
         return intent;
     const GameUpdateStatus &status = ctx_.store.state().game_update_status;
-    const std::vector<GameUpdateItem> games = pending_game_items(status, dlc_mode_);
+    const std::vector<GameUpdateItem> games = pending_game_items(status, dlc_mode_, true);
     const std::vector<DlcGroup> groups = dlc_mode_ ? dlc_groups(games, open_) : std::vector<DlcGroup>();
     const std::vector<DlcRow> rows = dlc_mode_ ? dlc_rows(groups, games) : std::vector<DlcRow>();
     const int count = dlc_mode_ ? static_cast<int>(rows.size()) : static_cast<int>(games.size());
@@ -136,6 +136,14 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
         result_serial_ = result.serial;
         if (result.setting == Setting::game_update_job && !result.error.empty())
             intent.toast = tr(result.error);
+    }
+    // The outcome of picking a version in the browser is told once.
+    if (status.pick_state != pick_seen_)
+    {
+        if (!pick_seen_.empty() && (status.pick_state == "captured" || status.pick_state == "failed") &&
+            !status.pick_message.empty())
+            intent.toast = tr(status.pick_message);
+        pick_seen_ = status.pick_state;
     }
     row_ = std::clamp(row_, 0, std::max(0, count - 1));
     header = dlc_mode_ && count > 0 && item_at(row_) == nullptr ? rows[static_cast<std::size_t>(row_)].group : nullptr;
@@ -292,8 +300,19 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
         }
         else if (game.blocked)
         {
-            refuse(feedback, input);
-            intent.toast = tr("This update needs a newer firmware than this console has.");
+            // Its newest patch needs a newer firmware: the version this console can install is picked on
+            // prosperopatches.com, in the console's browser.
+            if (status.pick_state == "waiting")
+            {
+                refuse(feedback, input);
+                intent.toast = tr("Finish or cancel the current selection first.");
+            }
+            else
+            {
+                feedback.play(hui::audio::Cue::select);
+                ctx_.store.game_update_job("pickLink", game.title_id);
+                intent.toast = tr("Pick your version on prosperopatches.com, then select its CRC link.");
+            }
         }
         else if (queue_place(status, game.title_id) > 0)
         {
@@ -336,7 +355,7 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
 std::vector<hui::ui::Hint> GameUpdatesScreen::hints() const
 {
     const GameUpdateStatus &status = ctx_.store.state().game_update_status;
-    const std::vector<GameUpdateItem> pending = pending_game_items(status, dlc_mode_);
+    const std::vector<GameUpdateItem> pending = pending_game_items(status, dlc_mode_, true);
     const std::vector<DlcGroup> groups = dlc_mode_ ? dlc_groups(pending, open_) : std::vector<DlcGroup>();
     const std::vector<DlcRow> rows = dlc_mode_ ? dlc_rows(groups, pending) : std::vector<DlcRow>();
     const std::vector<GameUpdateItem> listed = dlc_mode_ ? std::vector<GameUpdateItem>() : pending;
@@ -376,6 +395,8 @@ std::vector<hui::ui::Hint> GameUpdatesScreen::hints() const
             items.push_back({hui::ui::Button::cross, tr("Pause")});
         else if (queue_place(status, game.title_id) > 0)
             items.push_back({hui::ui::Button::cross, tr("Remove from queue")});
+        else if (game.blocked)
+            items.push_back({hui::ui::Button::cross, tr("Choose update")});
         else if (!installing)
             items.push_back({hui::ui::Button::cross,
                              job_of(status).active || job_of(status).phase == "paused" ? tr("Add to queue") : tr("Download")});
@@ -396,7 +417,7 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
     const Snapshot &state = ctx_.store.state();
     const ui::Type &type = ctx_.type;
     const GameUpdateStatus &status = state.game_update_status;
-    const std::vector<GameUpdateItem> games = pending_game_items(status, dlc_mode_);
+    const std::vector<GameUpdateItem> games = pending_game_items(status, dlc_mode_, true);
     const std::vector<DlcGroup> groups = dlc_mode_ ? dlc_groups(games, open_) : std::vector<DlcGroup>();
     const std::vector<DlcRow> rows = dlc_mode_ ? dlc_rows(groups, games) : std::vector<DlcRow>();
     const int row_count = dlc_mode_ ? static_cast<int>(rows.size()) : static_cast<int>(games.size());
@@ -414,7 +435,10 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
     }
     else
         for (const GameUpdateItem &game : games)
-            listed_bytes += game.size;
+            if (!game.blocked) // a patch this console cannot install is not part of "Update all"
+                listed_bytes += game.size;
+    if (!dlc_mode_)
+        listed_count = static_cast<std::size_t>(std::count_if(games.begin(), games.end(), [](const GameUpdateItem &game) { return !game.blocked; }));
 
     const float title = ui::text(list, type.semibold, dlc_mode_ ? tr("Add-on content") : tr("Updates"),
                                  ui::kGutter, kTitleBaseline, 60.0f, ui::color::text);
@@ -537,7 +561,7 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
         const bool installing = this_job && job.phase == "installing";
 
         std::string state = place > 0 ? std::string(tr("Waiting")) + " \xC2\xB7 #" + std::to_string(place)
-                                      : std::string(dlc_mode_ ? tr("DLC available") : tr("Update available"));
+                                      : std::string(dlc_mode_ ? tr("DLC available") : game.blocked ? tr("Newer firmware needed") : tr("Update available"));
         ui::Color state_ink = ui::color::text2;
         if (this_job)
         {
@@ -576,7 +600,9 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
                       :
             game.title_id + " \xC2\xB7 " +
             tr("Installed {version}", {{"version", game.installed.empty() ? std::string("?") : game.installed}}) +
-            "  \xE2\x86\x92  " + tr("Available {version}", {{"version", game.version}});
+            "  \xE2\x86\x92  " +
+            (game.blocked ? tr("Needs firmware {version}", {{"version", game.firmware}})
+                          : tr("Available {version}", {{"version", game.picked ? tr("your selection") : game.version}}));
         ui::text_fit(list, type.regular, versions, tx, row.y + kRowPad + 51.0f, 16.0f, info_width,
                      ui::color::text3);
 
@@ -603,6 +629,8 @@ void GameUpdatesScreen::draw(Frame &frame, bool focused) const
             actions = {tr("Pause"), tr("Cancel")};
         else if (place > 0)
             actions = {tr("Remove from queue")};
+        else if (game.blocked)
+            actions = {tr("Choose update")};
         else if (!installing)
             actions = {job_of(status).active || job_of(status).phase == "paused" ? tr("Add to queue") : tr("Download")};
         float ax = tx;

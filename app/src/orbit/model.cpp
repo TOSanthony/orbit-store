@@ -492,10 +492,18 @@ GameUpdateStatus parse_game_update_status(const json::Value &value)
         item.blocked = entry.text("state") == "needs-firmware";
         item.firmware = entry.text("firmware");
         item.size = entry.number("size");
-        // An update that needs a newer firmware than this console has is not offered.
-        if (!item.title_id.empty() && !item.blocked)
+        item.picked = entry.flag("picked", false);
+        // An update that needs a newer firmware than this console has cannot be downloaded, but a
+        // version this console can install may be picked for it.
+        if (item.title_id.empty())
+            continue;
+        if (item.blocked)
+            status.blocked.push_back(std::move(item));
+        else
             status.games.push_back(std::move(item));
     }
+    status.pick_state = value["pick"].text("state");
+    status.pick_message = value["pick"].text("message");
     for (const json::Value &entry : value["dlc"].items())
     {
         GameUpdateItem item;
@@ -933,11 +941,14 @@ bool taken(const GameUpdateStatus &status, const GameUpdateJob &job, const std::
 }
 } // namespace
 
-std::vector<GameUpdateItem> pending_game_items(const GameUpdateStatus &status, bool dlc)
+std::vector<GameUpdateItem> pending_game_items(const GameUpdateStatus &status, bool dlc, bool include_blocked)
 {
     std::vector<GameUpdateItem> out;
     for (const GameUpdateItem &item : dlc ? status.dlc : status.games)
         if (!taken(status, dlc ? status.dlc_job : status.job, item.title_id))
+            out.push_back(item);
+    if (!dlc && include_blocked)
+        for (const GameUpdateItem &item : status.blocked) // after the others
             out.push_back(item);
     return out;
 }

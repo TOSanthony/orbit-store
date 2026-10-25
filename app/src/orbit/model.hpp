@@ -316,6 +316,7 @@ struct GameUpdateItem
     std::string version;   // 06.005.000
     bool blocked = false;  // the patch needs a newer firmware than this console has
     std::string firmware;  // "11.00" when blocked
+    bool picked = false;   // the person chose its version on prosperopatches.com
     double size = 0;       // the patch in bytes; 0 when unknown
     // A DLC: title_id is its key ("PPSA01552/LIMITEDPACK00000"), the game it belongs to is base_id.
     std::string base_id;
@@ -351,6 +352,9 @@ struct GameUpdateStatus
     std::string error;
     std::string detail; // why the first failed game failed (technical, English)
     std::vector<GameUpdateItem> games;
+    std::vector<GameUpdateItem> blocked; // games whose newest patch needs a newer firmware: a version can be picked
+    std::string pick_state;   // picking a version on prosperopatches.com: idle, waiting, captured, failed, cancelled
+    std::string pick_message; // what the service says about it
     std::vector<GameUpdateItem> dlc; // DLC on the NAS that an installed game does not have yet
     GameUpdateJob job;     // the update being downloaded
     GameUpdateJob dlc_job; // the DLC being downloaded, at the same time
@@ -518,7 +522,8 @@ bool contains(const std::vector<std::string> &values, std::string_view value);
 // Statuses, as the web storefront words them.
 // Game updates and DLC shown in Downloads like any other download, and what is left for the Updates and DLC tabs.
 std::vector<Job> game_update_jobs(const GameUpdateStatus &status);
-std::vector<GameUpdateItem> pending_game_items(const GameUpdateStatus &status, bool dlc);
+// include_blocked adds the games whose newest patch needs a newer firmware (the list shows them, the badge does not).
+std::vector<GameUpdateItem> pending_game_items(const GameUpdateStatus &status, bool dlc, bool include_blocked = false);
 bool is_game_update_job(const std::string &job_id); // "gu:<title id or DLC key>"
 bool job_active(const Job &job);   // queued, downloading, retrying, verifying
 bool job_inactive(const Job &job); // complete or cancelled

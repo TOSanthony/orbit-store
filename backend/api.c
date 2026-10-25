@@ -172,6 +172,14 @@ static void lan_address(char *out, size_t cap) {
         out[0] = 0;
     close(fd);
 }
+/* The game updates, with the state of picking an update on prosperopatches.com beside them. */
+static cJSON *updates_with_pick(void) {
+    cJSON *o = gameupdates_status();
+    if (o)
+        cJSON_AddItemToObject(o, "pick", patchlink_status());
+    return o;
+}
+
 static cJSON *storage_json(void) {
     Storage s[ORBIT_MAX_STORAGE];
     size_t n = storage_list(s);
@@ -827,12 +835,13 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
                                : error(c, (unsigned)code, *e ? e : "Expected refresh action.");
         }
         if (get && !strcmp(url, "/api/v1/game-updates"))
-            return json_response(c, 200, gameupdates_status());
+            return json_response(c, 200, updates_with_pick());
         if (post && !strcmp(url, "/api/v1/game-updates")) {
             char e[256] = {0};
-            int code = gameupdates_action(input, e, sizeof e);
+            const char *picking = json_text(input, "action");
+            int code = !strncmp(picking, "pick", 4) ? patchlink_action(input, e, sizeof e) : gameupdates_action(input, e, sizeof e);
             cJSON_Delete(input);
-            return code == 202 ? json_response(c, 202, gameupdates_status())
+            return code == 202 ? json_response(c, 202, updates_with_pick())
                                : error(c, (unsigned)code, e);
         }
         if (get && !strcmp(url, "/api/v1/updates"))

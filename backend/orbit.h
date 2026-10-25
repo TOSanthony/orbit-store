@@ -252,6 +252,12 @@ bool gameupdates_offer(const char *title_id, char *name, size_t name_cap, char *
                        char *manifest, size_t manifest_cap);
 void gameupdates_request_refresh(void);
 bool gameupdates_current_version(const char *title_id, char *out, size_t cap);
+/* The update the person picked on prosperopatches.com for a game (its manifest), kept until it is installed. */
+void gameupdates_choose(const char *title_id, const char *manifest);
+/* patchlink.c: opening prosperopatches.com in the PS5 browser and taking the link the person selects. */
+int patchlink_action(const cJSON *input, char *error, size_t cap);
+cJSON *patchlink_status(void);
+void patchlink_stop(void);
 /* Downloading and installing a game update (patchdl.c): one at a time. */
 /* A DLC's key is "<game id>/<label>" (PPSA00001/LIMITEDPACK00000); an update's is the game id. */
 bool gameupdates_split_dlc(const char *key, char *base, size_t base_cap, char *label, size_t label_cap);
