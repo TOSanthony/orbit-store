@@ -425,20 +425,26 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         if (list) ui::paragraph(*list, type.medium, title, kLeft, y + size * 0.85f, size,
                                width, size * 1.04f, ui::color::text, shown);
         y += static_cast<float>(shown) * size * 1.04f + 25;
-        // The slogan and the summary below it always sit at the same height, as if the title took two lines
-        // (a one-line title leaves the room empty); a title of three lines or more pushes them down.
-        y = std::max(y, 185.0f + 2.0f * 92.0f * 1.04f + 25.0f);
-        const float tagline_top = y;
+        // The slogan and the summary form one block, centred vertically between the title (as if it took two
+        // lines) and the row of pills, which never move. A summary of six lines or more fills the whole room.
+        constexpr float kSize = 22.0f, kStep = kSize * 1.45f;
+        constexpr int kSummaryLines = 6;
+        constexpr float kRegionTop = 185.0f + 2.0f * 92.0f * 1.04f;   // under a two-line title
+        constexpr float kPillsLine = 644.0f;                             // where the row of pills starts
+        const float text_w = std::min(width, type.regular.measure("0", 22) * 54);
+        const int desc_count = game->description.empty() ? 0
+            : static_cast<int>(type.regular.font->wrap(game->description, kSize, text_w).size());
+        const int shown_lines = std::min(desc_count, kSummaryLines);
+        const float tag_h = game->tagline.empty() ? 0.0f
+            : static_cast<float>(type.regular.font->wrap(game->tagline, 25.0f, width).size()) * 25.0f * 1.45f + 15.0f;
+        const float block = tag_h + static_cast<float>(shown_lines) * kStep;
+        y = std::max(kRegionTop, kRegionTop + (kPillsLine - kRegionTop - block) * 0.5f);
+        const float block_top = y;
         paragraph(game->tagline, kLeft, y, width, 25, ui::color::text);
-        if (!game->tagline.empty()) y += 15;
-        y = std::max(y, tagline_top + 25.0f * 1.45f + 15.0f);   // the room of a one-line slogan, even without one
-        // The summary always takes the same room (kSummaryLines lines) so nothing moves from game to game.
-        // A longer one scrolls by itself: a pause at the start, a slow scroll, a pause at the end, back to the top.
+        y = block_top + tag_h;
+        // A longer summary scrolls by itself: a pause at the start, a slow scroll, a pause at the end, back to the top.
         {
-            constexpr float kSize = 22.0f, kStep = kSize * 1.45f;
-            constexpr int kSummaryLines = 6;
-            const float box = kStep * kSummaryLines;
-            const float text_w = std::min(width, type.regular.measure("0", 22) * 54);
+            const float box = kStep * static_cast<float>(shown_lines);
             if (list && !game->description.empty())
             {
                 const auto lines = type.regular.font->wrap(game->description, kSize, text_w);
@@ -463,7 +469,8 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
                 list->pop_transform();
                 list->pop_clip();
             }
-            y += box;
+            (void)box;
+            y = kPillsLine;
         }
         // Server, format, size and platform as pills shaped like the download button.
         {
