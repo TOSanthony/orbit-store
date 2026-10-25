@@ -346,7 +346,11 @@ function patch_saved_load(): array
     if (is_array($j)) {
         foreach ($j as $id => $v) {
             if (is_string($id) && preg_match('/^PPSA\d{5}$/', $id) && is_array($v)) {
-                $out[$id] = ['version' => (string)($v['version'] ?? ''), 'link' => (string)($v['link'] ?? ''), 'title' => substr(trim((string)($v['title'] ?? '')), 0, 80)];
+                $more = [];
+                foreach (is_array($v['more'] ?? null) ? array_slice($v['more'], 0, 20) : [] as $m) {
+                    if (is_array($m)) $more[] = ['version' => (string)($m['version'] ?? ''), 'link' => (string)($m['link'] ?? ''), 'fw' => (string)($m['fw'] ?? '')];
+                }
+                $out[$id] = ['version' => (string)($v['version'] ?? ''), 'link' => (string)($v['link'] ?? ''), 'fw' => (string)($v['fw'] ?? ''), 'more' => $more, 'title' => substr(trim((string)($v['title'] ?? '')), 0, 80)];
             }
         }
     }
@@ -387,6 +391,11 @@ function saved_info_fetch(string $id): void
     }
     proc_close($proc);
 }
+/** Firmware minimum d'un patch : vide (toutes les consoles) ou « 13.20 ». */
+function fw_field_ok(string $fw): bool
+{
+    return $fw === '' || (bool)preg_match('/^\d{1,2}\.\d{2}$/', $fw);
+}
 function patch_link_ok(string $link): bool
 {
     return (bool)preg_match('~^https?://[A-Za-z0-9.-]+/[A-Za-z0-9/._-]{1,400}$~', $link) && strpos($link, '..') === false;
@@ -401,9 +410,15 @@ function patch_public_sync(): void
     global $GAMES_DIR;
     $out = [];
     foreach (patch_saved_load() as $id => $v) {
-        if ($v['version'] !== '' && $v['link'] !== '' && preg_match('/^\d{2}\.\d{3}\.\d{3}$/', $v['version']) && patch_link_ok($v['link'])) {
-            $out[$id] = ['version' => $v['version'], 'link' => $v['link']];
+        // La première entrée (version, lien, firmware minimum) garde les champs d'avant ; les autres suivent dans « more ».
+        $entries = [];
+        foreach (array_merge([['version' => $v['version'], 'link' => $v['link'], 'fw' => $v['fw']]], $v['more']) as $e) {
+            if ($e['version'] !== '' && $e['link'] !== '' && preg_match('/^\d{2}\.\d{3}\.\d{3}$/', $e['version']) && patch_link_ok($e['link']) && fw_field_ok($e['fw'])) {
+                $entries[] = ['version' => $e['version'], 'link' => $e['link']] + ($e['fw'] !== '' ? ['fw' => $e['fw']] : []);
+            }
         }
+        if (!$entries) continue;
+        $out[$id] = $entries[0] + (count($entries) > 1 ? ['more' => array_slice($entries, 1)] : []);
     }
     $file = rtrim((string)$GAMES_DIR, '/') . '/game-patches.json';
     $json = json_encode((object)$out, JSON_UNESCAPED_SLASHES);
@@ -412,23 +427,41 @@ function patch_public_sync(): void
     if (@file_put_contents($tmp, $json, LOCK_EX) !== false) @rename($tmp, $file);
 }
 /** @return string message d'erreur, vide si enregistré */
-function patch_saved_set(string $id, string $version, string $link, ?string $title = null): string
+function patch_saved_set(string $id, string $version, string $link, ?string $title = null, ?string $fw = null, ?array $more = null): string
 {
     if (!preg_match('/^PPSA\d{5}$/', $id)) return 'Identifiant du jeu invalide.';
     $version = trim($version);
     $link = trim($link);
     if ($version !== '' && !preg_match('/^\d{2}\.\d{3}\.\d{3}$/', $version)) return 'Version invalide.';
     if ($link !== '' && !patch_link_ok($link)) return 'Lien invalide.';
+    if ($fw !== null && !fw_field_ok(trim($fw))) return 'Firmware minimum invalide (attendu : 13.20).';
+    if ($more !== null) {
+        $clean = [];
+        foreach (array_slice($more, 0, 20) as $m) {
+            if (!is_array($m)) continue;
+            $mv = trim((string)($m['version'] ?? ''));
+            $ml = trim((string)($m['link'] ?? ''));
+            $mf = trim((string)($m['fw'] ?? ''));
+            if ($mv === '' && $ml === '') continue;
+            if (!preg_match('/^\d{2}\.\d{3}\.\d{3}$/', $mv)) return 'Version invalide.';
+            if ($ml !== '' && !patch_link_ok($ml)) return 'Lien invalide.';
+            if (!fw_field_ok($mf)) return 'Firmware minimum invalide (attendu : 13.20).';
+            $clean[] = ['version' => $mv, 'link' => $ml, 'fw' => $mf];
+        }
+        $more = $clean;
+    }
     $fh = @fopen(patch_saved_file(), 'c+');
     if (!$fh) return 'Enregistrement impossible (dossier non modifiable).';
     flock($fh, LOCK_EX);
     $all = json_decode((string)stream_get_contents($fh), true);
     $all = is_array($all) ? $all : [];
-    if ($version === '' && $link === '') unset($all[$id]);
+    $keepMore = $more ?? (is_array($all[$id]['more'] ?? null) ? $all[$id]['more'] : []);
+    $keepFw = $fw !== null ? trim($fw) : (string)($all[$id]['fw'] ?? '');
+    if ($version === '' && $link === '' && !$keepMore) unset($all[$id]);
     else {
         // Le nom du jeu (facultatif) sert à l'afficher dans « Mises à jour » quand il n'est pas dans l'index.
         $name = $title === null ? (string)($all[$id]['title'] ?? '') : substr(trim(preg_replace('/[\x00-\x1f\x7f]+/u', ' ', $title) ?? ''), 0, 80);
-        $all[$id] = ['version' => $version, 'link' => $link] + ($name !== '' ? ['title' => $name] : []);
+        $all[$id] = ['version' => $version, 'link' => $link] + ($keepFw !== '' ? ['fw' => $keepFw] : []) + ($keepMore ? ['more' => $keepMore] : []) + ($name !== '' ? ['title' => $name] : []);
     }
     if (count($all) > 500) $all = array_slice($all, -500, null, true);
     ftruncate($fh, 0);
@@ -833,7 +866,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             echo json_encode(['ok' => $err === '', 'error' => $err], JSON_UNESCAPED_UNICODE);
         } elseif ($action === 'patch_save') {
             $sid = (string)($_POST['id'] ?? '');
-            $err = patch_saved_set($sid, (string)($_POST['version'] ?? ''), (string)($_POST['link'] ?? ''), isset($_POST['title']) ? (string)$_POST['title'] : null);
+            $moreIn = isset($_POST['more']) ? json_decode((string)$_POST['more'], true) : null;
+            $err = patch_saved_set($sid, (string)($_POST['version'] ?? ''), (string)($_POST['link'] ?? ''), isset($_POST['title']) ? (string)$_POST['title'] : null,
+                isset($_POST['fw']) ? (string)$_POST['fw'] : null, is_array($moreIn) ? $moreIn : null);
             $info = null;
             if ($err === '' && !empty($_POST['art']) && isset(patch_saved_load()[$sid])) {
                 if (!isset(saved_info_load()[$sid])) saved_info_fetch($sid);   // titre et images de prosperopatches.com
@@ -1156,6 +1191,9 @@ summary{cursor:pointer;font-weight:600}
       <div id="pRows"></div>
       <label>Version<input class="field" id="pVer" maxlength="10" placeholder="06.005.000" autocomplete="off"></label>
       <label>Lien CRC du patch<input class="field" id="pLink" maxlength="500" placeholder="https://sgst.prod.dl.playstation.net/…/….crc" autocomplete="off"></label>
+      <label>Firmware minimum de ce patch (vide = toutes les consoles)<input class="field" id="pMin" size="7" maxlength="5" placeholder="13.20" autocomplete="off"></label>
+      <div id="pMore"></div>
+      <div class="row"><button type="button" class="btn" id="pAddMore">+ Autre version pour un autre firmware</button></div>
       <p class="note">Sur la page du jeu, ouvre le patch, fais un clic droit sur « CRC » → copier l'adresse du lien, puis colle-la ici. Le fichier est téléchargé depuis les serveurs Sony dans <code>packages/ps5/updates/</code>.</p>
       <label class="chk"><input type="checkbox" id="pForce"> Forcer même si le firmware de la console est trop ancien</label>
       <div class="row"><button class="btn primary" id="pGo" type="button">Télécharger le patch</button><button class="btn" id="pStop" type="button" hidden>Annuler</button></div>
@@ -1518,7 +1556,8 @@ summary{cursor:pointer;font-weight:600}
     patchGame = id;
     $('pFw').value = lsGet('orbitFw') || CFG_FW || '';
     $('pSite').href = 'https://prosperopatches.com/' + id;
-    $('pRows').replaceChildren(); $('pVer').value = (SAVED[id] || {}).version || ''; $('pLink').value = (SAVED[id] || {}).link || ''; $('pForce').checked = false;
+    $('pRows').replaceChildren(); $('pVer').value = (SAVED[id] || {}).version || ''; $('pLink').value = (SAVED[id] || {}).link || ''; $('pMin').value = (SAVED[id] || {}).fw || ''; $('pForce').checked = false;
+    $('pMore').replaceChildren(); for (const m of (SAVED[id] || {}).more || []) addMoreRow(m);
     $('pMsg').textContent = ''; $('pBar').hidden = true; $('pStop').hidden = true; $('pGo').disabled = false;
     pollPatch();
   }
@@ -1528,14 +1567,24 @@ summary{cursor:pointer;font-weight:600}
     const id = patchGame, version = $('pVer').value.trim(), link = $('pLink').value.trim();
     if (!id) return;
     if (!/^(\d{2}\.\d{3}\.\d{3})?$/.test(version) || !(link === '' || /^https?:\/\/\S+$/.test(link))) return;
+    const fw = $('pMin').value.trim();
+    if (!/^(\d{1,2}\.\d{2})?$/.test(fw)) return;
+    const more = [];
+    for (const row of $('pMore').children) {
+      const [v, l, f] = row.querySelectorAll('input');
+      const mv = v.value.trim(), ml = l.value.trim(), mf = f.value.trim();
+      if (mv === '' && ml === '') continue;
+      if (!/^\d{2}\.\d{3}\.\d{3}$/.test(mv) || !(ml === '' || /^https?:\/\/\S+$/.test(ml)) || !/^(\d{1,2}\.\d{2})?$/.test(mf)) return;
+      more.push({ version: mv, link: ml, fw: mf });
+    }
     const adding = !$('dAdd').hidden, title = adding ? $('aName').value.trim() : null;
-    SAVED[id] = { ...(SAVED[id] || {}), version, link };
+    SAVED[id] = { ...(SAVED[id] || {}), version, link, fw, more };
     if (adding) SAVED[id].title = title;
     clearTimeout(saveTimer);
     // Jeu absent de l'index : on récupère aussi son titre et ses images sur prosperopatches.com (une seule tentative par jeu).
     const art = version && link && !SAVED_INFO[id] && !artTried.has(id) && !all.some((g) => g.cat === 'game' && g.titleId === id);
     if (art) artTried.add(id);
-    const body = { action: 'patch_save', id, version, link };
+    const body = { action: 'patch_save', id, version, link, fw, more: JSON.stringify(more) };
     if (adding) body.title = title;
     if (art) body.art = '1';
     saveTimer = setTimeout(() => pPost(body).then((r) => {
@@ -1547,6 +1596,19 @@ summary{cursor:pointer;font-weight:600}
     const id = $('aId').value.trim().toUpperCase();
     if (/^PPSA\d{5}$/.test(id)) { if (id !== patchGame) { startPatch(id); $('aName').value = (SAVED[id] || {}).title || ''; } } else startPatch('');
   });
+  // Une ligne par autre version : version, lien CRC, firmware minimum, et le bouton pour la retirer.
+  function addMoreRow(m) {
+    const row = el('div', 'row');
+    const mk = (ph, val, size) => { const i = el('input', 'field'); i.placeholder = ph; i.value = val || ''; i.autocomplete = 'off'; if (size) i.size = size; i.addEventListener('input', saveFields); return i; };
+    const v = mk('06.006.000', m && m.version, 10), l = mk('https://…/….crc', m && m.link), f = mk('13.60', m && m.fw, 5);
+    l.style.flex = '1 1 18rem';
+    const rm = el('button', 'btn', 'Retirer'); rm.type = 'button';
+    rm.onclick = () => { row.remove(); saveFields(); };
+    row.append(v, l, f, rm);
+    $('pMore').append(row);
+  }
+  $('pAddMore').addEventListener('click', () => addMoreRow());
+  $('pMin').addEventListener('input', saveFields);
   $('pVer').addEventListener('input', saveFields);
   $('pLink').addEventListener('input', saveFields);
   $('pFw').addEventListener('change', () => { if (fwOk()) lsSet('orbitFw', $('pFw').value.trim()); });

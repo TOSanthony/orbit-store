@@ -192,6 +192,38 @@ bool gameupdates_split_dlc(const char *key, char *base, size_t base_cap, char *l
     copy_text(label, label_cap, slash + 1);
     return true;
 }
+/* A game's entry in game-patches.json: its own version and link, then those of "more", each with the
+ * lowest firmware ("fw", like "13.20"; none = any console) the patch installs on. The newest one this
+ * console's firmware can install, or NULL when there is none. */
+static bool saved_fw_ok(const cJSON *entry) {
+    const char *fw = json_text(entry, "fw");
+    if (!*fw)
+        return true;
+    char *dot;
+    unsigned long major = strtoul(fw, &dot, 16);
+    if (*dot != '.' || major > 0xff)
+        return false;
+    char *end;
+    unsigned long minor = strtoul(dot + 1, &end, 16);
+    if (*end || minor > 0xff)
+        return false;
+    return patchfeed_firmware_ok((uint32_t)((major << 24) | (minor << 16)), orbit.firmware);
+}
+static const cJSON *saved_pick(const cJSON *game) {
+    if (!game || !cJSON_IsObject(game))
+        return NULL;
+    const cJSON *best = NULL;
+    const cJSON *more = cJSON_GetObjectItemCaseSensitive(game, "more");
+    int count = 1 + (cJSON_IsArray(more) ? cJSON_GetArraySize(more) : 0);
+    for (int i = 0; i < count; i++) {
+        const cJSON *entry = i == 0 ? game : cJSON_GetArrayItem(more, i - 1);
+        if (!cJSON_IsObject(entry) || !patchfeed_version_valid(json_text(entry, "version")) || !saved_fw_ok(entry))
+            continue;
+        if (!best || strcmp(json_text(entry, "version"), json_text(best, "version")) > 0)
+            best = entry;
+    }
+    return best;
+}
 /* The DLC the console says it has installed, read from its addcont.db at each check (see appdb.h). */
 #define ADDCONT_MAX 32768
 static appdb_content *addcont_list;
@@ -649,7 +681,7 @@ static void run_check(void) {
             }
             /* A version and Sony link saved on the person's NAS page wins when it is newer than what
              * is installed and than anything Sony offers this console. */
-            const cJSON *saved_game = saved ? cJSON_GetObjectItemCaseSensitive(saved, game->title_id) : NULL;
+            const cJSON *saved_game = saved_pick(saved ? cJSON_GetObjectItemCaseSensitive(saved, game->title_id) : NULL);
             const char *saved_version = saved_game ? json_text(saved_game, "version") : "";
             const char *saved_link = saved_game ? json_text(saved_game, "link") : "";
             char saved_manifest[768];
