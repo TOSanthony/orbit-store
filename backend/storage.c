@@ -149,26 +149,57 @@ static bool known_drive(const Job *j) {
     }
     return known;
 }
-/* The console hands a drive a new device number each time it starts, so a download saved before a restart
- * would never match its own drive again. When everything else is the same (same mount, same root folder
- * number, and the partial file is really there), the saved device number is refreshed. A different drive
- * mounted in the same place has no such partial file and still counts as another drive. */
-bool storage_rebind(Job *j) {
-    if (!strcmp(j->status, "complete") || !known_drive(j)) return false;
-    struct stat st;
-    if (lstat(j->root, &st) || !S_ISDIR(st.st_mode) || st.st_ino != j->inode) return false;
-    if (st.st_dev == j->device) return false;
-    int root = open(j->root, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
-    if (root < 0) return false;
-    struct stat opened, partial;
+/* Whether `root` holds this job's partial file, and the numbers that identify that drive. */
+static bool holds_partial(const Job *j, const char *root, struct stat *id) {
+    struct stat st, opened, partial;
+    if (lstat(root, &st) || !S_ISDIR(st.st_mode)) return false;
+    int fd = open(root, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    if (fd < 0) return false;
     char name[300];
     snprintf(name, sizeof name, "homebrew/%s.part", j->filename);
-    bool same = !fstat(root, &opened) && opened.st_dev == st.st_dev && opened.st_ino == st.st_ino &&
-        !fstatat(root, name, &partial, AT_SYMLINK_NOFOLLOW) && S_ISREG(partial.st_mode) &&
+    bool found = !fstat(fd, &opened) && opened.st_dev == st.st_dev && opened.st_ino == st.st_ino &&
+        !fstatat(fd, name, &partial, AT_SYMLINK_NOFOLLOW) && S_ISREG(partial.st_mode) &&
         partial.st_dev == st.st_dev;
-    close(root);
-    if (same) j->device = st.st_dev;
-    return same;
+    close(fd);
+    if (found) *id = st;
+    return found;
+}
+/* The console hands a drive a new device number each time it starts, and a USB drive may come back as
+ * usb1 instead of usb0. A saved download would never match its own drive again. The drive is found again
+ * by the one thing that cannot be faked by another drive: the partial file of this very download. It is
+ * taken only when it is on the saved mount (same root folder number), or when exactly one other USB drive
+ * holds it. Anything else still counts as another drive. */
+bool storage_rebind(Job *j) {
+    if (!strcmp(j->status, "complete") || !known_drive(j)) return false;
+    struct stat now;
+    if (holds_partial(j, j->root, &now) && now.st_ino == j->inode) {
+        if (now.st_dev == j->device) return false;
+        j->device = now.st_dev;
+        return true;
+    }
+    if (orbit.desktop || !strcmp(j->storage_id, "internal")) return false;
+    char found_id[24] = "", found_root[32] = "";
+    struct stat found = {0};
+    int matches = 0;
+    static const char *const kinds[] = {"usb", "ext"};
+    for (int k = 0; k < 2; k++)
+        for (int n = 0; n < 8; n++) {
+            char id[8], root[32];
+            snprintf(id, sizeof id, "%s%d", kinds[k], n);
+            snprintf(root, sizeof root, "/mnt/%s", id);
+            struct stat st;
+            if (!strcmp(root, j->root) || !holds_partial(j, root, &st)) continue;
+            matches++;
+            copy_text(found_id, sizeof found_id, id);
+            copy_text(found_root, sizeof found_root, root);
+            found = st;
+        }
+    if (matches != 1) return false;
+    copy_text(j->storage_id, sizeof j->storage_id, found_id);
+    copy_text(j->root, sizeof j->root, found_root);
+    j->device = found.st_dev;
+    j->inode = found.st_ino;
+    return true;
 }
 bool storage_matches(const Job *j) {
     /* Identity checks run on every writer, and during queue actions. Never scan
