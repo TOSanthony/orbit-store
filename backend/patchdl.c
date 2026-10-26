@@ -349,6 +349,9 @@ static void wait_seconds(unsigned seconds) {
 #define PARALLEL_STREAMS 16
 #define SLICE_BYTES (4LL * 1024 * 1024)
 #define SLICE_RETRIES 3
+/* How far ahead of the first unfinished slice the connections may go. Only the part before that slice
+ * survives a stop, so without this limit one stalled slice could throw away hundreds of MB fetched past it. */
+#define SLICE_WINDOW 24
 
 static bool fan_stop(void) {
     return stopped() || atomic_load(&cur->fan_failed);
@@ -362,6 +365,7 @@ typedef struct {
     _Atomic int64_t *reached;      /* per slice: the position reached inside the piece */
     atomic_bool *finished;          /* per slice */
     atomic_size_t next;
+    atomic_size_t low;              /* every slice before this one is finished */
     atomic_int alive;
     pthread_mutex_t mutex;          /* guards the first error */
     sony_range_result result;
@@ -387,6 +391,16 @@ static void fan_fail(Fan *fan, sony_range_result r, const char *why) {
     atomic_store(&cur->fan_failed, true);
 }
 
+static size_t fan_low(Fan *fan) {
+    size_t k = atomic_load(&fan->low);
+    while (k < fan->slices && atomic_load(&fan->finished[k]))
+        k++;
+    size_t seen = atomic_load(&fan->low);
+    while (k > seen && !atomic_compare_exchange_weak(&fan->low, &seen, k))
+        ;
+    return k;
+}
+
 static void *fan_worker(void *context) {
     Fan *fan = context;
     PatchJob *job = fan->job;
@@ -395,6 +409,11 @@ static void *fan_worker(void *context) {
     for (;;) {
         size_t k = atomic_fetch_add(&fan->next, 1);
         if (k >= fan->slices || fan_stop())
+            break;
+        /* Too far ahead of a slice that is still running: wait for it rather than pile up data that would be lost. */
+        while (k >= fan_low(fan) + SLICE_WINDOW && !fan_stop())
+            nanosleep(&(struct timespec){.tv_nsec = 100 * 1000000L}, NULL);
+        if (fan_stop())
             break;
         unsigned tries = 0;
         for (;;) {
@@ -459,6 +478,7 @@ static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, c
     for (size_t k = 0; k < fan.slices; k++)
         atomic_store_explicit(&fan.reached[k], slice_start(&fan, k), memory_order_relaxed);
     atomic_store(&fan.next, 0);
+    atomic_store(&fan.low, 0);
     atomic_store(&cur->fan_failed, false);
     pthread_mutex_init(&fan.mutex, NULL);
 
