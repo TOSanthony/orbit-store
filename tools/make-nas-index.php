@@ -1067,12 +1067,20 @@ main{padding:0 0 3rem}
 dialog{border:0;border-radius:1.2rem;background:rgba(20,20,20,.94);box-shadow:0 0 0 1px rgba(255,255,255,.08),inset 0 1px rgba(255,255,255,.07),0 30px 70px -20px rgba(0,0,0,.75);backdrop-filter:blur(18px) saturate(1.3);color:var(--text);padding:0;width:min(42rem,calc(100% - 2rem));max-height:calc(100% - 2rem);overflow:auto}
 dialog::backdrop{background:#000000b3;backdrop-filter:blur(4px)}
 [hidden]{display:none!important}
-.dhero{height:11rem;background:linear-gradient(135deg,#2a2a2a,var(--panel2)) center/cover;position:relative}
-.dhero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 40%,#141414f0)}
-.det{display:flex;gap:1.1rem;padding:0 1.4rem 1.4rem;margin-top:-4rem;position:relative;z-index:1}
-.det .art{width:7.5rem;flex:none;box-shadow:0 8px 24px #0008;border:1px solid #ffffff22}
-.det h2{margin:.2rem 0 .1rem;font-size:1.35rem}
-.desc{margin:0 1.4rem;color:var(--dim);font-size:.92rem}.desc:empty{display:none}
+#dlg{width:100vw;max-width:none;height:100vh;max-height:none;margin:0;border-radius:0;background:#080808;box-shadow:none;backdrop-filter:none;overflow-x:hidden}
+.dhero{position:fixed;inset:0;background:linear-gradient(135deg,#2a2a2a,#080808) 72% 35%/cover no-repeat}
+.dhero:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#000d 0%,#0009 29%,#0000 62%),linear-gradient(0deg,#000f 0%,#000a 15%,#0000 54%,#0003 100%)}
+.hub{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:2rem 3rem;align-items:end;min-height:100vh;padding:6.5rem var(--pad) 2.5rem}
+.hub-heading{display:flex;flex-direction:column;align-items:flex-start;min-width:0}
+.hub-heading .art{width:6.5rem;margin-bottom:1.2rem;box-shadow:0 8px 24px #0008;border:1px solid #ffffff22}
+.hub-heading h2{margin:0;max-width:16ch;font-size:clamp(2.4rem,4.4vw,4.8rem);font-weight:450;line-height:1.03;letter-spacing:-.045em;text-transform:uppercase;overflow-wrap:anywhere;text-shadow:0 2px 24px #0005}
+.tagline{margin:.8rem 0 0;font-size:1.05rem;line-height:1.45;color:#f4f4f4}.tagline:empty{display:none}
+.desc{margin:.65rem 0 0;max-width:54ch;font-size:.92rem;line-height:1.55;color:#ddd;white-space:pre-line}.desc:empty{display:none}
+.hub-release{display:flex;flex-wrap:wrap;gap:.2rem .7rem;margin-top:1.2rem;color:#ddd;font-size:.95rem}
+.tray{min-width:0;padding:1.1rem 0 1.2rem;border-radius:1.2rem;background:rgba(20,20,20,.82);backdrop-filter:blur(18px) saturate(1.3);box-shadow:0 0 0 1px rgba(255,255,255,.08),inset 0 1px rgba(255,255,255,.07),0 30px 70px -20px rgba(0,0,0,.75);max-height:calc(100vh - 9rem);overflow:auto}
+#settings .close{position:absolute;top:.7rem;right:.7rem;z-index:2}
+#dlg>.close{position:fixed;top:1.3rem;left:var(--pad);z-index:5;padding:.55rem 1.1rem;background:#1119;backdrop-filter:blur(12px)}
+@media (max-width:56rem){.hub{grid-template-columns:minmax(0,1fr);align-items:start;padding-top:5.5rem}.tray{max-height:none}.hub-heading h2{max-width:none}}
 h3{margin:1.2rem 1.4rem .5rem;font-size:.85rem;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
 ul.files{list-style:none;margin:0 1.4rem;padding:0;display:grid;gap:.4rem}
 ul.files li{display:grid;grid-template-columns:auto 1fr auto;gap:.2rem .8rem;align-items:baseline;padding:.55rem .8rem;border-radius:.7rem;background:#ffffff0a;font-size:.88rem}
@@ -1095,7 +1103,6 @@ ul.files .fn small{display:block;color:var(--dim);font-size:.75rem}
 ul.files .sz{color:var(--dim);white-space:nowrap}
 dl{display:grid;grid-template-columns:max-content 1fr;gap:.35rem 1rem;margin:0 1.4rem;font-size:.9rem}
 dt{color:var(--dim)}dd{margin:0;word-break:break-all}
-.close{position:absolute;top:.7rem;right:.7rem;z-index:2}
 .actions{padding:1.2rem 1.4rem 1.4rem;display:flex;justify-content:flex-end}
 
 /* Actualisation */
@@ -1107,7 +1114,7 @@ dt{color:var(--dim)}dd{margin:0;word-break:break-all}
 summary{cursor:pointer;font-weight:600}
 .spin{display:none;width:1rem;height:1rem;border:2px solid #08080855;border-top-color:#080808;border-radius:50%;animation:s 1s linear infinite;vertical-align:-.2rem;margin-right:.4rem}
 .busy .spin,.spin.on{display:inline-block}.panel .spin{border-color:#ffffff40;border-top-color:#fff;vertical-align:-.15rem}@keyframes s{to{transform:rotate(360deg)}}
-@media (max-width:40rem){.brand span{display:none}#q{width:8rem}.det{flex-direction:column;margin-top:-3rem}.grid{grid-template-columns:repeat(2,1fr)}.rail-row .tile{width:8.8rem}.hero{padding-top:2rem}.page-head{padding-top:1.5rem}.hero,.page-head{margin-top:0}header.bar{position:relative}.panel.first{margin-top:1rem}.filters{margin-left:0}}
+@media (max-width:40rem){.brand span{display:none}#q{width:8rem}.grid{grid-template-columns:repeat(2,1fr)}.rail-row .tile{width:8.8rem}.hero{padding-top:2rem}.page-head{padding-top:1.5rem}.hero,.page-head{margin-top:0}header.bar{position:relative}.panel.first{margin-top:1rem}.filters{margin-left:0}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation-duration:2s!important}}
 </style></head><body>
 <header class="bar">
@@ -1171,10 +1178,17 @@ summary{cursor:pointer;font-weight:600}
   <div class="actions"><form method="post"><input type="hidden" name="action" value="logout"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><button class="btn">Déconnexion</button></form></div>
 </dialog>
 <dialog id="dlg" aria-labelledby="dTitle">
-  <button class="btn close" id="dClose" aria-label="Fermer">✕</button>
+  <button class="btn close" id="dClose" aria-label="Fermer">‹ Retour</button>
   <div class="dhero" id="dHero"></div>
-  <div class="det"><div class="art" id="dArt"></div><div><h2 id="dTitle"></h2><div class="sub" id="dSub"></div></div></div>
-  <p class="desc" id="dDesc"></p>
+  <div class="hub">
+  <div class="hub-heading">
+    <div class="art" id="dArt"></div>
+    <h2 id="dTitle"></h2>
+    <p class="tagline" id="dTag"></p>
+    <p class="desc" id="dDesc"></p>
+    <div class="hub-release" id="dSub"></div>
+  </div>
+  <div class="tray">
   <h3 id="dFilesTitle">Fichiers</h3>
   <ul class="files" id="dFiles"></ul>
   <h3 id="dInfoTitle">Informations</h3>
@@ -1205,6 +1219,8 @@ summary{cursor:pointer;font-weight:600}
     </div>
   </div>
   <div class="actions"><button class="btn" id="dOk">Fermer</button></div>
+  </div>
+  </div>
 </dialog>
 <script type="application/json" id="data"><?= $data ?></script>
 <script nonce="<?= h($nonce) ?>">
@@ -1496,8 +1512,11 @@ summary{cursor:pointer;font-weight:600}
     $('dHero').style.backgroundImage = g.heroReal ? cssUrl(g.hero) : g.hero ? cssUrl(g.hero) : '';
     $('dArt').replaceWith(Object.assign(picture(g, false), { id: 'dArt' }));
     $('dTitle').textContent = g.title;
-    $('dSub').textContent = [LABEL[g.cat], g.titleId, g.publisher].filter(Boolean).join(' · ');
-    $('dDesc').textContent = [g.cat === 'game' && g.tagline, g.description].filter(Boolean).join(' — ');
+    const year = (g.releaseDate || '').slice(0, 4);
+    const rel = [LABEL[g.cat], g.titleId, g.platform && g.platform.toUpperCase(), g.genre, year, g.publisher, g.size ? bytes(g.size) : ''].filter(Boolean);
+    $('dSub').replaceChildren(...rel.flatMap((t, i) => i ? [el('span', null, '·'), el('span', null, t)] : [el('span', null, t)]));
+    $('dTag').textContent = g.cat === 'game' && g.tagline ? g.tagline : '';
+    $('dDesc').textContent = g.description || '';
     const files = [...g.files].sort((a, b) => a.filename.localeCompare(b.filename, 'fr', { numeric: true }));
     $('dFilesTitle').textContent = files.length > 1 ? 'Fichiers (' + files.length + ')' : 'Fichier';
     $('dFiles').replaceChildren(...files.map((f) => {
