@@ -422,6 +422,25 @@ out:
     return NULL;
 }
 
+/* The payload's standard output is kept nowhere a person can fetch it, so the speed lines go to
+ * <state dir>/patch.log (over FTP: /data/orbit-store/patch.log). Capped; the old file becomes patch.prev.log. */
+static void patch_log_file(const char *line) {
+    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+    char path[560], old[560];
+    snprintf(path, sizeof path, "%s/patch.log", orbit.state_dir);
+    snprintf(old, sizeof old, "%s/patch.prev.log", orbit.state_dir);
+    pthread_mutex_lock(&lock);
+    FILE *f = fopen(path, "a");
+    if (f) {
+        fputs(line, f);
+        long size = ftell(f);
+        fclose(f);
+        if (size > 128 * 1024)
+            rename(path, old);
+    }
+    pthread_mutex_unlock(&lock);
+}
+
 static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, char *why, size_t why_cap) {
     const patchmanifest_piece *piece = &job->manifest.pieces[i];
     if (job->written[i] >= piece->size)
@@ -514,13 +533,15 @@ static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, c
         sony_stats_take(&net);
         /* "write" is the time spent in pwrite summed over all connections: close to seconds x connections
          * means the drive is the limit; small means the network or the console is. */
-        fprintf(stderr,
-                "[patch] piece %zu/%zu: %.1f MB in %ld s = %.1f MB/s over up to %d connections; "
-                "write %.1f s, %ld requests, connect %.2f s, first byte %.2f s (sums), server %s\n",
-                i + 1, job->manifest.count, got / 1e6, seconds,
-                seconds > 0 ? got / 1e6 / (double)seconds : got / 1e6, PARALLEL_STREAMS, net.write_seconds,
-                net.requests, net.connect_seconds, net.first_byte_seconds, net.ip);
-        fflush(stderr);
+        char line[400];
+        snprintf(line, sizeof line,
+                 "[patch] %s piece %zu/%zu: %.1f MB in %ld s = %.1f MB/s over up to %d connections; "
+                 "write %.1f s, %ld requests, connect %.2f s, first byte %.2f s (sums), server %s\n",
+                 cur->title_id, i + 1, job->manifest.count, got / 1e6, seconds,
+                 seconds > 0 ? got / 1e6 / (double)seconds : got / 1e6, PARALLEL_STREAMS, net.write_seconds,
+                 net.requests, net.connect_seconds, net.first_byte_seconds, net.ip);
+        fputs(line, stderr);
+        patch_log_file(line);
     }
     return r;
 }
