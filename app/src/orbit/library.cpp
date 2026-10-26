@@ -407,8 +407,10 @@ std::vector<LibraryScreen::Control> LibraryScreen::page_controls() const
     // Header actions, then one compact row of status tabs, search and location.
     float right = 1920.0f - ui::kGutter;
     {
-        const float w =
-            ui::button_width(type, tr("Check for game updates"), 20.0f, ui::ButtonKind::secondary) + 40.0f;
+        // As wide as its text, which changes to "Checking…" while it looks.
+        const std::string label = state.game_update_status.checking ? std::string(tr("Checking\xE2\x80\xA6"))
+                                                                    : std::string(tr("Check for updates"));
+        const float w = ui::button_width(type, label, 20.0f, ui::ButtonKind::secondary) + 40.0f;
         out.push_back({Kind::updates, 0, row, {right - w, 112.0f, w, 66.0f}});
         right -= w + 16.0f;
     }
@@ -1065,7 +1067,7 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
     {
         const bool looking = state.game_update_status.checking;
         updates_action(list, type, rect(Kind::updates, 0),
-                       looking ? tr("Checking\xE2\x80\xA6") : tr("Check for game updates"),
+                       looking ? tr("Checking\xE2\x80\xA6") : tr("Check for updates"),
                        amount(Kind::updates, 0), !looking);
     }
     if (library.can("rescan"))
