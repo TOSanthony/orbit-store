@@ -342,6 +342,36 @@ static sony_range_result range(const char *url, int64_t start, int64_t end, int 
     char detail[CURL_ERROR_SIZE] = "";
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, detail);
     CURLcode result = perform(curl, detail, !local && !nas);
+    /* Sony's old sgst.* servers sometimes fail the TLS handshake or its certificate check in ways that
+     * differ from the SHA-1 case above. A piece of a patch is only kept once its SHA-256 from the
+     * manifest matches (the manifest itself is always fetched with full verification), so for the
+     * pieces alone the transfer is repeated once without certificate verification. */
+    if (!local && !nas && w.position == start &&
+        (result == CURLE_PEER_FAILED_VERIFICATION || result == CURLE_SSL_CONNECT_ERROR ||
+         result == CURLE_SSL_CERTPROBLEM || result == CURLE_SSL_CACERT_BADFILE || result == CURLE_SSL_CIPHER ||
+         result == CURLE_SSL_ISSUER_ERROR)) {
+        sony_range_close();
+        curl_easy_reset(curl);
+        held = curl;
+        route_free(&route);
+        route_apply(curl, address, sizeof address, &route);
+        curl_easy_setopt(curl, CURLOPT_URL, address);
+        common(curl, &ca, local, &watch);
+        own_dns(curl, local, nas);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+        curl_easy_setopt(curl, CURLOPT_SSL_CIPHER_LIST, "DEFAULT:@SECLEVEL=0");
+        curl_easy_setopt(curl, CURLOPT_RANGE, range_text);
+        curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, (long)PATCH_READ_BUFFER);
+        curl_easy_setopt(curl, CURLOPT_SOCKOPTFUNCTION, tune_socket);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 45L);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, store);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &w);
+        detail[0] = 0;
+        curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, detail);
+        result = curl_easy_perform(curl);
+    }
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
     if (result != CURLE_OK)
