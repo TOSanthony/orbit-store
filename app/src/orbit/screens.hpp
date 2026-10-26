@@ -333,6 +333,7 @@ class LibraryScreen final : public Screen
     {
         refresh,
         scan,
+        updates, // Check for game updates
         section, // index 0 games, 1 storage
         view,    // the status views
         search,

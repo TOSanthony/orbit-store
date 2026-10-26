@@ -111,6 +111,17 @@ void header_action(hui::gfx::DrawList &list, const ui::Type &type, const ui::Rec
     ui::text(list, type.medium, text, r.cx() - width * 0.5f + 40.0f, r.cy() + 7.0f, 20.0f, ink);
 }
 
+// The same pill as the other header actions, with a download arrow: looks for game updates.
+void updates_action(hui::gfx::DrawList &list, const ui::Type &type, const ui::Rect &r, std::string_view text,
+                    float focus, bool enabled)
+{
+    const ui::Color ink = enabled ? ui::state_ink(focus) : ui::color::text.with_alpha(0.4f);
+    ui::state_fill(list, r, r.h * 0.5f, focus);
+    const float width = type.medium.measure(text, 20.0f) + 40.0f;
+    ui::icon_download(list, r.cx() - width * 0.5f + 12.0f, r.cy(), 22.0f, ink);
+    ui::text(list, type.medium, text, r.cx() - width * 0.5f + 40.0f, r.cy() + 7.0f, 20.0f, ink);
+}
+
 bool in_view(const LibraryGame &game, int view)
 {
     switch (view)
@@ -395,6 +406,12 @@ std::vector<LibraryScreen::Control> LibraryScreen::page_controls() const
     int row = 0;
     // Header actions, then one compact row of status tabs, search and location.
     float right = 1920.0f - ui::kGutter;
+    {
+        const float w =
+            ui::button_width(type, tr("Check for game updates"), 20.0f, ui::ButtonKind::secondary) + 40.0f;
+        out.push_back({Kind::updates, 0, row, {right - w, 112.0f, w, 66.0f}});
+        right -= w + 16.0f;
+    }
     if (library.can("rescan"))
     {
         const float w =
@@ -863,6 +880,16 @@ Intent LibraryScreen::update(const InputFrame &input, float dt, Feedback &feedba
                 ctx_.store.refresh_library();
                 feedback.play(hui::audio::Cue::select);
                 break;
+            case Kind::updates:
+                if (!ctx_.store.state().game_update_status.checking && !ctx_.store.setting_result().busy)
+                {
+                    ctx_.store.check_game_updates();
+                    intent.toast = tr("Checking\xE2\x80\xA6");
+                    feedback.play(hui::audio::Cue::select);
+                }
+                else
+                    refuse(feedback, input);
+                break;
             case Kind::scan:
                 scan_open_ = true;
                 scan_button_ = 0;
@@ -1035,6 +1062,12 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
     if (rect(Kind::refresh, 0).w > 0.0f)
         ui::button(list, type, rect(Kind::refresh, 0), busy ? tr("Refreshing…") : tr("Refresh library"),
                    ui::ButtonKind::secondary, amount(Kind::refresh, 0), !busy, 18.0f);
+    {
+        const bool looking = state.game_update_status.checking;
+        updates_action(list, type, rect(Kind::updates, 0),
+                       looking ? tr("Checking\xE2\x80\xA6") : tr("Check for game updates"),
+                       amount(Kind::updates, 0), !looking);
+    }
     if (library.can("rescan"))
         header_action(list, type, rect(Kind::scan, 0), tr("Scan for games"), amount(Kind::scan, 0),
                       true, !library.working());
