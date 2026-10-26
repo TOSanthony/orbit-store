@@ -62,7 +62,9 @@ static struct {
 #define CHOSEN_MAX 16
 static struct {
     char title_id[32], manifest[768], installed[16];
+    int64_t size; /* the patch's size in bytes, 0 when its manifest could not be read */
 } chosen[CHOSEN_MAX]; /* protected by gu.mutex */
+static bool stopping(void);
 static int chosen_find_locked(const char *title_id) {
     for (int i = 0; i < CHOSEN_MAX; i++)
         if (chosen[i].title_id[0] && !strcmp(chosen[i].title_id, title_id))
@@ -72,6 +74,18 @@ static int chosen_find_locked(const char *title_id) {
 void gameupdates_choose(const char *title_id, const char *manifest) {
     char installed[16] = "";
     gameupdates_current_version(title_id, installed, sizeof installed);
+    /* The size tells the person which version this is; a failure just leaves it out. */
+    int64_t size = 0;
+    SonyBody body = {0};
+    char why[160] = "", reason[100] = "";
+    if (sony_get(manifest, 4u * 1024 * 1024, &body, stopping, why, sizeof why)) {
+        patchmanifest m;
+        if (!patchmanifest_parse(body.data, body.size, &m, reason, sizeof reason)) {
+            size = m.total;
+            patchmanifest_free(&m);
+        }
+        free(body.data);
+    }
     pthread_mutex_lock(&gu.mutex);
     int at = chosen_find_locked(title_id);
     for (int i = 0; at < 0 && i < CHOSEN_MAX; i++)
@@ -82,6 +96,7 @@ void gameupdates_choose(const char *title_id, const char *manifest) {
     copy_text(chosen[at].title_id, sizeof chosen[at].title_id, title_id);
     copy_text(chosen[at].manifest, sizeof chosen[at].manifest, manifest);
     copy_text(chosen[at].installed, sizeof chosen[at].installed, installed);
+    chosen[at].size = size;
     pthread_mutex_unlock(&gu.mutex);
 }
 static bool stopping(void) {
@@ -966,7 +981,8 @@ cJSON *gameupdates_status(void) {
         if (e->blocked && !picked)
             cJSON_AddStringToObject(g, "firmware", e->needs);
         else {
-            cJSON_AddNumberToObject(g, "size", (double)e->size);
+            const int pick_at = picked ? chosen_find_locked(e->title_id) : -1;
+            cJSON_AddNumberToObject(g, "size", (double)(pick_at >= 0 ? chosen[pick_at].size : e->size));
             available++;
         }
         cJSON_AddItemToArray(games, g);

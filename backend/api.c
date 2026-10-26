@@ -917,6 +917,16 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
     cJSON_Delete(input);
     if (!get)
         return error(c, 405, "Method not supported.");
+    if (!strcmp(url, "/picked")) {
+        /* Where the browser is left once a game update has been selected (see patchlink.c). */
+        static const char page[] =
+            "<!doctype html><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\">"
+            "<title>Orbit Store</title><body style=\"margin:0;background:#101010;color:#fff;font:28px sans-serif;"
+            "display:grid;place-items:center;height:100vh;text-align:center\"><p>Update selected.<br>"
+            "Press the PS button to go back to Orbit Store.<br><br>Mise \xC3\xA0 jour choisie.<br>"
+            "Appuyez sur le bouton PS pour revenir \xC3\xA0 Orbit Store.</p>";
+        return respond(c, 200, page, sizeof page - 1, "text/html; charset=utf-8");
+    }
     const char *path = !strcmp(url, "/") ? "/index.html" : url;
     for (size_t i = 0; i < sizeof assets / sizeof assets[0]; i++)
         if (!strcmp(path, assets[i].path))

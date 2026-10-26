@@ -1386,5 +1386,20 @@
   "Keep after extracting": "Bewaren na uitpakken",
   "The archive stays next to its files": "Het archief blijft naast zijn bestanden staan",
   "Delete after extracting": "Verwijderen na uitpakken",
-  "Removed once its files are in place": "Verwijderd zodra de bestanden op hun plaats staan"
+  "Removed once its files are in place": "Verwijderd zodra de bestanden op hun plaats staan",
+  "Choose update": "Update kiezen",
+  "Needs firmware {version}": "Vereist firmware {version}",
+  "Newer firmware needed": "Nieuwere firmware nodig",
+  "your selection": "jouw selectie",
+  "Volume": "Volume",
+  "Pick your version on prosperopatches.com, then select its CRC link.": "Kies je versie op prosperopatches.com en selecteer daarna de CRC-link.",
+  "Pick the version in the browser, then select its CRC link.": "Kies de versie in de browser en selecteer daarna de CRC-link.",
+  "Finish or cancel the current selection first.": "Rond eerst de huidige selectie af of annuleer die.",
+  "Expected a PS5 title id such as PPSA01234.": "Een PS5-titel-ID zoals PPSA01234 werd verwacht.",
+  "Picking an update is available on the PS5 only.": "Een update kiezen kan alleen op de PS5.",
+  "Selection cancelled.": "Selectie geannuleerd.",
+  "The selection could not start. Try again.": "De selectie kon niet starten. Probeer het opnieuw.",
+  "Update selected. Return to Orbit and start the download.": "Update geselecteerd. Ga terug naar Orbit en start de download.",
+  "No link was selected in time. Return to Orbit to try again.": "Er is niet op tijd een link geselecteerd. Ga terug naar Orbit om het opnieuw te proberen.",
+  "No link was selected.": "Er is geen link geselecteerd."
 }

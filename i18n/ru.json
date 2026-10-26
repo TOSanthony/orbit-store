@@ -1406,5 +1406,20 @@
   "Keep after extracting": "Оставлять после распаковки",
   "The archive stays next to its files": "Архив остаётся рядом со своими файлами",
   "Delete after extracting": "Удалять после распаковки",
-  "Removed once its files are in place": "Удаляется, когда файлы на месте"
+  "Removed once its files are in place": "Удаляется, когда файлы на месте",
+  "Choose update": "Выбрать обновление",
+  "Needs firmware {version}": "Требуется прошивка {version}",
+  "Newer firmware needed": "Нужна более новая прошивка",
+  "your selection": "ваш выбор",
+  "Volume": "Громкость",
+  "Pick your version on prosperopatches.com, then select its CRC link.": "Выберите версию на prosperopatches.com, затем выберите её ссылку CRC.",
+  "Pick the version in the browser, then select its CRC link.": "Выберите версию в браузере, затем выберите её ссылку CRC.",
+  "Finish or cancel the current selection first.": "Сначала завершите или отмените текущий выбор.",
+  "Expected a PS5 title id such as PPSA01234.": "Ожидался идентификатор игры PS5, например PPSA01234.",
+  "Picking an update is available on the PS5 only.": "Выбор обновления доступен только на PS5.",
+  "Selection cancelled.": "Выбор отменён.",
+  "The selection could not start. Try again.": "Не удалось начать выбор. Повторите попытку.",
+  "Update selected. Return to Orbit and start the download.": "Обновление выбрано. Вернитесь в Orbit и начните загрузку.",
+  "No link was selected in time. Return to Orbit to try again.": "Ссылка не была выбрана вовремя. Вернитесь в Orbit, чтобы повторить попытку.",
+  "No link was selected.": "Ссылка не выбрана."
 }

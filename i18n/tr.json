@@ -1386,5 +1386,20 @@
   "Keep after extracting": "Açtıktan sonra sakla",
   "The archive stays next to its files": "Arşiv dosyalarının yanında kalır",
   "Delete after extracting": "Açtıktan sonra sil",
-  "Removed once its files are in place": "Dosyalar yerine geçince silinir"
+  "Removed once its files are in place": "Dosyalar yerine geçince silinir",
+  "Choose update": "Güncelleme seç",
+  "Needs firmware {version}": "{version} sürümü ürün yazılımı gerekli",
+  "Newer firmware needed": "Daha yeni ürün yazılımı gerekli",
+  "your selection": "seçiminiz",
+  "Volume": "Ses",
+  "Pick your version on prosperopatches.com, then select its CRC link.": "Sürümünüzü prosperopatches.com’da seçin, ardından CRC bağlantısını seçin.",
+  "Pick the version in the browser, then select its CRC link.": "Sürümü tarayıcıda seçin, ardından CRC bağlantısını seçin.",
+  "Finish or cancel the current selection first.": "Önce mevcut seçimi tamamlayın veya iptal edin.",
+  "Expected a PS5 title id such as PPSA01234.": "PPSA01234 gibi bir PS5 başlık kimliği bekleniyordu.",
+  "Picking an update is available on the PS5 only.": "Güncelleme seçimi yalnızca PS5’te kullanılabilir.",
+  "Selection cancelled.": "Seçim iptal edildi.",
+  "The selection could not start. Try again.": "Seçim başlatılamadı. Tekrar deneyin.",
+  "Update selected. Return to Orbit and start the download.": "Güncelleme seçildi. Orbit’e dönün ve indirmeyi başlatın.",
+  "No link was selected in time. Return to Orbit to try again.": "Zamanında bağlantı seçilmedi. Tekrar denemek için Orbit’e dönün.",
+  "No link was selected.": "Bağlantı seçilmedi."
 }

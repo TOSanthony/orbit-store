@@ -1396,5 +1396,20 @@
   "Keep after extracting": "Manter após extrair",
   "The archive stays next to its files": "O arquivo fica ao lado dos seus arquivos",
   "Delete after extracting": "Excluir após extrair",
-  "Removed once its files are in place": "Excluído quando os arquivos estiverem no lugar"
+  "Removed once its files are in place": "Excluído quando os arquivos estiverem no lugar",
+  "Choose update": "Escolher atualização",
+  "Needs firmware {version}": "Requer o firmware {version}",
+  "Newer firmware needed": "Firmware mais recente necessário",
+  "your selection": "sua seleção",
+  "Volume": "Volume",
+  "Pick your version on prosperopatches.com, then select its CRC link.": "Escolha sua versão em prosperopatches.com e selecione o link CRC dela.",
+  "Pick the version in the browser, then select its CRC link.": "Escolha a versão no navegador e selecione o link CRC dela.",
+  "Finish or cancel the current selection first.": "Conclua ou cancele primeiro a seleção atual.",
+  "Expected a PS5 title id such as PPSA01234.": "Era esperado um ID de título do PS5, como PPSA01234.",
+  "Picking an update is available on the PS5 only.": "Escolher uma atualização só está disponível no PS5.",
+  "Selection cancelled.": "Seleção cancelada.",
+  "The selection could not start. Try again.": "Não foi possível iniciar a seleção. Tente novamente.",
+  "Update selected. Return to Orbit and start the download.": "Atualização selecionada. Volte ao Orbit e inicie o download.",
+  "No link was selected in time. Return to Orbit to try again.": "Nenhum link foi selecionado a tempo. Volte ao Orbit para tentar novamente.",
+  "No link was selected.": "Nenhum link foi selecionado."
 }

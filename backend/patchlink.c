@@ -158,6 +158,15 @@ static void *worker(void *unused) {
         pthread_mutex_lock(&orbit.mutex);
         copy_text(pl.manifest, sizeof pl.manifest, manifest);
         state_locked("captured", "Update selected. Return to Orbit and start the download.");
+        /* Leave the page the person selected: the browser cannot show a manifest. A fixed local page
+         * takes its place; no address from the browser is carried back. */
+        char home[64];
+        snprintf(home, sizeof home, "http://127.0.0.1:%d/picked", (int)orbit.port);
+        pthread_mutex_unlock(&orbit.mutex);
+#ifndef ORBIT_TEST
+        (void)probe_browser_open(home);
+#endif
+        pthread_mutex_lock(&orbit.mutex);
     } else {
         state_locked("failed", error[0] ? error : "No link was selected.");
     }
