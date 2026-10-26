@@ -346,7 +346,7 @@ static void wait_seconds(unsigned seconds) {
  * into slices; each connection takes the next slice, so one connection's speed limit no longer caps the
  * download. What is kept for a resume is the contiguous part from the start, as before: a slice that
  * finished beyond a gap is fetched again, which costs at most the slices that were in flight. */
-#define PARALLEL_STREAMS 8
+#define PARALLEL_STREAMS 16
 #define SLICE_BYTES (4LL * 1024 * 1024)
 #define SLICE_RETRIES 3
 
@@ -426,6 +426,7 @@ static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, c
     const patchmanifest_piece *piece = &job->manifest.pieces[i];
     if (job->written[i] >= piece->size)
         return SONY_RANGE_OK;
+    const time_t started_at = time(NULL);
     Fan fan = {.job = job, .piece = piece, .base = job->written[i], .result = SONY_RANGE_OK};
     fan.slices = (size_t)((piece->size - fan.base + SLICE_BYTES - 1) / SLICE_BYTES);
     fan.reached = calloc(fan.slices, sizeof *fan.reached);
@@ -506,6 +507,13 @@ static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, c
     if (r == SONY_RANGE_OK) {
         publish(job, i, piece->size, speed->speed);
         save_state(job);
+        /* What this piece really got, to tune the connection count from facts. */
+        const long seconds = (long)(time(NULL) - started_at);
+        const double got = (double)(piece->size - fan.base);
+        fprintf(stderr, "[patch] piece %zu/%zu: %.1f MB in %ld s = %.1f MB/s over up to %d connections\n", i + 1,
+               job->manifest.count, got / 1e6, seconds, seconds > 0 ? got / 1e6 / (double)seconds : got / 1e6,
+               PARALLEL_STREAMS);
+        fflush(stderr);
     }
     return r;
 }
