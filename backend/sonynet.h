@@ -36,6 +36,14 @@ sony_range_result sony_range(const char *url, int64_t start, int64_t end, int fd
                              _Atomic int64_t *received, sony_stop_fn stop, char *why, size_t why_cap);
 /* Closes the connection sony_range / nas_range keep between calls. Call it when a download ends. */
 void sony_range_close(void);
+/* What the downloads since the last call spent: writing to the drive, opening connections, waiting for the
+ * first byte, and the server address used. Added up over every connection; for logging only. */
+typedef struct {
+    double write_seconds, connect_seconds, first_byte_seconds;
+    long requests;
+    char ip[48];
+} SonyStats;
+void sony_stats_take(SonyStats *out);
 
 /* The same, from a file on the person's own NAS (its address must be on the NAS origin saved in Sources,
  * over HTTPS; private addresses are refused). Used for updates listed in the NAS index. */

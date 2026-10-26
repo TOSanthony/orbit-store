@@ -510,9 +510,16 @@ static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, c
         /* What this piece really got, to tune the connection count from facts. */
         const long seconds = (long)(time(NULL) - started_at);
         const double got = (double)(piece->size - fan.base);
-        fprintf(stderr, "[patch] piece %zu/%zu: %.1f MB in %ld s = %.1f MB/s over up to %d connections\n", i + 1,
-               job->manifest.count, got / 1e6, seconds, seconds > 0 ? got / 1e6 / (double)seconds : got / 1e6,
-               PARALLEL_STREAMS);
+        SonyStats net;
+        sony_stats_take(&net);
+        /* "write" is the time spent in pwrite summed over all connections: close to seconds x connections
+         * means the drive is the limit; small means the network or the console is. */
+        fprintf(stderr,
+                "[patch] piece %zu/%zu: %.1f MB in %ld s = %.1f MB/s over up to %d connections; "
+                "write %.1f s, %ld requests, connect %.2f s, first byte %.2f s (sums), server %s\n",
+                i + 1, job->manifest.count, got / 1e6, seconds,
+                seconds > 0 ? got / 1e6 / (double)seconds : got / 1e6, PARALLEL_STREAMS, net.write_seconds,
+                net.requests, net.connect_seconds, net.first_byte_seconds, net.ip);
         fflush(stderr);
     }
     return r;

@@ -10,7 +10,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 /* Sony signs its download servers with its own root, which public CA lists do not carry. */
@@ -56,6 +59,25 @@ typedef struct {
     sony_stop_fn stop;
 } Write;
 
+static _Atomic long long stat_write_ns, stat_connect_ns, stat_first_byte_ns, stat_requests;
+static pthread_mutex_t stat_mutex = PTHREAD_MUTEX_INITIALIZER;
+static char stat_ip[48];
+static long long now_ns(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (long long)t.tv_sec * 1000000000LL + t.tv_nsec;
+}
+void sony_stats_take(SonyStats *out) {
+    memset(out, 0, sizeof *out);
+    out->write_seconds = (double)atomic_exchange(&stat_write_ns, 0) / 1e9;
+    out->connect_seconds = (double)atomic_exchange(&stat_connect_ns, 0) / 1e9;
+    out->first_byte_seconds = (double)atomic_exchange(&stat_first_byte_ns, 0) / 1e9;
+    out->requests = (long)atomic_exchange(&stat_requests, 0);
+    pthread_mutex_lock(&stat_mutex);
+    snprintf(out->ip, sizeof out->ip, "%s", stat_ip);
+    pthread_mutex_unlock(&stat_mutex);
+}
+
 static size_t collect(char *data, size_t a, size_t b, void *context) {
     Collect *c = context;
     size_t n = a * b;
@@ -91,6 +113,7 @@ static size_t store(char *data, size_t a, size_t b, void *context) {
     if ((int64_t)n > w->limit)
         n = (size_t)w->limit; /* never write past the piece, whatever the server sends */
     size_t done = 0;
+    const long long began = now_ns();
     while (done < n) {
         ssize_t r = pwrite(w->fd, data + done, n - done, (off_t)(w->file_offset + w->position + (int64_t)done));
         if (r < 0 && errno == EINTR)
@@ -101,6 +124,7 @@ static size_t store(char *data, size_t a, size_t b, void *context) {
         }
         done += (size_t)r;
     }
+    atomic_fetch_add(&stat_write_ns, now_ns() - began);
     w->position += (int64_t)n;
     w->limit -= (int64_t)n;
     if (w->received)
@@ -374,6 +398,20 @@ static sony_range_result range(const char *url, int64_t start, int64_t end, int 
     }
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
+    if (result == CURLE_OK) {
+        curl_off_t connect = 0, first = 0;
+        char *ip = NULL;
+        curl_easy_getinfo(curl, CURLINFO_CONNECT_TIME_T, &connect);
+        curl_easy_getinfo(curl, CURLINFO_STARTTRANSFER_TIME_T, &first);
+        atomic_fetch_add(&stat_connect_ns, (long long)connect * 1000);
+        atomic_fetch_add(&stat_first_byte_ns, (long long)first * 1000);
+        atomic_fetch_add(&stat_requests, 1);
+        if (!curl_easy_getinfo(curl, CURLINFO_PRIMARY_IP, &ip) && ip) {
+            pthread_mutex_lock(&stat_mutex);
+            snprintf(stat_ip, sizeof stat_ip, "%s", ip);
+            pthread_mutex_unlock(&stat_mutex);
+        }
+    }
     if (result != CURLE_OK)
         sony_range_close(); /* never reuse a connection that just failed */
     route_free(&route);
