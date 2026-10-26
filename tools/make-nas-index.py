@@ -118,16 +118,41 @@ def find_artwork(root: Path, folder: str):
     return found
 
 
+def is_game_dump(folder: str, subfolders, names) -> bool:
+    """True for the root of a game dump (the extracted files of a game): it holds eboot.bin, or an sce_sys
+    folder with the game's param.json / param.sfo. Nothing under such a folder is a package to list."""
+    if any(name.lower() == "eboot.bin" for name in names):
+        return True
+    for sub in subfolders:
+        if sub.lower() == "sce_sys":
+            try:
+                inside = {entry.lower() for entry in os.listdir(os.path.join(folder, sub))}
+            except OSError:
+                continue
+            if "param.json" in inside or "param.sfo" in inside:
+                return True
+    return False
+
+
+IGNORED_DUMPS = []   # the dump folders left out by the last walk, shown in the report
+
+
 def walk_files(root: Path):
     """Every file under root, following symbolic links to folders (so games kept on another
-    volume can be linked into the web folder). A folder is visited once, which stops loops."""
+    volume can be linked into the web folder). A folder is visited once, which stops loops.
+    Game dumps (extracted games) are left out entirely."""
     seen = set()
+    IGNORED_DUMPS.clear()
     for folder, subfolders, names in os.walk(root, followlinks=True):
         real = os.path.realpath(folder)
         if real in seen:
             subfolders[:] = []
             continue
         seen.add(real)
+        if os.path.abspath(folder) != os.path.abspath(root) and is_game_dump(folder, subfolders, names):
+            IGNORED_DUMPS.append(os.path.relpath(folder, root))
+            subfolders[:] = []
+            continue
         subfolders[:] = sorted(d for d in subfolders if d not in SKIP_DIRS and not d.startswith("."))
         for name in sorted(names):
             yield Path(folder) / name
@@ -1358,6 +1383,8 @@ def main() -> int:
     from_param = 0
     pack_rows = 0
     all_files = sorted(walk_files(root))                # the tree is walked once (slow on a network volume)
+    if IGNORED_DUMPS:
+        print(f"scan: {len(IGNORED_DUMPS)} game dump folder(s) ignored (eboot.bin or sce_sys/param.json): " + ", ".join(IGNORED_DUMPS[:5]) + (" ..." if len(IGNORED_DUMPS) > 5 else ""))
     candidates = [p for p in all_files if p.suffix.lower() in IMAGE_FORMATS or p.suffix.lower() in ARCHIVES]
     print(f"scan: {len(candidates)} candidate file(s) in {root}")
     seen_count = 0
