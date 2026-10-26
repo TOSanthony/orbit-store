@@ -1399,7 +1399,7 @@
   "Picking an update is available on the PS5 only.": "Güncelleme seçimi yalnızca PS5’te kullanılabilir.",
   "Selection cancelled.": "Seçim iptal edildi.",
   "The selection could not start. Try again.": "Seçim başlatılamadı. Tekrar deneyin.",
-  "Update selected. Return to Orbit and start the download.": "Güncelleme seçildi. Orbit’e dönün ve indirmeyi başlatın.",
+  "Update selected and added to the downloads.": "Güncelleme seçildi ve indirmelere eklendi.",
   "No link was selected in time. Return to Orbit to try again.": "Zamanında bağlantı seçilmedi. Tekrar denemek için Orbit’e dönün.",
   "No link was selected.": "Bağlantı seçilmedi."
 }

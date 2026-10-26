@@ -1399,7 +1399,7 @@
   "Picking an update is available on the PS5 only.": "A frissítés kiválasztása csak PS5-ön érhető el.",
   "Selection cancelled.": "Kiválasztás megszakítva.",
   "The selection could not start. Try again.": "A kiválasztás nem indult el. Próbáld újra.",
-  "Update selected. Return to Orbit and start the download.": "Frissítés kiválasztva. Térj vissza az Orbitba, és indítsd el a letöltést.",
+  "Update selected and added to the downloads.": "Frissítés kiválasztva és hozzáadva a letöltésekhez.",
   "No link was selected in time. Return to Orbit to try again.": "Nem lett időben hivatkozás kiválasztva. Térj vissza az Orbitba az újrapróbáláshoz.",
   "No link was selected.": "Nem lett hivatkozás kiválasztva."
 }

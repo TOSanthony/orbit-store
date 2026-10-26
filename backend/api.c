@@ -213,6 +213,46 @@ static enum MHD_Result authority_header(void *cls, enum MHD_ValueKind kind,
     if (!strcasecmp(key, "Sec-Fetch-Site")) headers->site++;
     return MHD_YES;
 }
+/* The page the PS5 browser is left on after a pick: one sentence, in the language of Orbit (or of the
+ * console when Orbit follows it, which the browser reports), with the Circle button drawn as in the app. */
+static void picked_page(char *out, size_t cap, const char *language, const char *accept) {
+    static const struct { const char *code, *title, *before, *after; } text[] = {
+        {"en", "Update selected.", "Press ", " to go back to Orbit Store."},
+        {"fr", "Mise \xC3\xA0 jour choisie.", "Appuyez sur ", " pour revenir \xC3\xA0 Orbit Store."},
+        {"de", "Update ausgew\xC3\xA4hlt.", "Dr\xC3\xBC" "cke ", ", um zu Orbit Store zur\xC3\xBC" "ckzukehren."},
+        {"es", "Actualizaci\xC3\xB3n seleccionada.", "Pulsa ", " para volver a Orbit Store."},
+        {"it", "Aggiornamento selezionato.", "Premi ", " per tornare a Orbit Store."},
+        {"nl", "Update geselecteerd.", "Druk op ", " om terug te gaan naar Orbit Store."},
+        {"pl", "Aktualizacja wybrana.", "Naci\xC5\x9Bnij ", ", aby wr\xC3\xB3\xC4\x87 do Orbit Store."},
+        {"pt-BR", "Atualiza\xC3\xA7\xC3\xA3o selecionada.", "Pressione ", " para voltar \xC3\xA0 Orbit Store."},
+        {"ru", "\xD0\x9E\xD0\xB1\xD0\xBD\xD0\xBE\xD0\xB2\xD0\xBB\xD0\xB5\xD0\xBD\xD0\xB8\xD0\xB5 \xD0\xB2\xD1\x8B\xD0\xB1\xD1\x80\xD0\xB0\xD0\xBD\xD0\xBE.",
+         "\xD0\x9D\xD0\xB0\xD0\xB6\xD0\xBC\xD0\xB8\xD1\x82\xD0\xB5 ",
+         ", \xD1\x87\xD1\x82\xD0\xBE\xD0\xB1\xD1\x8B \xD0\xB2\xD0\xB5\xD1\x80\xD0\xBD\xD1\x83\xD1\x82\xD1\x8C\xD1\x81\xD1\x8F \xD0\xB2 Orbit Store."},
+        {"tr", "G\xC3\xBCncelleme se\xC3\xA7ildi.", "Orbit Store'a d\xC3\xB6nmek i\xC3\xA7in ", " tu\xC5\x9F" "una bas\xC4\xB1n."},
+        {"hu", "Friss\xC3\xADt\xC3\xA9s kiv\xC3\xA1lasztva.", "Nyomd meg a ", " gombot az Orbit Storebe val\xC3\xB3 visszat\xC3\xA9r\xC3\xA9shez."},
+    };
+    const size_t count = sizeof text / sizeof text[0];
+    size_t pick = 0;
+    const char *wanted = language && language[0] && strcmp(language, "auto") ? language : accept;
+    for (size_t i = 0; wanted && i < count; i++) {
+        if (!strncasecmp(wanted, text[i].code, 2)) {
+            pick = i;
+            break;
+        }
+    }
+    /* The face button as the app draws it: a thin ring, and inside it the circle in the button's own colour. */
+    static const char glyph[] =
+        "<svg width=\"1.5em\" height=\"1.5em\" viewBox=\"0 0 28 28\" style=\"vertical-align:-0.3em\">"
+        "<circle cx=\"14\" cy=\"14\" r=\"12.5\" fill=\"none\" stroke=\"#fff\" stroke-width=\"1.5\"/>"
+        "<circle cx=\"14\" cy=\"14\" r=\"7\" fill=\"none\" stroke=\"#ff6b7d\" stroke-width=\"1.6\"/></svg>";
+    snprintf(out, cap,
+             "<!doctype html><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\">"
+             "<title>Orbit Store</title><body style=\"margin:0;background:#101010;color:#fff;font:32px sans-serif;"
+             "display:grid;place-items:center;height:100vh;text-align:center\"><div><p style=\"font-size:1.25em;"
+             "margin:0 0 .6em\">%s</p><p style=\"margin:0;color:#ccc\">%s%s%s</p></div>",
+             text[pick].title, text[pick].before, glyph, text[pick].after);
+}
+
 static enum MHD_Result route(struct MHD_Connection *c, const char *url, const char *method,
                              Request *req) {
     AuthorityHeaders authority = {0};
@@ -919,13 +959,10 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
         return error(c, 405, "Method not supported.");
     if (!strcmp(url, "/picked")) {
         /* Where the browser is left once a game update has been selected (see patchlink.c). */
-        static const char page[] =
-            "<!doctype html><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\">"
-            "<title>Orbit Store</title><body style=\"margin:0;background:#101010;color:#fff;font:28px sans-serif;"
-            "display:grid;place-items:center;height:100vh;text-align:center\"><p>Update selected.<br>"
-            "Press the PS button to go back to Orbit Store.<br><br>Mise \xC3\xA0 jour choisie.<br>"
-            "Appuyez sur le bouton PS pour revenir \xC3\xA0 Orbit Store.</p>";
-        return respond(c, 200, page, sizeof page - 1, "text/html; charset=utf-8");
+        char page[2600];
+        const char *accept = MHD_lookup_connection_value(c, MHD_HEADER_KIND, "Accept-Language");
+        picked_page(page, sizeof page, orbit.language, accept);
+        return respond(c, 200, page, strlen(page), "text/html; charset=utf-8");
     }
     const char *path = !strcmp(url, "/") ? "/index.html" : url;
     for (size_t i = 0; i < sizeof assets / sizeof assets[0]; i++)

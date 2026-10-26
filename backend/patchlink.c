@@ -155,9 +155,12 @@ static void *worker(void *unused) {
     } else if (ok) {
         pthread_mutex_unlock(&orbit.mutex);
         gameupdates_choose(title_id, manifest);
+        /* The update starts at once, or waits its turn when another one is running. */
+        char started_error[120] = "";
+        (void)patchdl_enqueue(title_id, started_error, sizeof started_error);
         pthread_mutex_lock(&orbit.mutex);
         copy_text(pl.manifest, sizeof pl.manifest, manifest);
-        state_locked("captured", "Update selected. Return to Orbit and start the download.");
+        state_locked("captured", "Update selected and added to the downloads.");
         /* Leave the page the person selected: the browser cannot show a manifest. A fixed local page
          * takes its place; no address from the browser is carried back. */
         char home[64];
