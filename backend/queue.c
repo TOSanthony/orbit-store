@@ -550,6 +550,7 @@ int job_action_locked(Job *j, const char *action, bool remove, char *err, size_t
             copy_text(err, cap, "This job cannot be resumed in its current state.");
             return 409;
         }
+        storage_rebind(j);
         if (!storage_matches(j)) {
             copy_text(err, cap, "Reconnect the original destination drive.");
             return 409;

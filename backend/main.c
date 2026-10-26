@@ -213,6 +213,9 @@ int main(int argc, char **argv) {
         diagnostics_stage("saved-state", "started", 0);
         startup_result = state_load();
         diagnostics_stage("saved-state", startup_result ? "error" : "ok", startup_result);
+        /* A drive's device number changes at every console start: downloads saved before it still belong to it. */
+        for (size_t i = 0; !startup_result && i < orbit.job_count; i++)
+            storage_rebind(&orbit.jobs[i]);
     }
     if (startup_result) {
         fputs("Failed to initialize HTTPS or read saved state. Preserving state for recovery.\n",

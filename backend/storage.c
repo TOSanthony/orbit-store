@@ -135,11 +135,8 @@ int storage_prefer(const char *id, char *error, size_t cap) {
     pthread_mutex_unlock(&orbit.mutex);
     return code;
 }
-bool storage_matches(const Job *j) {
-    /* Identity checks run on every writer, and during queue actions. Never scan
-     * unrelated mounts or ask statvfs for free space here: an allocating USB
-     * volume must not block access to a different drive. Capacity is checked
-     * separately by discovery/preflight and the transfer's own fstatvfs. */
+/* The drives a job may name: internal, desktop preview, or /mnt/usbN and /mnt/extN. */
+static bool known_drive(const Job *j) {
     bool known = orbit.desktop ?
         !strcmp(j->storage_id, "desktop") && !strcmp(j->root, orbit.desktop_storage) :
         !strcmp(j->storage_id, "internal") && !strcmp(j->root, "/data");
@@ -150,6 +147,35 @@ bool storage_matches(const Job *j) {
         snprintf(root, sizeof root, "/mnt/%s", j->storage_id);
         known = !strcmp(j->root, root);
     }
+    return known;
+}
+/* The console hands a drive a new device number each time it starts, so a download saved before a restart
+ * would never match its own drive again. When everything else is the same (same mount, same root folder
+ * number, and the partial file is really there), the saved device number is refreshed. A different drive
+ * mounted in the same place has no such partial file and still counts as another drive. */
+bool storage_rebind(Job *j) {
+    if (!strcmp(j->status, "complete") || !known_drive(j)) return false;
+    struct stat st;
+    if (lstat(j->root, &st) || !S_ISDIR(st.st_mode) || st.st_ino != j->inode) return false;
+    if (st.st_dev == j->device) return false;
+    int root = open(j->root, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    if (root < 0) return false;
+    struct stat opened, partial;
+    char name[300];
+    snprintf(name, sizeof name, "homebrew/%s.part", j->filename);
+    bool same = !fstat(root, &opened) && opened.st_dev == st.st_dev && opened.st_ino == st.st_ino &&
+        !fstatat(root, name, &partial, AT_SYMLINK_NOFOLLOW) && S_ISREG(partial.st_mode) &&
+        partial.st_dev == st.st_dev;
+    close(root);
+    if (same) j->device = st.st_dev;
+    return same;
+}
+bool storage_matches(const Job *j) {
+    /* Identity checks run on every writer, and during queue actions. Never scan
+     * unrelated mounts or ask statvfs for free space here: an allocating USB
+     * volume must not block access to a different drive. Capacity is checked
+     * separately by discovery/preflight and the transfer's own fstatvfs. */
+    bool known = known_drive(j);
     if (!known) return false;
     struct stat expected, actual;
     if (lstat(j->root, &expected) || !S_ISDIR(expected.st_mode) ||

@@ -209,6 +209,7 @@ size_t storage_list(Storage *out);
 cJSON *storage_diagnostics(void);
 int storage_prefer(const char *id, char *error, size_t cap);
 bool storage_matches(const Job *job);
+bool storage_rebind(Job *job);
 int storage_open(const Job *job);
 int storage_check_writable(int directory);
 void *download_worker(void *unused);
