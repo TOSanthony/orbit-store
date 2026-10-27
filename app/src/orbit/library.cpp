@@ -105,7 +105,13 @@ void header_action(hui::gfx::DrawList &list, const ui::Type &type, const ui::Rec
                    std::string_view text, float focus, bool scan, bool enabled)
 {
     const ui::Color ink = enabled ? ui::state_ink(focus) : ui::color::text.with_alpha(0.4f);
-    ui::state_fill(list, r, r.h * 0.5f, focus);
+    if (enabled)
+        ui::state_fill(list, r, r.h * 0.5f, focus);
+    else
+    {
+        ui::focus_ring(list, r, r.h * 0.5f, focus);
+        list.bordered_rect(r, r.h * 0.5f, ui::Color::rgb(0xffffff, 0.04f), 1.0f, ui::Color::rgb(0xffffff, 0.08f));
+    }
     const float width = type.medium.measure(text, 20.0f) + 40.0f;
     library_icon(list, r.cx() - width * 0.5f + 12.0f, r.cy(), scan, ink);
     ui::text(list, type.medium, text, r.cx() - width * 0.5f + 40.0f, r.cy() + 7.0f, 20.0f, ink);
@@ -116,7 +122,14 @@ void updates_action(hui::gfx::DrawList &list, const ui::Type &type, const ui::Re
                     float focus, bool enabled)
 {
     const ui::Color ink = enabled ? ui::state_ink(focus) : ui::color::text.with_alpha(0.4f);
-    ui::state_fill(list, r, r.h * 0.5f, focus);
+    // Disabled (while it checks) it looks like the other disabled buttons: dim fill, dim text, never the white fill.
+    if (enabled)
+        ui::state_fill(list, r, r.h * 0.5f, focus);
+    else
+    {
+        ui::focus_ring(list, r, r.h * 0.5f, focus);
+        list.bordered_rect(r, r.h * 0.5f, ui::Color::rgb(0xffffff, 0.04f), 1.0f, ui::Color::rgb(0xffffff, 0.08f));
+    }
     const float width = type.medium.measure(text, 20.0f) + 40.0f;
     ui::icon_download(list, r.cx() - width * 0.5f + 12.0f, r.cy(), 22.0f, ink);
     ui::text(list, type.medium, text, r.cx() - width * 0.5f + 40.0f, r.cy() + 7.0f, 20.0f, ink);
