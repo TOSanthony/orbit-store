@@ -460,6 +460,19 @@ static void patch_log_file(const char *line) {
     pthread_mutex_unlock(&lock);
 }
 
+static double wall_now(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (double)t.tv_sec + (double)t.tv_nsec / 1e9;
+}
+/* How long each step before the first byte took, for the "slow to start" question: patch.log. */
+static void start_log(const char *what, double since) {
+    char line[200];
+    snprintf(line, sizeof line, "[patch] %s: %s took %.1f s\n", cur->title_id, what, wall_now() - since);
+    fputs(line, stderr);
+    patch_log_file(line);
+}
+
 static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, char *why, size_t why_cap) {
     const patchmanifest_piece *piece = &job->manifest.pieces[i];
     if (job->written[i] >= piece->size)
@@ -691,6 +704,7 @@ static int choose_drive(int64_t total, Storage *chosen) {
 static void run(const char *manifest_url) {
     char why[160] = "", detail[200] = "";
     phase("preparing", "");
+    const double run_began = wall_now();
     PatchJob job;
     memset(&job, 0, sizeof job);
     job.slot = cur;
@@ -716,7 +730,10 @@ static void run(const char *manifest_url) {
             copy_text(job.manifest.pieces[0].hash, sizeof job.manifest.pieces[0].hash, release.sha256);
     } else {
         SonyBody body = {0};
-        if (!sony_get(manifest_url, MANIFEST_MAX, &body, stopped, why, sizeof why)) {
+        const double manifest_began = wall_now();
+        const bool got_manifest = sony_get(manifest_url, MANIFEST_MAX, &body, stopped, why, sizeof why);
+        start_log(got_manifest ? "reading Sony's update list" : "reading Sony's update list (failed)", manifest_began);
+        if (!got_manifest) {
             if (stopped())
                 return finish(stop_phase(), "");
             return finish_d("failed", "Could not read Sony's update list.", why);
@@ -773,11 +790,14 @@ static void run(const char *manifest_url) {
         if (!job.written || !job.done) {
             outcome = "Not enough memory.";
         } else {
+            const double truncate_began = wall_now();
             if (part.st_size != job.manifest.total && ftruncate(job.fd, (off_t)job.manifest.total) != 0)
                 outcome = "The drive is full or was disconnected.";
             else
                 load_state(&job, part.st_size == job.manifest.total ? job.manifest.total : -1);
+            start_log("reserving the file on the drive", truncate_began);
         }
+        start_log("everything before the first byte", run_began);
         phase("downloading", "");
         unsigned *failures = calloc(job.manifest.count, sizeof *failures);
         Check check = {0};
