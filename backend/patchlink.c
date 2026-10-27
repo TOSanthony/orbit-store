@@ -154,6 +154,14 @@ static void *worker(void *unused) {
         state_locked("cancelled", "Selection cancelled.");
     } else if (ok) {
         pthread_mutex_unlock(&orbit.mutex);
+#ifndef ORBIT_TEST
+        /* The page that replaces the one the person selected opens first, with nothing in front of it: the
+         * browser cannot show a manifest, and the local page is fixed text, so what follows can happen while
+         * the browser switches over. No address from the browser is carried back. */
+        char home[64];
+        snprintf(home, sizeof home, "http://127.0.0.1:%d/picked", (int)orbit.port);
+        (void)probe_browser_open(home);
+#endif
         gameupdates_choose(title_id, manifest);
         /* The update starts at once, or waits its turn when another one is running. */
         char started_error[120] = "";
@@ -161,15 +169,6 @@ static void *worker(void *unused) {
         pthread_mutex_lock(&orbit.mutex);
         copy_text(pl.manifest, sizeof pl.manifest, manifest);
         state_locked("captured", "Update selected and added to the downloads.");
-        /* Leave the page the person selected: the browser cannot show a manifest. A fixed local page
-         * takes its place; no address from the browser is carried back. */
-        char home[64];
-        snprintf(home, sizeof home, "http://127.0.0.1:%d/picked", (int)orbit.port);
-        pthread_mutex_unlock(&orbit.mutex);
-#ifndef ORBIT_TEST
-        (void)probe_browser_open(home);
-#endif
-        pthread_mutex_lock(&orbit.mutex);
     } else {
         state_locked("failed", error[0] ? error : "No link was selected.");
     }
