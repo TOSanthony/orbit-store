@@ -503,6 +503,8 @@ static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, c
     }
     for (size_t k = 0; k < fan.slices; k++)
         atomic_store_explicit(&fan.reached[k], slice_start(&fan, k), memory_order_relaxed);
+    if (!job->nas && fan.slices > 1)
+        sony_warm(piece->url, stopped);
     atomic_store(&fan.next, 0);
     atomic_store(&fan.low, 0);
     atomic_store(&cur->fan_failed, false);

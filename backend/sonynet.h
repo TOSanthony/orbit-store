@@ -44,6 +44,8 @@ typedef struct {
     char ip[48];
 } SonyStats;
 void sony_stats_take(SonyStats *out);
+/* Looks up and remembers the address of a piece's server with one tiny request (never fails the download). */
+void sony_warm(const char *url, sony_stop_fn stop);
 /* The same numbers so far, without resetting them. */
 void sony_stats_peek(SonyStats *out);
 

@@ -14,6 +14,7 @@
 #include <stdatomic.h>
 #include <sys/socket.h>
 #include <time.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 /* Sony signs its download servers with its own root, which public CA lists do not carry. */
@@ -202,10 +203,11 @@ static char *join_ca(struct curl_blob *blob) {
 typedef struct {
     struct curl_slist *headers;
     struct curl_slist *connect_to;
+    struct curl_slist *resolve;
 } Route;
 static void route_apply(CURL *curl, char *address, size_t cap, Route *route) {
     static const char gst[] = "https://gst.prod.dl.playstation.net/";
-    route->headers = route->connect_to = NULL;
+    route->headers = route->connect_to = route->resolve = NULL;
     if (strncmp(address, gst, sizeof gst - 1))
         return;
     char rest[900];
@@ -241,9 +243,80 @@ static CURLcode perform(CURL *curl, const char *detail, bool doh) {
     }
     return result;
 }
+/* The address Sony's host resolved to, remembered for a few minutes. Every slice is a new request, and the
+ * log showed all 16 connections "Resolving timed out after 20 s" together at the start of each piece: the
+ * lookup (DNS-over-HTTPS, 16 at once) was what stalled, not Sony. Once one request has reached a host, the
+ * address it really connected to is reused for the others, so no lookup is needed until it expires or fails. */
+#define DNS_KEEP_SECONDS 300
+typedef struct {
+    char key[160];
+    char ip[64];
+    time_t when;
+} DnsEntry;
+static DnsEntry dns_cache[8];
+static pthread_mutex_t dns_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/* "host:port" of the address a request will connect to (the original one, before the Akamai rewrite). */
+static bool dns_key(const char *address, char *key, size_t cap) {
+    int port = 443;
+    const char *host = address;
+    if (!strncmp(address, "https://", 8))
+        host += 8;
+    else if (!strncmp(address, "http://", 7)) {
+        host += 7;
+        port = 80;
+    } else
+        return false;
+    size_t n = strcspn(host, "/:?");
+    if (!n || n >= 120)
+        return false;
+    snprintf(key, cap, "%.*s:%d", (int)n, host, port);
+    return true;
+}
+static void dns_apply(CURL *curl, const char *key, Route *route) {
+    char ip[64] = "";
+    pthread_mutex_lock(&dns_mutex);
+    for (size_t i = 0; i < sizeof dns_cache / sizeof *dns_cache; i++)
+        if (!strcmp(dns_cache[i].key, key) && time(NULL) - dns_cache[i].when < DNS_KEEP_SECONDS)
+            snprintf(ip, sizeof ip, "%s", dns_cache[i].ip);
+    pthread_mutex_unlock(&dns_mutex);
+    if (!ip[0])
+        return;
+    char entry[260];
+    if (strchr(ip, ':'))
+        snprintf(entry, sizeof entry, "%s:[%s]", key, ip);
+    else
+        snprintf(entry, sizeof entry, "%s:%s", key, ip);
+    route->resolve = curl_slist_append(NULL, entry);
+    curl_easy_setopt(curl, CURLOPT_RESOLVE, route->resolve);
+}
+static void dns_remember(const char *key, const char *ip) {
+    pthread_mutex_lock(&dns_mutex);
+    size_t slot = 0;
+    for (size_t i = 0; i < sizeof dns_cache / sizeof *dns_cache; i++) {
+        if (!strcmp(dns_cache[i].key, key)) {
+            slot = i;
+            break;
+        }
+        if (dns_cache[i].when < dns_cache[slot].when)
+            slot = i;
+    }
+    snprintf(dns_cache[slot].key, sizeof dns_cache[slot].key, "%s", key);
+    snprintf(dns_cache[slot].ip, sizeof dns_cache[slot].ip, "%s", ip);
+    dns_cache[slot].when = time(NULL);
+    pthread_mutex_unlock(&dns_mutex);
+}
+static void dns_forget(const char *key) {
+    pthread_mutex_lock(&dns_mutex);
+    for (size_t i = 0; i < sizeof dns_cache / sizeof *dns_cache; i++)
+        if (!strcmp(dns_cache[i].key, key))
+            dns_cache[i].when = 0;
+    pthread_mutex_unlock(&dns_mutex);
+}
 static void route_free(Route *route) {
     curl_slist_free_all(route->headers);
     curl_slist_free_all(route->connect_to);
+    curl_slist_free_all(route->resolve);
 }
 /* The address to contact: Sony's own, or (tests only) a local fake that serves the same file names. */
 static bool resolve(const char *url, char *out, size_t cap, bool *local, bool nas, char *why, size_t why_cap) {
@@ -398,8 +471,12 @@ static sony_range_result range(const char *url, int64_t start, int64_t end, int 
     Progress watch = {stop};
     char range_text[64];
     snprintf(range_text, sizeof range_text, "%lld-%lld", (long long)start, (long long)(end - 1));
+    char dns_name[160] = "";
+    const bool use_cache = !local && !nas && dns_key(address, dns_name, sizeof dns_name);
     Route route;
     route_apply(curl, address, sizeof address, &route);
+    if (use_cache)
+        dns_apply(curl, dns_name, &route);
     curl_easy_setopt(curl, CURLOPT_URL, address);
     common(curl, &ca, local, &watch);
     own_dns(curl, local, nas);
@@ -430,6 +507,8 @@ static sony_range_result range(const char *url, int64_t start, int64_t end, int 
         held = curl;
         route_free(&route);
         route_apply(curl, address, sizeof address, &route);
+        if (use_cache)
+            dns_apply(curl, dns_name, &route);
         curl_easy_setopt(curl, CURLOPT_URL, address);
         common(curl, &ca, local, &watch);
         own_dns(curl, local, nas);
@@ -460,13 +539,18 @@ static sony_range_result range(const char *url, int64_t start, int64_t end, int 
         atomic_fetch_add(&stat_first_byte_ns, (long long)first * 1000);
         atomic_fetch_add(&stat_requests, 1);
         if (!curl_easy_getinfo(curl, CURLINFO_PRIMARY_IP, &ip) && ip) {
+            if (use_cache && ip[0])
+                dns_remember(dns_name, ip);
             pthread_mutex_lock(&stat_mutex);
             snprintf(stat_ip, sizeof stat_ip, "%s", ip);
             pthread_mutex_unlock(&stat_mutex);
         }
     }
-    if (result != CURLE_OK)
+    if (result != CURLE_OK) {
+        if (use_cache && (result == CURLE_COULDNT_CONNECT || result == CURLE_COULDNT_RESOLVE_HOST))
+            dns_forget(dns_name); /* the remembered address no longer answers: look it up again */
         sony_range_close(); /* never reuse a connection that just failed */
+    }
     route_free(&route);
     free(storage);
     if (received)
@@ -502,4 +586,21 @@ sony_range_result sony_range(const char *url, int64_t start, int64_t end, int fd
 sony_range_result nas_range(const char *url, int64_t start, int64_t end, int fd, int64_t file_offset,
                             _Atomic int64_t *received, sony_stop_fn stop, char *why, size_t why_cap) {
     return range(url, start, end, fd, file_offset, received, stop, true, why, why_cap);
+}
+
+/* One byte from the piece's address before the connections start, so a single lookup (and a single TLS
+ * handshake) happens first and the sixteen that follow reuse its address instead of all resolving at once. */
+void sony_warm(const char *url, sony_stop_fn stop) {
+    const int sink = open("/dev/null", O_WRONLY);
+    if (sink < 0)
+        return;
+    char why[120];
+    for (int attempt = 0; attempt < 3; attempt++) {
+        if (stop && stop())
+            break;
+        if (range(url, 0, 1, sink, 0, NULL, stop, false, why, sizeof why) == SONY_RANGE_OK)
+            break;
+    }
+    sony_range_close();
+    close(sink);
 }
