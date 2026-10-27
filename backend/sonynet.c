@@ -57,6 +57,8 @@ typedef struct {
     int64_t base;
     bool disk_error;
     sony_stop_fn stop;
+    int64_t durable;  /* how far the drive really has it: position minus what still waits in the buffer */
+    size_t buffered;  /* bytes received but not yet written, in this thread's buffer */
 } Write;
 
 static _Atomic long long stat_write_ns, stat_connect_ns, stat_first_byte_ns, stat_requests;
@@ -107,28 +109,61 @@ static int tune_socket(void *unused, curl_socket_t fd, curlsocktype purpose) {
     }
     return CURL_SOCKOPT_OK;
 }
+/* Data is collected into a 4 MiB buffer (one slice) and written in one go, one writer at a time. Sixteen
+ * connections each writing 256 KiB pieces at different places of a huge file made the drive's file system
+ * the bottleneck (the log showed 93 % of the time inside pwrite, 6 MB/s); the large ordered writes are what
+ * a game download does. Only what has been written counts as received, so a stop never claims more than is
+ * on the drive. */
+#define WRITE_BUFFER (4 * 1024 * 1024)
+static pthread_mutex_t write_lock = PTHREAD_MUTEX_INITIALIZER;
+static __thread char *write_buffer;
+
+static bool flush_buffer(Write *w) {
+    if (!w->buffered)
+        return true;
+    pthread_mutex_lock(&write_lock);
+    const long long began = now_ns();
+    size_t done = 0;
+    bool ok = true;
+    while (done < w->buffered) {
+        ssize_t r = pwrite(w->fd, write_buffer + done, w->buffered - done,
+                           (off_t)(w->file_offset + w->durable + (int64_t)done));
+        if (r < 0 && errno == EINTR)
+            continue;
+        if (r <= 0) {
+            ok = false;
+            break;
+        }
+        done += (size_t)r;
+    }
+    atomic_fetch_add(&stat_write_ns, now_ns() - began);
+    pthread_mutex_unlock(&write_lock);
+    if (!ok) {
+        w->disk_error = true;
+        return false;
+    }
+    w->durable += (int64_t)w->buffered;
+    w->buffered = 0;
+    if (w->received)
+        atomic_store_explicit(w->received, w->base + w->durable, memory_order_relaxed);
+    return true;
+}
 static size_t store(char *data, size_t a, size_t b, void *context) {
     Write *w = context;
     size_t n = a * b;
     if ((int64_t)n > w->limit)
         n = (size_t)w->limit; /* never write past the piece, whatever the server sends */
-    size_t done = 0;
-    const long long began = now_ns();
-    while (done < n) {
-        ssize_t r = pwrite(w->fd, data + done, n - done, (off_t)(w->file_offset + w->position + (int64_t)done));
-        if (r < 0 && errno == EINTR)
-            continue;
-        if (r <= 0) {
-            w->disk_error = true;
+    size_t taken = 0;
+    while (taken < n) {
+        size_t room = WRITE_BUFFER - w->buffered, part = n - taken < room ? n - taken : room;
+        memcpy(write_buffer + w->buffered, data + taken, part);
+        w->buffered += part;
+        taken += part;
+        if (w->buffered == WRITE_BUFFER && !flush_buffer(w))
             return 0;
-        }
-        done += (size_t)r;
     }
-    atomic_fetch_add(&stat_write_ns, now_ns() - began);
     w->position += (int64_t)n;
     w->limit -= (int64_t)n;
-    if (w->received)
-        atomic_store_explicit(w->received, w->base + w->position, memory_order_relaxed);
     return a * b;
 }
 typedef struct {
@@ -310,6 +345,8 @@ bool sony_get(const char *url, size_t max, SonyBody *body, sony_stop_fn stop, ch
  * TCP and TLS handshake and restarts the transfer's slow start. Each download thread has its own. */
 static __thread CURL *held; /* one per thread: parallel slices each keep their own */
 void sony_range_close(void) {
+    free(write_buffer);
+    write_buffer = NULL;
     if (held) {
         curl_easy_cleanup(held);
         held = NULL;
@@ -342,8 +379,15 @@ static sony_range_result range(const char *url, int64_t start, int64_t end, int 
         snprintf(why, why_cap, "not enough memory");
         return SONY_RANGE_FAILED;
     }
+    if (!write_buffer)
+        write_buffer = malloc(WRITE_BUFFER);
+    if (!write_buffer) {
+        free(storage);
+        snprintf(why, why_cap, "not enough memory");
+        return SONY_RANGE_FAILED;
+    }
     Write w = {.fd = fd, .position = start, .file_offset = file_offset, .limit = end - start,
-               .received = received, .base = 0, .stop = stop};
+               .received = received, .base = 0, .stop = stop, .durable = start};
     Progress watch = {stop};
     char range_text[64];
     snprintf(range_text, sizeof range_text, "%lld-%lld", (long long)start, (long long)(end - 1));
@@ -396,6 +440,8 @@ static sony_range_result range(const char *url, int64_t start, int64_t end, int 
         curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, detail);
         result = curl_easy_perform(curl);
     }
+    flush_buffer(&w); /* whatever arrived, also when the transfer failed or was stopped, so a retry resumes after it */
+    w.position = w.durable;
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
     if (result == CURLE_OK) {
