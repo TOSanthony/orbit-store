@@ -122,6 +122,7 @@ class Client
     Result<bool> set_ps4_hidden(bool hidden); // 404: an older Orbit
     Result<bool> set_delete_pkgs(bool enabled); // 404: an older Orbit
     Result<bool> set_install_pkgs(bool enabled); // 404: an older Orbit
+    Result<bool> set_own_dns(bool enabled);      // 404: an older Orbit
     Result<std::string> set_appearance(const std::string &id);
     Result<std::string> set_language(const std::string &code);
     Result<std::string> set_keyboard(const std::string &layout);

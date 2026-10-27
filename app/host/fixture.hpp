@@ -78,6 +78,7 @@ class Fixture final : public http::Transport
     bool ps4_hidden_ = false; // the PS4 switch in the catalogue settings
     bool delete_pkgs_ = false;  // the delete-after-install switch
     bool install_pkgs_ = false; // the install-after-download switch
+    bool own_dns_ = true;       // Orbit Store's own DNS switch
     bool nas_saved_ = false; // a My NAS address was sent
     std::vector<std::string> game_queue_; // title IDs waiting behind the game update job
     std::string game_job_;   // the game update job phase: "", downloading or paused

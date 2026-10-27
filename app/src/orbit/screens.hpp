@@ -617,6 +617,7 @@ class SettingsScreen final : public Screen
         open_browser,
         zero_toggle,
         archives_choice, // index 0 keeps the archive after extracting, 1 deletes it
+        own_dns_toggle,      // turns Orbit Store's own DNS for Sony's servers on or off
         install_pkgs_choice, // index 0 installs after download, 1 does not
         delete_pkgs_choice,  // index 0 keeps the package after installing, 1 deletes it
         download_limit_select,

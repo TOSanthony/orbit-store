@@ -37,6 +37,7 @@ struct System
     int sound_volume = 50;   // their volume, 0-100 percent
     bool ps4_hidden = false; // the TV app leaves PS4 titles out of the catalogue
     bool delete_pkgs = false; // the service removes a .pkg once the console has installed it
+    bool own_dns = true;       // the service looks up Sony's hosts through Orbit's own DNS-over-HTTPS
     bool install_pkgs = false; // the service installs a downloaded .pkg once it is verified
     std::string appearance; // the TV app background preset id the service keeps
     std::string keyboard;   // the TV app keyboard letters the service keeps: "", "auto", "qwerty" or "azerty"

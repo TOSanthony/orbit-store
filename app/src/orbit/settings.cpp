@@ -1126,6 +1126,19 @@ void SettingsScreen::build_updates(Pane &pane) const
                 pane.notice({}, tr(error_));
         }
     }
+    // Which DNS reaches Sony's servers: Orbit's own encrypted one (default, works behind a DNS filter), or the network's.
+    pane.rule();
+    pane.fine(state.system.own_dns
+                  ? tr("Orbit Store\xE2\x80\x99s DNS is on. Sony\xE2\x80\x99s servers are looked up through Orbit\xE2\x80\x99s own "
+                       "encrypted DNS, so a DNS filter on your network cannot block game updates.")
+                  : tr("Orbit Store\xE2\x80\x99s DNS is off. Sony\xE2\x80\x99s servers are looked up through your network\xE2\x80\x99s DNS "
+                       "only, so a DNS filter that blocks them will stop game updates."));
+    const bool dns_saving = result.busy && result.setting == Setting::own_dns;
+    pane.buttons({{Kind::own_dns_toggle,
+                   state.system.own_dns ? tr("Turn off Orbit Store\xE2\x80\x99s DNS") : tr("Turn on Orbit Store\xE2\x80\x99s DNS"),
+                   ui::ButtonKind::secondary, !dns_saving}});
+    if (result.setting == Setting::own_dns && !result.error.empty())
+        pane.error(result.error);
     pane.end_card();
     pane.gap(10.0f);
 
@@ -1598,6 +1611,10 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
     case Kind::ps4_toggle:
         error_.clear();
         ctx_.store.set_ps4_hidden(!state.system.ps4_hidden);
+        break;
+    case Kind::own_dns_toggle:
+        error_.clear();
+        ctx_.store.set_own_dns(!state.system.own_dns);
         break;
     case Kind::install_pkgs_choice:
         error_.clear();

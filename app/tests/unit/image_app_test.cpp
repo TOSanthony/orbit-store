@@ -870,6 +870,8 @@ TEST(App, UpdatesInstallTheTvAppAndRestartTheServiceAfterConfirming)
     h.store.poll_once();
     h.app.open_settings(SettingsScreen::Section::updates, true);
     h.settle();
+    h.frame(Direction::down);  // the game updates card now holds Orbit Store's DNS switch:
+    h.frame(Direction::down);  // two moves down reach the TV app's buttons
     h.frame(Direction::right); // Update TV app
     h.press(Action::confirm);
     ASSERT_TRUE(h.store.setting_result().busy);

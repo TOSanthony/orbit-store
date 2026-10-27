@@ -224,7 +224,8 @@ static void route_apply(CURL *curl, char *address, size_t cap, Route *route) {
  * so the filter can stay as strict as you like for the console. TLS to the resolver is verified against
  * Orbit's CA list; if the resolver cannot be reached the network's own DNS is used. */
 static void own_dns(CURL *curl, bool local, bool nas) {
-    if (!local && !nas)
+    /* Settings > Game updates > "Orbit Store's DNS": off means the network's own DNS only. */
+    if (!local && !nas && orbit.own_dns)
         curl_easy_setopt(curl, CURLOPT_DOH_URL, ORBIT_DNS_URL);
 }
 /* Sony's older servers (sgst.*) chain to a root from 2003 whose signatures use SHA-1, which OpenSSL

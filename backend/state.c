@@ -15,6 +15,7 @@ Orbit orbit = {.mutex = PTHREAD_MUTEX_INITIALIZER,
                .port = ORBIT_HTTP_PORT,
                .state_fd = -1,
                .delete_archives = true,
+               .own_dns = true, /* Sony's hosts resolved through Orbit's own DNS (changeable in Settings) */
                .install_pkgs = true, /* a downloaded .pkg is installed, then removed (changeable in Settings) */
                .delete_pkgs = true,
                .sound_volume = 50,
@@ -177,6 +178,7 @@ int state_save_locked(void) {
     cJSON_AddBoolToObject(o, "soundsOff", orbit.sounds_off);
     cJSON_AddNumberToObject(o, "soundVolume", orbit.sound_volume);
     cJSON_AddBoolToObject(o, "ps4Hidden", orbit.ps4_hidden);
+    cJSON_AddBoolToObject(o, "ownDns", orbit.own_dns);
     cJSON_AddBoolToObject(o, "installPkgs", orbit.install_pkgs);
     cJSON_AddBoolToObject(o, "deletePkgs", orbit.delete_pkgs);
     cJSON_AddBoolToObject(o, "deleteArchives", orbit.delete_archives);
@@ -300,6 +302,8 @@ int state_load(void) {
         orbit.sound_volume = (int)sound_volume->valuedouble;
     const cJSON *ps4_hidden = cJSON_GetObjectItemCaseSensitive(o, "ps4Hidden");
     if (cJSON_IsBool(ps4_hidden)) orbit.ps4_hidden = cJSON_IsTrue(ps4_hidden);
+    const cJSON *own_dns = cJSON_GetObjectItemCaseSensitive(o, "ownDns");
+    if (cJSON_IsBool(own_dns)) orbit.own_dns = cJSON_IsTrue(own_dns);
     const cJSON *install_pkgs = cJSON_GetObjectItemCaseSensitive(o, "installPkgs");
     if (cJSON_IsBool(install_pkgs)) orbit.install_pkgs = cJSON_IsTrue(install_pkgs);
     const cJSON *delete_pkgs = cJSON_GetObjectItemCaseSensitive(o, "deletePkgs");

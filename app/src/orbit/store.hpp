@@ -141,6 +141,7 @@ enum class Setting : std::uint8_t
     sound_volume,
     ps4,
     install_pkgs,
+    own_dns,
     delete_pkgs,
     game_updates,
     game_update_job,
@@ -259,6 +260,7 @@ class Store
     void set_ps4_hidden(bool hidden) { send_setting(Setting::ps4, {}, {}, hidden); }
     void set_delete_pkgs(bool enabled) { send_setting(Setting::delete_pkgs, {}, {}, enabled); }
     void set_install_pkgs(bool enabled) { send_setting(Setting::install_pkgs, {}, {}, enabled); }
+    void set_own_dns(bool enabled) { send_setting(Setting::own_dns, {}, {}, enabled); }
     void set_appearance(const std::string &id) { send_setting(Setting::appearance, id); }
     void set_language(const std::string &code) { send_setting(Setting::language, code); }
     void set_keyboard(const std::string &layout) { send_setting(Setting::keyboard, layout); }

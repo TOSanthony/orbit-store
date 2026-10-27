@@ -383,6 +383,7 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
         cJSON_AddNumberToObject(o, "soundVolume", orbit.sound_volume);
         cJSON_AddBoolToObject(o, "ps4Hidden", orbit.ps4_hidden);
         cJSON_AddBoolToObject(o, "installPkgs", orbit.install_pkgs);
+        cJSON_AddBoolToObject(o, "ownDns", orbit.own_dns);
         cJSON_AddBoolToObject(o, "deletePkgs", orbit.delete_pkgs);
         cJSON_AddNumberToObject(o, "concurrentDownloads", orbit.concurrent_downloads);
         cJSON_AddNumberToObject(o, "httpPort", orbit.port);
@@ -588,6 +589,27 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
             if (rc) orbit.delete_pkgs = previous;
             cJSON *o = cJSON_CreateObject();
             cJSON_AddBoolToObject(o, "deletePkgs", orbit.delete_pkgs);
+            pthread_mutex_unlock(&orbit.mutex);
+            cJSON_Delete(input);
+            if (rc) {
+                cJSON_Delete(o);
+                return error(c, 503, "Could not save the setting.");
+            }
+            return json_response(c, 200, o);
+        }
+        if ((get || post) && !strcmp(url, "/api/v1/settings/own-dns")) {
+            const cJSON *value = cJSON_GetObjectItemCaseSensitive(input, "ownDns");
+            if (post && !cJSON_IsBool(value)) {
+                cJSON_Delete(input);
+                return error(c, 400, "Expected ownDns.");
+            }
+            pthread_mutex_lock(&orbit.mutex);
+            bool previous = orbit.own_dns;
+            if (post) orbit.own_dns = cJSON_IsTrue(value);
+            int rc = post ? state_save_locked() : 0;
+            if (rc) orbit.own_dns = previous;
+            cJSON *o = cJSON_CreateObject();
+            cJSON_AddBoolToObject(o, "ownDns", orbit.own_dns);
             pthread_mutex_unlock(&orbit.mutex);
             cJSON_Delete(input);
             if (rc) {

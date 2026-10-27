@@ -151,6 +151,7 @@ System parse_system(const json::Value &value)
     system.sounds_off = value.flag("soundsOff", false);
     system.sound_volume = static_cast<int>(value.number("soundVolume", 50.0));
     system.ps4_hidden = value.flag("ps4Hidden", false);
+    system.own_dns = value.flag("ownDns", true);
     system.install_pkgs = value.flag("installPkgs", false);
     system.delete_pkgs = value.flag("deletePkgs", false);
     system.delete_archives = value.flag("deleteArchives", true);

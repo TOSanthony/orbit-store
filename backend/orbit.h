@@ -121,6 +121,7 @@ typedef struct {
     int sound_volume; /* TV app sound volume, 0-100 percent (default 50). */
     bool ps4_hidden; /* TV app hides PS4 titles (default false = shown). */
     bool delete_pkgs; /* Remove a .pkg once the console has installed it (default true; false = keep). */
+    bool own_dns; /* Sony's hosts are looked up through Orbit's own DNS-over-HTTPS (default true; false = the network's DNS only). */
     bool install_pkgs; /* Install a downloaded .pkg once it is verified (default true; false = off). */
     char keyboard[12];   /* TV app keyboard letters: empty or "auto" (AZERTY when the app is in French), "qwerty" or "azerty". */
     char language[12];   /* TV app language: empty or "auto" (follow the console), or a catalogue code such as "fr" or "pt-BR". */
