@@ -44,6 +44,8 @@ typedef struct {
     char ip[48];
 } SonyStats;
 void sony_stats_take(SonyStats *out);
+/* The same numbers so far, without resetting them. */
+void sony_stats_peek(SonyStats *out);
 
 /* The same, from a file on the person's own NAS (its address must be on the NAS origin saved in Sources,
  * over HTTPS; private addresses are refused). Used for updates listed in the NAS index. */

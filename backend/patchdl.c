@@ -495,6 +495,8 @@ static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, c
     atomic_store(&cur->fan_failed, false);
     pthread_mutex_init(&fan.mutex, NULL);
 
+    double tick_time = wall_now(), tick_received = 0, tick_write = 0;
+    long tick_requests = 0;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, 512 * 1024);
@@ -533,6 +535,23 @@ static sony_range_result download_piece(PatchJob *job, size_t i, Speed *speed, c
             speed->mark_bytes = fan.base + received;
         }
         publish(job, i, fan.base + received, speed->speed);
+        if (wall_now() - tick_time >= 15.0) {
+            /* A line every 15 s: what the last stretch really did, so a slow or stuck download shows up at once. */
+            SonyStats so_far;
+            sony_stats_peek(&so_far);
+            const double span = wall_now() - tick_time;
+            char line[300];
+            snprintf(line, sizeof line,
+                     "[patch] %s piece %zu now: %.1f MB/s over the last %.0f s; write %.1f s, %ld requests finished, %.0f MB of the piece\n",
+                     cur->title_id, i + 1, ((double)received - tick_received) / 1e6 / span, span,
+                     so_far.write_seconds - tick_write, so_far.requests - tick_requests, (double)received / 1e6);
+            fputs(line, stderr);
+            patch_log_file(line);
+            tick_time = wall_now();
+            tick_received = (double)received;
+            tick_write = so_far.write_seconds;
+            tick_requests = so_far.requests;
+        }
         if (now - job->last_save >= SAVE_EVERY)
             save_state(job);
     }

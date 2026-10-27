@@ -69,6 +69,13 @@ static long long now_ns(void) {
     clock_gettime(CLOCK_MONOTONIC, &t);
     return (long long)t.tv_sec * 1000000000LL + t.tv_nsec;
 }
+void sony_stats_peek(SonyStats *out) {
+    memset(out, 0, sizeof *out);
+    out->write_seconds = (double)atomic_load(&stat_write_ns) / 1e9;
+    out->connect_seconds = (double)atomic_load(&stat_connect_ns) / 1e9;
+    out->first_byte_seconds = (double)atomic_load(&stat_first_byte_ns) / 1e9;
+    out->requests = (long)atomic_load(&stat_requests);
+}
 void sony_stats_take(SonyStats *out) {
     memset(out, 0, sizeof *out);
     out->write_seconds = (double)atomic_exchange(&stat_write_ns, 0) / 1e9;
