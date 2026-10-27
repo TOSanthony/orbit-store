@@ -411,7 +411,7 @@ static sony_range_result range(const char *url, int64_t start, int64_t end, int 
     curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, (long)PATCH_READ_BUFFER);
     curl_easy_setopt(curl, CURLOPT_SOCKOPTFUNCTION, tune_socket);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 45L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 10L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, store);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &w);
     char detail[CURL_ERROR_SIZE] = "";
@@ -440,7 +440,7 @@ static sony_range_result range(const char *url, int64_t start, int64_t end, int 
         curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, (long)PATCH_READ_BUFFER);
         curl_easy_setopt(curl, CURLOPT_SOCKOPTFUNCTION, tune_socket);
         curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
-        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 45L);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 10L);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, store);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &w);
         detail[0] = 0;

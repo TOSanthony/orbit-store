@@ -351,7 +351,7 @@ static void wait_seconds(unsigned seconds) {
 #define SLICE_RETRIES 3
 /* How far ahead of the first unfinished slice the connections may go. Only the part before that slice
  * survives a stop, so without this limit one stalled slice could throw away hundreds of MB fetched past it. */
-#define SLICE_WINDOW 24
+#define SLICE_WINDOW 64
 
 static bool fan_stop(void) {
     return stopped() || atomic_load(&cur->fan_failed);
