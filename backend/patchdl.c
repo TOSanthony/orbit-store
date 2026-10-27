@@ -348,10 +348,12 @@ static void wait_seconds(unsigned seconds) {
  * finished beyond a gap is fetched again, which costs at most the slices that were in flight. */
 #define PARALLEL_STREAMS 16
 #define SLICE_BYTES (4LL * 1024 * 1024)
-#define SLICE_RETRIES 3
+#define SLICE_RETRIES 40
 /* How far ahead of the first unfinished slice the connections may go. Only the part before that slice
  * survives a stop, so without this limit one stalled slice could throw away hundreds of MB fetched past it. */
 #define SLICE_WINDOW 64
+
+static void patch_log_file(const char *line);
 
 static bool fan_stop(void) {
     return stopped() || atomic_load(&cur->fan_failed);
@@ -428,7 +430,18 @@ static void *fan_worker(void *context) {
                 break;
             }
             if (r == SONY_RANGE_FAILED && ++tries <= SLICE_RETRIES && !fan_stop()) {
-                sleep(1); /* a hiccup on one connection: try that slice again from where it stopped */
+                /* A hiccup, or the whole network stalling for a minute: try that slice again from where it
+                 * stopped, waiting a little longer each time. Giving up here would throw away everything
+                 * fetched beyond this slice, so it is only done after a long run of failures. */
+                if (tries == 1 || tries % 10 == 0) {
+                    char line[260];
+                    snprintf(line, sizeof line, "[patch] %s slice %zu failed (try %u): %s\n", job->slot->title_id, k, tries, why);
+                    fputs(line, stderr);
+                    patch_log_file(line);
+                }
+                const unsigned pause = tries < 5 ? tries : 5;
+                for (unsigned t = 0; t < pause && !fan_stop(); t++)
+                    sleep(1);
                 continue;
             }
             fan_fail(fan, r, why);
