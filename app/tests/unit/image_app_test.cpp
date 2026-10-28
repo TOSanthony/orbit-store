@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "fixture.hpp"
+#include "orbit/download_settings.hpp"
+#include "orbit/i18n.hpp"
 #include "orbit/image.hpp"
 #include "orbit/mark.hpp"
 #include "orbit/screens.hpp"
@@ -138,11 +140,24 @@ struct AppHarness
     App app{context};
     Feedback feedback;
 
-    explicit AppHarness(host::FixtureMode mode = host::FixtureMode::normal, bool through_opening = true)
-        : backend(mode)
+    explicit AppHarness(host::FixtureMode mode = host::FixtureMode::normal, bool with_addon = false, int addon_count = 1) : backend(mode)
     {
-        transport.reply = [this](const http::Request &request)
+        transport.reply = [this, with_addon, addon_count](const http::Request &request)
         {
+            if (with_addon && request.path == "/api/v1/addons")
+            {
+                std::string rows = "[";
+                for (int i = 0; i < addon_count; ++i)
+                {
+                    const std::string suffix = i == 0 ? "" : "-" + std::to_string(i);
+                    const std::string id = "neon-extra" + suffix;
+                    if (i > 0) rows += ',';
+                    rows += "{\"id\":\"" + id + "-file\",\"gameId\":\"" + id +
+                            "\",\"addonId\":\"" + id + "\",\"title\":\"Extra campaign" + suffix +
+                            R"(","titleId":"PPSA12345","sizeBytes":4096,"provider":"Archive.org","sourceId":"archive","format":"PKG","filename":"extra.pkg","platform":"ps5","baseGameId":"neon-courier","baseGameTitle":"Neon Courier","addonType":"expansion","contents":["Extra campaign"],"requirements":{"titleIds":["PPSA12345"],"minimumVersion":null,"edition":null}})";
+                }
+                return test::json_reply(200, rows + ']');
+            }
             if (request.path == "/api/v1/storage" && !storage_override.empty())
                 return test::json_reply(200, storage_override);
             if (request.path == "/api/v1/browser" && request.method == "GET" && !browser_override.empty())
@@ -153,10 +168,6 @@ struct AppHarness
         context.app_version = "01.000.000";
         store.poll_once();
         frame();
-        // The opening screen holds until Discover's first images arrive or 3 s pass,
-        // then fades out over 0.4 s: run past it, as a player would.
-        for (int i = 0; through_opening && i < 240; ++i)
-            frame();
     }
     void frame(Direction nav = Direction::none, std::uint32_t press = 0)
     {
@@ -164,6 +175,18 @@ struct AppHarness
         input.connected = true;
         input.nav = nav;
         input.pressed = press;
+        frame(input);
+    }
+    void pad(std::uint32_t buttons)
+    {
+        hui::InputTracker tracker;
+        hui::PadSample sample;
+        sample.connected = true;
+        sample.buttons = buttons;
+        frame(tracker.update(std::span<const hui::PadSample>(&sample, 1), 100000));
+    }
+    void frame(const InputFrame &input)
+    {
         feedback.clear();
         app.update(input, 1.0f / 60.0f, feedback);
         Frame drawn;
@@ -182,43 +205,186 @@ struct AppHarness
     }
 };
 
-TEST(App, OpeningScreenWaitsForDiscoverImagesButNeverMoreThanThreeSeconds)
+struct NativeLook
 {
+    explicit NativeLook(look::Interface interface)
     {
-        // Nothing serves the images: the opening screen lets go at 3 s, then fades for 0.4 s.
-        AppHarness h(host::FixtureMode::normal, false);
-        h.settle(150); // 2.5 s
-        EXPECT_TRUE(h.app.opening());
-        h.settle(30); // 3.0 s
-        EXPECT_TRUE(h.app.opening());
-        h.settle(30); // past the fade
-        EXPECT_FALSE(h.app.opening());
+        look::load("");
+        look::preview(interface);
+        auto prefs = look::prefs();
+        prefs.notice_seen = true;
+        look::set(prefs);
     }
+    ~NativeLook() { look::load(""); }
+};
+
+TEST(App, AddonDetailsAndControllerBackWorkInEveryInterfaceWithoutSavingItAsAGame)
+{
+    for (auto layout : {look::Interface::store, look::Interface::crossbar, look::Interface::cinema, look::Interface::panorama})
     {
-        // Images arrive at once: it still stays 0.8 s, then it is gone after the fade.
-        AppHarness h(host::FixtureMode::normal, false);
-        h.settle(10);
-        while (h.art.work_once())
-            h.settle(1);
-        h.settle(20); // 0.5 s in total
-        EXPECT_TRUE(h.app.opening());
-        h.settle(80); // 1.7 s: held 0.8 s, faded 0.4 s
-        EXPECT_FALSE(h.app.opening());
+        NativeLook appearance(layout);
+        AppHarness h(host::FixtureMode::normal, true);
+        ASSERT_EQ(h.store.state().addons.size(), 1u);
+        const auto count = h.store.state().games.size();
+        h.app.show_tab(tab::addons);
+        h.settle();
+        h.app.open_game("neon-extra");
+        h.settle();
+        h.press(Action::north);
+        EXPECT_FALSE(h.store.favourite_action().busy);
+        h.press(Action::back);
+        h.settle();
+        EXPECT_EQ(h.app.current_tab(), tab::addons);
+        EXPECT_EQ(h.store.state().games.size(), count);
+        h.app.open_game("neon-extra");
+        h.press(Action::west);
+        h.pad(hui::pad_bits::kDown);
+        h.press(Action::back);
+        h.settle();
+        EXPECT_EQ(h.app.current_tab(), tab::addons);
     }
 }
 
-TEST(App, KeyboardLettersFollowTheChoiceAndAutomaticIsAzertyOnlyInFrench)
+TEST(App, ConfirmOnFilteredAddonOpensThatAddonInEveryInterface)
 {
+    for (auto layout : {look::Interface::store, look::Interface::crossbar,
+                        look::Interface::cinema, look::Interface::panorama})
+    {
+        SCOPED_TRACE(static_cast<int>(layout));
+        NativeLook appearance(layout);
+        AppHarness h(host::FixtureMode::normal, true);
+        BrowseScreen screen(h.context, true);
+        screen.focus();
+        screen.for_base("neon-courier");
+        screen.set_query("Extra campaign");
+        const auto input = [&](Direction direction, bool confirm = false)
+        {
+            InputFrame frame;
+            frame.connected = true;
+            frame.nav = direction;
+            if (confirm) frame.pressed = hui::action_bit(Action::confirm);
+            const Intent intent = screen.update(frame, 1.0f / 60.0f, h.feedback, true);
+            Frame drawn;
+            screen.draw(drawn, true);
+            return intent;
+        };
+        if (layout == look::Interface::store || layout == look::Interface::crossbar)
+        {
+            input(Direction::down); // Search/filter controls.
+            input(Direction::down); // The only matching DLC tile.
+            if (layout == look::Interface::crossbar)
+                input(Direction::down); // Skip Reset filters after the base-game filter.
+        }
+        const Intent opened = input(Direction::none, true);
+        EXPECT_EQ(opened.kind, Intent::Kind::open_game);
+        EXPECT_EQ(opened.id, "neon-extra");
+        ASSERT_NE(h.store.state().game(opened.id), nullptr);
+        EXPECT_EQ(h.store.state().game(opened.id)->addon_id, "neon-extra");
+        screen.return_to(opened.id);
+        EXPECT_EQ(input(Direction::none, true).id, "neon-extra");
+    }
+}
+
+TEST(App, AddonSelectionUsesItsOwnIndexWhenThereAreMoreAddonsThanGames)
+{
+    NativeLook appearance(look::Interface::store);
+    AppHarness h(host::FixtureMode::normal, true, 40);
+    ASSERT_GT(h.store.state().addons.size(), h.store.state().games.size());
+    const Game &target = h.store.state().addons.back();
+    BrowseScreen screen(h.context, true);
+    screen.focus();
+    screen.set_query(target.title);
+    screen.return_to(target.id);
+    InputFrame input;
+    input.connected = true;
+    input.pressed = hui::action_bit(Action::confirm);
+    const Intent opened = screen.update(input, 1.0f / 60.0f, h.feedback, true);
+    EXPECT_EQ(opened.kind, Intent::Kind::open_game);
+    EXPECT_EQ(opened.id, target.id);
+}
+
+TEST(App, CinemaDpadReachesEveryChapterWithoutCyclingCollectionsOrSearch)
+{
+    NativeLook cinema(look::Interface::cinema);
     AppHarness h;
-    h.context.keyboard_choice = "azerty";
-    h.frame();
-    EXPECT_TRUE(h.context.azerty);
-    h.context.keyboard_choice = "qwerty";
-    h.frame();
-    EXPECT_FALSE(h.context.azerty);
-    h.context.keyboard_choice = "auto"; // the tests run in English
-    h.frame();
-    EXPECT_FALSE(h.context.azerty);
+    h.pad(hui::pad_bits::kUp);
+    h.pad(hui::pad_bits::kLeft);
+    EXPECT_EQ(h.app.current_section(), section::settings);
+    h.pad(hui::pad_bits::kRight);
+    EXPECT_EQ(h.app.current_section(), section::discover);
+    for (int next : {section::browse, section::addons, section::library, section::downloads, section::settings, section::discover})
+    {
+        h.pad(hui::pad_bits::kRight);
+        EXPECT_EQ(h.app.current_section(), next);
+    }
+    h.pad(hui::pad_bits::kDown);
+    h.pad(hui::pad_bits::kRight); // game row, not the navbar
+    EXPECT_EQ(h.app.current_section(), section::discover);
+    h.pad(hui::pad_bits::kUp);
+    h.pad(hui::pad_bits::kR1);
+    EXPECT_EQ(h.app.current_section(), section::browse);
+    h.pad(hui::pad_bits::kR1); // skips Browse's Favourites collection on the navbar
+    EXPECT_EQ(h.app.current_section(), section::addons);
+}
+
+TEST(App, CinemaSearchRemainsAvailableInsideBrowseFilters)
+{
+    NativeLook cinema(look::Interface::cinema);
+    AppHarness h;
+    h.app.show_tab(tab::browse);
+    h.pad(hui::pad_bits::kSquare);
+    for (int i = 0; i < 12; ++i) // past the filters and Reset filters: Search is last
+        h.pad(hui::pad_bits::kDown);
+    h.pad(hui::pad_bits::kCross);
+    EXPECT_TRUE(h.app.browse().modal()); // Search keyboard
+    h.pad(hui::pad_bits::kCircle);
+    EXPECT_FALSE(h.app.browse().modal());
+    h.pad(hui::pad_bits::kUp);
+    h.pad(hui::pad_bits::kLeft);
+    EXPECT_EQ(h.app.current_section(), section::discover);
+}
+
+TEST(App, CrossbarDpadSwitchesCategoriesButLeavesDialogsInControl)
+{
+    NativeLook crossbar(look::Interface::crossbar);
+    AppHarness h;
+    h.pad(hui::pad_bits::kRight);
+    EXPECT_EQ(h.app.current_section(), section::browse);
+    h.app.browse().start_search();
+    h.pad(hui::pad_bits::kLeft);
+    EXPECT_EQ(h.app.current_section(), section::browse);
+    EXPECT_TRUE(h.app.browse().modal());
+    h.pad(hui::pad_bits::kCircle);
+    for (int next : {section::addons, section::library, section::downloads, section::settings, section::search, section::discover})
+    {
+        h.pad(hui::pad_bits::kRight);
+        EXPECT_EQ(h.app.current_section(), next);
+        if (next == section::search)
+            h.pad(hui::pad_bits::kCircle); // close Search's keyboard
+    }
+}
+
+TEST(App, CinemaShowsStoresLibraryAndDownloadsInItsOwnPalette)
+{
+    NativeLook cinema(look::Interface::cinema);
+    AppHarness h;
+    h.app.show_tab(tab::library);
+    h.settle();
+    ASSERT_TRUE(h.store.state().library.ready());
+    // L1 and R1 switch the app's tabs, as in Store, not Cinema's old collections.
+    EXPECT_FALSE(h.app.library().page(1));
+    // Store's details panel.
+    h.app.library().show_game("PPSA90004", std::string(64, '4')); // Glass Orchard
+    EXPECT_TRUE(h.app.library().details_open());
+    h.pad(hui::pad_bits::kCircle);
+    EXPECT_FALSE(h.app.library().details_open());
+    // Cinema's paper and gold, then back to Store's palette.
+    ui::color::use_cinema(true);
+    EXPECT_NEAR(ui::color::accent.r, 0xdc / 255.0f, 1e-4f);
+    EXPECT_NEAR(ui::color::text.b, 0xec / 255.0f, 1e-4f);
+    ui::color::use_cinema(false);
+    EXPECT_NEAR(ui::color::accent.r, 1.0f, 1e-4f);
+    EXPECT_NEAR(ui::color::text.b, 1.0f, 1e-4f);
 }
 
 TEST(App, OpensAGameAndQueuesADownloadToTheDownloadsTab)
@@ -248,12 +414,12 @@ TEST(App, GameDetailsQueuesTheSelectedEditionAndDrive)
     h.settle();
     h.press(Action::confirm); // Download options
     h.frame(Direction::up); // Save to
-    h.frame(Direction::up); // Delivery
-    h.frame(Direction::up); // Source
+    h.frame(Direction::left); // Delivery
+    h.frame(Direction::left); // Source
     h.press(Action::confirm);
     h.frame(Direction::down); // version 1.05
     h.press(Action::confirm); // Return to Source setting
-    h.frame(Direction::down);h.frame(Direction::down); // Save to
+    h.frame(Direction::right);h.frame(Direction::right); // Save to
     h.press(Action::confirm);
     h.frame(Direction::down); // Internal storage
     h.press(Action::confirm);
@@ -306,7 +472,7 @@ TEST(App, NativeVikingStartsVerificationWithTheChosenDriveWithoutOpeningOrbitBro
     for (const auto &request : h.transport.seen)
         if (request.method == "POST" && request.path == "/api/v1/browser")
         {
-            EXPECT_EQ(request.body,R"({"action":"start","releaseId":"ironclad-skies-viking","storageId":"internal"})");
+            EXPECT_EQ(request.body,R"({"action":"start","releaseId":"ironclad-skies-viking","storageId":"internal","returnTarget":"native"})");
             started = true;
         }
     EXPECT_TRUE(started);
@@ -347,7 +513,7 @@ TEST(App, BrowserHandoffNeverSubstitutesADisconnectedDrive)
     h.press(Action::confirm); // Disabled primary falls back to Source.
     EXPECT_EQ(opened,0);
     EXPECT_FALSE(h.store.action().busy);
-    h.frame(Direction::down);h.frame(Direction::down); // Save to
+    h.frame(Direction::right);h.frame(Direction::right); // Save to
     h.press(Action::confirm);
     h.press(Action::confirm); // Explicitly select remaining internal drive.
     h.frame(Direction::down);
@@ -403,85 +569,26 @@ TEST(App, NativeVikingDelayedStartDoesNotUndoClosingTheProgressPanel)
     EXPECT_EQ(h.store.state().browser.state,"cancelled");
 }
 
-// Saves the enabled sources the way the Sources settings do, and lets the result reach the store.
-static void enable_sources(AppHarness &h, std::vector<std::string> enabled)
-{
-    h.store.save_sources(std::move(enabled), 1);
-    ASSERT_TRUE(h.store.run_next_action());
-    h.settle(3);
-    h.store.poll_once();
-    h.settle();
-}
-
-TEST(App, AppsDlcAndUpdatesTabsNeedMyNas)
-{
-    AppHarness h;
-    h.settle();
-    enable_sources(h, {"archive"});
-    ASSERT_EQ(h.store.state().sources.enabled, (std::vector<std::string>{"archive"}));
-    // Without My NAS: Discover, Games, Library, Downloads.
-    h.press(Action::page_next);
-    EXPECT_EQ(h.app.current_tab(), orbit::tab::browse);
-    h.press(Action::page_next);
-    EXPECT_EQ(h.app.current_tab(), orbit::tab::library);
-    h.press(Action::page_next);
-    h.settle();
-    EXPECT_EQ(h.app.current_tab(), orbit::tab::downloads);
-    h.press(Action::page_prev);
-    EXPECT_EQ(h.app.current_tab(), orbit::tab::library);
-    // A tab that is asked for but hidden falls back to Games.
-    h.app.show_tab(orbit::tab::dlc);
-    EXPECT_EQ(h.app.current_tab(), orbit::tab::browse);
-    // My NAS together with another source brings them back.
-    enable_sources(h, {"archive", "nas"});
-    h.app.show_tab(orbit::tab::dlc);
-    EXPECT_EQ(h.app.current_tab(), orbit::tab::dlc);
-    // Turning My NAS off while on one of them leaves it.
-    enable_sources(h, {"archive"});
-    h.frame(Direction::none);
-    EXPECT_EQ(h.app.current_tab(), orbit::tab::browse);
-}
-
 TEST(App, CircleLeavesTheGamePageAndTabsSwitchWithL1R1)
 {
     AppHarness h;
-    h.settle();
-    enable_sources(h, {"archive", "nas"});
     EXPECT_EQ(h.app.current_tab(), orbit::tab::discover);
     h.app.open_game("tidewater");
     h.settle();
     h.press(Action::back);
     h.settle();
-    // From Discover: Games, Apps, DLC, Updates, Library, then Downloads.
+    // From Discover, Browse and Add-ons precede Library and Downloads.
     h.press(Action::page_next);
     EXPECT_EQ(h.app.current_tab(), orbit::tab::browse);
     h.press(Action::page_next);
-    EXPECT_EQ(h.app.current_tab(), orbit::tab::apps);
-    h.press(Action::page_next);
-    EXPECT_EQ(h.app.current_tab(), orbit::tab::dlc);
-    h.press(Action::page_next);
-    EXPECT_EQ(h.app.current_tab(), orbit::tab::updates);
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::addons);
     h.press(Action::page_next);
     h.press(Action::page_next);
     h.settle();
     EXPECT_EQ(h.app.current_tab(), orbit::tab::downloads);
-    // After the last tab R1 goes on to search, then settings, and stops there.
     h.press(Action::page_next);
     EXPECT_EQ(h.app.current_tab(), orbit::tab::downloads);
-    EXPECT_EQ(h.app.top_focus(), orbit::tab::count); // search
-    h.press(Action::page_next);
-    EXPECT_EQ(h.app.top_focus(), orbit::tab::count + 1); // settings
-    h.press(Action::page_next);
-    EXPECT_EQ(h.app.top_focus(), orbit::tab::count + 1);
     EXPECT_FALSE(h.feedback.cues.empty());
-    // L1 comes back through search to Downloads, then to Library: no skipped tab.
-    h.press(Action::page_prev);
-    EXPECT_EQ(h.app.top_focus(), orbit::tab::count);
-    h.press(Action::page_prev);
-    EXPECT_EQ(h.app.top_focus(), orbit::tab::downloads);
-    EXPECT_EQ(h.app.current_tab(), orbit::tab::downloads);
-    h.press(Action::page_prev);
-    EXPECT_EQ(h.app.current_tab(), orbit::tab::library);
 }
 
 TEST(App, AFavouriteFromAGamePageShowsUnderBrowseFavourites)
@@ -670,6 +777,57 @@ TEST(App, LibraryMountsAGameFromItsDetails)
     EXPECT_FALSE(h.app.library().details_open());
 }
 
+// Files: a folder opens directly, its row menu offers actions, Circle goes back up,
+// and Delete asks first: nothing is sent until Delete is pressed in the question.
+TEST(App, LibraryFilesBrowsesAndDeletesOnlyAfterConfirming)
+{
+    AppHarness h;
+    h.app.show_tab(orbit::tab::library);
+    h.settle();
+    h.app.library().show_files("usb0", "homebrew");
+    while (h.store.run_next_action())
+        ;
+    h.settle();
+    ASSERT_EQ(h.store.state().files.storage_id, "usb0");
+    ASSERT_EQ(h.store.state().files.entries.size(), 7u);
+    h.frame(Direction::right); // the folder's separate More icon
+    h.press(Action::confirm);
+    EXPECT_TRUE(h.app.library().modal());
+    EXPECT_EQ(h.store.state().files.path, "homebrew");
+    h.press(Action::back); // close actions without leaving the folder
+    h.frame(Direction::left); // folder row
+    h.press(Action::confirm); // open Lantern Keep directly
+    EXPECT_FALSE(h.app.library().modal());
+    while (h.store.run_next_action())
+        ;
+    h.settle();
+    EXPECT_EQ(h.store.state().files.path, "homebrew/Lantern Keep");
+    h.press(Action::back); // up one folder
+    while (h.store.run_next_action())
+        ;
+    h.settle();
+    EXPECT_EQ(h.store.state().files.path, "homebrew");
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::library);
+    // Lantern Keep is focused again; notes.txt is four rows down.
+    for (int i = 0; i < 4; ++i)
+        h.frame(Direction::down);
+    h.press(Action::confirm); // its details: Copy, Move, Rename, Delete
+    for (int i = 0; i < 3; ++i)
+        h.frame(Direction::right);
+    h.press(Action::confirm); // Delete: the question
+    while (h.store.run_next_action())
+        ;
+    EXPECT_EQ(h.transport.count("/api/v1/files/action"), 0);
+    EXPECT_TRUE(h.app.library().modal());
+    h.press(Action::confirm); // Delete
+    while (h.store.run_next_action())
+        ;
+    h.settle();
+    EXPECT_EQ(h.transport.count("/api/v1/files/action"), 1);
+    EXPECT_EQ(h.store.state().file_operation.action, "delete");
+    EXPECT_EQ(h.store.state().file_operation.path, "homebrew/notes.txt");
+}
+
 TEST(App, ViewInLibraryOpensTheGamesLibraryDetails)
 {
     AppHarness h;
@@ -751,6 +909,36 @@ TEST(App, CancelledDeletionFailureStaysVisibleAndHistoryOnlyNeedsAnotherConfirma
 
 // ---- App settings ----
 
+TEST(App, VikingfileAccountIsReachableFromSourcesInEveryLook) {
+    for (auto theme : {look::Interface::store, look::Interface::crossbar, look::Interface::cinema, look::Interface::panorama}) {
+        SCOPED_TRACE(static_cast<int>(theme));
+        NativeLook appearance(theme);
+        AppHarness h;
+        // Reopening Orbit while the account page exists must not recover it as
+        // a download-verification overlay. Settings stays usable after closure.
+        h.browser_override=R"({"available":true,"vikingAccountAvailable":true,"nativeDialogAvailable":true,"accountPage":true,"id":"account-1","active":true,"state":"waiting"})";
+        h.store.poll_once(); h.settle();
+        ASSERT_TRUE(h.store.state().browser.viking_account_available);
+        h.app.open_settings(SettingsScreen::Section::sources,true); h.settle();
+        h.browser_override=R"({"available":true,"vikingAccountAvailable":true,"nativeDialogAvailable":true,"accountPage":true,"id":"account-1","active":false,"state":"idle"})";
+        h.store.poll_once(); h.settle();
+        const int steps=theme==look::Interface::store ? 3 : static_cast<int>(h.store.state().sources.options.size())+2;
+        for (int i=0;i<steps;++i) h.frame(Direction::down);
+        h.press(Action::confirm);
+        ASSERT_TRUE(h.store.browser_action().busy);
+        h.store.run_next_action(); h.settle(3);
+        bool opened=false;
+        for (const auto &request:h.transport.seen) {
+            if(request.method=="POST" && request.path=="/api/v1/browser") {
+                EXPECT_NE(request.body.find("viking-account"),std::string::npos);
+                EXPECT_EQ(request.body.find("releaseId"),std::string::npos);
+                opened=true;
+            }
+        }
+        EXPECT_TRUE(opened);
+    }
+}
+
 TEST(App, FirstRunChoosesSourcesInTheAppAndOpensDiscover)
 {
     AppHarness h(host::FixtureMode::setup);
@@ -790,61 +978,6 @@ TEST(App, SavingSourcesNeedsTheNoticeAccepted)
     EXPECT_FALSE(h.store.setting_result().busy);
 }
 
-TEST(App, HidingPs4GamesDropsThemFromTheCatalogueAndShowingBringsThemBack)
-{
-    AppHarness h;
-    h.settle();
-    ASSERT_NE(h.store.state().game("copper-circuit-ps4"), nullptr);
-    const std::size_t all = h.store.state().games.size();
-    h.store.set_ps4_hidden(true);
-    ASSERT_TRUE(h.store.run_next_action());
-    h.settle(3);
-    h.store.poll_once();
-    h.settle();
-    EXPECT_TRUE(h.store.state().system.ps4_hidden);
-    EXPECT_EQ(h.store.state().game("copper-circuit-ps4"), nullptr);
-    EXPECT_EQ(h.store.state().games.size(), all - 1);
-    // A PS5 title is untouched.
-    EXPECT_NE(h.store.state().game("ember-hollow"), nullptr);
-    h.store.set_ps4_hidden(false);
-    ASSERT_TRUE(h.store.run_next_action());
-    h.settle(3);
-    h.store.poll_once();
-    h.settle();
-    EXPECT_NE(h.store.state().game("copper-circuit-ps4"), nullptr);
-    EXPECT_EQ(h.store.state().games.size(), all);
-}
-
-TEST(App, InstallingPackagesAfterDownloadIsOffUntilTheSwitchIsTurnedOn)
-{
-    AppHarness h;
-    h.settle();
-    EXPECT_FALSE(h.store.state().system.install_pkgs);
-    h.store.set_install_pkgs(true);
-    ASSERT_TRUE(h.store.run_next_action());
-    h.settle(3);
-    EXPECT_TRUE(h.store.state().system.install_pkgs);
-    h.store.set_install_pkgs(false);
-    ASSERT_TRUE(h.store.run_next_action());
-    h.settle(3);
-    EXPECT_FALSE(h.store.state().system.install_pkgs);
-}
-
-TEST(App, InstalledPackagesAreKeptUntilTheSwitchIsTurnedOn)
-{
-    AppHarness h;
-    h.settle();
-    EXPECT_FALSE(h.store.state().system.delete_pkgs);
-    h.store.set_delete_pkgs(true);
-    ASSERT_TRUE(h.store.run_next_action());
-    h.settle(3);
-    EXPECT_TRUE(h.store.state().system.delete_pkgs);
-    h.store.set_delete_pkgs(false);
-    ASSERT_TRUE(h.store.run_next_action());
-    h.settle(3);
-    EXPECT_FALSE(h.store.state().system.delete_pkgs);
-}
-
 TEST(App, SettingsChoosesTheDefaultDrive)
 {
     AppHarness h;
@@ -870,8 +1003,7 @@ TEST(App, UpdatesInstallTheTvAppAndRestartTheServiceAfterConfirming)
     h.store.poll_once();
     h.app.open_settings(SettingsScreen::Section::updates, true);
     h.settle();
-    h.frame(Direction::down);  // the game updates card now holds Orbit Store's DNS switch:
-    h.frame(Direction::down);  // two moves down reach the TV app's buttons
+    h.frame(Direction::down);  // past Update Orbit, to the TV app's buttons
     h.frame(Direction::right); // Update TV app
     h.press(Action::confirm);
     ASSERT_TRUE(h.store.setting_result().busy);
@@ -898,6 +1030,266 @@ TEST(App, UpdatesInstallTheTvAppAndRestartTheServiceAfterConfirming)
     h.store.run_next_action();
     h.settle(3);
     EXPECT_EQ(h.store.state().restart, Restart::stopping);
+}
+
+TEST(App, UpdateOrbitInstallsBothPartsInOnePress)
+{
+    AppHarness h(host::FixtureMode::updates);
+    h.store.poll_once();
+    h.app.open_settings(SettingsScreen::Section::updates, true);
+    h.settle();
+    h.press(Action::confirm); // Update Orbit, focused first
+    ASSERT_TRUE(h.store.setting_result().busy);
+    h.store.run_next_action();
+    h.settle(3);
+    int sent = 0;
+    for (const http::Request &request : h.transport.seen)
+        if (request.path == "/api/v1/updates" && request.body.find("\"update-all\"") != std::string::npos)
+        {
+            ++sent;
+            EXPECT_NE(request.body.find("\"serviceVersion\":\"0.6.1\""), std::string::npos) << request.body;
+            EXPECT_NE(request.body.find("\"tvAppVersion\":\"1.1.0\""), std::string::npos) << request.body;
+        }
+    EXPECT_EQ(sent, 1);
+    EXPECT_EQ(h.store.state().tv_app.installed_version, "1.1.0");
+    EXPECT_TRUE(h.store.state().service.update_all);
+    EXPECT_TRUE(h.store.state().service.restart_required); // no loader here: the service waits for a restart
+}
+
+TEST(App, ClearFinishedHistoryRemovesOnlyFinishedDownloads)
+{
+    AppHarness h;
+    h.store.poll_once();
+    h.settle();
+    const auto count = [&](const char *status)
+    {
+        int n = 0;
+        for (const orbit::Job &job : h.store.state().jobs)
+            n += job.status == status;
+        return n;
+    };
+    ASSERT_GT(count("complete"), 0);
+    const int others = static_cast<int>(h.store.state().jobs.size()) - count("complete");
+    h.store.clear_history("complete");
+    h.store.run_next_action();
+    h.settle();
+    EXPECT_EQ(count("complete"), 0);
+    EXPECT_EQ(static_cast<int>(h.store.state().jobs.size()), others);
+    EXPECT_EQ(h.transport.count("/api/v1/downloads/clear-history"), 1);
+    EXPECT_TRUE(h.store.action().error.empty());
+}
+
+TEST(App, NotificationEventsAreChosenForThePs5AndNtfy)
+{
+    AppHarness h;
+    h.store.poll_once();
+    h.settle();
+    ASSERT_TRUE(h.store.state().system.has_notification_events);
+    for (bool on : h.store.state().system.notification_events)
+        EXPECT_TRUE(on);
+    h.store.set_notification_event(1, false); // downloadFailed
+    h.store.run_next_action();
+    h.settle();
+    const auto &events = h.store.state().system.notification_events;
+    EXPECT_TRUE(events[0]);
+    EXPECT_FALSE(events[1]);
+    EXPECT_TRUE(events[4]);
+    EXPECT_EQ(h.transport.count("/api/v1/settings/notifications"), 1);
+}
+
+TEST(App, DownloadNotificationsToggleFromNotifications)
+{
+    AppHarness h;
+    h.store.poll_once();
+    h.settle();
+    ASSERT_TRUE(h.store.state().system.has_download_notifications);
+    ASSERT_TRUE(h.store.state().system.download_notifications);
+    h.store.set_download_notifications(false);
+    h.store.run_next_action();
+    h.settle();
+    EXPECT_FALSE(h.store.state().system.download_notifications);
+    EXPECT_EQ(h.transport.count("/api/v1/settings/notifications"), 1);
+}
+
+TEST(App, DeletePackagesToggleFromStorage)
+{
+    AppHarness h;
+    h.store.poll_once();
+    h.settle();
+    ASSERT_TRUE(h.store.state().system.has_delete_packages);
+    ASSERT_FALSE(h.store.state().system.delete_packages);
+    h.store.set_delete_packages(true);
+    h.store.run_next_action();
+    h.settle();
+    EXPECT_TRUE(h.store.state().system.delete_packages);
+    EXPECT_EQ(h.transport.count("/api/v1/settings/installation"), 1);
+    h.store.poll_once();
+    h.settle();
+    EXPECT_TRUE(h.store.state().system.delete_packages); // the service keeps it
+}
+
+TEST(App, ConnectionsPerDownloadStepThroughPresets)
+{
+    AppHarness h;
+    h.store.poll_once();
+    h.settle();
+    ASSERT_TRUE(h.store.state().system.has_download_connections);
+    EXPECT_EQ(h.store.state().system.download_connections, 8);
+    EXPECT_EQ(orbit::connection_choices(8), (std::vector<int>{1, 2, 4, 8, 12, 16, 24, 32, 48, 64}));
+    EXPECT_EQ(orbit::connection_choices(20).size(), 11u); // a value set in the browser stays a choice
+    h.store.set_download_connections(64);
+    h.store.run_next_action();
+    h.settle();
+    EXPECT_EQ(h.store.state().system.download_connections, 64);
+    h.store.set_download_connections(65); // refused before it is sent
+    h.store.run_next_action();
+    h.settle();
+    EXPECT_EQ(h.store.state().system.download_connections, 64);
+    EXPECT_EQ(h.transport.count("/api/v1/settings/downloads"), 1);
+}
+
+TEST(App, NtfySettingsSaveAndSendATest)
+{
+    AppHarness h;
+    h.store.poll_once();
+    h.store.want_settings(true);
+    h.store.poll_once();
+    h.settle();
+    ASSERT_TRUE(h.store.state().ntfy.known);
+    ASSERT_FALSE(h.store.state().ntfy.enabled);
+    h.store.test_ntfy();
+    h.store.run_next_action();
+    h.settle();
+    EXPECT_EQ(h.store.setting_result().error, "Save an ntfy server and topic first.");
+    h.store.save_ntfy("{\"enabled\":true,\"server\":\"https://ntfy.sh\",\"topic\":\"orbit-downloads\",\"auth\":false,"
+                      "\"username\":\"\",\"password\":\"\"}");
+    h.store.run_next_action();
+    h.settle();
+    EXPECT_TRUE(h.store.setting_result().error.empty());
+    EXPECT_TRUE(h.store.state().ntfy.enabled);
+    EXPECT_EQ(orbit::ntfy_address(h.store.state().ntfy), "ntfy.sh/orbit-downloads");
+    h.store.test_ntfy();
+    h.store.run_next_action();
+    h.settle();
+    EXPECT_TRUE(h.store.setting_result().error.empty());
+    EXPECT_EQ(h.transport.count("/api/v1/settings/ntfy/test"), 2);
+}
+
+TEST(App, MoreSettingsSavesADiagnosticReportToADrive)
+{
+    AppHarness h;
+    h.store.poll_once();
+    h.app.open_settings(SettingsScreen::Section::more, true);
+    h.settle();
+    h.store.save_diagnostics("1.9.0", "de|crossbar");
+    h.store.run_next_action();
+    h.settle();
+    EXPECT_EQ(h.store.state().diagnostics_path, "/mnt/usb0/orbit-diagnostics/orbit-diagnostics-20261004-120000.txt");
+    int sent = 0;
+    for (const http::Request &request : h.transport.seen)
+        if (request.path == "/api/v1/diagnostics/export")
+        {
+            ++sent;
+            EXPECT_EQ(request.body, R"({"client":{"app":"tv","version":"1.9.0","language":"de","interface":"crossbar"}})");
+        }
+    EXPECT_EQ(sent, 1);
+}
+
+TEST(App, AppearanceLanguageSwitchesAtOnceAndIsKept)
+{
+    NativeLook appearance(look::Interface::crossbar);
+    ASSERT_TRUE(i18n::load(std::string(HUI_SOURCE_DIR) + "/../i18n", "en"));
+    i18n::set_system("en");
+    AppHarness h;
+    h.app.open_settings(SettingsScreen::Section::appearance, true);
+    h.settle();
+    // Interface, Ribbons, Motion, then Language.
+    for (int i = 0; i < 3; ++i)
+        h.frame(Direction::down);
+    h.press(Action::confirm);
+    h.settle(10);
+    h.frame(Direction::down); // English
+    h.frame(Direction::down); // Deutsch
+    h.press(Action::confirm);
+    h.settle();
+    EXPECT_EQ(look::prefs().language, "de");
+    EXPECT_EQ(i18n::language(), "de");
+    EXPECT_STREQ(tr("Language"), "Sprache");
+    // Automatic goes back to the console's language.
+    h.press(Action::confirm);
+    h.settle(10);
+    h.frame(Direction::up);
+    h.frame(Direction::up);
+    h.press(Action::confirm);
+    h.settle();
+    EXPECT_EQ(look::prefs().language, "");
+    EXPECT_EQ(i18n::language(), "en");
+}
+
+TEST(App, MoreSettingsShowsDiagnosticsOnScreen)
+{
+    AppHarness h;
+    h.store.poll_once();
+    h.app.open_settings(SettingsScreen::Section::more, true);
+    h.settle();
+    h.press(Action::confirm); // View diagnostics
+    ASSERT_TRUE(h.app.settings().modal());
+    h.store.run_next_action();
+    h.settle();
+    const DiagnosticsReport &report = h.store.state().diagnostics;
+    ASSERT_TRUE(report.known);
+    EXPECT_EQ(report.platform, "ps5");
+    EXPECT_TRUE(report.state_healthy);
+    EXPECT_EQ(report.launcher_status, "installed");
+    ASSERT_EQ(report.downloads.size(), 2u);
+    EXPECT_EQ(report.downloads[0].reason, "source-unavailable");
+    ASSERT_EQ(report.events.size(), 3u);
+    EXPECT_EQ(report.events[1].http_status, 503);
+    EXPECT_EQ(report.events[1].received, 1048576.0);
+    h.press(Action::confirm); // Refresh report
+    h.store.run_next_action();
+    h.settle();
+    EXPECT_EQ(h.transport.count("/api/v1/diagnostics"), 2);
+    h.press(Action::back);
+    EXPECT_FALSE(h.app.settings().modal());
+}
+
+TEST(App, MoreSettingsSaveButtonSendsTheReportAndShowsOnlyTheLastFile)
+{
+    AppHarness h;
+    h.store.poll_once();
+    h.app.open_settings(SettingsScreen::Section::more, true);
+    h.settle();
+    h.frame(Direction::right);
+    h.press(Action::confirm); // Save diagnostic report, after View diagnostics
+    ASSERT_TRUE(h.store.setting_result().busy);
+    h.store.run_next_action();
+    h.settle(3);
+    EXPECT_FALSE(h.store.state().diagnostics_path.empty());
+    bool described = false;
+    for (const http::Request &request : h.transport.seen)
+        if (request.path == "/api/v1/diagnostics/export")
+            described = request.body.find(R"("app":"tv")") != std::string::npos &&
+                        request.body.find(R"("interface":"store")") != std::string::npos;
+    EXPECT_TRUE(described);
+    // A save that fails, or answers without a file, never shows the earlier file.
+    for (const char *reply : {R"({"error":"Connect a writable drive to your PS5."})", R"({})"})
+    {
+        const std::string body = reply;
+        const auto service = h.transport.reply;
+        h.transport.reply = [&](const http::Request &request)
+        {
+            if (request.path == "/api/v1/diagnostics/export")
+                return test::json_reply(body.find("error") != std::string::npos ? 409 : 200, body);
+            return service(request);
+        };
+        h.press(Action::confirm);
+        h.store.run_next_action();
+        h.settle(3);
+        h.transport.reply = service;
+        EXPECT_TRUE(h.store.state().diagnostics_path.empty());
+        EXPECT_FALSE(h.store.setting_result().error.empty());
+    }
 }
 
 TEST(App, SurvivesRandomInputEverywhere)

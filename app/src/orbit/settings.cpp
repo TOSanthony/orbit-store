@@ -1,3 +1,4 @@
+#include "orbit/download_settings.hpp"
 // Orbit Store TV app - App settings: sources, storage, pairing, the catalogue and updates.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
@@ -6,13 +7,12 @@
 // a controller. Each section is laid out by one function that, given a draw
 // list, also draws it, so what the focus moves between is what is drawn.
 
-#include "orbit/appearance.hpp"
 #include "orbit/screens.hpp"
 #include "orbit/i18n.hpp"
+#include "orbit/look.hpp"
 
 #include <algorithm>
-#include "third_party/qrcodegen/qrcodegen.h"
-
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -23,21 +23,21 @@ namespace orbit
 namespace
 {
 
-constexpr float kTitleBaseline = 176.0f; // as the other page titles
-constexpr float kNavTop = 244.0f;
+constexpr float kTitleBaseline = 192.0f; // as Downloads
+constexpr float kNavTop = 262.0f;
 constexpr float kNavWidth = 400.0f;
 constexpr float kNavItem = 62.0f;
 constexpr float kNavGap = 6.0f;
 constexpr float kContentX = 600.0f;
-constexpr float kContentTop = 244.0f;
+constexpr float kContentTop = 262.0f;
 constexpr float kContentWidth = 940.0f;
-constexpr float kViewTop = 212.0f;    // content scrolls under the title
+constexpr float kViewTop = 230.0f;    // content scrolls under the title
 constexpr float kViewBottom = 990.0f; // and stops above the hints
 constexpr float kCardRadius = 14.0f;
-constexpr float kKeyboardTop = 560.0f;
 constexpr int kSectionCount = static_cast<int>(SettingsScreen::Section::count);
-constexpr const char *kSections[] = {/* i18n */ "Personalisation", /* i18n */ "Language", /* i18n */ "Download sources", /* i18n */ "Storage", /* i18n */ "Pair a device",
-                                     /* i18n */ "Game catalogue",   /* i18n */ "Updates", "Orbit Zero",
+constexpr const char *kSections[] = {/* i18n */ "Download sources", /* i18n */ "Storage", /* i18n */ "Notifications",
+                                     /* i18n */ "Pair a device",
+                                     /* i18n */ "Game catalogue",   /* i18n */ "Updates", "Orbit Zero", /* i18n */ "Appearance",
                                      /* i18n */ "More settings"};
 constexpr const char *kSavedElf = "/data/orbit-store/orbit_store.elf";
 constexpr const char *kNotice =
@@ -46,251 +46,9 @@ constexpr const char *kNotice =
     "applicable law and the provider\xE2\x80\x99s terms. Public links do not prove permission, "
     "and Orbit does not guarantee the files\xE2\x80\x99 safety or authenticity.";
 
-// A small line icon for each section, drawn from shapes, centred on (cx, cy).
-void ellipse_outline(hui::gfx::DrawList &list, float cx, float cy, float rx, float ry, float turn,
-                     float thickness, ui::Color ink)
-{
-    constexpr int kSteps = 72;
-    float last_x = 0.0f, last_y = 0.0f;
-    for (int i = 0; i <= kSteps; ++i)
-    {
-        const float t = static_cast<float>(i) * 6.2831853f / static_cast<float>(kSteps);
-        const float ex = std::cos(t) * rx;
-        const float ey = std::sin(t) * ry;
-        const float x = cx + ex * std::cos(turn) - ey * std::sin(turn);
-        const float y = cy + ex * std::sin(turn) + ey * std::cos(turn);
-        if (i > 0)
-            list.line(last_x, last_y, x, y, thickness, ink);
-        last_x = x;
-        last_y = y;
-    }
-}
-
-// A QR code of `text` on a white square no wider than max_side, at whole pixels per module so
-// the edges stay sharp. Returns the side it takes (0 when the text cannot be encoded).
-// A null list only measures.
-float draw_qr(hui::gfx::DrawList *list, const std::string &text, float x, float y, float max_side)
-{
-    constexpr int kMaxVersion = 10;
-    constexpr int kQuiet = 3; // modules of white all round
-    static std::string cached_text;
-    static std::vector<std::uint8_t> cached;
-    static bool cached_ok = false;
-    if (cached.empty() || text != cached_text)
-    {
-        cached_text = text;
-        cached.assign(qrcodegen_BUFFER_LEN_FOR_VERSION(kMaxVersion), 0);
-        std::vector<std::uint8_t> scratch(qrcodegen_BUFFER_LEN_FOR_VERSION(kMaxVersion), 0);
-        cached_ok = qrcodegen_encodeText(text.c_str(), scratch.data(), cached.data(), qrcodegen_Ecc_MEDIUM,
-                                         qrcodegen_VERSION_MIN, kMaxVersion, qrcodegen_Mask_AUTO, true);
-    }
-    if (!cached_ok)
-        return 0.0f;
-    const int n = qrcodegen_getSize(cached.data());
-    const float px = std::floor(max_side / static_cast<float>(n + 2 * kQuiet));
-    if (px < 2.0f)
-        return 0.0f;
-    const float side = px * static_cast<float>(n + 2 * kQuiet);
-    if (list != nullptr)
-    {
-        list->rounded_rect({x, y, side, side}, 14.0f, ui::Color::rgb(0xffffff));
-        const ui::Color dark = ui::Color::rgb(0x0a0a0a);
-        for (int row = 0; row < n; ++row)
-        {
-            for (int col = 0; col < n;)
-            {
-                if (!qrcodegen_getModule(cached.data(), col, row))
-                {
-                    ++col;
-                    continue;
-                }
-                int run = 1;
-                while (col + run < n && qrcodegen_getModule(cached.data(), col + run, row))
-                    ++run;
-                // A little overlap keeps a scrolled, fractional position from leaving seams.
-                list->rounded_rect({x + static_cast<float>(kQuiet + col) * px,
-                                    y + static_cast<float>(kQuiet + row) * px,
-                                    static_cast<float>(run) * px, px + 0.5f},
-                                   0.0f, dark);
-                col += run;
-            }
-        }
-    }
-    return side;
-}
-
-void section_icon(hui::gfx::DrawList &list, SettingsScreen::Section section, float cx, float cy,
-                  float size, ui::Color ink)
-{
-    using Section = SettingsScreen::Section;
-    const float t = std::max(2.0f, size * 0.085f);
-    const ui::Color none{0, 0, 0, 0};
-    switch (section)
-    {
-    case Section::appearance:
-    {
-        // An artist's palette: a rounded board with a bite out of one side, a thumb hole and
-        // dabs of colour.
-        constexpr int kSteps = 56;
-        float last_x = 0.0f, last_y = 0.0f;
-        for (int i = 0; i <= kSteps; ++i)
-        {
-            const float a = static_cast<float>(i) * 6.2831853f / static_cast<float>(kSteps);
-            // The bite sits at the lower right (a = 2.4 rad, clockwise from the right).
-            float d = a - 0.95f;
-            d = std::atan2(std::sin(d), std::cos(d));
-            const float bite = 0.2f * std::exp(-d * d / 0.09f);
-            const float x = cx + std::cos(a) * size * (0.46f - bite);
-            const float y = cy + std::sin(a) * size * (0.38f - bite * 0.8f);
-            if (i > 0)
-                list.line(last_x, last_y, x, y, t, ink);
-            last_x = x;
-            last_y = y;
-        }
-        list.ring(cx - size * 0.2f, cy + size * 0.1f, size * 0.07f, t * 0.9f, ink);
-        list.circle(cx - size * 0.22f, cy - size * 0.1f, size * 0.06f, ink);
-        list.circle(cx - size * 0.02f, cy - size * 0.2f, size * 0.06f, ink);
-        list.circle(cx + size * 0.2f, cy - size * 0.1f, size * 0.06f, ink);
-        break;
-    }
-    case Section::language:
-    {
-        // A globe: the circle, a lens-shaped meridian and two parallels. Inner strokes are a
-        // little finer than the rim so the joins stay clean at this size.
-        const float r = size * 0.45f;
-        const float g = t * 0.85f;
-        list.ring(cx, cy, r, t, ink);
-        // The meridians stop short of the poles so the rim stays perfectly round there.
-        for (const float side : {-1.0f, 1.0f})
-        {
-            constexpr int kSeg = 24;
-            constexpr float kEnd = 0.45f; // radians away from the pole
-            float lx = 0.0f, ly = 0.0f;
-            for (int n = 0; n <= kSeg; ++n)
-            {
-                const float a = -1.5707963f + kEnd +
-                                (3.1415927f - 2.0f * kEnd) * static_cast<float>(n) / kSeg;
-                const float ex = cx + side * r * 0.36f * std::cos(a);
-                const float ey = cy + r * std::sin(a);
-                if (n > 0)
-                    list.line(lx, ly, ex, ey, g, ink);
-                lx = ex;
-                ly = ey;
-            }
-        }
-        const float py = r * 0.30f;
-        const float px = std::sqrt(r * r - py * py) - t * 0.3f;
-        list.line(cx - px, cy - py, cx + px, cy - py, g, ink);
-        list.line(cx - px, cy + py, cx + px, cy + py, g, ink);
-        break;
-    }
-    case Section::sources:
-        ui::icon_layers(list, cx, cy - size * 0.04f, size, ink);
-        break;
-    case Section::storage:
-    {
-        // The storage icon of the game pages: a database cylinder (a full ellipse on top,
-        // two half ellipses below, joined by the sides).
-        const float k = size / 40.0f;
-        const float tt = std::max(2.0f, 2.4f * k);
-        const float rx = 12.0f * k, ry = 4.5f * k;
-        ellipse_outline(list, cx, cy - 8.0f * k, rx, ry, 0.0f, tt, ink);
-        list.line(cx - rx, cy - 8.0f * k, cx - rx, cy + 8.0f * k, tt, ink);
-        list.line(cx + rx, cy - 8.0f * k, cx + rx, cy + 8.0f * k, tt, ink);
-        for (const float dy : {8.0f, 0.0f})
-        {
-            constexpr int kHalf = 20;
-            float last_x = cx + rx, last_y = cy + dy * k;
-            for (int n = 1; n <= kHalf; ++n)
-            {
-                const float a = 3.1415927f * static_cast<float>(n) / static_cast<float>(kHalf);
-                const float x = cx + rx * std::cos(a);
-                const float y = cy + dy * k + ry * std::sin(a);
-                list.line(last_x, last_y, x, y, tt, ink);
-                last_x = x;
-                last_y = y;
-            }
-        }
-        break;
-    }
-    case Section::pairing:
-    {
-        // A computer: the screen on a short stand and a base.
-        const ui::Rect screen{cx - size * 0.44f, cy - size * 0.36f, size * 0.88f, size * 0.58f};
-        list.bordered_rect(screen, size * 0.07f, none, t, ink);
-        list.line(cx, cy + size * 0.22f, cx, cy + size * 0.36f, t, ink);
-        list.line(cx - size * 0.24f, cy + size * 0.38f, cx + size * 0.24f, cy + size * 0.38f, t, ink);
-        break;
-    }
-    case Section::catalogue:
-    {
-        // The four PlayStation shapes: triangle, circle, square and cross.
-        const float k = size / 36.0f;
-        const float tt = std::max(2.0f, size * 0.075f);
-        list.line(cx - 9.0f * k, cy - 15.0f * k, cx - 3.0f * k, cy - 5.0f * k, tt, ink);
-        list.line(cx - 3.0f * k, cy - 5.0f * k, cx - 15.0f * k, cy - 5.0f * k, tt, ink);
-        list.line(cx - 15.0f * k, cy - 5.0f * k, cx - 9.0f * k, cy - 15.0f * k, tt, ink);
-        list.ring(cx + 8.0f * k, cy - 10.0f * k, 5.5f * k, tt, ink);
-        list.bordered_rect({cx - 14.5f * k, cy + 3.0f * k, 11.0f * k, 11.0f * k}, 2.5f * k, none, tt, ink);
-        list.line(cx + 3.0f * k, cy + 3.0f * k, cx + 14.0f * k, cy + 14.0f * k, tt, ink);
-        list.line(cx + 14.0f * k, cy + 3.0f * k, cx + 3.0f * k, cy + 14.0f * k, tt, ink);
-        break;
-    }
-    case Section::updates:
-    {
-        // Two half-circle arrows chasing each other: solid triangular heads whose flat base
-        // sits on the vertical axis, one pointing left at the top, one right at the bottom.
-        const float g = t * 1.25f;
-        const float R = size * 0.34f; // centre line of the stroke
-        const float hw = g * 1.8f; // half height of a head
-        const float hl = g * 1.7f; // length of a head
-        constexpr float kSweep = 2.35f;
-        list.arc(cx, cy, R + g * 0.5f, g, 0.0f, kSweep, ink, false);
-        list.arc(cx, cy, R + g * 0.5f, g, 3.1415927f, kSweep, ink, false);
-        const float top[6] = {cx, cy - R - hw, cx, cy - R + hw, cx - hl, cy - R};
-        const float bottom[6] = {cx, cy + R - hw, cx, cy + R + hw, cx + hl, cy + R};
-        list.polygon(top, 3, ink);
-        list.polygon(bottom, 3, ink);
-        break;
-    }
-    case Section::zero:
-    {
-        // A planet on its tilted orbit, as Orbit's own mark.
-        list.circle(cx, cy, size * 0.17f, ink);
-        ellipse_outline(list, cx, cy, size * 0.46f, size * 0.17f, -0.45f, t * 0.9f, ink);
-        break;
-    }
-    default:
-    {
-        // Three sliders.
-        for (int i = 0; i < 3; ++i)
-        {
-            const float y = cy + (static_cast<float>(i) - 1.0f) * size * 0.28f;
-            const float knob = cx + (i == 1 ? 0.16f : i == 0 ? -0.14f : 0.02f) * size;
-            list.line(cx - size * 0.42f, y, cx + size * 0.42f, y, t * 0.85f, ink);
-            list.circle(knob, y, size * 0.1f, ink);
-        }
-        break;
-    }
-    }
-}
-
 int seconds_until(double unix_time)
 {
     return std::max(0, static_cast<int>(std::ceil(unix_time - unix_seconds())));
-}
-
-
-// The service words the NAS notices in English; a skipped-entries count is part of the sentence.
-std::string nas_message(const std::string &error)
-{
-    unsigned long count = 0;
-    if (std::sscanf(error.c_str(), "%lu entr", &count) == 1 &&
-        error.find(" skipped: invalid, duplicated or not on your NAS address.") != std::string::npos)
-        return trn(static_cast<long>(count),
-                   "{count} entry was skipped: invalid, duplicated or not on your NAS address.",
-                   "{count} entries were skipped: invalid, duplicated or not on your NAS address.");
-    return std::string(tr(std::string_view(error)));
 }
 
 } // namespace
@@ -429,29 +187,6 @@ struct SettingsScreen::Pane
         card_tops.pop_back();
         y += 24.0f;
     }
-    // A volume bar: label and percentage on top, a track below. Left and right change it.
-    void volume_row(std::string_view label, int percent)
-    {
-        const ui::Rect r{x, y + 6.0f, width, 84.0f};
-        if (list != nullptr)
-        {
-            const float f = amount();
-            ui::state_fill(*list, r, 16.0f, f, false);
-            const ui::Color ink = ui::state_ink(f, false);
-            ui::text(*list, type.medium, label, r.x + 28.0f, r.y + 36.0f, 21.0f, ink);
-            ui::text(*list, type.medium, std::to_string(percent) + " %", r.x + r.w - 28.0f,
-                     r.y + 36.0f, 21.0f, ink, ui::Align::right);
-            const ui::Rect track{r.x + 28.0f, r.y + 54.0f, r.w - 56.0f, 8.0f};
-            list->rounded_rect(track, 4.0f, ui::Color::rgb(f > 0.5f ? 0x080808 : 0xffffff, 0.22f));
-            const float fill = track.w * static_cast<float>(percent) / 100.0f;
-            if (fill > 0.0f)
-                list->rounded_rect({track.x, track.y, fill, track.h}, 4.0f, ink);
-            list->circle(track.x + fill, track.cy(), 11.0f, ink);
-        }
-        add(Kind::sound_volume, 0, r, true);
-        ++row;
-        y += r.h + 18.0f;
-    }
     void error(std::string_view text)
     {
         if (text.empty())
@@ -497,13 +232,9 @@ struct SettingsScreen::Pane
 
 // ---- the screen ----
 
-SettingsScreen::SettingsScreen(Context &context) : Screen(context)
+SettingsScreen::SettingsScreen(Context &context)
+    : Screen(context), archive_sign_in_(context), ntfy_form_(context), diagnostics_view_(context)
 {
-    nas_keyboard_.style.theme = keyboard_theme();
-    nas_keyboard_.style.bindings = hui::ui::KeyboardBindings::standard();
-    nas_keyboard_.style.max_length = 1000;
-    nas_keyboard_.style.done_label = tr("Done");
-    nas_keyboard_.set_bounds({ui::kGutter + 220.0f, kKeyboardTop + 40.0f, 1280.0f, 400.0f});
 }
 
 void SettingsScreen::open(Section section, bool content)
@@ -521,6 +252,16 @@ void SettingsScreen::open(Section section, bool content)
     ctx_.store.want_settings(true);
     if (section == Section::pairing)
         ctx_.store.refresh_session();
+    // Crossbar opens on the list of sections, or inside one when asked to;
+    // Cinema on the contents and Panorama on the pivots, or in the section's rows.
+    xb_open_ = content;
+    cn_rows_ = content;
+    cn_row_ = 0;
+    pn_rows_ = content && section != Section::pairing;
+    pn_row_ = 0;
+    xb_menu_.open = false;
+    xb_.index = content ? 0 : static_cast<int>(section);
+    xb_.snap();
     if (content)
     {
         const std::vector<Control> all = controls();
@@ -544,13 +285,6 @@ void SettingsScreen::load_draft()
     draft_ = state.sources.enabled;
     draft_acknowledged_ = state.sources.acknowledged;
     first_setup_ = !state.sources.acknowledged;
-    nas_url_.clear();
-    nas_edit_ = false;
-}
-
-void SettingsScreen::close_nas_editor()
-{
-    nas_edit_ = false;
 }
 
 bool SettingsScreen::update_available() const
@@ -560,6 +294,51 @@ bool SettingsScreen::update_available() const
     const bool tv = state.have_tv_app && !state.tv_app.latest_version.empty() && !running.empty() &&
                     starter::compare_versions(state.tv_app.latest_version, running) > 0;
     return tv || (state.have_service_update && state.service.update_available);
+}
+
+SettingsScreen::UpdateOrbit SettingsScreen::update_orbit() const
+{
+    const Snapshot &state = ctx_.store.state();
+    const SettingResult &result = ctx_.store.setting_result();
+    const ServiceUpdate &service = state.service;
+    const TvAppStatus &tv = state.tv_app;
+    const bool tv_update = state.have_tv_app && tv.available && tv.update_available;
+    // A release that's already saved only needs a restart (the service card offers it).
+    const bool service_update = state.have_service_update && service.available && service.needs_install();
+    const bool running = service.update_all && (service.busy || service.phase == "restarting");
+    const bool tv_done = service.update_all && service.phase == "updated" && !service.tv_app_updated.empty();
+    UpdateOrbit one;
+    one.show = tv_update || service_update || running || tv_done;
+    one.offer = (tv_update || service_update) && !running;
+    const bool sending = result.busy && result.setting == Setting::update_all;
+    // After a failed install, Orbit asks for a pause before the next one.
+    const int wait = std::max(service_update ? seconds_until(service.retry_at) : 0,
+                              tv_update ? seconds_until(tv.retry_at) : 0);
+    one.enabled = !sending && !service.busy && !tv.busy && wait == 0 &&
+                  (state.restart == Restart::idle || state.restart == Restart::done);
+    if (tv_update && service_update)
+        one.summary = tr("TV app {tv} and download service {service} are available.",
+                         {{"tv", tv.latest_version}, {"service", service.latest_version}});
+    else if (service_update)
+        one.summary = tr("Download service {version} is available.", {{"version", service.latest_version}});
+    else if (tv_update)
+        one.summary = tr("TV app {version} is available.", {{"version", tv.latest_version}});
+    else if (tv_done)
+        one.summary = tr("TV app {version} is installed", {{"version", service.tv_app_updated}});
+    if (sending)
+        one.status = tr("Checking\xE2\x80\xA6");
+    else if (service.update_all && service.phase == "tv-app" && tv.busy)
+        one.status = tr("Downloading the TV app: {received} of {size}",
+                        {{"received", format_bytes(tv.received)}, {"size", format_bytes(tv.size)}});
+    else if (service.update_all && service.phase == "downloading")
+        one.status = tr("Downloading Orbit: {size}", {{"size", format_bytes(service.received)}});
+    else if (service.update_all && service.phase == "saving")
+        one.status = tr("Saving the verified release\xE2\x80\xA6");
+    else if (service.phase == "restarting")
+        one.status = tr("Restarting Orbit\xE2\x80\xA6");
+    else if (one.offer && wait > 0)
+        one.status = tr("Please wait {seconds} s before another request.", {{"seconds", std::to_string(wait)}});
+    return one;
 }
 
 std::vector<SettingsScreen::Control> SettingsScreen::controls(float *height) const
@@ -581,6 +360,9 @@ void SettingsScreen::build(Pane &pane) const
     case Section::storage:
         build_storage(pane);
         break;
+    case Section::notifications:
+        build_notifications(pane);
+        break;
     case Section::pairing:
         build_pairing(pane);
         break;
@@ -595,9 +377,6 @@ void SettingsScreen::build(Pane &pane) const
         break;
     case Section::appearance:
         build_appearance(pane);
-        break;
-    case Section::language:
-        build_language(pane);
         break;
     default:
         build_more(pane);
@@ -617,107 +396,52 @@ void SettingsScreen::build_sources(Pane &pane) const
     pane.body(tr("Select your download sources. You can change them anytime."));
     pane.gap(8.0f);
 
-    // The sources as the keyboard choice: three cards to a row, the rest aligned to the left.
-    constexpr float kGap = 12.0f;
-    constexpr float kCardH = 76.0f;
-    const float card_w = (pane.width - 2.0f * kGap) / 3.0f;
+    // .source-card: a check and the source's name.
+    float cx = pane.x;
+    float cy = pane.y;
     bool browser_only_source = false;
-    const int total = static_cast<int>(state.sources.options.size());
-    // A fixed order: Vikingfile, Archive.org, AkiraBox, DataNodes, My NAS; any other source follows.
-    std::vector<int> shown(static_cast<std::size_t>(total));
-    for (int i = 0; i < total; ++i)
-        shown[static_cast<std::size_t>(i)] = i;
-    const auto rank = [&](int i)
+    for (int i = 0; i < static_cast<int>(state.sources.options.size()); ++i)
     {
-        static const char *const order[] = {"vikingfile", "archive", "akirabox", "datanodes", "nas"};
-        const std::string &id = state.sources.options[static_cast<std::size_t>(i)].id;
-        for (int k = 0; k < 5; ++k)
-            if (id == order[k])
-                return k;
-        return 5;
-    };
-    std::stable_sort(shown.begin(), shown.end(), [&](int a, int b) { return rank(a) < rank(b); });
-    for (int slot = 0; slot < total; ++slot)
-    {
-        const int i = shown[static_cast<std::size_t>(slot)]; // the option's own index is what a press reports
         const SourceOption &option = state.sources.options[static_cast<std::size_t>(i)];
         const bool on = contains(draft_, option.id);
-        browser_only_source = browser_only_source || option.id == "vikingfile" || option.id == "akirabox" || option.id == "datanodes";
-        const int line = slot / 3, col = slot % 3;
-        if (col == 0 && slot > 0)
-            ++pane.row;
-        const ui::Rect r{pane.x + static_cast<float>(col) * (card_w + kGap),
-                         pane.y + static_cast<float>(line) * (kCardH + 10.0f), card_w, kCardH};
+        browser_only_source = browser_only_source || option.id == "vikingfile" || option.id == "akirabox" || option.id == "datanodes" || option.id == "1fichier";
+        const float w = type.medium.measure(option.label, 21.0f) + 104.0f;
+        if (cx > pane.x && cx + w > pane.x + pane.width) { cx = pane.x; cy += 74.0f; ++pane.row; }
+        const ui::Rect r{cx, cy, w, 60.0f};
         if (pane.list != nullptr)
         {
-            ui::DrawList &list = *pane.list;
-            const float f = pane.amount();
-            ui::state_fill(list, r, kCardRadius, f, on);
-            const float mx = r.x + 24.0f + 14.0f;
+            ui::focus_ring(*pane.list, r, 30.0f, pane.amount());
+            pane.list->rounded_rect(
+                r, 30.0f, on ? ui::Color::rgb(0xffffff, 0.26f) : ui::Color::rgb(0xffffff, 0.08f));
+            const float mx = r.x + 22.0f + 13.0f;
             if (on)
             {
-                list.circle(mx, r.cy(), 14.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
-                ui::icon_check(list, mx, r.cy(), 16.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.4f);
+                pane.list->circle(mx, r.cy(), 13.0f, ui::color::action);
+                ui::icon_check(*pane.list, mx, r.cy(), 15.0f, ui::color::night1, 2.4f);
             }
             else
-                list.ring(mx, r.cy(), 13.5f, 1.0f, f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::color::text3);
-            ui::text_fit(list, type.medium, option.label, mx + 34.0f, r.cy() + 7.0f, 21.0f, card_w - 90.0f,
-                         ui::state_ink(f, on));
+            {
+                pane.list->ring(mx, r.cy(), 12.0f, 2.0f, ui::Color::rgb(0xffffff, 0.55f));
+            }
+            ui::text(*pane.list, type.medium, option.label, mx + 13.0f + 18.0f, r.cy() + 7.5f,
+                     21.0f, ui::color::text);
         }
         pane.add(Kind::source, i, r, !saving);
+        cx += w + 14.0f;
     }
-    if (total > 0)
+    if (!state.sources.options.empty())
     {
         ++pane.row;
-        pane.y += static_cast<float>((total + 2) / 3) * (kCardH + 10.0f) + 8.0f;
+        pane.y = cy + 60.0f + 18.0f;
     }
     if (browser_only_source)
     {
         if (contains(draft_, "vikingfile"))
-            pane.fine(tr("On {provider}, complete any verification and select the site’s {button} button.",
-                         {{"provider", "Vikingfile"}, {"button", tr("Download")}}));
+            pane.fine(tr("Complete verification if shown, then wait. Orbit will check the generated download link automatically."));
         if (contains(draft_, "akirabox"))
             pane.fine(tr("Complete verification on AkiraBox, then wait for Orbit to check the download link."));
         if (contains(draft_, "datanodes"))
             pane.fine(tr("Scroll to the bottom, select Continue to Download, then Free Download. Wait for the countdown and select Start Download."));
-    }
-
-    // My NAS: the address of the index.json, typed with the on-screen keyboard.
-    if (contains(draft_, "nas"))
-    {
-        pane.subheading(tr("My NAS index address"));
-        const ui::Rect field{pane.x, pane.y, pane.width, 64.0f};
-        if (pane.list != nullptr)
-        {
-            ui::DrawList &list = *pane.list;
-            ui::focus_ring(list, field, 18.0f, pane.amount());
-            list.rounded_rect(field, 18.0f, ui::Color::rgb(0xffffff, 0.08f));
-            const bool typed = !nas_url_.empty();
-            const std::string shown =
-                typed ? nas_url_
-                      : state.sources.nas_configured
-                            ? std::string(tr("Saved address kept. Select to change it."))
-                            : std::string("https://nas.example.com/orbit-secret/index.json");
-            ui::text_fit(list, type.regular, shown, field.x + 24.0f, field.cy() + 7.0f, 20.0f,
-                         field.w - 48.0f, typed ? ui::color::text : ui::color::text3);
-        }
-        pane.add(Kind::nas_url, 0, field, !saving);
-        ++pane.row;
-        pane.y = field.y + field.h + 10.0f;
-        if (state.sources.nas_configured)
-        {
-            if (!state.sources.nas_error.empty())
-                pane.fine(state.sources.nas_host + ": " + nas_message(state.sources.nas_error));
-            else
-                pane.fine(tr("{host}: {count} games found.",
-                             {{"host", state.sources.nas_host},
-                              {"count", std::to_string(state.sources.nas_count)}}));
-        }
-        else
-        {
-            pane.fine(tr("Enter the https address of the index.json on your NAS."));
-        }
-        pane.gap(6.0f);
     }
 
     // .source-notice, then .source-acknowledgement.
@@ -732,22 +456,21 @@ void SettingsScreen::build_sources(Pane &pane) const
     const ui::Rect box{pane.x, pane.y, pane.width, 44.0f + 28.0f * static_cast<float>(lines)};
     if (pane.list != nullptr)
     {
-        const float f = pane.amount();
-        ui::state_fill(*pane.list, box, 16.0f, f, draft_acknowledged_);
+        ui::focus_ring(*pane.list, box, 16.0f, pane.amount());
+        pane.list->rounded_rect(box, 16.0f, ui::Color::rgb(0xffffff, 0.06f));
         const float mx = box.x + 26.0f + 16.0f;
-        const float my = box.cy(); // centred in the row, whatever the number of text lines
+        const float my = box.y + 22.0f + 16.0f;
         if (draft_acknowledged_)
         {
-            pane.list->circle(mx, my, 16.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
-            ui::icon_check(*pane.list, mx, my, 18.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.6f);
+            pane.list->circle(mx, my, 16.0f, ui::color::action);
+            ui::icon_check(*pane.list, mx, my, 18.0f, ui::color::night1, 2.6f);
         }
         else
         {
-            pane.list->ring(mx, my, 15.0f, 2.0f,
-                            f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::Color::rgb(0xffffff, 0.55f));
+            pane.list->ring(mx, my, 15.0f, 2.0f, ui::Color::rgb(0xffffff, 0.55f));
         }
         ui::paragraph(*pane.list, type.regular, agree, box.x + 76.0f, box.y + 22.0f + 21.0f, 19.0f,
-                      text_w, 28.0f, ui::state_ink(f, draft_acknowledged_), 4);
+                      text_w, 28.0f, ui::color::text, 4);
     }
     pane.add(Kind::acknowledge, 0, box, !saving);
     ++pane.row;
@@ -761,8 +484,53 @@ void SettingsScreen::build_sources(Pane &pane) const
     const bool can_save =
         !saving && draft_acknowledged_ && (state.sources.acknowledged || !draft_.empty());
     pane.buttons({{Kind::save_sources, saving ? tr("Saving\xE2\x80\xA6") : tr("Save sources"),
-                   ui::ButtonKind::secondary, can_save}});
+                   ui::ButtonKind::primary, can_save}});
     pane.fine(tr("Saved for this console and its paired devices."));
+
+    if (state.browser.viking_account_available) {
+        pane.gap(12.0f);
+        pane.rule();
+        pane.heading("Vikingfile");
+        pane.body(tr("Sign in on Vikingfile, then return to Orbit."));
+        pane.fine(tr("Orbit uses your Vikingfile sign-in when requesting download links. If verification is needed, its page opens."));
+        pane.fine(tr("Enter your Vikingfile account code (hash), complete verification if asked, then select Login. Return to Orbit when finished. Manage or sign out on the same account page."));
+        pane.body(state.browser.viking_state == "signed-in" ? tr("Signed in") :
+            state.browser.viking_state == "signed-out" ? tr("Not signed in") : tr("Sign-in could not be confirmed"));
+        pane.buttons({{Kind::viking_account, tr("Open Vikingfile account"), ui::ButtonKind::secondary,
+            !ctx_.store.browser_action().busy && !state.browser.active},
+            {Kind::viking_check, tr("Check sign-in"), ui::ButtonKind::secondary,
+            !ctx_.store.browser_action().busy && !state.browser.active}});
+        if (state.browser.account_page) pane.error(ctx_.store.browser_action().error);
+    }
+
+    // .archive-account-settings: signing in for login-only Archive.org games.
+    const ArchiveAccount &account = state.archive_account;
+    if (!account.known)
+        return;
+    const bool signing = result.busy && (result.setting == Setting::archive_sign_in ||
+                                         result.setting == Setting::archive_sign_out);
+    pane.gap(12.0f);
+    pane.rule();
+    pane.heading("Archive.org");
+    pane.body(tr("Some Archive.org games only download for signed-in accounts. Sign in with your Archive.org "
+                 "account to download them."));
+    pane.body(!account.signed_in   ? std::string(tr("Not signed in"))
+              : account.name.empty() ? std::string(tr("Signed in"))
+                                     : tr("Signed in as {name}", {{"name", account.name}}),
+              19.0f);
+    if (!account.signed_in)
+        pane.buttons({{Kind::archive_sign_in, tr("Sign in"), ui::ButtonKind::secondary, !signing}});
+    else if (archive_sign_out_)
+    {
+        pane.notice({}, tr("Sign out of Archive.org? Games that need an account won't download until you sign in "
+                           "again."));
+        pane.buttons({{Kind::archive_sign_out_confirm, tr("Sign out"), ui::ButtonKind::secondary, !signing},
+                      {Kind::archive_sign_out_cancel, tr("Stay signed in"), ui::ButtonKind::secondary, true}});
+    }
+    else
+        pane.buttons({{Kind::archive_sign_out, tr("Sign out"), ui::ButtonKind::secondary, !signing}});
+    if (error_setting_ == Setting::archive_sign_out)
+        pane.error(error_);
 }
 
 // ---- Storage: the default drive ----
@@ -790,29 +558,32 @@ void SettingsScreen::build_storage(Pane &pane) const
         if (pane.list != nullptr)
         {
             ui::DrawList &list = *pane.list;
-            const float f = pane.amount();
-            ui::state_fill(list, r, kCardRadius, f, chosen);
+            ui::focus_ring(list, r, kCardRadius, pane.amount());
+            list.bordered_rect(r, kCardRadius,
+                               chosen ? ui::Color::rgb(0xffffff, 0.25f)
+                                      : ui::Color::rgb(0x151515, 0.8f),
+                               1.0f, chosen ? ui::Color::rgb(0xffffff) : ui::color::line);
             const float mx = r.x + 24.0f + 14.0f;
             if (chosen)
             {
-                list.circle(mx, r.cy(), 14.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
-                ui::icon_check(list, mx, r.cy(), 16.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.4f);
+                list.circle(mx, r.cy(), 14.0f, ui::color::action);
+                ui::icon_check(list, mx, r.cy(), 16.0f, ui::color::night1, 2.4f);
             }
             else
             {
-                list.ring(mx, r.cy(), 13.5f, 1.0f, f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::color::text3);
+                list.ring(mx, r.cy(), 13.5f, 1.0f, ui::color::text3);
             }
             const float tx = mx + 14.0f + 20.0f;
             const float rx = r.x + r.w - 24.0f;
             // Without a right column, the left text may use the whole card.
             const float fit = right.empty() && right_detail.empty() ? rx - tx : 470.0f;
             ui::text_fit(list, type.medium, title, tx, r.cy() - 6.0f, 21.0f, fit,
-                         ui::state_ink(f, chosen));
+                         ui::color::text);
             ui::text_fit(list, type.regular, detail, tx, r.cy() + 22.0f, 16.0f, fit,
-                         ui::state_ink_dim(f));
-            ui::text(list, type.medium, right, rx, r.cy() - 6.0f, 19.0f, ui::state_ink(f, chosen),
+                         ui::color::text2);
+            ui::text(list, type.medium, right, rx, r.cy() - 6.0f, 19.0f, ui::color::text,
                      ui::Align::right);
-            ui::text(list, type.regular, right_detail, rx, r.cy() + 22.0f, 16.0f, ui::state_ink_dim(f),
+            ui::text(list, type.regular, right_detail, rx, r.cy() + 22.0f, 16.0f, ui::color::text2,
                      ui::Align::right);
         }
         pane.add(Kind::drive, index, r, !saving);
@@ -842,101 +613,147 @@ void SettingsScreen::build_storage(Pane &pane) const
         pane.error(error_);
     pane.fine(tr("Downloads save inside the drive\xE2\x80\x99s homebrew folder."));
     pane.gap(12.0f);
-    pane.begin_card(tr("Downloads"),
-                    tr("How many games download at once, and what happens to ZIP, 7z and RAR files."));
-    // A small title for each of the two settings the card holds.
-    const auto part = [&](std::string_view title)
-    {
-        if (pane.list != nullptr)
-            ui::text(*pane.list, type.medium, title, pane.x, pane.y + 22.0f, 22.0f, ui::color::text);
-        pane.y += 36.0f;
-    };
-    part(tr("Simultaneous downloads"));
-    pane.body(tr("Choose 1–8 games. One by default. Lowering the limit lets current downloads finish."), 19.0f);
-    {
-        // A dropdown of 1 to 8; Cross opens its list.
-        const ui::Rect field{pane.x, pane.y + 6.0f, 180.0f, ui::kButtonHeight};
-        const bool free_to_change = !result.busy;
-        if (pane.list != nullptr)
-            ui::select_field(*pane.list, type, field, std::to_string(state.system.concurrent_downloads),
-                             pane.amount(), picker_.open, free_to_change);
-        pane.add(Kind::download_limit_select, 0, field, free_to_change);
-        ++pane.row;
-        pane.y = field.y + field.h + 14.0f;
-    }
-    if (result.setting == Setting::download_limit)
-        pane.error(result.error);
-    pane.gap(6.0f);
     pane.rule();
-    pane.gap(6.0f);
-    // Two options side by side, the chosen one ringed with a check, like the default drive.
-    struct Choice { std::string title, detail; bool chosen; };
-    const auto pair = [&](Kind kind, const Choice &left, const Choice &right, bool enabled)
+    pane.heading(tr("Simultaneous downloads"));
+    pane.body(tr("Choose 1–8 games. One by default. Lowering the limit lets current downloads finish."));
+    pane.version_row(tr("Simultaneous downloads"), std::to_string(state.system.concurrent_downloads));
+    pane.buttons({{Kind::download_limit_less, tr("Decrease download limit"), ui::ButtonKind::secondary,
+                   !result.busy && state.system.concurrent_downloads > 1},
+                  {Kind::download_limit_more, tr("Increase download limit"), ui::ButtonKind::secondary,
+                   !result.busy && state.system.concurrent_downloads < 8}});
+    if (result.setting == Setting::download_limit) pane.error(result.error);
+    if (state.system.has_download_connections)
     {
-        const float gap = 12.0f;
-        const float w = (pane.width - gap) * 0.5f;
-        const Choice *both[2] = {&left, &right};
-        for (int i = 0; i < 2; ++i)
+        // Connections per download: the browser's number, by the steps a controller wants.
+        const auto choices = connection_choices(state.system.download_connections);
+        const int current = state.system.download_connections;
+        pane.gap(12.0f);
+        pane.heading(tr("Connections per download"));
+        pane.body(tr(connections_help));
+        pane.version_row(tr("Connections per download"), std::to_string(current));
+        pane.buttons({{Kind::connections_less, tr("Decrease connections"), ui::ButtonKind::secondary,
+                       !result.busy && current > choices.front()},
+                      {Kind::connections_more, tr("Increase connections"), ui::ButtonKind::secondary,
+                       !result.busy && current < choices.back()}});
+        if (result.setting == Setting::download_connections) pane.error(result.error);
+    }
+    pane.rule();
+    pane.heading(tr("Download recovery"));
+    pane.body(tr(download_recovery_help));
+    pane.body(tr(download_speed_help));
+    for (int i = 0; i < 4; ++i) {
+        const auto &setting = download_settings[i];
+        int value = state.system.download_recovery[i];
+        pane.version_row(tr(setting.label), std::to_string(value));
+        pane.buttons({{Kind::download_recovery_less, tr("Decrease"), ui::ButtonKind::secondary,
+                       !result.busy && value > setting.min, i},
+                      {Kind::download_recovery_more, tr("Increase"), ui::ButtonKind::secondary,
+                       !result.busy && value < setting.max, i}});
+    }
+    if (result.setting == Setting::download_recovery) pane.error(result.error);
+    pane.gap(12.0f);
+    pane.rule();
+    pane.heading(tr("Compressed downloads"));
+    pane.body(state.system.delete_archives
+                  ? tr("ZIP, 7z and RAR downloads are extracted on the drive. The archive is deleted once its files are in place.")
+                  : tr("ZIP, 7z and RAR downloads are extracted on the drive. The archive is kept next to its files."));
+    const bool archives_saving = result.busy && result.setting == Setting::archives;
+    pane.buttons({{Kind::archives_toggle,
+                   state.system.delete_archives ? tr("Keep archives after extracting")
+                                                : tr("Delete archives after extracting"),
+                   ui::ButtonKind::secondary, !archives_saving}});
+    if (result.setting == Setting::archives && !result.error.empty())
+        pane.error(result.error);
+    if (state.system.has_delete_packages)
+    {
+        pane.gap(12.0f);
+        pane.rule();
+        pane.heading(tr("Installed packages"));
+        pane.body(tr("Orbit can delete a PKG or FPKG once it has installed on your PS5, to free up space. If installation fails, the package is kept so you can try again."));
+        const bool packages_saving = result.busy && result.setting == Setting::packages;
+        pane.buttons({{Kind::packages_toggle,
+                       state.system.delete_packages ? tr("Keep packages after installing")
+                                                    : tr("Delete packages after installing"),
+                       ui::ButtonKind::secondary, !packages_saving}});
+        if (result.setting == Setting::packages && !result.error.empty())
+            pane.error(result.error);
+    }
+}
+
+// ---- Notifications (src/NotificationSetting.tsx) ----
+
+void SettingsScreen::build_notifications(Pane &pane) const
+{
+    const Snapshot &state = ctx_.store.state();
+    const ui::Type &type = ctx_.type;
+    const SettingResult &result = ctx_.store.setting_result();
+    // .source-card checks, as Download sources lists its choices.
+    const auto checks = [&](Kind kind, const std::vector<std::pair<std::string, bool>> &items, bool enabled)
+    {
+        float cx = pane.x;
+        float cy = pane.y;
+        for (int i = 0; i < static_cast<int>(items.size()); ++i)
         {
-            const Choice &c = *both[i];
-            const ui::Rect r{pane.x + static_cast<float>(i) * (w + gap), pane.y, w, 92.0f};
+            const auto &[label, on] = items[static_cast<std::size_t>(i)];
+            const float w = type.medium.measure(label, 21.0f) + 104.0f;
+            if (cx > pane.x && cx + w > pane.x + pane.width) { cx = pane.x; cy += 74.0f; ++pane.row; }
+            const ui::Rect r{cx, cy, w, 60.0f};
             if (pane.list != nullptr)
             {
-                ui::DrawList &list = *pane.list;
-                const float f = pane.amount();
-                ui::state_fill(list, r, kCardRadius, f, c.chosen);
-                const float mx = r.x + 24.0f + 14.0f;
-                if (c.chosen)
+                ui::focus_ring(*pane.list, r, 30.0f, pane.amount());
+                pane.list->rounded_rect(r, 30.0f, on ? ui::Color::rgb(0xffffff, 0.26f) : ui::Color::rgb(0xffffff, 0.08f));
+                const float mx = r.x + 22.0f + 13.0f;
+                if (on)
                 {
-                    list.circle(mx, r.cy(), 14.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
-                    ui::icon_check(list, mx, r.cy(), 16.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.4f);
+                    pane.list->circle(mx, r.cy(), 13.0f, ui::color::action);
+                    ui::icon_check(*pane.list, mx, r.cy(), 15.0f, ui::color::night1, 2.4f);
                 }
                 else
                 {
-                    list.ring(mx, r.cy(), 13.5f, 1.0f, f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::color::text3);
+                    pane.list->ring(mx, r.cy(), 12.0f, 2.0f, ui::Color::rgb(0xffffff, 0.55f));
                 }
-                const float tx = mx + 14.0f + 20.0f;
-                const float fit = r.x + r.w - 24.0f - tx;
-                ui::text_fit(list, type.medium, c.title, tx, r.cy() - 6.0f, 21.0f, fit, ui::state_ink(f, c.chosen));
-                ui::text_fit(list, type.regular, c.detail, tx, r.cy() + 22.0f, 16.0f, fit, ui::state_ink_dim(f));
+                ui::text(*pane.list, type.medium, label, mx + 13.0f + 18.0f, r.cy() + 7.5f, 21.0f, ui::color::text);
             }
             pane.add(kind, i, r, enabled);
+            cx += w + 14.0f;
         }
         ++pane.row;
-        pane.y += 92.0f + 12.0f;
+        pane.y = cy + 60.0f + 18.0f;
     };
-    part(tr("Compressed downloads"));
-    pane.body(tr("ZIP, 7z and RAR downloads are extracted on the drive. Choose what happens to the archive afterwards."),
-              19.0f);
-    const bool archives_saving = result.busy && result.setting == Setting::archives;
-    pair(Kind::archives_choice,
-         {tr("Keep after extracting"), tr("The archive stays next to its files"), !state.system.delete_archives},
-         {tr("Delete after extracting"), tr("Removed once its files are in place"), state.system.delete_archives},
-         !archives_saving);
-    if (result.setting == Setting::archives && !result.error.empty())
-        pane.error(result.error);
-    pane.end_card();
-    pane.gap(12.0f);
-    pane.begin_card(tr("Packages"),
-                    tr("Install a downloaded .pkg on your PS5, and choose what happens to the file afterwards."));
-    const bool install_saving = result.busy && result.setting == Setting::install_pkgs;
-    pair(Kind::install_pkgs_choice,
-         {tr("Install after download"), tr("Installed once Orbit has checked it"), state.system.install_pkgs},
-         {tr("Don\xE2\x80\x99t install after download"), tr("Stays in the homebrew folder"), !state.system.install_pkgs},
-         !install_saving);
-    if (result.setting == Setting::install_pkgs && !result.error.empty())
-        pane.error(result.error);
-    pane.gap(6.0f);
+    pane.heading(tr("Where to notify"));
+    pane.body(tr("Orbit tells you about the events you choose on your PS5, even while you play, and on your phone or "
+                 "computer through ntfy."));
+    if (state.system.has_download_notifications)
+    {
+        checks(Kind::notifications_toggle, {{tr("On this PS5"), state.system.download_notifications}},
+               !(result.busy && result.setting == Setting::notifications));
+        if (result.setting == Setting::notifications && !result.error.empty())
+            pane.error(result.error);
+    }
+    if (state.ntfy.known)
+    {
+        pane.gap(6.0f);
+        pane.subheading(tr("ntfy notifications"));
+        pane.body(tr("Get a push notification on your phone or computer for the events you choose. "
+                     "Subscribe to the same topic in the ntfy app."));
+        pane.body(state.ntfy.enabled ? std::string(tr("On")) + " \xC2\xB7 " + ntfy_address(state.ntfy) : std::string(tr("Off")),
+                  19.0f);
+        pane.buttons({{Kind::ntfy_open, state.ntfy.server.empty() ? tr("Set up ntfy") : tr("Change ntfy settings"),
+                       ui::ButtonKind::secondary, true}});
+    }
+    if (!state.system.has_notification_events)
+        return;
     pane.rule();
-    const bool pkgs_saving = result.busy && result.setting == Setting::delete_pkgs;
-    pair(Kind::delete_pkgs_choice,
-         {tr("Keep after installing"), tr("The .pkg stays in the homebrew folder"), !state.system.delete_pkgs},
-         {tr("Delete after installing"), tr("Removed once your PS5 has installed it"), state.system.delete_pkgs},
-         !pkgs_saving);
-    pane.fine(tr("Deleting only applies to packages Orbit installs."));
-    if (result.setting == Setting::delete_pkgs && !result.error.empty())
+    pane.heading(tr("What to notify about"));
+    pane.body(tr("Your choices apply to this PS5 and to ntfy."));
+    std::vector<std::pair<std::string, bool>> events;
+    for (std::size_t i = 0; i < state.system.notification_events.size(); ++i)
+        events.emplace_back(tr(kNotificationEvents[i].label), state.system.notification_events[i]);
+    checks(Kind::notification_event, events, !(result.busy && result.setting == Setting::notification_event));
+    if (result.setting == Setting::notification_event && !result.error.empty())
         pane.error(result.error);
-    pane.end_card();
+    if (state.system.notification_events[4])
+        pane.fine(tr("To tell you about updates, Orbit checks for a new release every six hours."));
 }
 
 // ---- Pair a device (src/Pairing.tsx, on the console) ----
@@ -974,25 +791,6 @@ void SettingsScreen::build_pairing(Pane &pane) const
         ui::text_fit(*pane.list, type.medium, address, pane.x + 60.0f, pane.y + 36.0f,
                      state.address.empty() ? 28.0f : 40.0f, pane.width - 60.0f, ui::color::text);
     pane.y += 58.0f;
-    if (!state.address.empty())
-    {
-        // The same address as a QR code: scanning it opens Orbit on a phone.
-        const float side = draw_qr(pane.list, address, pane.x + 60.0f, pane.y + 4.0f, 232.0f);
-        if (side > 0.0f)
-        {
-            if (pane.list != nullptr)
-            {
-                const float tx = pane.x + 60.0f + side + 32.0f;
-                const float tw = pane.width - 60.0f - side - 32.0f;
-                ui::text(*pane.list, type.medium, tr("Or scan this code with your phone\xE2\x80\x99s camera"), tx,
-                         pane.y + 52.0f, 23.0f, ui::color::text);
-                ui::paragraph(*pane.list, type.regular,
-                              tr("Your phone must be on the same Wi-Fi network as this PS5."), tx,
-                              pane.y + 92.0f, 18.0f, tw, 27.0f, ui::color::text3, 3);
-            }
-            pane.y += side + 12.0f;
-        }
-    }
     if (state.address.empty())
     {
         pane.x += 60.0f;
@@ -1023,27 +821,11 @@ void SettingsScreen::build_catalogue(Pane &pane) const
     const CatalogueStatus &catalogue = state.catalogue;
     const SettingResult &result = ctx_.store.setting_result();
     const bool sending = result.busy && result.setting == Setting::catalogue;
-    // Hiding the PS4 games is a choice about what the catalogue lists, so it lives here.
-    const auto ps4_block = [&]
-    {
-        pane.gap(12.0f);
-        pane.rule();
-        pane.heading(tr("PS4 games"));
-        pane.body(state.system.ps4_hidden
-                      ? tr("PS4 games are hidden. A game that also comes in a PS5 version stays, with its PS5 options.")
-                      : tr("PS4 games are shown next to PS5 games."));
-        const bool ps4_saving = result.busy && result.setting == Setting::ps4;
-        pane.buttons({{Kind::ps4_toggle, state.system.ps4_hidden ? tr("Show PS4 games") : tr("Hide PS4 games"),
-                       ui::ButtonKind::secondary, !ps4_saving}});
-        if (result.setting == Setting::ps4 && !result.error.empty())
-            pane.error(result.error);
-    };
     pane.heading(tr("Game catalogue"));
     if(state.system.zero_enabled) {
         pane.body("Orbit Zero supplies the catalogue and artwork from your computer. Refresh the catalogue in the desktop app to get new games.");
         pane.version_row("Games",std::to_string(state.games.size()));
         pane.error(state.system.zero_error);
-        ps4_block();
         return;
     }
     pane.body(tr("New games arrive without reinstalling Orbit. Your PS5 checks when Orbit starts "
@@ -1076,7 +858,6 @@ void SettingsScreen::build_catalogue(Pane &pane) const
         pane.notice({}, tr(error_));
     else if (!catalogue.error.empty())
         pane.notice({}, tr(catalogue.error));
-    ps4_block();
 }
 
 // ---- Updates: this app (src/TvApp.tsx) and the download service (src/Updates.tsx) ----
@@ -1087,60 +868,24 @@ void SettingsScreen::build_updates(Pane &pane) const
     const SettingResult &result = ctx_.store.setting_result();
     const double now = unix_seconds();
     pane.heading(tr("Updates"));
-    pane.body(tr("Orbit has two parts, updated separately: this TV app, and the download service "
-              "that keeps running after you close it."));
+    pane.body(tr("Orbit has two parts: this TV app, and the download service that keeps running "
+              "after you close it. Update both at once, or each one below."));
     pane.gap(10.0f);
 
-    // ---- installed games with a patch on Sony's servers ----
-    pane.begin_card(tr("Game updates"),
-                    tr("Your installed games are checked against Sony\xE2\x80\x99s servers when Orbit "
-                       "starts and every six hours."));
-    if (!state.have_game_updates)
-        pane.fine(tr("Loading\xE2\x80\xA6"));
-    else
+    // ---- both parts in one press ----
+    const UpdateOrbit one = update_orbit();
+    if (one.show)
     {
-        const GameUpdateStatus &games = state.game_update_status;
-        if (!games.supported)
-            pane.fine(tr("The game update check is not running on this console."));
-        else
-        {
-            pane.version_row(games.checking ? std::string(tr("Checking\xE2\x80\xA6"))
-                             : games.checked_at > 0.0
-                                 ? tr("Checked {time}", {{"time", format_age(games.checked_at, now)}})
-                                 : std::string(tr("Not checked yet")),
-                             tr("Updates found: {count}", {{"count", std::to_string(games.count)}}));
-            if (games.failed > 0)
-            {
-                pane.fine(tr("Games that could not be checked: {count}",
-                             {{"count", std::to_string(games.failed)}}));
-                if (!games.detail.empty())
-                    pane.fine(tr("First failure: {detail}", {{"detail", games.detail}}));
-            }
-            if (!games.error.empty())
-                pane.notice({}, tr(games.error));
-            const bool looking = games.checking || (result.busy && result.setting == Setting::game_updates);
-            pane.buttons({{Kind::game_updates_check,
-                           looking ? tr("Checking\xE2\x80\xA6") : tr("Check for game updates"),
-                           ui::ButtonKind::secondary, !looking}});
-            if (error_setting_ == Setting::game_updates && !error_.empty())
-                pane.notice({}, tr(error_));
-        }
+        pane.begin_card(tr("Update Orbit"), one.summary);
+        pane.fine(tr("The TV app and the download service update together. Downloads pause while Orbit restarts, then continue."));
+        if (one.offer)
+            pane.buttons({{Kind::update_all, tr("Update Orbit"), ui::ButtonKind::primary, one.enabled}});
+        if (!one.status.empty())
+            pane.fine(one.status);
+        if (error_setting_ == Setting::update_all)
+            pane.error(error_);
+        pane.end_card();
     }
-    // Which DNS reaches Sony's servers: Orbit's own encrypted one (default, works behind a DNS filter), or the network's.
-    pane.rule();
-    pane.fine(state.system.own_dns
-                  ? tr("Orbit Store\xE2\x80\x99s DNS is on. Sony\xE2\x80\x99s servers are looked up through Orbit\xE2\x80\x99s own "
-                       "encrypted DNS, so a DNS filter on your network cannot block game updates.")
-                  : tr("Orbit Store\xE2\x80\x99s DNS is off. Sony\xE2\x80\x99s servers are looked up through your network\xE2\x80\x99s DNS "
-                       "only, so a DNS filter that blocks them will stop game updates."));
-    const bool dns_saving = result.busy && result.setting == Setting::own_dns;
-    pane.buttons({{Kind::own_dns_toggle,
-                   state.system.own_dns ? tr("Turn off Orbit Store\xE2\x80\x99s DNS") : tr("Turn on Orbit Store\xE2\x80\x99s DNS"),
-                   ui::ButtonKind::secondary, !dns_saving}});
-    if (result.setting == Setting::own_dns && !result.error.empty())
-        pane.error(result.error);
-    pane.end_card();
-    pane.gap(10.0f);
 
     // ---- the TV app ----
     const TvAppStatus &tv = state.tv_app;
@@ -1192,7 +937,7 @@ void SettingsScreen::build_updates(Pane &pane) const
                                 : installable ? tr("Update TV app")
                                               : tr("Replace with this release");
             row.push_back({installable ? Kind::tv_install : Kind::tv_replace, label,
-                           ui::ButtonKind::secondary,
+                           ui::ButtonKind::primary,
                            !disabled && wait == 0 && fresh && !confirm_replace_});
         }
         pane.buttons(row);
@@ -1217,7 +962,7 @@ void SettingsScreen::build_updates(Pane &pane) const
                            "replaces it with release {version}. This app keeps running until you "
                            "close it.",
                            {{"version", tv.latest_version}}));
-            pane.buttons({{Kind::tv_replace, tr("Replace"), ui::ButtonKind::secondary,
+            pane.buttons({{Kind::tv_replace, tr("Replace"), ui::ButtonKind::primary,
                            !disabled && wait == 0 && fresh, 1},
                           {Kind::tv_keep, tr("Keep my copy")}});
         }
@@ -1287,7 +1032,7 @@ void SettingsScreen::build_updates(Pane &pane) const
                                                : tr("Orbit didn\xE2\x80\x99t restart"),
                     text, restart == Restart::failed);
         if (ctx_.store.can_start())
-            pane.buttons({{Kind::restart_retry, tr("Try again"), ui::ButtonKind::secondary}});
+            pane.buttons({{Kind::restart_retry, tr("Try again"), ui::ButtonKind::primary}});
     }
     else if (!state.have_service_update || !service.available)
     {
@@ -1319,19 +1064,20 @@ void SettingsScreen::build_updates(Pane &pane) const
                  installing                                  ? tr("Installing\xE2\x80\xA6")
                  : service.latest_version == running_service ? tr("Reinstall release")
                                                              : tr("Install update"),
-                 ui::ButtonKind::secondary,
+                 service.update_available ? ui::ButtonKind::primary : ui::ButtonKind::secondary,
                  !disabled && wait == 0 && fresh});
         }
         if (!confirm_restart_)
             row.push_back(
                 {Kind::service_restart, tr("Restart download service"),
-                 ui::ButtonKind::secondary,
+                 service.restart_required ? ui::ButtonKind::primary : ui::ButtonKind::secondary,
                  !disabled});
         pane.buttons(row);
         std::string status;
-        if (service.phase == "downloading")
+        // During Update Orbit, its own card shows the progress.
+        if (service.phase == "downloading" && !service.update_all)
             status = tr("Downloading Orbit: {size}", {{"size", format_bytes(service.received)}});
-        else if (service.phase == "saving")
+        else if (service.phase == "saving" && !service.update_all)
             status = tr("Saving the verified release\xE2\x80\xA6");
         else if (wait > 0 && !service.busy)
             status = tr("Please wait {seconds} s before another request.",
@@ -1355,10 +1101,12 @@ void SettingsScreen::build_updates(Pane &pane) const
         if (confirm_restart_)
         {
             pane.notice(tr("Restart the download service?"),
-                        tr("Active downloads pause. This app stops Orbit and starts it again, then "
-                        "you can resume your downloads from Downloads."));
+                        service.self_restart
+                            ? std::string(tr("Active downloads pause and continue once Orbit is back."))
+                            : std::string(tr("Active downloads pause. This app stops Orbit and starts it again, then "
+                                             "you can resume your downloads from Downloads.")));
             pane.buttons(
-                {{Kind::restart_confirm, tr("Restart now"), ui::ButtonKind::secondary, !disabled},
+                {{Kind::restart_confirm, tr("Restart now"), ui::ButtonKind::primary, !disabled},
                  {Kind::restart_cancel, tr("Not now")}});
         }
         if (error_setting_ == Setting::service_check ||
@@ -1369,6 +1117,57 @@ void SettingsScreen::build_updates(Pane &pane) const
             pane.error(service.error);
     }
     pane.end_card();
+    pane.gap(10.0f);
+    // ---- installed games with a patch on Sony's servers ----
+    pane.begin_card(tr("Game updates"),
+                    tr("Your installed games are checked against Sony\xE2\x80\x99s servers when Orbit "
+                       "starts and every six hours."));
+    if (!state.have_game_updates)
+        pane.fine(tr("Loading\xE2\x80\xA6"));
+    else
+    {
+        const GameUpdateStatus &games = state.game_update_status;
+        if (!games.supported)
+            pane.fine(tr("The game update check is not running on this console."));
+        else
+        {
+            pane.version_row(games.checking ? std::string(tr("Checking\xE2\x80\xA6"))
+                             : games.checked_at > 0.0
+                                 ? tr("Checked {time}", {{"time", format_age(games.checked_at, now)}})
+                                 : std::string(tr("Not checked yet")),
+                             tr("Updates found: {count}", {{"count", std::to_string(games.count)}}));
+            if (games.failed > 0)
+            {
+                pane.fine(tr("Games that could not be checked: {count}",
+                             {{"count", std::to_string(games.failed)}}));
+                if (!games.detail.empty())
+                    pane.fine(tr("First failure: {detail}", {{"detail", games.detail}}));
+            }
+            if (!games.error.empty())
+                pane.notice({}, tr(games.error));
+            const bool looking = games.checking || (result.busy && result.setting == Setting::game_updates);
+            pane.buttons({{Kind::game_updates_check,
+                           looking ? tr("Checking\xE2\x80\xA6") : tr("Check for game updates"),
+                           ui::ButtonKind::secondary, !looking}});
+            if (error_setting_ == Setting::game_updates && !error_.empty())
+                pane.notice({}, tr(error_));
+        }
+    }
+    // Which DNS reaches Sony's servers: Orbit's own encrypted one (default, works behind a DNS filter), or the network's.
+    pane.rule();
+    pane.fine(state.system.own_dns
+                  ? tr("Orbit Store\xE2\x80\x99s DNS is on. Sony\xE2\x80\x99s servers are looked up through Orbit\xE2\x80\x99s own "
+                       "encrypted DNS, so a DNS filter on your network cannot block game updates.")
+                  : tr("Orbit Store\xE2\x80\x99s DNS is off. Sony\xE2\x80\x99s servers are looked up through your network\xE2\x80\x99s DNS "
+                       "only, so a DNS filter that blocks them will stop game updates."));
+    const bool dns_saving = result.busy && result.setting == Setting::own_dns;
+    pane.buttons({{Kind::own_dns_toggle,
+                   state.system.own_dns ? tr("Turn off Orbit Store\xE2\x80\x99s DNS") : tr("Turn on Orbit Store\xE2\x80\x99s DNS"),
+                   ui::ButtonKind::secondary, !dns_saving}});
+    if (result.setting == Setting::own_dns && !result.error.empty())
+        pane.error(result.error);
+    pane.end_card();
+    pane.gap(10.0f);
 }
 
 // ---- More: what stays in the browser version ----
@@ -1377,170 +1176,160 @@ void SettingsScreen::build_zero(Pane &pane) const
 {
     const auto &system=ctx_.store.state().system;
     pane.heading("Orbit Zero");
-    pane.body("Use your computer to download games and transfer them to this PS5 over Wi-Fi or Ethernet.");
-    pane.fine("Open Orbit Zero on your computer, connect to this console and enter the PS5 pairing code. Then enable it here.");
+    pane.body(tr("Use your computer to download games and transfer them to this PS5 over Wi-Fi or Ethernet."));
+    pane.fine(tr("Open Orbit Zero on your computer, connect to this console and enter the PS5 pairing code. Then enable it here."));
     if(system.zero_configured) {
-        pane.version_row("Computer",system.zero_address);
-        pane.version_row("Orbit Zero",system.zero_enabled ? "Enabled" : "Off");
+        pane.version_row(tr("Computer"),system.zero_address);
+        pane.version_row("Orbit Zero",system.zero_enabled ? tr("Enabled") : tr("Off"));
         if(system.zero_enabled) pane.body(system.zero_preference=="prefer-ps5" ?
-            "Your preference uses the PS5 when the selected source is reachable, otherwise your computer. Running downloads keep their route." :
-            "Downloads run on your computer and transfer to your selected PS5 drive. Keep Orbit Zero open.");
+            tr("Your preference uses the PS5 when the selected source is reachable, otherwise your computer. Running downloads keep their route.") :
+            tr("Downloads run on your computer and transfer to your selected PS5 drive. Keep Orbit Zero open."));
         pane.error(system.zero_error);
-        pane.buttons({{Kind::zero_toggle,system.zero_enabled?"Turn off Orbit Zero":"Enable Orbit Zero",ui::ButtonKind::secondary,!ctx_.store.setting_result().busy}});
+        pane.buttons({{Kind::zero_toggle,system.zero_enabled?tr("Turn off Orbit Zero"):tr("Enable Orbit Zero"),ui::ButtonKind::primary,!ctx_.store.setting_result().busy}});
         if(ctx_.store.setting_result().setting==Setting::zero) pane.error(ctx_.store.setting_result().error);
-    } else pane.body("No computer paired. Use Console setup in the desktop app to connect.");
+    } else pane.body(tr("No computer paired. Use Console setup in the desktop app to connect."));
 }
+
+// ---- Appearance: kept on this console, never sent to Orbit ----
 
 void SettingsScreen::build_appearance(Pane &pane) const
 {
+    const look::Prefs &prefs = look::prefs();
     const ui::Type &type = ctx_.type;
-    pane.heading(tr("Personalisation"));
-    pane.subheading(tr("Sounds"));
-    pane.body(ctx_.sounds_on ? tr("Menu sounds are on: you hear a sound when you move and select.")
-                             : tr("Menu sounds are off. The app is silent."));
-    pane.volume_row(tr("Volume"), ctx_.sound_volume);
-    pane.buttons({{Kind::sounds_toggle, ctx_.sounds_on ? tr("Turn off sounds") : tr("Turn on sounds"),
-                   ui::ButtonKind::secondary}});
-    if (ctx_.store.setting_result().setting == Setting::sounds)
-        pane.error(ctx_.store.setting_result().error);
+    pane.width = 1220.0f; // four cards side by side
+    pane.heading(tr("Interface"));
+    pane.body(tr("Choose how Orbit looks and moves on this device. Your queue, favourites and "
+                 "settings stay the same."));
     pane.gap(12.0f);
-    pane.rule();
-    pane.subheading(tr("Background"));
-    pane.body(tr("Choose the background of the app. Game artwork still shows over it."));
-    pane.gap(10.0f);
-    for (std::size_t i = 0; i < appearance::count(); ++i)
+    constexpr int kCards = static_cast<int>(look::Interface::count);
+    constexpr float kCardGap = 18.0f;
+    const float w = (pane.width - kCardGap * (kCards - 1)) / kCards;
+    const float thumb = 160.0f;
+    const float h = 12.0f + thumb + 60.0f;
+    for (int i = 0; i < kCards; ++i)
     {
-        const appearance::Preset &preset = appearance::preset(i);
-        const bool chosen = i == ctx_.appearance;
-        const ui::Rect r{pane.x, pane.y, pane.width, 92.0f};
+        const auto interface = static_cast<look::Interface>(i);
+        const ui::Rect r{pane.x + static_cast<float>(i) * (w + kCardGap), pane.y, w, h};
         if (pane.list != nullptr)
         {
-            ui::DrawList &list = *pane.list;
-            const float f = pane.amount();
-            ui::state_fill(list, r, kCardRadius, f, chosen);
-            const float mx = r.x + 24.0f + 14.0f;
-            if (chosen)
+            hui::gfx::DrawList &list = *pane.list;
+            const float focus = pane.amount();
+            ui::focus_ring(list, r, 20.0f, focus);
+            // Opaque underneath, so the ring's glow stays outside the card.
+            list.rounded_rect(r, 20.0f, ui::Color::rgb(0x101010, 0.96f));
+            list.rounded_rect(r, 20.0f, ui::Color::rgb(0xffffff, 0.06f + 0.08f * focus));
+            draw_interface_thumb(ctx_, list, i, {r.x + 12.0f, r.y + 12.0f, r.w - 24.0f, thumb});
+            const float name_y = r.y + 12.0f + thumb + 40.0f;
+            ui::text(list, type.medium, tr(look::title(interface)), r.x + 16.0f, name_y, 22.0f,
+                     ui::color::text);
+            if (interface == prefs.interface)
             {
-                list.circle(mx, r.cy(), 14.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
-                ui::icon_check(list, mx, r.cy(), 16.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.4f);
+                const char *label = tr("In use");
+                const float pill = type.semibold.measure(label, 14.0f) + 20.0f;
+                const ui::Rect tag{r.x + r.w - 16.0f - pill, name_y - 20.0f, pill, 26.0f};
+                list.rounded_rect(tag, 13.0f, ui::Color::rgb(0xffffff));
+                ui::text(list, type.semibold, label, tag.cx(), tag.cy() + 5.0f, 14.0f,
+                         ui::Color::rgb(0x000000), ui::Align::center);
             }
-            else
-                list.ring(mx, r.cy(), 13.5f, 1.0f, f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::color::text3);
-            const float tx = mx + 14.0f + 20.0f;
-            const float rx = r.x + r.w - 24.0f;
-            ui::text_fit(list, type.medium, tr(preset.name), tx, r.cy() - 6.0f, 21.0f, 470.0f, ui::state_ink(f, chosen));
-            ui::text_fit(list, type.regular, tr(preset.about), tx, r.cy() + 22.0f, 16.0f, 470.0f,
-                         ui::state_ink_dim(f));
-            if (preset.animated)
-                ui::text(list, type.medium, tr("Animated"), rx, r.cy() + 7.0f, 19.0f, ui::state_ink_dim(f),
-                         ui::Align::right);
         }
-        pane.add(Kind::appearance, static_cast<int>(i), r, true);
-        ++pane.row;
-        pane.y += r.h + 12.0f;
+        pane.add(Kind::interface_card, i, r, true);
     }
-    if (ctx_.store.setting_result().setting == Setting::appearance)
-        pane.error(ctx_.store.setting_result().error);
-    pane.fine(tr("Saved on this console. Animated backgrounds use a little more graphics power."));
+    ++pane.row;
+    pane.y += h + 22.0f;
+    pane.gap(10.0f);
+
+    // Choices as pills, the chosen one lit; with a label above them.
+    const auto pills = [&](Kind kind, const std::vector<std::string> &options, int selected)
+    {
+        std::vector<Pane::Button> buttons;
+        for (int i = 0; i < static_cast<int>(options.size()); ++i)
+            buttons.push_back({kind, options[static_cast<std::size_t>(i)],
+                               i == selected ? ui::ButtonKind::light : ui::ButtonKind::secondary,
+                               true, i});
+        pane.buttons(buttons);
+    };
+    const auto choices = [&](const char *label, Kind kind, const std::vector<std::string> &options,
+                             int selected)
+    {
+        pane.subheading(label);
+        pills(kind, options, selected);
+    };
+    choices(tr("Motion"), Kind::motion, {tr("Full"), tr("Reduced")}, prefs.reduced_motion ? 1 : 0);
+    switch (prefs.interface)
+    {
+    case look::Interface::crossbar:
+    {
+        std::vector<std::string> options;
+        for (int i = 0; i < static_cast<int>(look::Ribbons::count); ++i)
+            options.push_back(tr(look::ribbons_title(static_cast<look::Ribbons>(i))));
+        choices(tr("Ribbons"), Kind::ribbons, options, static_cast<int>(prefs.ribbons));
+        break;
+    }
+    case look::Interface::cinema:
+        choices(tr("Art behind menus"), Kind::art_behind, {tr("Blurred game art"), tr("Plain black")},
+                prefs.art_behind ? 0 : 1);
+        break;
+    case look::Interface::panorama:
+    {
+        std::vector<std::string> options;
+        for (int i = 0; i < static_cast<int>(look::Accent::count); ++i)
+            options.push_back(tr(look::accent_title(static_cast<look::Accent>(i))));
+        choices(tr("Accent colour"), Kind::accent, options, static_cast<int>(prefs.accent));
+        choices(tr("Art behind pages"), Kind::art_behind, {tr("Faint game art"), tr("Plain black")},
+                prefs.art_behind ? 0 : 1);
+        break;
+    }
+    default:
+        break;
+    }
+    // The language, as the browser's Language setting: Automatic follows the console.
+    pane.gap(10.0f);
+    pane.subheading(tr("Language"));
+    pane.body(tr("Choose the language Orbit uses on this device."));
+    pills(Kind::language, language_options(), language_index());
 }
 
-void SettingsScreen::build_language(Pane &pane) const
+std::vector<std::string> SettingsScreen::language_options() const
 {
-    const ui::Type &type = ctx_.type;
-    pane.heading(tr("Language"));
-    pane.subheading(tr("Keyboard"));
-    pane.body(tr("The on-screen keyboard\xE2\x80\x99s letters. Automatic uses AZERTY when the app is in French."));
-    pane.gap(10.0f);
-    {
-        const char *names[] = {tr("Automatic"), "QWERTY", "AZERTY"};
-        constexpr float kGap = 12.0f;
-        const float w = (pane.width - 2.0f * kGap) / 3.0f;
-        const std::string &kb = ctx_.keyboard_choice;
-        for (int i = 0; i < 3; ++i)
-        {
-            const bool chosen = i == 0 ? kb != "qwerty" && kb != "azerty" : kb == (i == 1 ? "qwerty" : "azerty");
-            const ui::Rect r{pane.x + static_cast<float>(i) * (w + kGap), pane.y, w, 76.0f};
-            if (pane.list != nullptr)
-            {
-                ui::DrawList &list = *pane.list;
-                const float f = pane.amount();
-                ui::state_fill(list, r, kCardRadius, f, chosen);
-                const float mx = r.x + 24.0f + 14.0f;
-                if (chosen)
-                {
-                    list.circle(mx, r.cy(), 14.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
-                    ui::icon_check(list, mx, r.cy(), 16.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.4f);
-                }
-                else
-                    list.ring(mx, r.cy(), 13.5f, 1.0f, f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::color::text3);
-                ui::text_fit(list, type.medium, names[i], mx + 34.0f, r.cy() + 7.0f, 21.0f, w - 90.0f,
-                             ui::state_ink(f, chosen));
-            }
-            pane.add(Kind::keyboard, i, r, true);
-        }
-        ++pane.row;
-        pane.y += 76.0f + 10.0f;
-    }
-    pane.gap(12.0f);
-    pane.rule();
-    pane.subheading(tr("App language"));
-    pane.body(tr("Choose the language of the app. Automatic follows the console\xE2\x80\x99s language."));
-    pane.gap(10.0f);
-    const std::string_view system = i18n::resolve({}, ctx_.system_language);
-    const bool automatic = ctx_.language_choice.empty() || ctx_.language_choice == "auto" ||
-                           !i18n::supported(ctx_.language_choice);
-    for (std::size_t i = 0; i <= i18n::choice_count(); ++i)
-    {
-        const bool chosen = i == 0 ? automatic : !automatic && ctx_.language_choice == i18n::choice(i - 1).code;
-        const ui::Rect r{pane.x, pane.y, pane.width, 76.0f};
-        if (pane.list != nullptr)
-        {
-            ui::DrawList &list = *pane.list;
-            const float f = pane.amount();
-            ui::state_fill(list, r, kCardRadius, f, chosen);
-            const float mx = r.x + 24.0f + 14.0f;
-            if (chosen)
-            {
-                list.circle(mx, r.cy(), 14.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
-                ui::icon_check(list, mx, r.cy(), 16.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.4f);
-            }
-            else
-                list.ring(mx, r.cy(), 13.5f, 1.0f, f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::color::text3);
-            const float tx = mx + 14.0f + 20.0f;
-            if (i == 0)
-            {
-                std::string now;
-                for (std::size_t k = 0; k < i18n::choice_count(); ++k)
-                    if (i18n::choice(k).code == system)
-                        now = i18n::choice(k).name;
-                ui::text_fit(list, type.medium, tr("Automatic"), tx, r.cy() - 6.0f, 21.0f, 700.0f,
-                             ui::state_ink(f, chosen));
-                ui::text_fit(list, type.regular, now, tx, r.cy() + 20.0f, 16.0f, 700.0f, ui::state_ink_dim(f));
-            }
-            else
-            {
-                ui::text_fit(list, type.medium, i18n::choice(i - 1).name, tx, r.cy() + 7.0f, 21.0f, 700.0f,
-                             ui::state_ink(f, chosen));
-            }
-        }
-        pane.add(Kind::language, static_cast<int>(i), r, true);
-        ++pane.row;
-        pane.y += r.h + 10.0f;
-    }
-    if (ctx_.store.setting_result().setting == Setting::language || ctx_.store.setting_result().setting == Setting::keyboard)
-        pane.error(ctx_.store.setting_result().error);
+    std::string automatic = "English";
+    for (const i18n::Language &l : i18n::languages())
+        if (l.code == i18n::system())
+            automatic = std::string(l.name);
+    std::vector<std::string> out{tr("Automatic ({language})", {{"language", automatic}})};
+    for (const i18n::Language &l : i18n::languages())
+        out.emplace_back(l.name);
+    return out;
+}
+
+int SettingsScreen::language_index() const
+{
+    const std::span<const i18n::Language> all = i18n::languages();
+    for (int i = 0; i < static_cast<int>(all.size()); ++i)
+        if (all[static_cast<std::size_t>(i)].code == look::prefs().language)
+            return i + 1;
+    return 0;
+}
+
+void SettingsScreen::choose_language(int index) const
+{
+    const std::span<const i18n::Language> all = i18n::languages();
+    if (index < 0 || index > static_cast<int>(all.size()))
+        return;
+    look::Prefs prefs = look::prefs();
+    prefs.language = index == 0 ? std::string() : std::string(all[static_cast<std::size_t>(index - 1)].code);
+    look::set(prefs);
+    (void)i18n::choose(prefs.language);
 }
 
 void SettingsScreen::build_more(Pane &pane) const
 {
     const Snapshot &state = ctx_.store.state();
     pane.heading(tr("More settings"));
-    pane.body(tr("Auto-start, payload managers and diagnostics are in the browser version of "
-              "Orbit."));
+    pane.body(tr("Auto-start and payload managers are in the browser version of Orbit."));
     pane.fine(tr("On this PS5, the browser version is the Orbit Store icon in your Media area. On a "
               "phone or computer, pair it under Pair a device."));
     if (ctx_.open_browser)
-        pane.buttons({{Kind::open_browser, tr("Open browser version"), ui::ButtonKind::secondary}});
+        pane.buttons({{Kind::open_browser, tr("Open browser version"), ui::ButtonKind::primary}});
     pane.gap(12.0f);
     pane.rule();
     const std::string running = app_release_version(ctx_.app_version);
@@ -1550,10 +1339,45 @@ void SettingsScreen::build_more(Pane &pane) const
     pane.version_row(tr("Game updates API"), state.system.api_game_updates > 0
                                                  ? std::to_string(state.system.api_game_updates)
                                                  : tr("Unknown"));
-    pane.version_row(tr("Artwork API"), state.system.api_artwork > 0
-                                            ? std::to_string(state.system.api_artwork)
-                                            : tr("Unknown"));
     pane.version_row(tr("Orbit DNS"), state.system.dns.empty() ? tr("Unknown") : state.system.dns);
+    // ---- a report for a bug report ----
+    const SettingResult &result = ctx_.store.setting_result();
+    const bool saving = result.busy && result.setting == Setting::diagnostics;
+    pane.gap(12.0f);
+    pane.rule();
+    pane.heading(tr("Diagnostic report"));
+    pane.body(tr("Save a report of Orbit\xE2\x80\x99s recent activity to a drive, then attach it to your bug "
+                 "report on GitHub. It has no game titles, download links, passwords or tokens."));
+    // In the browser's order (src/Diagnostics.tsx).
+    pane.buttons({{Kind::view_diagnostics, tr("View diagnostics"), ui::ButtonKind::secondary, true},
+                  {Kind::save_diagnostics, saving ? tr("Saving\xE2\x80\xA6") : tr("Save diagnostic report"),
+                   ui::ButtonKind::secondary, !saving}});
+    if (!state.diagnostics_path.empty())
+        pane.fine(tr("Saved to {path}", {{"path", state.diagnostics_path}}));
+    if (result.setting == Setting::diagnostics && !result.error.empty())
+        pane.error(result.error);
+    // ---- menu sounds and PS4 titles ----
+    {
+        const SettingResult &prefs_result = ctx_.store.setting_result();
+        pane.gap(12.0f);
+        pane.rule();
+        pane.buttons({{Kind::sounds_toggle,
+                       state.system.sounds_off ? tr("Turn menu sounds on") : tr("Turn menu sounds off"),
+                       ui::ButtonKind::secondary, !(prefs_result.busy && prefs_result.setting == Setting::sounds)},
+                      {Kind::ps4_toggle,
+                       state.system.ps4_hidden ? tr("Show PS4 games") : tr("Hide PS4 games"),
+                       ui::ButtonKind::secondary, !(prefs_result.busy && prefs_result.setting == Setting::ps4)}});
+    }
+}
+
+// What the diagnostic report says about this app.
+void SettingsScreen::save_diagnostics() const
+{
+    std::string interface = look::title(look::current());
+    for (char &c : interface)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    ctx_.store.save_diagnostics(app_release_version(ctx_.app_version),
+                                std::string(i18n::language()) + "|" + interface);
 }
 
 // ---- input ----
@@ -1562,74 +1386,135 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
 {
     const Snapshot &state = ctx_.store.state();
     feedback.play(hui::audio::Cue::select);
+    look::Prefs prefs = look::prefs();
     switch (control.kind)
     {
-    case Kind::nas_url:
-        nas_edit_ = true;
-        if (nas_url_.empty())
-            nas_url_ = "https://";
-        nas_keyboard_.enter();
-        nas_keyboard_.set_length(static_cast<int>(nas_url_.size()));
-        feedback.play(hui::audio::Cue::modal_open);
+    case Kind::viking_check:
+        ctx_.store.start_browser({}, {}, true, true);
         break;
-    case Kind::sound_volume:
-        break; // left and right change it
-    case Kind::sounds_toggle:
-        ctx_.sounds_on = !ctx_.sounds_on; // at once; the service keeps it for next time
-        ctx_.store.set_sounds_off(!ctx_.sounds_on);
+    case Kind::viking_account:
+        ctx_.store.start_browser({}, {}, true);
         break;
-    case Kind::appearance:
-        // Shown at once, kept by the download service (the app itself cannot write to /data).
-        ctx_.appearance = static_cast<std::size_t>(control.index);
-        error_.clear();
-        appearance::save(ctx_.appearance);
-        ctx_.store.set_appearance(appearance::preset(ctx_.appearance).id);
+    case Kind::archive_sign_in:
+        archive_sign_out_ = false;
+        archive_sign_in_.open();
         break;
-    case Kind::keyboard:
-        ctx_.keyboard_choice = control.index == 1 ? "qwerty" : control.index == 2 ? "azerty" : "auto";
-        error_.clear();
-        ctx_.store.set_keyboard(ctx_.keyboard_choice);
+    case Kind::archive_sign_out:
+        archive_sign_out_ = true; // asks first
+        break;
+    case Kind::archive_sign_out_confirm:
+        archive_sign_out_ = false;
+        ctx_.store.sign_out_archive();
+        break;
+    case Kind::archive_sign_out_cancel:
+        archive_sign_out_ = false;
+        break;
+    case Kind::interface_card:
+        // The keep check (App) follows; it reverts by itself after 15 seconds.
+        if (control.index != static_cast<int>(prefs.interface))
+            look::choose(static_cast<look::Interface>(control.index), ctx_.clock);
+        break;
+    case Kind::motion:
+        prefs.reduced_motion = control.index == 1;
+        look::set(prefs);
+        break;
+    case Kind::accent:
+        prefs.accent = static_cast<look::Accent>(control.index);
+        look::set(prefs);
+        break;
+    case Kind::ribbons:
+        prefs.ribbons = static_cast<look::Ribbons>(control.index);
+        look::set(prefs);
+        break;
+    case Kind::art_behind:
+        prefs.art_behind = control.index == 0;
+        look::set(prefs);
         break;
     case Kind::language:
-    {
-        // Shown at once, kept by the download service (the app itself cannot write to /data).
-        const std::string saved = control.index == 0 ? std::string("auto")
-                                                     : std::string(i18n::choice(static_cast<std::size_t>(control.index) - 1).code);
-        ctx_.language_choice = saved;
-        error_.clear();
-        if (i18n::apply(ctx_.language_dir, saved, ctx_.system_language))
-            ctx_.store.language_changed();
-        ctx_.store.set_language(saved);
+        choose_language(control.index);
         break;
-    }
     case Kind::zero_toggle:
         error_.clear();ctx_.store.set_zero(!state.system.zero_enabled);break;
-    case Kind::download_limit_select:
-        picker_.show(state.system.concurrent_downloads - 1);
-        feedback.play(hui::audio::Cue::modal_open);
+    case Kind::download_recovery_less:
+    case Kind::download_recovery_more:
+        if (!ctx_.store.setting_result().busy && control.index >= 0 && control.index < 4) {
+            int i = control.index, current = state.system.download_recovery[i];
+            const auto choices = download_choices(i, current);
+            auto at = std::find(choices.begin(), choices.end(), current);
+            if (control.kind == Kind::download_recovery_more && at + 1 != choices.end())
+                ctx_.store.set_download_recovery(i, *(at + 1));
+            else if (control.kind == Kind::download_recovery_less && at != choices.begin())
+                ctx_.store.set_download_recovery(i, *(at - 1));
+        }
         break;
-    case Kind::ps4_toggle:
+    case Kind::connections_less:
+    case Kind::connections_more:
+        if (!ctx_.store.setting_result().busy) {
+            const int current = state.system.download_connections;
+            const auto choices = connection_choices(current);
+            auto at = std::find(choices.begin(), choices.end(), current);
+            if (control.kind == Kind::connections_more && at + 1 != choices.end())
+                ctx_.store.set_download_connections(*(at + 1));
+            else if (control.kind == Kind::connections_less && at != choices.begin())
+                ctx_.store.set_download_connections(*(at - 1));
+        }
+        break;
+    case Kind::download_limit_less:
+    case Kind::download_limit_more:
+        if (!ctx_.store.setting_result().busy) {
+            const int limit = state.system.concurrent_downloads + (control.kind == Kind::download_limit_more ? 1 : -1);
+            if (limit >= 1 && limit <= 8) ctx_.store.set_download_limit(limit);
+        }
+        break;
+    case Kind::view_diagnostics:
         error_.clear();
-        ctx_.store.set_ps4_hidden(!state.system.ps4_hidden);
+        diagnostics_view_.open();
+        break;
+    case Kind::save_diagnostics:
+        error_.clear();
+        save_diagnostics();
         break;
     case Kind::own_dns_toggle:
         error_.clear();
         ctx_.store.set_own_dns(!state.system.own_dns);
         break;
-    case Kind::install_pkgs_choice:
+    case Kind::game_updates_check:
         error_.clear();
-        if (state.system.install_pkgs != (control.index == 0))
-            ctx_.store.set_install_pkgs(control.index == 0);
+        ctx_.store.check_game_updates();
         break;
-    case Kind::delete_pkgs_choice:
+    case Kind::sounds_toggle:
         error_.clear();
-        if (state.system.delete_pkgs != (control.index == 1))
-            ctx_.store.set_delete_pkgs(control.index == 1);
+        ctx_.store.set_sounds_off(!state.system.sounds_off);
         break;
-    case Kind::archives_choice:
+    case Kind::ps4_toggle:
         error_.clear();
-        if (state.system.delete_archives != (control.index == 1))
-            ctx_.store.set_delete_archives(control.index == 1);
+        ctx_.store.set_ps4_hidden(!state.system.ps4_hidden);
+        break;
+    case Kind::archives_toggle:
+        error_.clear();
+        ctx_.store.set_delete_archives(!state.system.delete_archives);
+        break;
+    case Kind::notifications_toggle:
+        error_.clear();
+        ctx_.store.set_download_notifications(!state.system.download_notifications);
+        break;
+    case Kind::notification_event:
+        error_.clear();
+        if (control.index >= 0 && control.index < static_cast<int>(state.system.notification_events.size()))
+            ctx_.store.set_notification_event(
+                control.index, !state.system.notification_events[static_cast<std::size_t>(control.index)]);
+        break;
+    case Kind::packages_toggle:
+        error_.clear();
+        ctx_.store.set_delete_packages(!state.system.delete_packages);
+        break;
+    case Kind::ntfy_open:
+        error_.clear();
+        ntfy_form_.open();
+        break;
+    case Kind::update_all:
+        error_.clear();
+        ctx_.store.update_orbit();
         break;
     case Kind::source:
     {
@@ -1647,18 +1532,8 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
         draft_acknowledged_ = !draft_acknowledged_;
         break;
     case Kind::save_sources:
-    {
         error_.clear();
-        // Only a typed address is sent; "https://" alone is the untouched prefix.
-        std::string address = nas_url_;
-        while (!address.empty() && address.back() == ' ')
-            address.pop_back();
-        std::optional<std::string> nas;
-        if (!address.empty() && address != "https://")
-            nas = address;
-        ctx_.store.save_sources(draft_, state.sources.notice_version, nas);
-        break;
-    }
+        ctx_.store.save_sources(draft_, state.sources.notice_version);
         break;
     case Kind::drive:
     {
@@ -1676,10 +1551,6 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
     case Kind::refresh_catalogue:
         error_.clear();
         ctx_.store.refresh_catalogue();
-        break;
-    case Kind::game_updates_check:
-        error_.clear();
-        ctx_.store.check_game_updates();
         break;
     case Kind::tv_check:
         error_.clear();
@@ -1769,6 +1640,12 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
             case Setting::storage:
                 intent.toast = tr("Default drive saved");
                 break;
+            case Setting::archive_sign_in:
+                intent.toast = tr("Signed in to Archive.org");
+                break;
+            case Setting::archive_sign_out:
+                intent.toast = tr("Signed out of Archive.org");
+                break;
             case Setting::service_restart:
                 confirm_restart_ = false;
                 break;
@@ -1780,43 +1657,37 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
             }
         }
     }
-
-    // The list of the simultaneous-downloads dropdown takes every button while it is open.
-    picker_.animate(dt);
-    if (focused && picker_.open)
+    if (archive_sign_in_.active())
     {
-        const int chosen = picker_.update(input, 8, feedback);
-        if (chosen >= 0 && !ctx_.store.setting_result().busy)
-            ctx_.store.set_download_limit(chosen + 1);
+        // The sign-in form takes all input until it closes.
+        if (focused)
+            archive_sign_in_.update(input, dt, feedback);
         return intent;
     }
-
-    // The My NAS address: the keyboard takes every button while it is open.
-    nas_keyboard_.set_azerty(ctx_.azerty);
-    nas_keyboard_.style.space_label = tr("Space");
-    nas_keyboard_.style.done_label = tr("Done");
-    nas_keyboard_.set_active(nas_edit_);
-    nas_keyboard_.update(dt);
-    nas_keyboard_in_.target = nas_edit_ ? 1.0f : 0.0f;
-    nas_keyboard_in_.update(dt, 14.0f);
-    if (focused && nas_edit_)
+    if (ntfy_form_.active())
     {
-        const hui::ui::Event event = nas_keyboard_.handle(input, feedback);
-        for (int i = 0; i < nas_keyboard_.erased() && !nas_url_.empty(); ++i)
-        {
-            std::size_t pos = nas_url_.size() - 1;
-            while (pos > 0 && (static_cast<unsigned char>(nas_url_[pos]) & 0xc0) == 0x80)
-                --pos;
-            nas_url_.resize(pos);
-        }
-        if (nas_url_.size() + nas_keyboard_.typed().size() <= 1000)
-            nas_url_ += nas_keyboard_.typed();
-        nas_keyboard_.set_length(static_cast<int>(nas_url_.size()));
-        if (event == hui::ui::Event::activated || event == hui::ui::Event::cancelled)
-        {
-            close_nas_editor();
-            feedback.play(hui::audio::Cue::modal_close);
-        }
+        if (focused)
+            ntfy_form_.update(input, dt, feedback);
+        return intent;
+    }
+    if (diagnostics_view_.active())
+    {
+        if (focused)
+            diagnostics_view_.update(input, dt, feedback);
+        return intent;
+    }
+    if (!look::is(look::Interface::store))
+    {
+        // A saved setting's toast (above) and what the rows ask for both count.
+        keep_row_focus(false);
+        const Intent more = look::is(look::Interface::cinema)     ? update_cinema(input, dt, feedback, focused)
+                            : look::is(look::Interface::panorama) ? update_panorama(input, dt, feedback, focused)
+                                                                  : update_crossbar(input, dt, feedback, focused);
+        keep_row_focus(true);
+        if (intent.kind == Intent::Kind::none && intent.toast.empty())
+            return more;
+        if (!more.toast.empty())
+            intent.toast = more.toast;
         return intent;
     }
 
@@ -1918,21 +1789,6 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
                 feedback.play(hui::audio::Cue::back);
                 return intent;
             }
-            if (here.kind == Kind::sound_volume &&
-                (input.nav == Direction::left || input.nav == Direction::right))
-            {
-                const int step = input.nav == Direction::right ? 10 : -10;
-                const int volume = std::clamp(ctx_.sound_volume + step, 0, 100);
-                if (volume == ctx_.sound_volume)
-                    refuse(feedback, input);
-                else
-                {
-                    ctx_.sound_volume = volume;
-                    ctx_.store.set_sound_volume(volume);
-                    feedback.play(hui::audio::Cue::slider); // the new level, heard at once
-                }
-                return intent;
-            }
             if (input.nav == Direction::left || input.nav == Direction::right)
             {
                 next = at + (input.nav == Direction::right ? 1 : -1);
@@ -2021,9 +1877,7 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
     if (in_content_ && !all.empty())
     {
         const Control &here = all[static_cast<std::size_t>(at)];
-        if (here.row == all.front().row && all.front().row != all.back().row)
-            target = 0.0f; // the first row shows the heading and text above it too
-        else if (here.row == all.back().row)
+        if (here.row == all.back().row)
             target = limit; // the last row shows what follows it too
         else if (here.rect.y - target < kViewTop + 60.0f)
             target = here.rect.y - (kViewTop + 60.0f);
@@ -2043,12 +1897,35 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
 
 void SettingsScreen::draw(Frame &frame, bool focused) const
 {
+    draw_look(frame, focused);
+    archive_sign_in_.draw(frame);
+    ntfy_form_.draw(frame);
+    diagnostics_view_.draw(frame);
+}
+
+void SettingsScreen::draw_look(Frame &frame, bool focused) const
+{
     (void)focused;
+    if (look::is(look::Interface::crossbar))
+    {
+        draw_crossbar(frame);
+        return;
+    }
+    if (look::is(look::Interface::cinema))
+    {
+        draw_cinema(frame);
+        return;
+    }
+    if (look::is(look::Interface::panorama))
+    {
+        draw_panorama(frame);
+        return;
+    }
     hui::gfx::DrawList &list = frame.scene;
     const ui::Type &type = ctx_.type;
     const float in = std::clamp(age_ / 0.3f, 0.0f, 1.0f);
     list.push_opacity(in);
-    ui::text(list, type.semibold, tr("App settings"), ui::kGutter, kTitleBaseline, 60.0f, ui::color::text);
+    ui::text(list, type.light, tr("App settings"), ui::kGutter, kTitleBaseline, 56.0f, ui::color::text);
 
     // The sections, as pills: the current one pale, as the tabs are.
     for (int i = 0; i < kSectionCount; ++i)
@@ -2057,16 +1934,24 @@ void SettingsScreen::draw(Frame &frame, bool focused) const
                          kNavWidth, kNavItem};
         const bool current = i == static_cast<int>(section_);
         const float focus = nav_focus_[i];
-        ui::state_fill(list, r, r.h * 0.5f, focus, current, true);
-        const ui::Color ink = ui::state_ink(focus, current, true);
-        if (static_cast<Section>(i) == Section::zero && ctx_.mark != 0)
-            // Orbit Zero is Orbit itself: the store's own mark, in the text colour.
-            list.image(ctx_.mark, {r.x + 44.0f - 20.0f, r.cy() - 20.0f, 40.0f, 40.0f}, hui::gfx::kFullUv, ink);
-        else
-            section_icon(list, static_cast<Section>(i), r.x + 44.0f, r.cy(), 28.0f, ink);
-        ui::text(list, type.medium, tr(kSections[i]), r.x + 78.0f, r.cy() + 7.5f, 21.0f, ink);
+        ui::focus_ring(list, r, r.h * 0.5f, focus);
+        if (current)
+            list.bordered_rect(r, r.h * 0.5f, ui::Color::rgb(0xffffff, 0.13f), 1.0f,
+                               ui::Color::rgb(0xffffff, 0.2f));
+        ui::text(list, type.medium, tr(kSections[i]), r.x + 30.0f, r.cy() + 7.5f, 21.0f,
+                 current || focus > 0.5f ? ui::color::text : ui::color::text2);
         if (static_cast<Section>(i) == Section::updates && update_available())
             list.circle(r.x + r.w - 32.0f, r.cy(), 7.0f, ui::color::action_hi);
+        if (static_cast<Section>(i) == Section::appearance)
+        {
+            // New in this version, as the browser's NEW label.
+            const float after = r.x + 30.0f + type.medium.measure(tr(kSections[i]), 21.0f) + 12.0f;
+            const char *label = tr("NEW");
+            const ui::Rect chip{after, r.cy() - 11.0f, type.semibold.measure(label, 13.0f) + 16.0f, 22.0f};
+            list.rounded_rect(chip, 6.0f, ui::Color::rgb(0xffffff));
+            ui::text(list, type.semibold, label, chip.cx(), chip.cy() + 4.6f, 13.0f,
+                     ui::Color::rgb(0x000000), ui::Align::center);
+        }
     }
 
     // The section: laid out once to size its cards, then drawn.
@@ -2081,59 +1966,22 @@ void SettingsScreen::draw(Frame &frame, bool focused) const
     list.pop_clip();
     list.pop_transform();
     list.pop_opacity();
-
-    // ---- the simultaneous-downloads list ----
-    if (picker_.in.value > 0.01f)
-    {
-        for (const Control &control : layout.controls)
-        {
-            if (control.kind != Kind::download_limit_select)
-                continue;
-            ui::Rect trigger = control.rect;
-            trigger.y -= scroll_.value;
-            std::vector<std::string> options;
-            for (int n = 1; n <= 8; ++n)
-                options.push_back(std::to_string(n));
-            frame.glass = true;
-            ui::select_menu(frame.overlay, type, trigger, options,
-                            ctx_.store.state().system.concurrent_downloads - 1, picker_.active,
-                            picker_.in.value, frame.glass_texture);
-        }
-    }
-
-    // ---- the My NAS address keyboard ----
-    if (nas_keyboard_in_.value > 0.01f)
-    {
-        hui::gfx::DrawList &overlay = frame.overlay;
-        frame.glass = true;
-        const float shown = nas_keyboard_in_.value;
-        overlay.push_opacity(shown);
-        overlay.push_transform(1.0f, 0.0f, 0.0f, 0.0f, 60.0f * (1.0f - shown));
-        const ui::Rect panel{0.0f, kKeyboardTop - 120.0f, 1920.0f, 1080.0f - kKeyboardTop + 120.0f};
-        overlay.glass(frame.glass_texture, panel, 0.0f, ui::Color::rgb(0xffffff));
-        overlay.rounded_rect(panel, 0.0f, ui::color::night1.with_alpha(0.78f));
-        overlay.rounded_rect({0.0f, panel.y, 1920.0f, 1.5f}, 0.0f, ui::color::line);
-        ui::text(overlay, type.regular, tr("My NAS index address"), ui::kGutter + 220.0f,
-                 panel.y + 50.0f, 20.0f, ui::color::text2);
-        const ui::Rect field{ui::kGutter + 220.0f, panel.y + 66.0f, 1280.0f, 56.0f};
-        overlay.rounded_rect(field, 16.0f, ui::Color::rgb(0xffffff, 0.1f));
-        ui::text_fit(overlay, type.regular, nas_url_, field.x + 20.0f, field.cy() + 7.0f, 20.0f,
-                     field.w - 40.0f, ui::color::text);
-        hui::ui::Canvas canvas{overlay, ctx_.fonts, frame.glass_texture, ctx_.clock};
-        nas_keyboard_.draw(canvas);
-        overlay.pop_transform();
-        overlay.pop_opacity();
-    }
 }
 
 std::vector<hui::ui::Hint> SettingsScreen::hints() const
 {
-    if (picker_.open)
-        return {{hui::ui::Button::cross, tr("Choose")}, {hui::ui::Button::circle, tr("Close")}};
-    if (nas_edit_)
-        return {{hui::ui::Button::square, tr("Delete")},
-                {hui::ui::Button::triangle, tr("Space")},
-                {hui::ui::Button::circle, tr("Close")}};
+    if (archive_sign_in_.active())
+        return archive_sign_in_.hints();
+    if (ntfy_form_.active())
+        return ntfy_form_.hints();
+    if (diagnostics_view_.active())
+        return diagnostics_view_.hints();
+    if (look::is(look::Interface::crossbar))
+        return crossbar_hints();
+    if (look::is(look::Interface::cinema))
+        return cinema_hints();
+    if (look::is(look::Interface::panorama))
+        return panorama_hints();
     if (in_content_)
         return {{hui::ui::Button::cross, tr("Select")}, {hui::ui::Button::circle, tr("Back")}};
     return {{hui::ui::Button::dpad, tr("Sections")},

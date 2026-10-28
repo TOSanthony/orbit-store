@@ -14,6 +14,7 @@ Archive extraction also links 7-Zip 26.03. Its sources are pinned in `tools/rele
 | GNU libmicrohttpd | 1.0.1 | LGPL-2.1-or-later | [licenses/LGPL-2.1.txt](licenses/LGPL-2.1.txt) | `libmicrohttpd-1.0.1.tar.gz` in each release; [gnu.org](https://www.gnu.org/software/libmicrohttpd/) |
 | curl (libcurl) | 8.18.0 | curl licence | [licenses/curl.txt](licenses/curl.txt) | `curl-8.18.0.tar.xz` in the source bundle; [curl.se](https://curl.se/download/curl-8.18.0.tar.xz) |
 | OpenSSL | 3.5.2 | Apache-2.0 | [licenses/Apache-2.0.txt](licenses/Apache-2.0.txt) | `openssl-3.5.2.tar.gz` in the source bundle; [openssl.org](https://github.com/openssl/openssl/releases/tag/openssl-3.5.2) |
+| SQLite | 3.54.1 | Public domain | [licenses/SQLite.txt](licenses/SQLite.txt) | `sqlite-amalgamation-3540100.zip` in the source bundle; [sqlite.org](https://www.sqlite.org/) |
 | cJSON | 1.7.19 | MIT | [licenses/cJSON-MIT.txt](licenses/cJSON-MIT.txt) | Exact files in `build-inputs/cjson/`; [DaveGamble/cJSON](https://github.com/DaveGamble/cJSON/tree/v1.7.19) |
 | libarchive (ZIP, 7z and RAR readers) | 3.8.1 | BSD-2-Clause | [licenses/libarchive-BSD-2-Clause.txt](licenses/libarchive-BSD-2-Clause.txt) | `libarchive-3.8.1.tar.xz` in the source bundle; [libarchive.org](https://www.libarchive.org/) |
 | liblzma (XZ Utils) | 5.8.1 | 0BSD | [licenses/liblzma-0BSD.txt](licenses/liblzma-0BSD.txt) | `xz-5.8.1.tar.gz` in the source bundle; [tukaani.org](https://tukaani.org/xz/) |
@@ -22,6 +23,8 @@ Archive extraction also links 7-Zip 26.03. Its sources are pinned in `tools/rele
 | React and React DOM | 19.3.0 | MIT | [licenses/React-MIT.txt](licenses/React-MIT.txt) | [facebook/react](https://github.com/facebook/react) |
 | scheduler | 0.28.0 | MIT | [licenses/scheduler-MIT.txt](licenses/scheduler-MIT.txt) | [facebook/react](https://github.com/facebook/react) |
 | Vite runtime helper (module preload) | 6.4.3 | MIT | [licenses/Vite-MIT.txt](licenses/Vite-MIT.txt) | [vitejs/vite](https://github.com/vitejs/vite) |
+| Inter Tight font (Cinema and Panorama interfaces), variable WOFF2 subsets from Fontsource | 5.3.0 | SIL Open Font License 1.1 | [licenses/InterTight-OFL.txt](licenses/InterTight-OFL.txt) | [rsms/inter-tight](https://github.com/rsms/inter-tight) |
+| Sora font (Crossbar interface), variable WOFF2 subsets from Fontsource | 5.3.0 | SIL Open Font License 1.1 | [licenses/Sora-OFL.txt](licenses/Sora-OFL.txt) | [sora-xor/sora-font](https://github.com/sora-xor/sora-font) |
 | Mozilla CA certificate bundle, via curl's CA Extract | bundle fetched by `tools/bootstrap.py` | MPL-2.0 | [licenses/MPL-2.0.txt](licenses/MPL-2.0.txt) | Embedded unmodified; [curl.se/docs/caextract.html](https://curl.se/docs/caextract.html) |
 
 libmicrohttpd is linked statically. Its complete source and Orbit's complete source are both provided, so you can rebuild `orbit_store.elf` with a modified libmicrohttpd using the steps in [BUILDING.md](BUILDING.md).
@@ -41,6 +44,7 @@ The native TV app is a separate program with its own build (`app/README.md`). It
 | stb_image, stb_vorbis | stb commit `2c980bb59875b0d32144a71867fbdebb2f77cd20` | Public domain or MIT | `app/src/third_party/stb/LICENSE` | [nothings/stb](https://github.com/nothings/stb) |
 | QR Code generator library (C) | commit `3c6d0b3cefb4e049dc337e82237c9644399716a8` | MIT | `app/src/third_party/qrcodegen/LICENSE` | [nayuki/QR-Code-generator](https://github.com/nayuki/QR-Code-generator) |
 | Inter typeface | 4.1 | SIL Open Font License 1.1 | `app/third_party/fonts/Inter-LICENSE.txt` | [rsms/inter](https://github.com/rsms/inter/releases/tag/v4.1) |
+| Inter Tight and Sora typefaces (Crossbar, Cinema and Panorama), static instances baked from google/fonts | google/fonts 6692879 | SIL Open Font License 1.1 | `app/third_party/fonts/InterTight-LICENSE.txt`, `app/third_party/fonts/Sora-LICENSE.txt` | [google/fonts](https://github.com/google/fonts) |
 | Interface sound effects (glass set) | from the kit above | GPL-3.0-or-later (BlackBearReloaded) | [licenses/GPL-3.0.txt](licenses/GPL-3.0.txt) | In this repository |
 
 The app's package also carries Orbit's payload, `orbit_store.elf`, so it includes every component listed above for the payload.

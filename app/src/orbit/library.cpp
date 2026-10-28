@@ -9,35 +9,12 @@
 
 #include "orbit/screens.hpp"
 #include "orbit/i18n.hpp"
+#include "orbit/look.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 
-namespace
-{
-// The usage ring runs from green when the drive is empty to red when it is full.
-hui::gfx::Color usage_colour(float used, bool on_light)
-{
-    struct Stop { float at; unsigned dark; unsigned light; };
-    static const Stop stops[] = {{0.0f, 0x34d27b, 0x15a34a}, {0.5f, 0xf5c542, 0xca9a04},
-                                 {0.75f, 0xf08a24, 0xc2610c}, {1.0f, 0xef4444, 0xdc2626}};
-    used = std::clamp(used, 0.0f, 1.0f);
-    for (int i = 1; i < 4; ++i)
-    {
-        if (used > stops[i].at && i < 3) continue;
-        const Stop &a = stops[i - 1], &b = stops[i];
-        const float t = (used - a.at) / (b.at - a.at);
-        const unsigned ca = on_light ? a.light : a.dark, cb = on_light ? b.light : b.dark;
-        const auto mix = [&](int shift) {
-            const float x = static_cast<float>((ca >> shift) & 255), y = static_cast<float>((cb >> shift) & 255);
-            return static_cast<unsigned>(x + (y - x) * t + 0.5f);
-        };
-        return hui::gfx::Color::rgb((mix(16) << 16) | (mix(8) << 8) | mix(0));
-    }
-    return hui::gfx::Color::rgb(on_light ? 0xdc2626 : 0xef4444);
-}
-}
 namespace orbit
 {
 
@@ -48,38 +25,11 @@ constexpr int kColumns = 6;
 constexpr float kTile = 268.333f;
 constexpr float kColumnStep = (1920.0f - 2.0f * ui::kGutter - kTile) / (kColumns - 1);
 constexpr float kCardStep = 346.0f;
-constexpr int kStorageColumns = 4;
-constexpr float kStorageTileW = 415.0f, kStorageTileH = 120.0f;
 constexpr float kKeyboardTop = 560.0f;
 constexpr const char *kViews[] = {/* i18n */ "All games", /* i18n */ "Installed", /* i18n */ "On drive", /* i18n */ "Unavailable"};
 constexpr int kViewCount = 4;
-constexpr const char *kSections[] = {/* i18n */ "Games", /* i18n */ "Storage"};
+constexpr const char *kSections[] = {/* i18n */ "Games", /* i18n */ "Files"};
 constexpr float kPanelWidth = 1000.0f;
-
-// A small drive (a stacked cylinder), drawn before the size of a game.
-void drive_icon(hui::gfx::DrawList &list, float cx, float cy, float size, ui::Color ink)
-{
-    const float k = size / 24.0f, t = 2.0f * k;
-    const auto arc = [&](float y, float from, float to)
-    {
-        constexpr int kSteps = 16;
-        float px = cx + 9.0f * k * std::cos(from), py = cy + y * k + 3.4f * k * std::sin(from);
-        for (int i = 1; i <= kSteps; ++i)
-        {
-            const float a = from + (to - from) * static_cast<float>(i) / kSteps;
-            const float nx = cx + 9.0f * k * std::cos(a), ny = cy + y * k + 3.4f * k * std::sin(a);
-            list.line(px, py, nx, ny, t, ink);
-            px = nx;
-            py = ny;
-        }
-    };
-    constexpr float kPi = 3.14159265f;
-    arc(-6.0f, 0.0f, 2.0f * kPi);
-    list.line(cx - 9.0f * k, cy - 6.0f * k, cx - 9.0f * k, cy + 6.0f * k, t, ink);
-    list.line(cx + 9.0f * k, cy - 6.0f * k, cx + 9.0f * k, cy + 6.0f * k, t, ink);
-    arc(0.0f, 0.0f, kPi);
-    arc(6.0f, 0.0f, kPi);
-}
 
 void library_icon(hui::gfx::DrawList &list, float cx, float cy, bool scan, ui::Color ink)
 {
@@ -102,7 +52,7 @@ void library_icon(hui::gfx::DrawList &list, float cx, float cy, bool scan, ui::C
 }
 
 void header_action(hui::gfx::DrawList &list, const ui::Type &type, const ui::Rect &r,
-                   std::string_view text, float focus, bool scan, bool enabled)
+                   std::string_view text, float focus, bool scan, bool enabled, bool folder = false)
 {
     const ui::Color ink = enabled ? ui::state_ink(focus) : ui::color::text.with_alpha(0.4f);
     if (enabled)
@@ -113,7 +63,10 @@ void header_action(hui::gfx::DrawList &list, const ui::Type &type, const ui::Rec
         list.bordered_rect(r, r.h * 0.5f, ui::Color::rgb(0xffffff, 0.04f), 1.0f, ui::Color::rgb(0xffffff, 0.08f));
     }
     const float width = type.medium.measure(text, 20.0f) + 40.0f;
-    library_icon(list, r.cx() - width * 0.5f + 12.0f, r.cy(), scan, ink);
+    if (folder)
+        icons::draw(list, icons::Icon::folder, r.cx() - width * 0.5f + 12.0f, r.cy(), 24.0f, ink, 1.8f);
+    else
+        library_icon(list, r.cx() - width * 0.5f + 12.0f, r.cy(), scan, ink);
     ui::text(list, type.medium, text, r.cx() - width * 0.5f + 40.0f, r.cy() + 7.0f, 20.0f, ink);
 }
 
@@ -133,6 +86,20 @@ void updates_action(hui::gfx::DrawList &list, const ui::Type &type, const ui::Re
     const float width = type.medium.measure(text, 20.0f) + 40.0f;
     ui::icon_download(list, r.cx() - width * 0.5f + 12.0f, r.cy(), 22.0f, ink);
     ui::text(list, type.medium, text, r.cx() - width * 0.5f + 40.0f, r.cy() + 7.0f, 20.0f, ink);
+}
+
+// "Check for updates", "Checking…", or the number of updates waiting; the same for DLC.
+std::string updates_label(const Snapshot &state)
+{
+    if (state.game_update_status.checking)
+        return tr("Checking\xE2\x80\xA6");
+    if (state.game_updates > 0)
+        return std::string(tr("Updates")) + " (" + std::to_string(state.game_updates) + ")";
+    return tr("Check for updates");
+}
+std::string dlc_label(const Snapshot &state)
+{
+    return std::string(tr("DLC")) + " (" + std::to_string(state.game_dlc) + ")";
 }
 
 bool in_view(const LibraryGame &game, int view)
@@ -240,7 +207,7 @@ std::string file_name(const std::string &path)
 
 LibraryScreen::LibraryScreen(Context &context) : Screen(context)
 {
-    keyboard_.style.theme = keyboard_theme();
+    xb::keyboard_look(keyboard_.style, false);
     keyboard_.style.bindings = hui::ui::KeyboardBindings::standard();
     keyboard_.style.max_length = 40;
     keyboard_.style.done_label = tr("Done");
@@ -250,18 +217,26 @@ LibraryScreen::LibraryScreen(Context &context) : Screen(context)
 void LibraryScreen::focus()
 {
     refilter();
-    ctx_.store.want_library_storage(section_ == 1 || (mode_ == 2 || mode_ == 3));
+    ctx_.store.want_library_storage(mode_ >= 2);
+    ctx_.store.want_files(section_ == 1);
 }
 
 void LibraryScreen::blur()
 {
     ctx_.store.want_library_storage(false);
+    ctx_.store.want_files(false);
 }
 
-void LibraryScreen::show_game(const std::string &title_id, const std::string &source_key, bool stay_in_section)
+void LibraryScreen::show_game(const std::string &title_id, const std::string &source_key)
 {
-    if (!stay_in_section)
-        section_ = 0;
+    if (section_ == 1)
+        leave_files();
+    select_game(title_id, source_key);
+}
+
+// A game's details, over Games or Files.
+void LibraryScreen::select_game(const std::string &title_id, const std::string &source_key)
+{
     selected_ = title_id;
     selected_key_ = source_key;
     mode_ = 0;
@@ -270,6 +245,8 @@ void LibraryScreen::show_game(const std::string &title_id, const std::string &so
     error_.clear();
     action_serial_ = ctx_.store.library_action().serial;
     panel_in_.snap(0.0f);
+    xb_.index = 0;
+    xb_.snap();
 }
 
 void LibraryScreen::refilter()
@@ -334,35 +311,6 @@ std::vector<const LibraryDrive *> LibraryScreen::destinations() const
     return out;
 }
 
-std::vector<const LibraryGame *> LibraryScreen::drive_games() const
-{
-    std::vector<const LibraryGame *> out;
-    const Snapshot &state = ctx_.store.state();
-    const LibraryDrive *drive = nullptr;
-    for (const LibraryDrive &d : state.library_storage.drives)
-    {
-        if (d.id == drive_id_)
-            drive = &d;
-    }
-    if (drive == nullptr && !state.library_storage.drives.empty())
-        drive = &state.library_storage.drives.front();
-    if (drive == nullptr)
-        return out;
-    for (const LibraryGame &game : state.library.games)
-    {
-        if (!game.on_drive)
-            continue;
-        // The console's own storage is the /user mount, but its games live under /data.
-        const bool console = drive->path == "/user" && game.path.rfind("/data/", 0) == 0;
-        const bool inside = game.path == drive->path ||
-                            (game.path.size() > drive->path.size() &&
-                             game.path.rfind(drive->path, 0) == 0 && game.path[drive->path.size()] == '/');
-        if (console || inside)
-            out.push_back(&game);
-    }
-    return out;
-}
-
 // Location and Format: every value the inventory reports, sorted. The picker
 // shows locations translated, so a choice maps back through this list.
 std::vector<std::string> LibraryScreen::filter_values() const
@@ -419,98 +367,75 @@ std::vector<LibraryScreen::Control> LibraryScreen::page_controls() const
     int row = 0;
     // Header actions, then one compact row of status tabs, search and location.
     float right = 1920.0f - ui::kGutter;
-    {
-        // As wide as its text, which changes to "Checking…" while it looks.
-        const std::string label = state.game_update_status.checking ? std::string(tr("Checking\xE2\x80\xA6"))
-                                                                    : std::string(tr("Check for updates"));
-        const float w = ui::button_width(type, label, 20.0f, ui::ButtonKind::secondary) + 40.0f;
-        out.push_back({Kind::updates, 0, row, {right - w, 112.0f, w, 66.0f}});
-        right -= w + 16.0f;
-    }
-    if (library.can("rescan"))
+    if (library.can("rescan") && section_ == 0)
     {
         const float w =
             ui::button_width(type, tr("Scan for games"), 20.0f, ui::ButtonKind::secondary) + 40.0f;
         out.push_back({Kind::scan, 0, row, {right - w, 112.0f, w, 66.0f}});
         right -= w + 16.0f;
     }
-    // Refresh only matters when the library is missing or unavailable; Scan for games covers the rest.
-    if (!state.have_library || !library.ready())
+    if (section_ == 0)
     {
-        const float w = ui::button_width(type, tr("Refresh library"), 18.0f, ui::ButtonKind::secondary);
+        // As wide as its text, which changes to "Checking…" while it looks.
+        const float w = ui::button_width(type, updates_label(state), 20.0f, ui::ButtonKind::secondary) + 40.0f;
+        out.push_back({Kind::updates, 0, row, {right - w, 112.0f, w, 66.0f}});
+        right -= w + 16.0f;
+        if (state.game_dlc > 0)
+        {
+            const float dw = ui::button_width(type, dlc_label(state), 20.0f, ui::ButtonKind::secondary) + 40.0f;
+            out.push_back({Kind::dlc, 0, row, {right - dw, 112.0f, dw, 66.0f}});
+            right -= dw + 16.0f;
+        }
+    }
+    if (section_ == 0 && (!state.have_library || !library.ready()))
+    {
+        // ShadowMount isn't answering. Everything else reads, scans and measures on its own.
+        const float w = ui::button_width(type, tr("Try again"), 18.0f, ui::ButtonKind::secondary);
         out.push_back({Kind::refresh, 0, row, {right - w, 112.0f, w, 66.0f}});
         right -= w + 16.0f;
     }
-    if (state.have_library && library.ready())
-        out.push_back({Kind::section, 1 - section_, row, {right - 204.0f, 112.0f, 204.0f, 66.0f}});
+    // Games and Files: Files works without ShadowMount, so it's always here.
+    out.push_back({Kind::section, 1 - section_, row, {right - 204.0f, 112.0f, 204.0f, 66.0f}});
     std::reverse(out.begin(), out.end());
     ++row;
-    if (!state.have_library || !library.ready())
-        return out;
-    // The message and the running-job bar float at the bottom of the screen (see draw), so
-    // nothing here moves when they appear.
-    float y = 216.0f;
-    if (section_ == 0)
+    if (section_ == 1)
     {
-        for (int v = 0; v < kViewCount; ++v)
-            out.push_back({Kind::view,
-                           v,
-                           row,
-                           {ui::kGutter + static_cast<float>(v) * 185.0f, y, 185.0f, 58.0f}});
-        out.push_back({Kind::search, 0, row, {930.0f, y, 580.0f, 58.0f}});
-        out.push_back({Kind::location, 0, row, {1530.0f, y, 290.0f, 58.0f}});
-        ++row;
-        y += 78.0f;
-        if (rows_.empty() && !library.games.empty())
-        {
-            const float rw =
-                ui::button_width(type, tr("Reset library filters"), 18.0f, ui::ButtonKind::secondary);
-            out.push_back({Kind::reset, 0, row, {960.0f - rw * 0.5f, y + 210.0f, rw, 44.0f}});
-            return out;
-        }
-        for (int i = 0; i < static_cast<int>(rows_.size()); ++i)
-        {
-            const int r = i / kColumns;
-            out.push_back({Kind::card,
-                           i,
-                           row + r,
-                           {ui::kGutter + static_cast<float>(i % kColumns) * kColumnStep,
-                            y + static_cast<float>(r) * kCardStep, kTile, kTile}});
-        }
+        const std::vector<Control> files =
+            files_controls(216.0f + (library.has_storage_job && library.storage_job.id > 0 ? 70.0f : 0.0f));
+        out.insert(out.end(), files.begin(), files.end());
         return out;
     }
-    // Storage: the drives, then the selected drive's games.
-    const std::vector<LibraryDrive> &drives = state.library_storage.drives;
-    y += 90.0f;
-    // A fixed grid of four slots per row, filled from the left, as wide as the page margins.
-    const float card_w = (1920.0f - 2 * ui::kGutter - 3 * 20.0f) / 4.0f;
-    for (int d = 0; d < static_cast<int>(drives.size()); ++d)
-        out.push_back({Kind::drive,
-                       d,
+    if (!state.have_library || !library.ready())
+        return out;
+    float y = 216.0f + (library.message.empty() && state.library_error.empty() ? 0.0f : 96.0f);
+    if (library.stale || library.scanning)
+        y += 36.0f;
+    if (library.has_storage_job && library.storage_job.id > 0)
+        y += 70.0f;
+    for (int v = 0; v < kViewCount; ++v)
+        out.push_back({Kind::view,
+                       v,
                        row,
-                       {ui::kGutter + static_cast<float>(d % 4) * (card_w + 20.0f),
-                        y + static_cast<float>(d / 4) * 190.0f, card_w, 170.0f}});
-    if (!drives.empty())
+                       {ui::kGutter + static_cast<float>(v) * 185.0f, y, 185.0f, 58.0f}});
+    out.push_back({Kind::search, 0, row, {930.0f, y, 580.0f, 58.0f}});
+    out.push_back({Kind::location, 0, row, {1530.0f, y, 290.0f, 58.0f}});
+    ++row;
+    y += 78.0f;
+    if (rows_.empty() && !library.games.empty())
     {
-        ++row;
-        y += 190.0f * static_cast<float>((drives.size() + 3) / 4) + 40.0f;
-        if (library.can("list_games"))
-        {
-            const float mw =
-                ui::button_width(type, tr("Measure game sizes"), 18.0f, ui::ButtonKind::secondary);
-            out.push_back({Kind::measure, 0, row, {ui::kGutter, y - 20.0f, mw, 44.0f}});
-            ++row;
-        }
-        y += 132.0f;
-        const std::vector<const LibraryGame *> games = drive_games();
-        // The drive's games as a grid of tiles: cover, title and size.
-        for (int g = 0; g < static_cast<int>(games.size()); ++g)
-            out.push_back({Kind::storage_game,
-                           g,
-                           row + g / kStorageColumns,
-                           {ui::kGutter + static_cast<float>(g % kStorageColumns) * (kStorageTileW + 20.0f),
-                            y + static_cast<float>(g / kStorageColumns) * (kStorageTileH + 16.0f),
-                            kStorageTileW, kStorageTileH}});
+        const float rw =
+            ui::button_width(type, tr("Reset library filters"), 18.0f, ui::ButtonKind::secondary);
+        out.push_back({Kind::reset, 0, row, {960.0f - rw * 0.5f, y + 140.0f, rw, 44.0f}});
+        return out;
+    }
+    for (int i = 0; i < static_cast<int>(rows_.size()); ++i)
+    {
+        const int r = i / kColumns;
+        out.push_back({Kind::card,
+                       i,
+                       row + r,
+                       {ui::kGutter + static_cast<float>(i % kColumns) * kColumnStep,
+                        y + static_cast<float>(r) * kCardStep, kTile, kTile}});
     }
     return out;
 }
@@ -603,6 +528,54 @@ float LibraryScreen::content_height() const
 
 // ---- input ----
 
+void LibraryScreen::run_library(const char *action, bool confirmed, const LibraryGame *game, const std::string &destination,
+                                int job, Feedback &feedback)
+{
+    api::Client::LibraryRequest request;
+    request.action = action;
+    if (game != nullptr)
+    {
+        request.title_id = game->title_id;
+        request.source_key = game->source_key;
+    }
+    request.destination_id = destination;
+    request.job_id = job;
+    request.confirmed = confirmed;
+    error_.clear();
+    ctx_.store.run_library_action(std::move(request));
+    feedback.play(hui::audio::Cue::select);
+}
+
+void LibraryScreen::update_keyboard(const InputFrame &input, Feedback &feedback)
+{
+    // Library's search, the folder's search, or a name or password for Files.
+    std::string &text = keyboard_for_ == 1 ? files_query_ : keyboard_for_ == 2 ? file_text_ : query_;
+    const hui::ui::Event event = keyboard_.handle(input, feedback);
+    bool changed = false;
+    for (int i = 0; i < keyboard_.erased(); ++i)
+    {
+        pop_character(text);
+        changed = true;
+    }
+    if (!keyboard_.typed().empty())
+    {
+        text += keyboard_.typed();
+        changed = true;
+    }
+    if (changed && keyboard_for_ == 0)
+        refilter();
+    if (keyboard_for_ == 2 && event == hui::ui::Event::activated)
+        submit_file_dialog(feedback, input);
+    else if (keyboard_for_ == 2 && event == hui::ui::Event::cancelled)
+        close_file_dialog(feedback);
+    else if (event == hui::ui::Event::activated || event == hui::ui::Event::cancelled)
+    {
+        keyboard_open_ = false;
+        keyboard_for_ = 0;
+        feedback.play(hui::audio::Cue::modal_close);
+    }
+}
+
 Intent LibraryScreen::update(const InputFrame &input, float dt, Feedback &feedback, bool focused)
 {
     Intent intent;
@@ -624,44 +597,16 @@ Intent LibraryScreen::update(const InputFrame &input, float dt, Feedback &feedba
     }
     const auto run = [&](const char *action, bool confirmed, const LibraryGame *game,
                          const std::string &destination, int job)
-    {
-        api::Client::LibraryRequest request;
-        request.action = action;
-        if (game != nullptr)
-        {
-            request.title_id = game->title_id;
-            request.source_key = game->source_key;
-        }
-        request.destination_id = destination;
-        request.job_id = job;
-        request.confirmed = confirmed;
-        error_.clear();
-        ctx_.store.run_library_action(std::move(request));
-        feedback.play(hui::audio::Cue::select);
-    };
+    { run_library(action, confirmed, game, destination, job, feedback); };
+    update_files();
+    xb::keyboard_look(keyboard_.style, look::is(look::Interface::crossbar));
+    if (look::is(look::Interface::crossbar))
+        return update_crossbar(input, dt, feedback, focused);
+    if (look::is(look::Interface::panorama))
+        return update_panorama(input, dt, feedback, focused);
 
     if (focused && keyboard_open_)
-    {
-        const hui::ui::Event event = keyboard_.handle(input, feedback);
-        bool changed = false;
-        for (int i = 0; i < keyboard_.erased(); ++i)
-        {
-            pop_character(query_);
-            changed = true;
-        }
-        if (!keyboard_.typed().empty())
-        {
-            query_ += keyboard_.typed();
-            changed = true;
-        }
-        if (changed)
-            refilter();
-        if (event == hui::ui::Event::activated || event == hui::ui::Event::cancelled)
-        {
-            keyboard_open_ = false;
-            feedback.play(hui::audio::Cue::modal_close);
-        }
-    }
+        update_keyboard(input, feedback);
     else if (focused && picker_.open)
     {
         int selected = 0;
@@ -708,6 +653,8 @@ Intent LibraryScreen::update(const InputFrame &input, float dt, Feedback &feedba
                 run("scan", true, nullptr, {}, 0);
         }
     }
+    else if (focused && files_modal())
+        update_files_panel(input, feedback);
     else if (focused && !selected_.empty())
     {
         const LibraryGame *game = selected_game();
@@ -830,6 +777,12 @@ Intent LibraryScreen::update(const InputFrame &input, float dt, Feedback &feedba
             refuse(feedback, input);
         }
     }
+    else if (focused && section_ == 1 && input.is_pressed(Action::back))
+    {
+        if (!files_drive_.empty()) files_up();
+        else leave_files();
+        feedback.play(hui::audio::Cue::back);
+    }
     else if (focused)
     {
         std::vector<Control> controls = page_controls();
@@ -838,6 +791,13 @@ Intent LibraryScreen::update(const InputFrame &input, float dt, Feedback &feedba
         {
             if (controls[static_cast<std::size_t>(i)].kind == focus_kind_ &&
                 controls[static_cast<std::size_t>(i)].index == focus_index_)
+                at = i;
+        }
+        // Gone (a folder read again, a drive removed): the nearest of its kind, else the first.
+        for (int i = static_cast<int>(controls.size()) - 1; at < 0 && i >= 0; --i)
+        {
+            if (controls[static_cast<std::size_t>(i)].kind == focus_kind_ &&
+                controls[static_cast<std::size_t>(i)].index < focus_index_)
                 at = i;
         }
         if (at < 0)
@@ -887,16 +847,34 @@ Intent LibraryScreen::update(const InputFrame &input, float dt, Feedback &feedba
         }
         focus_kind_ = controls[static_cast<std::size_t>(at)].kind;
         focus_index_ = controls[static_cast<std::size_t>(at)].index;
-        if (input.is_pressed(Action::confirm))
+        if (input.is_pressed(Action::confirm) && section_ == 1 && focus_kind_ != Kind::section)
+            update_files_page(input, feedback, focus_kind_, focus_index_);
+        else if (input.is_pressed(Action::confirm))
         {
             switch (focus_kind_)
             {
             case Kind::refresh:
-                ctx_.store.refresh_library();
-                feedback.play(hui::audio::Cue::select);
+                if (!state.have_library || library.busy)
+                    refuse(feedback, input);
+                else
+                {
+                    ctx_.store.refresh_library();
+                    feedback.play(hui::audio::Cue::select);
+                }
+                break;
+            case Kind::dlc:
+                intent.kind = Intent::Kind::open_updates;
+                intent.tab = 2;
+                feedback.play(hui::audio::Cue::open);
                 break;
             case Kind::updates:
-                if (!ctx_.store.state().game_update_status.checking && !ctx_.store.setting_result().busy)
+                if (ctx_.store.state().game_updates > 0)
+                {
+                    intent.kind = Intent::Kind::open_updates;
+                    intent.tab = 1;
+                    feedback.play(hui::audio::Cue::open);
+                }
+                else if (!ctx_.store.state().game_update_status.checking && !ctx_.store.setting_result().busy)
                 {
                     ctx_.store.check_game_updates();
                     intent.toast = tr("Checking\xE2\x80\xA6");
@@ -912,8 +890,14 @@ Intent LibraryScreen::update(const InputFrame &input, float dt, Feedback &feedba
                 feedback.play(hui::audio::Cue::modal_open);
                 break;
             case Kind::section:
-                section_ = focus_index_;
-                ctx_.store.want_library_storage(section_ == 1, section_ == 1);
+                if (focus_index_ == 1)
+                {
+                    section_ = 1;
+                    ctx_.store.want_files(true);
+                    open_folder({}, {});
+                }
+                else
+                    leave_files();
                 feedback.play(hui::audio::Cue::tab);
                 break;
             case Kind::view:
@@ -954,33 +938,6 @@ Intent LibraryScreen::update(const InputFrame &input, float dt, Feedback &feedba
                     feedback.play(hui::audio::Cue::open);
                 }
                 break;
-            case Kind::drive:
-                if (focus_index_ < static_cast<int>(state.library_storage.drives.size()))
-                {
-                    drive_id_ =
-                        state.library_storage.drives[static_cast<std::size_t>(focus_index_)].id;
-                    feedback.play(hui::audio::Cue::toggle);
-                }
-                break;
-            case Kind::measure:
-                if (library.working() || ctx_.store.library_action().busy)
-                    refuse(feedback, input);
-                else
-                    run("measure", false, nullptr, {}, 0);
-                break;
-            case Kind::cancel_job:
-                break;
-            case Kind::storage_game:
-            {
-                const std::vector<const LibraryGame *> games = drive_games();
-                if (focus_index_ < static_cast<int>(games.size()))
-                {
-                    show_game(games[static_cast<std::size_t>(focus_index_)]->title_id,
-                              games[static_cast<std::size_t>(focus_index_)]->source_key, true);
-                    feedback.play(hui::audio::Cue::open);
-                }
-                break;
-            }
             default:
                 break;
             }
@@ -1013,7 +970,7 @@ Intent LibraryScreen::update(const InputFrame &input, float dt, Feedback &feedba
     for (std::size_t i = 0; i < controls.size(); ++i)
     {
         const bool on = focused && selected_.empty() && !scan_open_ && !keyboard_open_ &&
-                        !picker_.open && controls[i].kind == focus_kind_ &&
+                        !picker_.open && !files_modal() && controls[i].kind == focus_kind_ &&
                         controls[i].index == focus_index_;
         focus_amount_[i] += ((on ? 1.0f : 0.0f) - focus_amount_[i]) * std::min(1.0f, dt * 16.0f);
         if (on)
@@ -1038,6 +995,16 @@ Intent LibraryScreen::update(const InputFrame &input, float dt, Feedback &feedba
 void LibraryScreen::draw(Frame &frame, bool focused) const
 {
     (void)focused;
+    if (look::is(look::Interface::crossbar))
+    {
+        draw_crossbar(frame);
+        return;
+    }
+    if (look::is(look::Interface::panorama))
+    {
+        draw_panorama(frame);
+        return;
+    }
     hui::gfx::DrawList &list = frame.scene;
     const Snapshot &state = ctx_.store.state();
     const ui::Type &type = ctx_.type;
@@ -1069,40 +1036,41 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
     // ---- .library-heading ----
     const float title_w =
         ui::text(list, type.semibold, tr("Library"), ui::kGutter, 176.0f, 60.0f, ui::color::text);
-    if (ready)
+    if (section_ == 1)
+        ui::text(list, type.regular, tr("Files"), ui::kGutter + title_w + 26.0f, 172.0f, 20.0f, ui::color::text2);
+    else if (ready)
         ui::text(list, type.regular,
                  trn(static_cast<long>(rows_.size()), "{count} game", "{count} games"),
                  ui::kGutter + title_w + 26.0f, 172.0f, 20.0f, ui::color::text2);
     const bool busy = !state.have_library || library.busy;
     if (rect(Kind::refresh, 0).w > 0.0f)
-        ui::button(list, type, rect(Kind::refresh, 0), busy ? tr("Refreshing…") : tr("Refresh library"),
+        ui::button(list, type, rect(Kind::refresh, 0), busy ? tr("Checking\xE2\x80\xA6") : tr("Try again"),
                    ui::ButtonKind::secondary, amount(Kind::refresh, 0), !busy, 18.0f);
-    {
-        const bool looking = state.game_update_status.checking;
-        updates_action(list, type, rect(Kind::updates, 0),
-                       looking ? tr("Checking\xE2\x80\xA6") : tr("Check for updates"),
-                       amount(Kind::updates, 0), !looking);
-    }
-    if (library.can("rescan"))
+    if (rect(Kind::scan, 0).w > 0.0f)
         header_action(list, type, rect(Kind::scan, 0), tr("Scan for games"), amount(Kind::scan, 0),
                       true, !library.working());
-    // The "saved snapshot" note sits at the bottom of each section, so it never pushes the
-    // content down when it appears or disappears.
-    const auto snapshot_note = [&](float note_y)
-    {
-        if (!library.stale)
-            return;
+    if (rect(Kind::updates, 0).w > 0.0f)
+        updates_action(list, type, rect(Kind::updates, 0), updates_label(state), amount(Kind::updates, 0),
+                       !state.game_update_status.checking);
+    if (rect(Kind::dlc, 0).w > 0.0f)
+        updates_action(list, type, rect(Kind::dlc, 0), dlc_label(state), amount(Kind::dlc, 0), true);
+    const int section_action = 1 - section_;
+    header_action(list, type, rect(Kind::section, section_action), tr(kSections[section_action]),
+                  amount(Kind::section, section_action), false, true, section_action == 1);
+    if (library.scanning && section_ == 0)
+        ui::text(list, type.regular, tr("Looking for new games\xE2\x80\xA6"), ui::kGutter, 214.0f, 16.0f,
+                 ui::color::text3);
+    else if (library.stale && section_ == 0)
         ui::text(list, type.regular,
                  library.updated_at > 0.0
                      ? tr("Saved snapshot \xC2\xB7 Last refreshed {time}",
                           {{"time", checked_time(library.updated_at)}})
                      : std::string(tr("Saved snapshot \xC2\xB7 Not refreshed yet")),
-                 ui::kGutter, note_y, 16.0f, ui::color::text3);
-    };
-    float y = 216.0f;
+                 ui::kGutter, 214.0f, 16.0f, ui::color::text3);
+    float y = 216.0f + ((library.stale || library.scanning) && section_ == 0 ? 36.0f : 0.0f);
     const std::string &message =
         !state.library_error.empty() ? state.library_error : library.message;
-    if (!message.empty() && !ready)
+    if (!message.empty() && section_ == 0)
     {
         const ui::Rect box{ui::kGutter, y, 800.0f, 72.0f};
         list.rounded_rect(box, 12.0f, ui::Color::rgb(0xffffff, 0.16f));
@@ -1111,7 +1079,7 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
         y += 96.0f;
     }
 
-    if (!ready)
+    if (!ready && section_ == 0)
     {
         // .empty.compact
         ui::icon_layers(list, 960.0f, y + 170.0f, 52.0f, ui::color::text2);
@@ -1120,7 +1088,7 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
         ui::paragraph(list, type.regular,
                       busy ? tr("Reading installed titles and drive availability from ShadowMount.")
                            : tr("Library uses ShadowMount\xE2\x80\x99s local games API on your PS5. "
-                             "Start a version with that API enabled, then refresh here."),
+                             "Start a version with that API enabled, then select Try again."),
                       960.0f, y + 316.0f, 20.0f, 600.0f, 30.0f, ui::color::text2, 3,
                       ui::Align::center);
         if (!busy)
@@ -1134,9 +1102,38 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
         return;
     }
 
-    const int section_action = 1 - section_;
-    header_action(list, type, rect(Kind::section, section_action), tr(kSections[section_action]),
-                  amount(Kind::section, section_action), false, true);
+    // A running copy, move or measurement, on either section.
+    if (library.has_storage_job && library.storage_job.id > 0)
+    {
+        const StorageJob &job = library.storage_job;
+        const ui::Rect box{ui::kGutter, y, 1720.0f, 54.0f};
+        list.rounded_rect(box, 14.0f, ui::Color::rgb(0xffffff, 0.09f));
+        const float progress = job.state == "completed" ? 1.0f
+                               : job.total > 0.0
+                                   ? static_cast<float>(std::min(1.0, job.processed / job.total))
+                                   : 0.0f;
+        std::string title = job.title_id;
+        for (const LibraryGame &g : library.games)
+        {
+            if (g.title_id == job.title_id)
+                title = g.title;
+        }
+        const std::string what = std::string(job.operation == "copy"   ? tr("Copy")
+                                             : job.operation == "move" ? tr("Move")
+                                                                       : job.operation.c_str()) +
+                                 " \xC2\xB7 " + title;
+        ui::text_fit(list, type.medium, what, box.x + 18.0f, box.y + 23.0f, 16.0f, 360.0f,
+                     ui::color::text);
+        std::string right = i18n::percent(progress * 100.0);
+        if (job.active && job.cancellable && !job.cancel_requested)
+            right += std::string("  \xC2\xB7  \xE2\x96\xA1 ") + tr("Cancel");
+        else if (job.cancel_requested)
+            right += std::string("  \xC2\xB7  ") + tr("Cancelling\xE2\x80\xA6");
+        ui::text(list, type.regular, right, box.x + box.w - 18.0f, box.y + 23.0f, 15.0f,
+                 ui::color::text2, ui::Align::right);
+        ui::progress_bar(list, {box.x + 18.0f, box.y + 36.0f, box.w - 36.0f, 5.0f}, progress,
+                         job.state == "failed" ? ui::color::bad : ui::color::action);
+    }
 
     if (section_ == 0)
     {
@@ -1177,8 +1174,7 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                      ey + 40.0f, 32.0f, ui::color::text, ui::Align::center);
             ui::paragraph(list, type.regular,
                           library.games.empty()
-                              ? tr("ShadowMount has not reported any installed or on-drive games. "
-                                "Refresh after its inventory updates.")
+                              ? tr("ShadowMount has not reported any installed or on-drive games yet.")
                               : tr("Try a different title, status or location."),
                           960.0f, ey + 86.0f, 20.0f, 640.0f, 30.0f, ui::color::text2, 2,
                           ui::Align::center);
@@ -1236,140 +1232,11 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                 ui::text(list, type.regular, text, x, footer_y, 17.0f, ui::color::text2);
                 x += width + 36.0f;
             }
-            snapshot_note(footer_y + 36.0f);
         }
-        else
-            snapshot_note(1028.0f);
     }
     else
     {
-        // ---- Storage: .storage-overview ----
-        const float top =
-            y;
-        ui::text(list, type.light, tr("Your drives"), ui::kGutter, top + 40.0f, 33.0f, ui::color::text);
-        ui::text(list, type.regular,
-                 tr("Capacity as ShadowMount reports it. Select a drive to see its games."),
-                 ui::kGutter, top + 72.0f, 17.0f, ui::color::text2);
-        const std::vector<LibraryDrive> &drives = state.library_storage.drives;
-        if (drives.empty())
-        {
-            ui::text(list, type.regular,
-                     state.library_storage.error.empty()
-                         ? (state.have_library_storage ? tr("No drives reported.")
-                                                       : tr("Checking your drives\xE2\x80\xA6"))
-                         : tr(state.library_storage.error),
-                     ui::kGutter, top + 140.0f, 20.0f, ui::color::text2);
-        }
-        for (int d = 0; d < static_cast<int>(drives.size()); ++d)
-        {
-            const LibraryDrive &drive = drives[static_cast<std::size_t>(d)];
-            const ui::Rect r = rect(Kind::drive, d);
-            const bool on = drive.id == drive_id_ || (drive_id_.empty() && d == 0);
-            const float focus = amount(Kind::drive, d);
-            ui::state_fill(list, r, 18.0f, focus, on);
-            const ui::Color ink = ui::state_ink(focus, on);
-            const ui::Color dim = ui::state_ink_dim(focus);
-            const bool lit = focus > 0.5f;
-            // Usage ring on the left; it turns dark when the card is lit by the cursor.
-            const float used =
-                drive.total > 0.0
-                    ? std::clamp(static_cast<float>(drive.used / drive.total), 0.0f, 1.0f)
-                    : 0.0f;
-            const float ring_x = r.x + 74.0f;
-            const float ring_y = r.y + 85.0f;
-            list.ring(ring_x, ring_y, 50.0f, 10.0f,
-                      lit ? ui::Color::rgb(0x080808, 0.14f) : ui::Color::rgb(0xffffff, 0.27f));
-            if (used > 0.0f)
-                list.arc(ring_x, ring_y, 50.0f, 10.0f, 0.0f, used * 6.2831853f,
-                         usage_colour(used, lit), true);
-            char percent[16];
-            std::snprintf(percent, sizeof percent, "%d%%",
-                          static_cast<int>(used * 100.0f + 0.5f));
-            ui::text(list, type.semibold, percent, ring_x, ring_y + 6.0f, 26.0f, ink,
-                     ui::Align::center);
-            ui::text(list, type.regular, tr("used"), ring_x, ring_y + 26.0f, 15.0f,
-                     dim, ui::Align::center);
-            const float tx = r.x + 146.0f;
-            const float tw = r.w - 146.0f - 20.0f;
-            ui::text_fit(list, type.regular, i18n::place(drive.label), tx, r.y + 50.0f, 20.0f, tw,
-                         ink);
-            // The console's drive is the /user mount, but its games are kept under /data.
-            ui::text_fit(list, type.regular, drive.path == "/user" ? "/data" : drive.path, tx, r.y + 76.0f, 17.0f, tw,
-                         dim);
-            ui::text_fit(list, type.medium, tr("{size} free", {{"size", format_bytes(drive.free)}}),
-                         tx, r.y + 114.0f, 20.0f, tw, ink);
-            ui::text_fit(list, type.regular,
-                         tr("{used} used of {total}",
-                            {{"used", format_bytes(drive.used)}, {"total", format_bytes(drive.total)}}),
-                         tx, r.y + 142.0f, 15.0f, tw, dim);
-        }
-        if (!drives.empty())
-        {
-            const std::vector<const LibraryGame *> games = drive_games();
-            const LibraryDrive *drive = &drives.front();
-            for (const LibraryDrive &d : drives)
-            {
-                if (d.id == drive_id_)
-                    drive = &d;
-            }
-            int measured = 0;
-            for (const LibraryGame *g : games)
-                measured += g->size >= 0.0 ? 1 : 0;
-            const float heading =
-                rect(Kind::drive, static_cast<int>(drives.size()) - 1).y + 170.0f + 128.0f;
-            ui::text(list, type.medium, tr("Games on {drive}", {{"drive", i18n::place(drive->label)}}),
-                     ui::kGutter, heading, 22.0f,
-                     ui::color::text);
-            const std::string sub =
-                trn(static_cast<long>(games.size()), "{count} game", "{count} games") +
-                " \xC2\xB7 " + trn(measured, "{count} size measured", "{count} sizes measured");
-            ui::text(list, type.regular, sub, ui::kGutter, heading + 30.0f, 17.0f,
-                     ui::color::text2);
-            if (library.can("list_games"))
-                ui::button(
-                    list, type, rect(Kind::measure, 0),
-                    library.has_action && library.action.action == "measure" && library.working()
-                        ? tr("Measuring\xE2\x80\xA6")
-                        : tr("Measure game sizes"),
-                    ui::ButtonKind::secondary, amount(Kind::measure, 0), !library.working(), 18.0f);
-            for (int g = 0; g < static_cast<int>(games.size()); ++g)
-            {
-                const LibraryGame &game = *games[static_cast<std::size_t>(g)];
-                const ui::Rect r = rect(Kind::storage_game, g);
-                const float focus = amount(Kind::storage_game, g);
-                ui::state_fill(list, r, 18.0f, focus);
-                const ui::Color ink = ui::state_ink(focus), dim = ui::state_ink_dim(focus);
-                const ui::Rect cover{r.x + 16.0f, r.y + 16.0f, r.h - 32.0f, r.h - 32.0f};
-                draw_cover(ctx_, list, local_cover(game), cover, 12.0f);
-                const float tx = cover.x + cover.w + 18.0f, tw = r.x + r.w - tx - 16.0f;
-                ui::text_fit(list, type.medium, game.title, tx, r.cy() - 6.0f, 21.0f, tw, ink);
-                drive_icon(list, tx + 11.0f, r.cy() + 24.0f, 20.0f, dim);
-                ui::text_fit(list, type.regular,
-                             game.size >= 0.0                    ? format_bytes(game.size)
-                             : game.size_status == "unavailable" ? tr("Unavailable")
-                                                                 : tr("Not measured"),
-                             tx + 30.0f, r.cy() + 31.0f, 18.0f, tw - 30.0f, dim);
-            }
-            if (!games.empty())
-                ui::paragraph(list, type.regular,
-                              tr("Sizes are measured on request. Shared source files can appear under "
-                              "more than one title, so these sizes are not a drive total."),
-                              ui::kGutter,
-                              rect(Kind::storage_game, static_cast<int>(games.size()) - 1).y +
-                                  kStorageTileH + 40.0f,
-                              15.0f, 1000.0f, 23.0f, ui::color::text3, 2);
-            const std::size_t sizes_lines =
-                std::min<std::size_t>(2, type.regular.font->wrap(
-                                             tr("Sizes are measured on request. Shared source files can appear under "
-                                                "more than one title, so these sizes are not a drive total."),
-                                             15.0f, 1000.0f).size());
-            const float note_y =
-                games.empty()
-                    ? rect(Kind::drive, static_cast<int>(drives.size()) - 1).y + 170.0f + 128.0f
-                    : rect(Kind::storage_game, static_cast<int>(games.size()) - 1).y +
-                          kStorageTileH + 40.0f + 23.0f * static_cast<float>(sizes_lines) + 14.0f;
-            snapshot_note(note_y);
-        }
+        draw_files(frame, list, y + (library.has_storage_job && library.storage_job.id > 0 ? 70.0f : 0.0f), controls);
     }
     list.pop_transform();
 
@@ -1469,7 +1336,7 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
         {
             ui::text(overlay, type.light, tr("This game is no longer reported"), left, panel.y + 100.0f,
                      36.0f, ui::color::text);
-            ui::text(overlay, type.regular, tr("Refresh the library, then try again."), left,
+            ui::text(overlay, type.regular, tr("Go back to see the current list."), left,
                      panel.y + 146.0f, 19.0f, ui::color::text2);
         }
         else
@@ -1497,7 +1364,7 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
             }
             if (library.stale)
                 ui::text(overlay, type.regular,
-                         tr("Saved snapshot. Refresh the library before relying on these statuses."),
+                         tr("Saved snapshot. These statuses may have changed."),
                          left, note_y + 20.0f, 17.0f, ui::Color::rgb(0xd0d0d0));
             if (mode_ == 0)
             {
@@ -1536,6 +1403,11 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                              left, fy, 15.0f, ui::color::text3);
                     fy += 26.0f;
                 }
+                if (game->found_by_orbit)
+                    fy = ui::paragraph(overlay, type.regular,
+                                       tr("Orbit found this game itself because your ShadowMount version doesn\xE2\x80\x99t list games "
+                                          "installed from PKG files. For the most complete list, update ShadowMount to 1.7beta5 or newer."),
+                                       left, fy, 15.0f, panel.w - 112.0f, 22.0f, ui::color::text3, 3) + 4.0f;
                 // .library-facts
                 struct Fact
                 {
@@ -1554,7 +1426,8 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
                     {tr("Source size"), game->size >= 0.0 ? format_bytes(game->size)
                                     : game->size_status == "unavailable"
                                         ? tr("Unavailable")
-                                        : tr("Use Measure game sizes in Storage")},
+                                    : library.measuring ? tr("Measuring\xE2\x80\xA6")
+                                                        : tr("Not measured")},
                     {tr("Size reported by console"), game->installed_size < 0.0
                                                      ? tr("Not reported")
                                                      : format_bytes(game->installed_size)},
@@ -1685,29 +1558,8 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
         overlay.pop_opacity();
     }
 
-    // ---- a dropdown's list (after the panel, so it opens above it) ----
-    if (picker_.in.value > 0.01f)
-    {
-        int selected = 0;
-        const std::vector<std::string> options = picker_options(&selected);
-        ui::Rect trigger;
-        if (picking_ == Kind::destination)
-        {
-            for (const Control &c : panel_controls())
-            {
-                if (c.kind == Kind::destination)
-                    trigger = c.rect;
-            }
-        }
-        else
-        {
-            trigger = rect(picking_, 0);
-            trigger.y -= scroll_.value;
-        }
-        frame.glass = true;
-        ui::select_menu(frame.overlay, type, trigger, options, selected, picker_.active,
-                        picker_.in.value, frame.glass_texture);
-    }
+    // ---- Files: an entry's details, a question or the operation ----
+    draw_files_panel(frame);
 
     // ---- keyboard ----
     if (keyboard_in_.value > 0.01f)
@@ -1729,6 +1581,10 @@ void LibraryScreen::draw(Frame &frame, bool focused) const
 
 std::vector<hui::ui::Hint> LibraryScreen::hints() const
 {
+    if (look::is(look::Interface::crossbar))
+        return crossbar_hints();
+    if (look::is(look::Interface::panorama))
+        return panorama_hints();
     const LibrarySnapshot &library = ctx_.store.state().library;
     if (keyboard_open_)
         return {{hui::ui::Button::square, tr("Delete")},
@@ -1739,6 +1595,8 @@ std::vector<hui::ui::Hint> LibraryScreen::hints() const
     if (!selected_.empty() || scan_open_)
         return {{hui::ui::Button::cross, tr("Select")},
                 {hui::ui::Button::circle, mode_ != 0 ? tr("Back") : tr("Close")}};
+    if (section_ == 1)
+        return files_hints();
     std::vector<hui::ui::Hint> items = {{hui::ui::Button::cross, tr("Select")}};
     if (library.has_storage_job && library.storage_job.active && library.storage_job.cancellable &&
         !library.storage_job.cancel_requested)

@@ -1,6 +1,8 @@
 #include "browser_platform.h"
 #ifndef ORBIT_DESKTOP
 #include <dlfcn.h>
+#include <string.h>
+#include <pthread.h>
 #ifndef ORBIT_BROWSER_PROBE
 #include "orbit.h"
 #define STAGE(phase, status, result) diagnostics_stage(phase, status, result)
@@ -8,24 +10,45 @@
 #define STAGE(phase, status, result) ((void)(result))
 #endif
 
+static void *system_service, *user_service;
+static pthread_mutex_t service_lock = PTHREAD_MUTEX_INITIALIZER;
+static int load_services(void) {
+    if (!system_service)
+        system_service = dlopen("libSceSystemService.sprx", RTLD_NOW | RTLD_LOCAL);
+    if (!system_service) return -1;
+    if (!user_service)
+        user_service = dlopen("libSceUserService.sprx", RTLD_NOW | RTLD_LOCAL);
+    return user_service ? 0 : -2;
+}
+static int foreground_user(void) {
+    if (load_services()) return -1;
+    int (*initialize)(void *) = (int (*)(void *))dlsym(user_service, "sceUserServiceInitialize");
+    int (*terminate)(void) = (int (*)(void))dlsym(user_service, "sceUserServiceTerminate");
+    int (*foreground)(int *) = (int (*)(int *))dlsym(user_service, "sceUserServiceGetForegroundUser");
+    if (!initialize || !terminate || !foreground) return -1;
+    int initialized = initialize(NULL), user = -1;
+    if (foreground(&user)) user = -1;
+    if (!initialized) (void)terminate();
+    /* Never fall back to a different initial/logged-in user. */
+    return user;
+}
+int probe_browser_user(void) {
+    pthread_mutex_lock(&service_lock);
+    int user = foreground_user();
+    pthread_mutex_unlock(&service_lock);
+    return user;
+}
+
 /* Only the explicit browser-session worker calls this. Keep loaded handles for
  * the process lifetime: opening the browser is asynchronous. No native service
  * import, lookup or initialization belongs on Orbit's normal startup path. */
-int probe_browser_open(const char *url) {
-    static void *system_service, *user_service;
+static int open_browser(const char *url) {
     if (!url || !*url) return -1;
     STAGE("browser-modules", "started", 0);
-    if (!system_service)
-        system_service = dlopen("libSceSystemService.sprx", RTLD_NOW | RTLD_LOCAL);
-    if (!system_service) {
-        STAGE("browser-modules", "error", -1);
-        return -1;
-    }
-    if (!user_service)
-        user_service = dlopen("libSceUserService.sprx", RTLD_NOW | RTLD_LOCAL);
-    if (!user_service) {
-        STAGE("browser-modules", "error", -2);
-        return -2;
+    int loaded = load_services();
+    if (loaded) {
+        STAGE("browser-modules", "error", loaded);
+        return loaded;
     }
     int (*initialize)(void *) = (int (*)(void *))dlsym(user_service, "sceUserServiceInitialize");
     int (*terminate)(void) = (int (*)(void))dlsym(user_service, "sceUserServiceTerminate");
@@ -48,6 +71,14 @@ int probe_browser_open(const char *url) {
     STAGE("browser-user-cleanup", cleanup ? "error" : "ok", cleanup);
     return result;
 }
+int probe_browser_open(const char *url) {
+    pthread_mutex_lock(&service_lock);
+    int result = open_browser(url);
+    pthread_mutex_unlock(&service_lock);
+    return result;
+}
+
 #else
 int probe_browser_open(const char *url) { (void)url; return -1; }
+int probe_browser_user(void) { return -1; }
 #endif

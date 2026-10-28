@@ -10,6 +10,7 @@
 #include "orbit/json.hpp"
 
 #include <cstdint>
+#include <array>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -17,6 +18,17 @@
 
 namespace orbit
 {
+
+// What Orbit can notify about: the API's name and the label it has in Settings.
+struct NotificationEvent
+{
+    const char *name;
+    const char *label;
+};
+inline constexpr NotificationEvent kNotificationEvents[] = {
+    {"downloadFinished", /* i18n */ "Download finished"}, {"downloadFailed", /* i18n */ "Download failed"},
+    {"installFinished", /* i18n */ "Package installed"},  {"installFailed", /* i18n */ "Installation failed"},
+    {"updateAvailable", /* i18n */ "Update available"}};
 
 struct System
 {
@@ -36,14 +48,27 @@ struct System
     bool sounds_off = false; // the TV app's menu sounds are muted
     int sound_volume = 50;   // their volume, 0-100 percent
     bool ps4_hidden = false; // the TV app leaves PS4 titles out of the catalogue
-    bool delete_pkgs = false; // the service removes a .pkg once the console has installed it
     bool own_dns = true;       // the service looks up Sony's hosts through Orbit's own DNS-over-HTTPS
-    bool install_pkgs = false; // the service installs a downloaded .pkg once it is verified
     std::string appearance; // the TV app background preset id the service keeps
     std::string keyboard;   // the TV app keyboard letters the service keeps: "", "auto", "qwerty" or "azerty"
     std::string language;   // the TV app language the service keeps: "", "auto" or a catalogue code
     int concurrent_downloads = 1;
+    int download_connections = 8; // connections per download; unset on an older service
+    bool has_download_connections = false;
+    std::array<int, 4> download_recovery{3, 10, 60, 1};
     bool delete_archives = true; // Remove a ZIP/7z/RAR download once its files are in place.
+    // Notifications on this PS5 (1.5.0's download notifications); unset on an older service.
+    bool download_notifications = true;
+    bool has_download_notifications = false;
+    // The events announced on the PS5 and through ntfy, as kNotificationEvents lists them;
+    // unset on a service from before they could be chosen.
+    std::array<bool, 5> notification_events{true, true, true, true, true};
+    bool has_notification_events = false;
+    // Delete a downloaded package once the PS5 reports it installed; unset on an older service.
+    bool delete_packages = false;
+    bool has_delete_packages = false;
+    bool ntfy_enabled = false; // ntfy push notifications are on
+    std::string firmware; // "13.60", or empty when the service can't tell
     bool zero_enabled = false;
     bool zero_configured = false;
     std::string zero_address, zero_error, zero_preference;
@@ -70,8 +95,20 @@ struct Sources
     std::string nas_error;
 };
 
+struct AddonInfo
+{
+    std::string addon_id, base_game_id, base_title, addon_type, content_id;
+    std::string required_edition, minimum_version, requirement_notes;
+    std::vector<std::string> required_title_ids, contents;
+};
+std::string addon_type_label(const std::string &type);
+struct LibraryGame;
+// What an add-on needs, as the browser's AddonInfo: whether a game with a required title ID
+// is installed or on a drive is checked against the Library's games.
+std::string addon_requirements(const AddonInfo &info, const std::vector<LibraryGame> &library);
+
 // One download option (a "release" at the API boundary).
-struct Release
+struct Release : AddonInfo
 {
     std::string platform = "ps5";
     std::string id;
@@ -93,6 +130,7 @@ struct Release
     std::string release_date; // YYYY-MM-DD or empty
     std::string added_at;
     int new_on_orbit_rank = 0;
+    std::vector<std::string> tags; // Browse tags; tag_label() names the ones this build knows
     double size_bytes = 0.0;
     std::string compression; // "zip", "7z" or "rar": extracted after downloading
     double extracted_bytes = 0.0;
@@ -101,6 +139,11 @@ struct Release
     // the PS5 web browser, started directly by the TV app through the service.
     bool browser_available = false;
     bool direct_available = true;
+    // What the option needs from the console's firmware (src/firmware.ts). An option
+    // that won't run here keeps its place in the queue rules; it's labelled and listed last.
+    std::string required_firmware; // "10.xx"
+    std::string max_firmware;      // "11.60" for PS5 packages
+    std::string firmware_issue;    // "ps5-package", "newer-firmware" or empty
 
     bool browser_only() const
     {
@@ -109,7 +152,7 @@ struct Release
 };
 
 // One card: every option that shares a curated gameId.
-struct Game
+struct Game : AddonInfo
 {
     std::string platform = "ps5";
     std::string id;
@@ -126,6 +169,42 @@ struct Game
     {
         return artwork_layout == "wide";
     }
+};
+
+// Archive.org sign-in (GET /api/v1/archive-account): whether, and as whom.
+// The console keeps the session; the app never sees it.
+struct ArchiveAccount
+{
+    bool known = false; // false on a download service without it
+    bool signed_in = false;
+    std::string name;
+};
+
+// ntfy push notifications for downloads (src/NtfySetting.tsx); never the password.
+struct NtfySettings
+{
+    bool known = false; // false on a download service without it
+    bool enabled = false;
+    std::string server, topic, username;
+    bool has_password = false;
+};
+
+// The download service's diagnostics (GET /api/v1/diagnostics; src/Diagnostics.tsx): no
+// pairing codes, tokens, links, game names or paths.
+struct DiagnosticEvent
+{
+    double at = 0.0;              // Unix seconds
+    long long download = 0;       // the queue's number for a download, 0 for Orbit itself
+    std::string phase, status, reason, provider;
+    double received = 0.0, total = 0.0;
+    int http_status = 0, result = 0;
+};
+struct DiagnosticsReport
+{
+    bool known = false; // read at least once
+    std::string version, platform, launcher_status;
+    bool state_healthy = true;
+    std::vector<DiagnosticEvent> downloads, events;
 };
 
 struct Debrid
@@ -155,8 +234,17 @@ struct Drive
     bool external = false;
 };
 
-struct Job
+struct PackageInstallation
 {
+    std::string id, filename, platform, state, message;
+    double received = 0, total = 0;
+};
+
+struct Job : AddonInfo
+{
+    bool installation_available = false;
+    std::string installation_state, installation_message, shadowmount_state, shadowmount_message;
+    std::vector<PackageInstallation> packages;
     bool can_refresh_link = false;
     bool can_enter_archive_password = false;
     std::string id;
@@ -188,6 +276,14 @@ struct Job
     int order = 0;
 };
 
+// Use the same byte basis in every interface. For Zero archives the PS5
+// receives the extracted files, not the smaller downloaded archive.
+struct JobProgress
+{
+    double done = 0.0, total = 0.0, remaining = 0.0, minutes = 0.0;
+};
+JobProgress job_progress(const Job &job);
+
 // The Library (docs/library.md): ShadowMount's inventory as Orbit reports it.
 struct LibraryGame
 {
@@ -202,6 +298,8 @@ struct LibraryGame
     bool installed = false;
     bool mounted = false;
     bool on_drive = false;
+    // Listed by Orbit because the running ShadowMount doesn't list installed PKGs.
+    bool found_by_orbit = false;
     bool managed = false;
     bool can_manage_source = false;
     double installed_size = -1.0; // bytes, or -1 when not reported
@@ -254,6 +352,8 @@ struct LibrarySnapshot
     StorageJob storage_job;
     std::string storage_error;
     bool storage_busy = false;
+    bool scanning = false;  // ShadowMount is scanning on its own, or registering what it found
+    bool measuring = false; // game sizes are being measured on their own
 
     bool ready() const
     {
@@ -285,6 +385,43 @@ struct LibraryStorage
     bool stale = false;
     double updated_at = 0.0;
     std::string error;
+};
+
+// Files: what is on the console's drives, by drive and a path from its top
+// (/api/v1/files/*, src/types.ts in the browser).
+struct FileEntry
+{
+    std::string name;
+    bool folder = false;
+    std::string type;   // folder, game, archive, package, image or file
+    double size = -1.0; // files; -1 when not known (a folder until measured)
+    double modified = 0.0;
+    std::string locked; // why it can't be changed: drive, orbit, download, game, install, busy
+};
+
+struct FileListing
+{
+    std::string storage_id;
+    std::string path;
+    std::vector<FileEntry> entries;
+    bool truncated = false;
+};
+
+struct FileOperation
+{
+    std::string id;
+    std::string action; // copy, move, delete, unpack, install, measure
+    std::string state;  // measuring, running, paused, password, complete, failed, cancelled
+    std::string name;
+    std::string storage_id, path;
+    std::string to_storage_id, to_path;
+    double processed = 0.0, total = 0.0, speed = 0.0;
+    double size = -1.0; // measure: the folder's size
+    std::string error;
+    bool ended() const
+    {
+        return state == "complete" || state == "failed" || state == "cancelled";
+    }
 };
 
 // The console's own session (GET /api/v1/session, loopback only).
@@ -388,6 +525,18 @@ struct ServiceUpdate
     double retry_at = 0.0; // Unix seconds
     double checked_at = 0.0;
     double check_after = 0.0;
+    // Orbit restarts itself through the ELF loader, and updates both parts in one step:
+    // update_all marks that request; phase "tv-app", downloading, saving, then
+    // "restarting" (or "updated" when only this app changed).
+    bool self_restart = false;
+    bool update_all = false;
+    std::string tv_app_updated;
+
+    // Newer than what runs, and not already saved for the next start (that needs a restart).
+    bool needs_install() const
+    {
+        return update_available && !(restart_required && saved_version == latest_version);
+    }
 };
 
 // The TV app installer (GET /api/v1/tv-app): this app's own releases.
@@ -402,16 +551,23 @@ struct TvAppStatus
     std::string phase; // idle checking checked downloading verifying installing installed error
     std::string error;
     bool busy = false;
+    bool update_available = false; // a newer release than Orbit's copy in /data/homebrew
     double received = 0.0;
     double retry_at = 0.0;
     double checked_at = 0.0;
     double check_after = 0.0;
 };
 
-// Provider verification is separate from the download queue. Only the service
-// sees provider URLs; the native app carries a selected release and drive.
+// Provider verification is separate from the download queue. The native app
+// receives a public provider page only for its own native-dialog session.
 struct BrowserSession
 {
+    bool native_dialog_available = false;
+    bool viking_account_available = false;
+    std::string viking_state;
+    bool account_page = false;
+    bool dialog_opened = false;
+    std::string client_id, page_url;
     bool available = false;
     bool active = false;
     std::string id;
@@ -426,12 +582,19 @@ BrowserSession parse_browser_session(const json::Value &value);
 System parse_system(const json::Value &value);
 Sources parse_sources(const json::Value &value);
 Debrid parse_debrid(const json::Value &value);
+ArchiveAccount parse_archive_account(const json::Value &value);
+NtfySettings parse_ntfy(const json::Value &value);
+// "ntfy.sh/orbit": where notifications go, without the scheme.
+std::string ntfy_address(const NtfySettings &ntfy);
 std::vector<Release> parse_catalog(const json::Value &value);
 std::vector<Drive> parse_storage(const json::Value &value);
 std::vector<Job> parse_jobs(const json::Value &value);
 std::vector<std::string> parse_favourites(const json::Value &value);
 LibrarySnapshot parse_library(const json::Value &value);
 LibraryStorage parse_library_storage(const json::Value &value);
+FileListing parse_file_listing(const json::Value &value);
+// {operation: ...}: false when there is none.
+bool parse_file_operation(const json::Value &value, FileOperation *operation);
 Session parse_session(const json::Value &value);
 CatalogueStatus parse_catalogue_status(const json::Value &value);
 ServiceUpdate parse_service_update(const json::Value &value);
@@ -458,6 +621,10 @@ bool in_discover(const Game &game);
 
 // Groups options by gameId in catalogue order (src/catalog.ts).
 std::vector<Game> group_games(const std::vector<Release> &releases);
+// What an option needs from the console's firmware, for its row; empty when nothing's known.
+std::string firmware_label(const Release &release);
+// The sentence for the chosen option when it won't run on this PS5; empty otherwise.
+std::string firmware_warning(const Release &release, const std::string &current);
 
 // Dated games newest first, undated and future-dated left out, at most 20
 // (the web Discover's "Latest releases"). `today` is YYYY-MM-DD.
@@ -492,12 +659,15 @@ const char *size_label(SizeFilter size);
 struct BrowseFilters
 {
     std::string query;
-    std::string source; // a sourceId; empty for all
-    std::string format; // empty for all
+    std::string addon_base, addon_type;
+    std::vector<std::string> sources; // sourceIds, any of them; none for all
+    std::vector<std::string> formats; // any of them; none for all
+    std::vector<std::string> tags;    // any of them; none for all
     std::string region; // empty for all, "unknown" for missing metadata
     std::string platform; // empty for all, "ps4" or "ps5"
     SizeFilter size = SizeFilter::any;
     bool favourites = false;
+    bool hide_installed = false; // leave out games in Library: installed, or on a drive
     Sort sort = Sort::release;
     Category category = Category::game; // which menu: games, apps, DLC or updates
     bool with_apps = false;             // Discover: games and apps together
@@ -505,19 +675,43 @@ struct BrowseFilters
     // Source, format, region, size and sort are at their defaults (Reset filters).
     bool narrowed() const
     {
-        return !source.empty() || !format.empty() || !region.empty() || !platform.empty() || size != SizeFilter::any ||
-               sort != Sort::release;
+        return !addon_base.empty() || !addon_type.empty() || !sources.empty() || !formats.empty() || !tags.empty() || !region.empty() || !platform.empty() || size != SizeFilter::any ||
+               hide_installed || sort != Sort::release;
     }
 };
+// A named set of Browse's filters, kept on the PS5 so every Orbit app has it
+// (docs/api.md#saved-filters). The search is part of it.
+struct SavedFilter
+{
+    std::string id;
+    std::string name;
+    bool addons = false; // the Add-ons page's, else Browse's
+    BrowseFilters filters;
+};
+std::vector<SavedFilter> parse_saved_filters(const json::Value &value);
+// The request that saves filters under a name, replacing the page's filter of that name.
+std::string saved_filter_body(std::string_view name, bool addons, const BrowseFilters &filters);
 // Indices of the games with an option matching every filter, in order. Size
 // sorting uses the smallest option that matches.
 std::vector<int> browse(const std::vector<Game> &games, const BrowseFilters &filters,
-                        const std::vector<std::string> &favourites);
+                        const std::vector<std::string> &favourites, const std::vector<LibraryGame> &library = {});
+// A Browse tag's label (the catalogue's tags, browse.ts TAGS), or nullptr for a
+// tag this build doesn't know; the labelled tags the games carry, in that order.
+const char *tag_label(std::string_view tag);
+std::vector<std::string> catalogue_tags(const std::vector<Game> &games);
+// A copy of the game installed or on a drive, as Library lists it: the same title ID
+// and platform as one of its options (inLibrary in src/collection.ts). Add-ons never are.
+bool in_library(const Game &game, const std::vector<LibraryGame> &library);
 // The sources (sourceId, provider) and formats the catalogue offers, in order.
 std::vector<std::pair<std::string, std::string>> source_choices(const std::vector<Game> &games);
 std::vector<std::string> format_choices(const std::vector<Game> &games);
 // Select the 20 newest catalogue additions, then order by release date (undated last).
 std::vector<int> newly_added_games(const std::vector<Game> &games);
+// L2 / R2 in a game grid move this many rows: 96 games at six columns.
+constexpr int kGridJumpRows = 16;
+// The tile `rows` rows away in the same column, stopping at the first or last
+// row; a short last row lands on its final tile.
+int grid_jump(int index, int count, int columns, int rows);
 bool contains(const std::vector<std::string> &values, std::string_view value);
 
 // Statuses, as the web storefront words them.

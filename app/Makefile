@@ -19,7 +19,8 @@ override APP_DEFINITIONS := $(strip GL_GLEXT_PROTOTYPES=1 $(APP_DEFINITIONS))
 override APP_INCLUDE_PATHS := $(strip src $(OPENGL_SDK)/include $(APP_INCLUDE_PATHS))
 override APP_STATIC_ARCHIVES := $(strip .deps/ps5-opengl/libps5opengl-group.a $(APP_STATIC_ARCHIVES))
 override APP_IMPORT_STUBS := $(strip $(OPENGL_SDK)/lib/libSceAgc.so \
-	$(OPENGL_SDK)/lib/libSceAgcDriver.so $(APP_IMPORT_STUBS))
+	$(OPENGL_SDK)/lib/libSceAgcDriver.so build/provider-dialog/libSceCommonDialog.so \
+	build/provider-dialog/libSceWebBrowserDialog.so $(APP_IMPORT_STUBS))
 # WebP (the catalogue's artwork format) from the pinned PacBrew ports. The
 # archives are named directly: the port's pkg-config output carries a
 # compiler flag (-D_THREAD_SAFE) that the linker rejects.
@@ -44,21 +45,21 @@ RUNTIME_INPUTS := tools/rebuild-libc.sh tools/build-host-tools.sh tools/ninja-bu
 	$(wildcard tooling/native/*.cpp tooling/native/*.hpp) \
 	$(wildcard tooling/native/runtime/*.txt)
 
-.PHONY: app ffpkg ffpfsc packages deps opengl libc payload-stage preview test fonts clean distclean help
+.PHONY: provider-dialog app ffpkg ffpfsc packages deps opengl libc payload-stage preview test fonts clean distclean help
 
-app: $(RUNTIME) opengl payload-stage
+app: $(RUNTIME) opengl provider-dialog payload-stage
 	@printf '%s\n' '==> [app] Compiling, linking, signing and assembling the app folder'
 	@bash tools/build.sh Folder
 
-ffpkg: $(RUNTIME) opengl payload-stage
+ffpkg: $(RUNTIME) opengl provider-dialog payload-stage
 	@printf '%s\n' '==> [ffpkg] Building the app folder and its UFS2 image'
 	@bash tools/build.sh Ffpkg
 
-ffpfsc: $(RUNTIME) opengl payload-stage
+ffpfsc: $(RUNTIME) opengl provider-dialog payload-stage
 	@printf '%s\n' '==> [ffpfsc] Building the app folder and its compressed image'
 	@bash tools/build.sh Ffpfsc
 
-packages: $(RUNTIME) opengl payload-stage
+packages: $(RUNTIME) opengl provider-dialog payload-stage
 	@bash tools/build.sh All
 
 deps:
@@ -69,6 +70,9 @@ deps:
 
 payload-stage:
 	@bash tools/stage-payload.sh "$(ORBIT_PAYLOAD)" "$(PAYLOAD_STAGE)"
+
+provider-dialog:
+	@bash tools/prepare-provider-dialog.sh
 
 opengl:
 	@bash tools/prepare-opengl.sh

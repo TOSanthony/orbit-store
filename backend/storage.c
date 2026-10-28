@@ -254,6 +254,46 @@ int storage_open(const Job *j) {
     }
     return fd;
 }
+/* A folder of a drive from its top ("" is the top), walked one name at a time
+ * without following links or leaving the drive's device. "homebrew" is the
+ * download destination, created if missing, as storage_open() does. */
+int storage_open_path(const Job *j, const char *path) {
+    if (!strcmp(path, "homebrew")) return storage_open(j);
+    if (!storage_matches(j)) {
+        errno = ENODEV;
+        return -1;
+    }
+    char copy[1024];
+    if (strlen(path) >= sizeof copy) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    int fd = open(j->root, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    struct stat st;
+    if (fd >= 0 && (fstat(fd, &st) || st.st_dev != j->device || st.st_ino != j->inode)) {
+        close(fd);
+        errno = ENODEV;
+        return -1;
+    }
+    copy_text(copy, sizeof copy, path);
+    char *save = NULL;
+    for (char *part = strtok_r(copy, "/", &save); fd >= 0 && part; part = strtok_r(NULL, "/", &save)) {
+        if (!strcmp(part, ".") || !strcmp(part, "..")) {
+            close(fd);
+            errno = EINVAL;
+            return -1;
+        }
+        int next = openat(fd, part, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        close(fd);
+        if (next >= 0 && (fstat(next, &st) || !S_ISDIR(st.st_mode) || st.st_dev != j->device)) {
+            close(next);
+            errno = EXDEV;
+            return -1;
+        }
+        fd = next;
+    }
+    return fd;
+}
 /* Explicit download preflight, never discovery: exclusively create a private
  * file relative to the verified destination and unlink it before writing so
  * failed writes leave no probe behind. Never truncate or remove a collision. */

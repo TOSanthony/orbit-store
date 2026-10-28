@@ -1,7 +1,7 @@
 name: Build Orbit Store
 
 # Every push to nas-source (or a manual run) builds the payload and the TV app, numbers them
-# 1.2.<run> / 1.5.<run>, publishes a GitHub release v1.2.<run> with both files, and updates the
+# 1.2.<run> / 1.5.<run> (branch game-updates) or 1.7.<run> / 1.11.<run> (game-updates-17), publishes a GitHub release v1.2.<run> with both files, and updates the
 # feeds (branch "updates") that the in-app "Update" buttons read. Settings -> update then offers it.
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ on:
         type: boolean
         default: true
   push:
-    branches: [game-updates]
+    branches: [game-updates, game-updates-17]
 
 permissions:
   contents: write
@@ -34,10 +34,10 @@ jobs:
         run: |
           RUN=${{ github.run_number }}
           if [ "$RUN" -gt 999 ]; then echo "run number $RUN is too large for the TV app version"; exit 1; fi
-          echo "ORBIT_V=1.2.$RUN" >> "$GITHUB_ENV"
-          echo "TV_V=1.5.$RUN" >> "$GITHUB_ENV"
-          sed -i "s/#define ORBIT_VERSION \".*\"/#define ORBIT_VERSION \"1.2.$RUN\"/" backend/orbit.h
-          sed -i "s/\"contentVersion\": \"[0-9.]*\"/\"contentVersion\": \"01.005.$(printf '%03d' "$RUN")\"/" app/sce_sys/param.json
+          echo "ORBIT_V=1.7.$RUN" >> "$GITHUB_ENV"
+          echo "TV_V=1.11.$RUN" >> "$GITHUB_ENV"
+          sed -i "s/#define ORBIT_VERSION \".*\"/#define ORBIT_VERSION \"1.7.$RUN\"/" backend/orbit.h
+          sed -i "s/\"contentVersion\": \"[0-9.]*\"/\"contentVersion\": \"01.011.$(printf '%03d' "$RUN")\"/" app/sce_sys/param.json
           grep -n "define ORBIT_VERSION" backend/orbit.h
           grep -n contentVersion app/sce_sys/param.json
 

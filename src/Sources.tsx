@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "./components";
 import type { SourceId, SourceSettings } from "./types";
-import { t, tn } from "./i18n";
+import { formatNumber, t, tn } from "./i18n";
 
 // The service words these in English; the count is part of the sentence.
 function nasMessage(error: string): string {
@@ -21,6 +21,7 @@ export function Sources({
   pair,
   save,
   saved,
+  rows = false,
 }: {
   settings: SourceSettings;
   paired: boolean;
@@ -31,6 +32,8 @@ export function Sources({
     nasUrl?: string,
   ) => Promise<void>;
   saved?: () => void;
+  // Crossbar, Cinema and Panorama list each source as a row with a switch.
+  rows?: boolean;
 }) {
   const [selected, setSelected] = useState<SourceId[]>(settings.enabled),
     [acknowledged, setAcknowledged] = useState(settings.acknowledged),
@@ -39,7 +42,7 @@ export function Sources({
     [error, setError] = useState("");
   const form = useRef<HTMLFormElement>(null);
   useEffect(() => {
-    form.current?.querySelector<HTMLButtonElement>(".source-card")?.focus();
+    form.current?.querySelector<HTMLButtonElement>(".source-card, .source-row")?.focus();
   }, []);
   async function submit() {
     setPending(true);
@@ -73,6 +76,41 @@ export function Sources({
           "Select your download sources. You can change them anytime.",
         )}
       </p>
+      {rows ? (
+        <div className="source-rows" role="group" aria-label={t("Download sources")}>
+          {settings.options.map((source) => {
+            const checked = selected.includes(source.id);
+            return (
+              <button
+                key={source.id}
+                type="button"
+                role="switch"
+                aria-checked={checked}
+                className="source-row"
+                disabled={pending}
+                onClick={() =>
+                  setSelected((current) =>
+                    current.includes(source.id) ? current.filter((id) => id !== source.id) : [...current, source.id],
+                  )
+                }
+              >
+                <span className="source-row-text">
+                  <strong>{source.label}</strong>
+                  <small>
+                    {tn(source.releaseCount, "{count} download option", "{count} download options", {
+                      count: formatNumber(source.releaseCount),
+                    })}
+                  </small>
+                </span>
+                <span className="source-switch-state" aria-hidden="true">
+                  {checked ? t("On") : t("Off")}
+                </span>
+                <span className="source-switch" aria-hidden="true" />
+              </button>
+            );
+          })}
+        </div>
+      ) : (
       <div
         className="source-grid"
         role="group"
@@ -105,6 +143,7 @@ export function Sources({
           );
         })}
       </div>
+      )}
       {selected.includes("nas") && (
         <div className="nas-settings">
           <label htmlFor="nas-url">{t("My NAS index address")}</label>

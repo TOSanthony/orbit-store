@@ -8,10 +8,13 @@ export function Pairing({
   system,
   pair,
   close,
+  inline = false,
 }: {
   system: System | null;
   pair: (code: string) => Promise<void>;
   close: () => void;
+  // In a settings page instead of a dialog (Crossbar, Cinema, Panorama).
+  inline?: boolean;
 }) {
   const local = !!system?.localSessionAvailable;
   const [code, setCode] = useState(""),
@@ -83,8 +86,8 @@ export function Pairing({
     local || system?.paired
       ? t("Pair another device")
       : t("Pair with your PS5");
-  return (
-    <Modal title={title} close={close} className="pairing-modal">
+  const body = (
+    <>
       <h1>{title}</h1>
       {local ? (
         <>
@@ -190,6 +193,15 @@ export function Pairing({
           {error}
         </p>
       )}
+    </>
+  );
+  return inline ? (
+    <section className="pairing-panel" aria-label={title}>
+      {body}
+    </section>
+  ) : (
+    <Modal title={title} close={close} className="pairing-modal">
+      {body}
     </Modal>
   );
 }

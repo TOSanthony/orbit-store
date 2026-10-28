@@ -1,8 +1,10 @@
+#include "orbit/download_settings.hpp"
 // Orbit Store TV app - Typed calls to the Orbit backend's local API v1.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "orbit/api.hpp"
 #include "orbit/i18n.hpp"
+#include <algorithm>
 #include <cstdio>
 
 namespace orbit::api
@@ -38,7 +40,10 @@ http::Response Client::send(const char *method, std::string path, std::string bo
     request.body = std::move(body);
     request.bearer = token_;
     request.max_bytes = max_bytes;
-    return transport_.send(request);
+    http::Response response = transport_.send(request);
+    // Sign-ins and the ntfy password travel in bodies: none outlives its request.
+    std::fill(request.body.begin(), request.body.end(), '\0');
+    return response;
 }
 
 template <typename T> bool Client::fail(const http::Response &response, Result<T> *result)
@@ -82,7 +87,7 @@ Result<System> Client::system()
         if (remote.status == 200 && json::parse(remote.body,&status) && status.is_object()) {
             result.value.catalogue_revision = status["revision"].as_int();
             result.value.zero_preference = status.text("preference");
-        } else result.value.zero_error = "Orbit Zero is unavailable. Keep it open on your computer and reconnect if its address changed.";
+        } else result.value.zero_error = /* i18n */ "Orbit Zero is unavailable. Keep it open on your computer and reconnect if its address changed.";
     }
     return result;
 }
@@ -165,6 +170,21 @@ Result<std::vector<Release>> Client::catalog()
     return result;
 }
 
+Result<std::vector<Release>> Client::addons()
+{
+    Result<std::vector<Release>> result;
+    const http::Response response = zero_enabled_ ? zero_send("/api/native/addons","GET",{},16u<<20)
+        : send("GET", "/api/v1/addons", {}, 16u << 20);
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    if (!json::parse(response.body, &value) || !value.is_array())
+        result.error = tr("Orbit sent an unreadable catalogue.");
+    else
+        result.value = parse_catalog(value);
+    return result;
+}
+
 Result<BrowserSession> Client::browser_request(std::string body)
 {
     Result<BrowserSession> result;
@@ -186,15 +206,29 @@ Result<BrowserSession> Client::browser_request(std::string body)
 
 Result<BrowserSession> Client::browser_session() { return browser_request(); }
 
-Result<BrowserSession> Client::start_browser(std::string_view release_id, std::string_view storage_id)
+Result<BrowserSession> Client::start_browser(std::string_view release_id, std::string_view storage_id, std::string_view client_id, bool account, bool check_account)
 {
-    return browser_request("{\"action\":\"start\",\"releaseId\":" + json::quote(release_id) +
-                           ",\"storageId\":" + json::quote(storage_id) + "}");
+    std::string body = "{\"action\":\"start\",\"releaseId\":" + json::quote(release_id) +
+                       ",\"storageId\":" + json::quote(storage_id) + ",\"returnTarget\":\"native\"";
+    if (account) body = "{\"action\":\"viking-account\",\"returnTarget\":\"native\"";
+    if (account && check_account) body = "{\"action\":\"viking-check\",\"returnTarget\":\"native\"";
+    if (!client_id.empty()) body += ",\"nativeDialog\":true,\"clientId\":" + json::quote(client_id);
+    return browser_request(body + "}");
 }
 
-Result<BrowserSession> Client::cancel_browser(std::string_view session_id)
+Result<BrowserSession> Client::browser_opened(std::string_view session_id, std::string_view client_id)
 {
-    return browser_request("{\"action\":\"cancel\",\"id\":" + json::quote(session_id) + "}");
+    return browser_request("{\"action\":\"opened\",\"id\":" + json::quote(session_id) +
+                           ",\"clientId\":" + json::quote(client_id) + "}");
+}
+
+Result<BrowserSession> Client::cancel_browser(std::string_view session_id, std::string_view client_id,
+                                            std::string_view failure, int error_code)
+{
+    std::string body = "{\"action\":\"cancel\",\"id\":" + json::quote(session_id);
+    if (!failure.empty()) body += ",\"clientId\":" + json::quote(client_id) +
+        ",\"nativeFailure\":" + json::quote(failure) + ",\"errorCode\":" + std::to_string(error_code);
+    return browser_request(body + "}");
 }
 
 Result<Session> Client::session()
@@ -236,6 +270,34 @@ Result<std::vector<std::string>> Client::favourites()
         result.error = tr("Orbit sent unreadable favourites.");
     else
         result.value = parse_favourites(value);
+    return result;
+}
+
+Result<std::vector<SavedFilter>> Client::saved_filters()
+{
+    Result<std::vector<SavedFilter>> result;
+    const http::Response response = send("GET", "/api/v1/filters");
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    if (!json::parse(response.body, &value) || !value.is_array())
+        result.error = tr("Orbit sent unreadable saved filters.");
+    else
+        result.value = parse_saved_filters(value);
+    return result;
+}
+
+Result<std::vector<SavedFilter>> Client::change_saved_filters(std::string body)
+{
+    Result<std::vector<SavedFilter>> result;
+    const http::Response response = send("POST", "/api/v1/filters", std::move(body));
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    if (json::parse(response.body, &value) && value.is_array())
+        result.value = parse_saved_filters(value);
+    else
+        result.error = tr("Orbit sent unreadable saved filters.");
     return result;
 }
 
@@ -281,6 +343,70 @@ Result<LibraryStorage> Client::library_storage(bool refresh)
         result.error = tr("Orbit sent unreadable drive details.");
     else
         result.value = parse_library_storage(value);
+    return result;
+}
+
+Result<FileListing> Client::files_list(const std::string &storage_id, const std::string &path)
+{
+    Result<FileListing> result;
+    const http::Response response = send("POST", "/api/v1/files/list",
+                                         "{\"storageId\":" + json::quote(storage_id) + ",\"path\":" + json::quote(path) + "}");
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    if (!json::parse(response.body, &value) || !value.is_object())
+        result.error = tr("Orbit sent an unreadable folder.");
+    else
+        result.value = parse_file_listing(value);
+    return result;
+}
+
+namespace
+{
+
+// {operation: ...} or {operation: null}: an empty id is no operation.
+void read_operation(const http::Response &response, Result<FileOperation> *result)
+{
+    json::Value value;
+    if (!json::parse(response.body, &value) || !value.is_object())
+        result->error = tr("Orbit sent an unreadable file operation.");
+    else
+        parse_file_operation(value, &result->value);
+}
+
+} // namespace
+
+Result<FileOperation> Client::files_status()
+{
+    Result<FileOperation> result;
+    const http::Response response = send("GET", "/api/v1/files/status");
+    if (!fail(response, &result))
+        read_operation(response, &result);
+    return result;
+}
+
+Result<FileOperation> Client::files_action(const FileRequest &request)
+{
+    Result<FileOperation> result;
+    std::string body = "{\"action\":" + json::quote(request.action);
+    const auto field = [&body](const char *key, const std::string &value)
+    {
+        if (!value.empty())
+            body += std::string(",\"") + key + "\":" + json::quote(value);
+    };
+    field("storageId", request.storage_id);
+    if (!request.storage_id.empty())
+        body += ",\"path\":" + json::quote(request.path); // "" is a drive's top
+    field("name", request.name);
+    field("toStorageId", request.to_storage_id);
+    if (!request.to_storage_id.empty())
+        body += ",\"toPath\":" + json::quote(request.to_path);
+    field("id", request.id);
+    field("password", request.password);
+    body += "}";
+    const http::Response response = send("POST", "/api/v1/files/action", body);
+    if (!fail(response, &result))
+        read_operation(response, &result);
     return result;
 }
 
@@ -403,6 +529,24 @@ Result<std::vector<Job>> Client::job_action(std::string_view job_id, std::string
     return result;
 }
 
+Result<std::vector<Job>> Client::clear_history(std::string_view status)
+{
+    Result<std::vector<Job>> result;
+    if (status != "complete" && status != "cancelled")
+    {
+        result.error = tr("Unknown download action.");
+        return result;
+    }
+    const http::Response response =
+        send("POST", "/api/v1/downloads/clear-history", "{\"status\":" + json::quote(status) + "}");
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    if (json::parse(response.body, &value) && value.is_array())
+        result.value = parse_jobs(value);
+    return result;
+}
+
 Result<Art> Client::art(std::string_view game_id, ArtKind kind)
 {
     Result<Art> result;
@@ -413,9 +557,9 @@ Result<Art> Client::art(std::string_view game_id, ArtKind kind)
     }
     std::string path = "/api/v1/art/";
     path += game_id;
-    path += kind == ArtKind::hero ? "/hero" : "/cover";
+    path += kind == ArtKind::cover ? "/cover" : "/hero";
     refresh_zero();
-    const http::Response response = zero_enabled_ ? zero_send("/api/native/art/"+std::string(game_id)+(kind==ArtKind::hero?"/hero":"/cover"),"GET",{},kArtLimit)
+    const http::Response response = zero_enabled_ ? zero_send("/api/native/art/"+std::string(game_id)+(kind==ArtKind::cover?"/cover":"/hero"),"GET",{},kArtLimit)
         : send("GET", std::move(path), {}, kArtLimit);
     if (fail(response, &result))
         return result;
@@ -500,6 +644,36 @@ Result<std::string> Client::set_preferred_storage(std::string_view storage_id)
     return result;
 }
 
+Result<int> Client::set_download_recovery(int field, int number)
+{
+    Result<int> result;
+    if (field < 0 || field >= static_cast<int>(download_settings.size())) { result.error = tr("Could not save the setting."); return result; }
+    const auto &setting = download_settings[field];
+    if (number < setting.min || number > setting.max) { result.error = tr("Could not save the setting."); return result; }
+    const http::Response response = send("POST", "/api/v1/settings/downloads",
+        "{\"" + std::string(setting.key) + "\":" + std::to_string(number) + "}");
+    if (fail(response, &result)) return result;
+    json::Value value;
+    if (!json::parse(response.body, &value) || !value[setting.key].is_number() || value[setting.key].as_number() != number)
+        result.error = tr("Update the download service to change this here.");
+    else result.value = number;
+    return result;
+}
+
+Result<int> Client::set_download_connections(int connections)
+{
+    Result<int> result;
+    if (connections < 1 || connections > 64) { result.error = tr("Choose 1 to 64 connections per download."); return result; }
+    const http::Response response = send("POST", "/api/v1/settings/downloads",
+        "{\"downloadConnections\":" + std::to_string(connections) + "}");
+    if (fail(response, &result)) return result;
+    json::Value value;
+    const auto saved = json::parse(response.body, &value) ? value["downloadConnections"].as_int() : 0;
+    if (saved < 1 || saved > 64) result.error = tr("Could not save the setting.");
+    else result.value = static_cast<int>(saved);
+    return result;
+}
+
 Result<int> Client::set_download_limit(int limit)
 {
     Result<int> result;
@@ -512,6 +686,156 @@ Result<int> Client::set_download_limit(int limit)
         value["concurrentDownloads"].as_int() > 8)
         result.error = tr("Could not save the setting.");
     else result.value = static_cast<int>(value["concurrentDownloads"].as_int());
+    return result;
+}
+
+Result<bool> Client::set_download_notifications(bool enabled)
+{
+    Result<bool> result;
+    const http::Response response = send("POST", "/api/v1/settings/notifications",
+                                         enabled ? "{\"downloadNotifications\":true}" : "{\"downloadNotifications\":false}");
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    if (json::parse(response.body, &value))
+        result.value = value.flag("downloadNotifications", enabled);
+    return result;
+}
+
+Result<DiagnosticsReport> Client::diagnostics()
+{
+    Result<DiagnosticsReport> result;
+    const http::Response response = send("GET", "/api/v1/diagnostics");
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    if (!json::parse(response.body, &value) || !value.is_object())
+    {
+        result.error = tr("Orbit sent an unreadable status.");
+        return result;
+    }
+    DiagnosticsReport &report = result.value;
+    report.known = true;
+    report.version = value.text("version");
+    report.platform = value.text("platform");
+    report.state_healthy = value.flag("stateHealthy", true);
+    report.launcher_status = value["launcher"].text("status");
+    const auto events = [](const json::Value &list)
+    {
+        std::vector<DiagnosticEvent> out;
+        for (const json::Value &e : list.items())
+        {
+            DiagnosticEvent event;
+            event.at = e["at"].as_number();
+            event.download = static_cast<long long>(e["download"].as_int());
+            event.phase = e.text("phase");
+            event.status = e.text("status");
+            event.reason = e.text("reason");
+            event.provider = e.text("provider");
+            event.received = e["received"].as_number();
+            event.total = e["total"].as_number();
+            event.http_status = static_cast<int>(e["httpStatus"].as_int());
+            event.result = static_cast<int>(e["result"].as_int());
+            out.push_back(std::move(event));
+        }
+        return out;
+    };
+    report.downloads = events(value["downloads"]);
+    report.events = events(value["events"]);
+    return result;
+}
+
+Result<std::array<bool, 5>> Client::set_notification_event(int index, bool on)
+{
+    Result<std::array<bool, 5>> result;
+    if (index < 0 || index >= 5)
+    {
+        result.error = tr("Could not save the setting.");
+        return result;
+    }
+    const std::string body = std::string("{\"events\":{") + json::quote(kNotificationEvents[index].name) +
+                             (on ? ":true}}" : ":false}}");
+    const http::Response response = send("POST", "/api/v1/settings/notifications", body);
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    if (!json::parse(response.body, &value) || !value["events"].is_object())
+    {
+        result.error = tr("Could not save the setting.");
+        return result;
+    }
+    for (std::size_t i = 0; i < result.value.size(); ++i)
+        result.value[i] = value["events"].flag(kNotificationEvents[i].name, true);
+    return result;
+}
+
+Result<std::string> Client::save_diagnostics(const std::string &version, const std::string &language,
+                                             const std::string &interface)
+{
+    Result<std::string> result;
+    const std::string body = "{\"client\":{\"app\":\"tv\",\"version\":" + json::quote(version) +
+                             ",\"language\":" + json::quote(language) + ",\"interface\":" +
+                             json::quote(interface) + "}}";
+    const http::Response response = send("POST", "/api/v1/diagnostics/export", body);
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    if (json::parse(response.body, &value))
+        result.value = value.text("path");
+    return result;
+}
+
+Result<bool> Client::set_delete_packages(bool enabled)
+{
+    Result<bool> result;
+    const http::Response response = send("POST", "/api/v1/settings/installation",
+                                         enabled ? "{\"deletePackages\":true}" : "{\"deletePackages\":false}");
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    if (json::parse(response.body, &value))
+        result.value = value.flag("deletePackages", enabled);
+    return result;
+}
+
+namespace
+{
+Result<NtfySettings> ntfy_reply(const http::Response &response)
+{
+    Result<NtfySettings> result;
+    result.status = response.status;
+    result.retry_after = response.retry_after;
+    json::Value value;
+    if (!response.error.empty())
+        result.error = response.error;
+    else if (response.status < 200 || response.status >= 300)
+        result.error = json::parse(response.body, &value) && !value.text("error").empty()
+                           ? value.text("error")
+                           : std::string(tr("Orbit could not complete this request."));
+    else if (!json::parse(response.body, &value) || !value.is_object())
+        result.error = tr("Orbit could not complete this request.");
+    else
+        result.value = parse_ntfy(value);
+    return result;
+}
+} // namespace
+
+Result<NtfySettings> Client::ntfy()
+{
+    return ntfy_reply(send("GET", "/api/v1/settings/ntfy"));
+}
+
+Result<NtfySettings> Client::save_ntfy(std::string body)
+{
+    return ntfy_reply(send("POST", "/api/v1/settings/ntfy", std::move(body)));
+}
+
+Result<bool> Client::test_ntfy()
+{
+    Result<bool> result;
+    const http::Response response = send("POST", "/api/v1/settings/ntfy/test", "{}");
+    if (!fail(response, &result))
+        result.value = true;
     return result;
 }
 
@@ -537,30 +861,6 @@ Result<bool> Client::set_ps4_hidden(bool hidden)
         return result;
     json::Value value;
     result.value = json::parse(response.body, &value) ? value.flag("ps4Hidden", hidden) : hidden;
-    return result;
-}
-
-Result<bool> Client::set_delete_pkgs(bool enabled)
-{
-    Result<bool> result;
-    const http::Response response = send("POST", "/api/v1/settings/delete-pkgs",
-                                         enabled ? "{\"deletePkgs\":true}" : "{\"deletePkgs\":false}");
-    if (fail(response, &result))
-        return result;
-    json::Value value;
-    result.value = json::parse(response.body, &value) ? value.flag("deletePkgs", enabled) : enabled;
-    return result;
-}
-
-Result<bool> Client::set_install_pkgs(bool enabled)
-{
-    Result<bool> result;
-    const http::Response response = send("POST", "/api/v1/settings/install-pkgs",
-                                         enabled ? "{\"installPkgs\":true}" : "{\"installPkgs\":false}");
-    if (fail(response, &result))
-        return result;
-    json::Value value;
-    result.value = json::parse(response.body, &value) ? value.flag("installPkgs", enabled) : enabled;
     return result;
 }
 
@@ -634,6 +934,59 @@ Result<std::string> Client::set_keyboard(const std::string &layout)
     json::Value value;
     result.value = json::parse(response.body, &value) ? value.text("keyboard") : layout;
     return result;
+}
+
+namespace
+{
+// The reply to every /api/v1/archive-account request.
+template <typename Send> Result<ArchiveAccount> archive_reply(Send send)
+{
+    Result<ArchiveAccount> result;
+    const http::Response response = send();
+    result.status = response.status;
+    result.retry_after = response.retry_after;
+    if (!response.error.empty())
+        result.error = response.error;
+    else if (response.status < 200 || response.status >= 300)
+    {
+        json::Value value;
+        result.error = json::parse(response.body, &value) && !value.text("error").empty()
+                           ? value.text("error")
+                           : std::string(tr("Orbit could not complete this request."));
+    }
+    else
+    {
+        json::Value value;
+        if (!json::parse(response.body, &value) || !value.is_object())
+            result.error = tr("Orbit could not complete this request.");
+        else
+            result.value = parse_archive_account(value);
+    }
+    return result;
+}
+} // namespace
+
+Result<ArchiveAccount> Client::archive_account()
+{
+    return archive_reply([this]() { return send("GET", "/api/v1/archive-account"); });
+}
+
+Result<ArchiveAccount> Client::archive_sign_in(const std::string &email, const std::string &password)
+{
+    return archive_reply(
+        [&]()
+        {
+            std::string body = "{\"action\":\"sign-in\",\"email\":" + json::quote(email) +
+                               ",\"password\":" + json::quote(password) + "}";
+            http::Response response = send("POST", "/api/v1/archive-account", body);
+            std::fill(body.begin(), body.end(), '\0');
+            return response;
+        });
+}
+
+Result<ArchiveAccount> Client::archive_sign_out()
+{
+    return archive_reply([this]() { return send("POST", "/api/v1/archive-account", "{\"action\":\"sign-out\"}"); });
 }
 
 Result<CatalogueStatus> Client::catalogue_status()
@@ -749,6 +1102,26 @@ Result<SavedPayload> Client::saved_payload()
     }
     result.value.image = std::move(response.body);
     result.value.version = std::move(response.orbit_version);
+    return result;
+}
+
+Result<ServiceUpdate> Client::update_all(const ServiceUpdate &service, const TvAppStatus &tv)
+{
+    std::string body = "{\"action\":\"update-all\"";
+    if (service.needs_install())
+        body += ",\"serviceVersion\":" + json::quote(service.latest_version) +
+                ",\"serviceChecksum\":" + json::quote(service.checksum);
+    if (tv.update_available)
+        body += ",\"tvAppVersion\":" + json::quote(tv.latest_version) +
+                ",\"tvAppChecksum\":" + json::quote(tv.checksum);
+    body += "}";
+    Result<ServiceUpdate> result;
+    const http::Response response = send("POST", "/api/v1/updates", body);
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    if (json::parse(response.body, &value) && value.is_object())
+        result.value = parse_service_update(value);
     return result;
 }
 

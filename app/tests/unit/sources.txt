@@ -22,3 +22,5 @@ src/ui/pixel_font.cpp
 src/ui/theme.cpp
 src/ui/widgets.cpp
 src/ui/confetti.cpp
+
+src/platform/ps5/provider_dialog.cpp

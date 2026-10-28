@@ -26,7 +26,7 @@ export function BrowserNotice({
   const [error, setError] = useState<{ id: string; message: string } | null>(
     null,
   );
-  if (!session?.id || hidden || (!session.active && dismissed === session.id))
+  if (!session?.id || session.accountPage || hidden || (!session.active && dismissed === session.id))
     return null;
   function dismiss(id: string) {
     setDismissed(id);
@@ -49,7 +49,7 @@ export function BrowserNotice({
             ? t("Checking your file")
             : session.state === "waiting-link"
               ? t("Waiting for the download link")
-            : t("Select Download, then return to Orbit.");
+            : t("Provider verification");
   return (
     <aside
       className="update-notice provider-browser-notice"

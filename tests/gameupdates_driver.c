@@ -2,7 +2,7 @@
 /* Runs the game-update check against a disposable console tree and a local fake of Sony's server.
  * usage: gameupdates_driver <system root> <console firmware, hex> ; the fake server's address is
  * in ORBIT_TEST_GAMEUPDATES_BASE. Prints the status JSON once the first check has finished. */
-#include "install_service.h"
+#include "packages.h"
 #include "orbit.h"
 #include <curl/curl.h>
 #include <fcntl.h>
@@ -179,17 +179,18 @@ curl_socket_t provider_open_socket(void *context, curlsocktype purpose, struct c
 bool orbit_is_stopping(void) {
     return false;
 }
-bool install_service_available(void) {
+bool package_platform_available(void) {
     return false;
 }
-bool install_has_space(int64_t bytes) {
-    (void)bytes;
-    return true;
+int packages_install_path(const Job *pin, const char *folder, const char *output, const char *origin, char *error,
+                          size_t cap) {
+    (void)pin, (void)folder, (void)output, (void)origin;
+    copy_text(error, cap, "not available in tests");
+    return 503;
 }
-int install_package_blocking(const char *path, const char *name, install_progress_fn progress, void *context,
-                             bool (*stop)(void), char *error, size_t cap) {
-    (void)path, (void)name, (void)progress, (void)context, (void)stop, (void)error, (void)cap;
-    return -1;
+cJSON *packages_for_download(const char *origin) {
+    (void)origin;
+    return cJSON_CreateObject();
 }
 
 /* The status key of the download being watched: DLC have a slot of their own. */

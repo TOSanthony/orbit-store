@@ -1,3 +1,13 @@
 Inter 4.1, https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip
 SHA-256 of the release archive: 9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e
 Files taken from extras/ttf/: Inter-Regular.ttf, Inter-Medium.ttf, Inter-SemiBold.ttf, InterDisplay-Light.ttf
+
+Interface faces (Crossbar, Cinema, Panorama): google/fonts commit 66928797f271fed5ee428544e7229685e2d90127
+  ofl/sora/Sora[wght].ttf (SHA-256 84ff7096ae3ec6c8be47d906d1a0ba4de7f2ce78c615275c77301964a316e16c)
+  ofl/intertight/InterTight[wght].ttf (SHA-256 b81b73dcb64df3c230cabade7df6c5773bf863233f24c9ee51087519f1f88b6f)
+Static instances made with fontTools 4.66.1 (fonttools varLib.instancer --static):
+  Sora-Regular.ttf wght=400, Sora-SemiBold.ttf wght=600 (--update-name-table)
+  InterTight-ExtraLight.ttf wght=200, InterTight-Light.ttf wght=300, InterTight-Medium.ttf wght=500,
+  InterTight-SemiBold.ttf wght=600 (--update-name-table)
+  InterTight-Medium.ttf and InterTight-SemiBold.ttf were then subset to the baked glyphs (fonttools subset, --layout-features='*') and their
+  Extension lookups unwrapped, so their pair kerning is in a plain GPOS lookup the baker reads.

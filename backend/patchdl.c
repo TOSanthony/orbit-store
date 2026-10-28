@@ -7,8 +7,8 @@
  * stopped or failed download resumes instead of starting over. Only when every piece is verified
  * is the file renamed to ".pkg" and handed to the console's installer. */
 #define _POSIX_C_SOURCE 200809L
-#include "install_service.h"
 #include "orbit.h"
+#include "packages.h"
 #include "patchfeed.h"
 #include "patchmanifest.h"
 #include "sonynet.h"
@@ -706,6 +706,7 @@ static const char *settle(PatchJob *job, Check *check, unsigned *failures, size_
     return "";
 }
 
+typedef void (*install_progress_fn)(unsigned percent, void *context);
 #define INSTALL_VERIFY_SECONDS 1800
 #define INSTALL_VERIFY_STEP 5
 
@@ -714,6 +715,69 @@ static void installed_progress(unsigned percent, void *context) {
     pthread_mutex_lock(&pd.mutex);
     pd.install_percent = percent;
     pthread_mutex_unlock(&pd.mutex);
+}
+
+/* Hands the finished package to Orbit's package installer (the same one Files uses) and follows its
+ * receipt until the console has taken it. 0 on success; otherwise -1 with a reason in `error`. */
+static int install_with_packages(const Storage *drive, const char *name, const char *origin,
+                                 install_progress_fn progress, void *context, bool (*stop)(void), char *error,
+                                 size_t cap) {
+    Job pin;
+    memset(&pin, 0, sizeof pin);
+    copy_text(pin.storage_id, sizeof pin.storage_id, drive->id);
+    copy_text(pin.root, sizeof pin.root, drive->root);
+    pin.device = drive->device;
+    pin.inode = drive->inode;
+    int code = packages_install_path(&pin, "homebrew", name, origin, error, cap);
+    if (code != 202)
+        return -1;
+    while (!stop() && !orbit_is_stopping()) {
+        struct timespec wait = {.tv_sec = 0, .tv_nsec = 500000000};
+        nanosleep(&wait, NULL);
+        cJSON *r = packages_for_download(origin), *p;
+        const char *state = json_text(r, "state");
+        if (!cJSON_IsObject(r) || !strcmp(state, "error")) {
+            copy_text(error, cap, *json_text(r, "message") ? json_text(r, "message") : "The installer couldn't check this file.");
+            cJSON_Delete(r);
+            return -1;
+        }
+        if (!strcmp(state, "checking")) {
+            cJSON_Delete(r);
+            continue;
+        }
+        int64_t received = 0, total = 0;
+        bool busy = false;
+        const char *failed = NULL;
+        int packages = 0;
+        cJSON_ArrayForEach(p, cJSON_GetObjectItemCaseSensitive(r, "packages")) {
+            const char *st = json_text(p, "state");
+            packages++;
+            received += (int64_t)cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(p, "received"));
+            total += (int64_t)cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(p, "total"));
+            if (!strcmp(st, "queued") || !strcmp(st, "installing"))
+                busy = true;
+            else if (!strcmp(st, "error") || !strcmp(st, "blocked") || !strcmp(st, "ready"))
+                failed = json_text(p, "message");
+        }
+        if (total > 0 && progress)
+            progress((unsigned)(received * 100 / total), context);
+        if (busy) {
+            cJSON_Delete(r);
+            continue;
+        }
+        int rc = 0;
+        if (failed) {
+            copy_text(error, cap, *failed ? failed : "The package couldn't be installed.");
+            rc = -1;
+        } else if (!packages) {
+            copy_text(error, cap, "The package was not found on the drive.");
+            rc = -1;
+        }
+        cJSON_Delete(r);
+        return rc;
+    }
+    copy_text(error, cap, "cancelled");
+    return -1;
 }
 
 /* Updates and DLC download to a USB drive, never to the console's own drive: the first one (usb0,
@@ -919,11 +983,8 @@ static void run(const char *manifest_url) {
     kept.drive = drive;
     copy_text(kept.pkg_name, sizeof kept.pkg_name, job.final_name);
     pthread_mutex_unlock(&pd.mutex);
-    if (!install_service_available()) {
+    if (!package_platform_available()) {
         return finish_d("downloaded", "Downloaded. Install the file from the console's Game Library.", job.final_name);
-    }
-    if (!install_has_space(job.manifest.total)) {
-        return finish("failed", "Downloaded, but the console has too little free space to install it.");
     }
     phase("installing", "");
     atomic_store(&pd.pause, false); /* a pause asked as the download ended does not stop the install */
@@ -931,7 +992,9 @@ static void run(const char *manifest_url) {
     pthread_mutex_lock(&pd.mutex);
     copy_text(name, sizeof name, pd.name);
     pthread_mutex_unlock(&pd.mutex);
-    int code = install_package_blocking(path, name, installed_progress, cur, stopped, error, sizeof error);
+    char origin[48];
+    snprintf(origin, sizeof origin, "patch-%.30s", job.final_name);
+    int code = install_with_packages(&drive, job.final_name, origin, installed_progress, cur, stopped, error, sizeof error);
     if (code != 0)
         return finish(stopped() ? "cancelled" : "failed", error);
     /* The console takes over from here and may report "playable" before the update is in. It is
@@ -964,7 +1027,7 @@ static void run(const char *manifest_url) {
     if (!arrived)
         return finish("failed", "The console has not finished installing the update yet. Check the Notifications on the console, then check for updates again.");
     pthread_mutex_lock(&orbit.mutex);
-    bool remove_it = orbit.delete_pkgs;
+    bool remove_it = orbit.delete_packages;
     pthread_mutex_unlock(&orbit.mutex);
     if (remove_it)
         unlink(path);

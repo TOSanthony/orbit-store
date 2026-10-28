@@ -133,7 +133,7 @@ static int ensure_copy(const char *path, const unsigned char *data, size_t lengt
         return same > 0 ? 0 : -1;
     return write_atomic(path, data, length, mode) ? -1 : 1;
 }
-int autoboot_saved_image(unsigned char **data, size_t *length) {
+static int saved_image(unsigned char **data, size_t *length) {
     Path p;
     at(p, SAVED);
     if (read_regular_file(p, MAX_IMAGE_BYTES, data, length))
@@ -144,6 +144,9 @@ int autoboot_saved_image(unsigned char **data, size_t *length) {
         return -1;
     }
     return 0;
+}
+int autoboot_saved_image(unsigned char **data, size_t *length) {
+    return saved_image(data, length);
 }
 static int lock_settings(void) {
     Path p;
@@ -465,7 +468,7 @@ int autoboot_install(const unsigned char *image, size_t length, const char *vers
     size_t n;
     char saved_version[64];
     autoboot_saved_version(saved_version, sizeof saved_version);
-    if (!autoboot_saved_image(&elf, &n)) {
+    if (!saved_image(&elf, &n)) {
         if (refresh_copies(elf, n, saved_version))
             updated = -1;
         free(elf);
@@ -561,7 +564,7 @@ int integration_set(const char *manager, bool enable, char *err, size_t cap) {
     } else if (enable && !is_dir(path)) {
         copy_text(err, cap, "This payload manager is not installed.");
         code = 409;
-    } else if (enable && autoboot_saved_image(&elf, &length)) {
+    } else if (enable && saved_image(&elf, &length)) {
         copy_text(err, cap, "Orbit's saved copy is missing. Run orbit_store.elf again.");
         code = 409;
     } else {
@@ -603,7 +606,7 @@ int autoboot_set(const char *manager, bool enable, char *err, size_t cap) {
     size_t n = 0;
     int code = 200;
     Path p;
-    bool have_saved = !autoboot_saved_image(&elf, &n);
+    bool have_saved = !saved_image(&elf, &n);
     if (enable && !have_saved) {
         copy_text(err, cap, "Orbit's saved copy is missing. Run orbit_store.elf again.");
         code = 409;

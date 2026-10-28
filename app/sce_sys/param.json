@@ -15,7 +15,7 @@
   "conceptId": "99177",
   "contentBadgeType": 1,
   "contentId": "UP9000-PPSA99177_00-ORBITSTORETV0001",
-  "contentVersion": "01.005.000",
+  "contentVersion": "01.011.000",
   "downloadDataSize": 256,
   "gameIntent": {
     "permittedIntents": [
@@ -36,7 +36,7 @@
   },
   "masterVersion": "01.00",
   "pubtools": {
-    "creationDate": "2026-10-10 00:00:00",
+    "creationDate": "2026-10-26 00:00:00",
     "loudnessSnd0": "-28.00",
     "toolVersion": "2.00"
   },

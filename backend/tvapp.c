@@ -49,14 +49,15 @@ static const char *const installed_names[] = {"none", "orbit", "manual", "folder
 
 static struct {
     pthread_mutex_t mutex;
-    pthread_cond_t changed;
+    pthread_cond_t changed, done; /* changed wakes the worker; done, anyone waiting on it. */
     pthread_t thread;
     bool started, stop, busy, replace;
     char action[16], phase[24], error[256];
     char version[40], url[512], checksum[65];
     int64_t size, received;
     time_t checked, retry_at, check_after, automatic_check_after;
-} tv = {.mutex = PTHREAD_MUTEX_INITIALIZER, .changed = PTHREAD_COND_INITIALIZER};
+} tv = {.mutex = PTHREAD_MUTEX_INITIALIZER, .changed = PTHREAD_COND_INITIALIZER,
+          .done = PTHREAD_COND_INITIALIZER};
 
 typedef struct {
     int fd; /* -1 collects into data */
@@ -496,6 +497,7 @@ static void *worker(void *unused) {
                   rc ? (*error ? error : "The TV app could not be installed. Try again.") : "");
         copy_text(tv.phase, sizeof tv.phase, rc ? "error" : checking ? "checked" : "installed");
         tv.busy = false;
+        pthread_cond_broadcast(&tv.done);
     }
     pthread_mutex_unlock(&tv.mutex);
     return NULL;
@@ -517,10 +519,22 @@ void tvapp_stop(void) {
     pthread_mutex_lock(&tv.mutex);
     tv.stop = true;
     pthread_cond_signal(&tv.changed);
+    pthread_cond_broadcast(&tv.done);
     bool started = tv.started;
     pthread_mutex_unlock(&tv.mutex);
     if (started)
         pthread_join(tv.thread, NULL);
+}
+/* Waits for the action tvapp_action accepted; 0 once the TV app is installed. */
+int tvapp_wait(char *error, size_t cap) {
+    pthread_mutex_lock(&tv.mutex);
+    while (tv.busy && !tv.stop)
+        pthread_cond_wait(&tv.done, &tv.mutex);
+    int rc = !tv.busy && !strcmp(tv.phase, "installed") ? 0 : -1;
+    if (rc)
+        copy_text(error, cap, *tv.error ? tv.error : "The TV app could not be installed. Try again.");
+    pthread_mutex_unlock(&tv.mutex);
+    return rc;
 }
 cJSON *tvapp_status(void) {
     char current[40] = {0};

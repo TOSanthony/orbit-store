@@ -23,6 +23,9 @@ export function useController(back: () => void, consoleBrowser = false) {
       previousFrame = 0,
       stickScrollUntil = 0;
     let pointerPosition: { x: number; y: number } | null = null;
+    function alertDialog() {
+      return document.querySelector<HTMLElement>('[role="alertdialog"][aria-modal="true"]');
+    }
     function sendKey(current: HTMLElement, key: string) {
       dispatchingKey = true;
       try {
@@ -82,20 +85,40 @@ export function useController(back: () => void, consoleBrowser = false) {
       return true;
     }
     function goBack() {
+      const alert = alertDialog();
+      if (alert) {
+        alert.querySelector<HTMLButtonElement>("[data-dialog-back]")?.click();
+        return;
+      }
       if (comboKey("Escape", true)) return;
+      // A menu that owns its keys (Crossbar's choices) closes before the page.
+      const current = document.activeElement as HTMLElement | null;
+      if (current?.closest("[data-own-arrows]")) {
+        const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+        dispatchingKey = true;
+        try {
+          current.dispatchEvent(escape);
+        } finally {
+          dispatchingKey = false;
+        }
+        if (escape.defaultPrevented) return;
+      }
       const close =
         document.querySelector<HTMLButtonElement>(
           '[role="dialog"] [data-dialog-back]',
         ) ||
         document.querySelector<HTMLButtonElement>('[role="dialog"] .close');
       if (close) close.click();
-      else onBack.current();
+      else if (document.dispatchEvent(new CustomEvent("orbit-page-back", { cancelable: true }))) onBack.current();
     }
     function railKey(key: string) {
       const current = document.activeElement as HTMLElement | null;
+      const sideways = key === "ArrowLeft" || key === "ArrowRight";
+      // Cinema's rows, strip and stage, and the popup menus, own the arrows
+      // (an unhandled one falls through to the document's move).
       if (
-        (key !== "ArrowLeft" && key !== "ArrowRight") ||
-        !current?.closest("[data-virtual-rail]")
+        !(sideways && current?.closest("[data-virtual-rail]")) &&
+        !(key.startsWith("Arrow") && current?.closest("[data-own-arrows]"))
       )
         return false;
       // The row can mount its next tile before moving controller focus to it.
@@ -104,6 +127,7 @@ export function useController(back: () => void, consoleBrowser = false) {
     }
     function scrollDiscover(top: number) {
       if (!onConsole.current || !document.querySelector(".app.discover") ||
+          alertDialog() ||
           document.querySelector('[role="dialog"]')) return false;
       // Vertical scrolling belongs to the page, not the horizontal row below
       // the PS5 browser cursor. Scrolling must not move the selected game.
@@ -138,9 +162,10 @@ export function useController(back: () => void, consoleBrowser = false) {
       return true;
     }
     function move(direction: string) {
-      if (scrollContent(direction)) return;
-      if (browseSearchKey(direction)) return;
-      const scope = document.querySelector('[role="dialog"]') || document;
+      const modal = alertDialog() || document.querySelector('[role="dialog"]');
+      if (!modal && scrollContent(direction)) return;
+      if (!modal && browseSearchKey(direction)) return;
+      const scope = modal || document;
       const items = [...scope.querySelectorAll<HTMLElement>(focusable)].filter(
         (el) => el.offsetWidth && el.offsetHeight && !el.closest("[inert]"),
       );
@@ -369,6 +394,8 @@ export function useController(back: () => void, consoleBrowser = false) {
       if (e.defaultPrevented || e.isComposing) return;
       root.classList.remove("pointer");
       if (e.key === "Escape" || e.key === "BrowserBack") {
+        // goBack's own Escape, unanswered: goBack goes on from there.
+        if (dispatchingKey) return;
         e.preventDefault();
         goBack();
         return;
@@ -407,6 +434,7 @@ export function useController(back: () => void, consoleBrowser = false) {
     window.addEventListener("blur", blur);
     function shortcut(command: string) {
       if (
+        alertDialog() ||
         document.querySelector(
           '[role="dialog"], [role="combobox"][aria-expanded="true"]',
         )
@@ -436,6 +464,13 @@ export function useController(back: () => void, consoleBrowser = false) {
           ?.click();
         return;
       }
+      // A page with collections (Cinema's Library and Downloads) steps
+      // through them first, as on the PS5 app.
+      const step = new CustomEvent("orbit-step", {
+        detail: command === "nextTab" ? 1 : -1,
+        cancelable: true,
+      });
+      if (!document.dispatchEvent(step)) return;
       const tabs = [
         ...document.querySelectorAll<HTMLButtonElement>(".main-nav button"),
       ];

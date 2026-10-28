@@ -167,7 +167,7 @@ static int create_locked(const Release *r, const char *sid, const Storage *pin,
                          const char *etag, const char *modified, bool dry_run, const char *delivery,
                          char *err, size_t cap, Job **result) {
     const char *rid = r ? r->id : "";
-    if (orbit.library_storage_busy || orbit.receiver_active) {
+    if (orbit.library_storage_busy || orbit.files_storage_busy || orbit.receiver_active) {
         copy_text(err, cap, "A library storage operation is in progress. Wait for it to finish before downloading.");
         return 409;
     }
@@ -195,8 +195,8 @@ static int create_locked(const Release *r, const char *sid, const Storage *pin,
     }
     if (!torbox && !provider_supported(r) && !(dry_run && provider_browser_supported(r))) {
         copy_text(err, cap, provider_browser_supported(r)
-            ? (!strcmp(r->source, "akirabox")
-                ? "Complete verification on AkiraBox, then wait for Orbit to check the download link."
+            ? (!strcmp(r->source, "akirabox") || !strcmp(r->source, "vikingfile")
+                ? "Complete verification if shown, then wait. Orbit will check the generated download link automatically."
                 : "Open this option's download page on PS5 first, select Download, then return to Orbit.")
             : "This provider does not support direct console downloads yet.");
         return 409;
@@ -384,7 +384,8 @@ bool job_can_refresh_link(const Job *j) {
     return j && (!strcmp(j->status, "paused") || !strcmp(j->status, "error")) &&
         !j->archive_ready && !(j->release.compression[0] && j->received >= j->total) &&
         strcmp(j->delivery, "torbox") &&
-        (!strcmp(j->release.source, "akirabox") || !strcmp(j->release.source, "datanodes")) &&
+        (!strcmp(j->release.source, "vikingfile") || !strcmp(j->release.source, "akirabox") ||
+         !strcmp(j->release.source, "datanodes") || !strcmp(j->release.source, "1fichier")) &&
         provider_browser_supported(&j->release);
 }
 int job_refresh_link_locked(Job *j, const Release *r, const Storage *pin,
@@ -451,7 +452,6 @@ int job_action_locked(Job *j, const char *action, bool remove, char *err, size_t
         copy_text(err, cap, "Orbit is stopping. Reconnect after restarting it.");
         return 503;
     }
-    if (!strcmp(action, "install")) return install_job_retry_locked(j, err, cap);
     bool active = job_active(j);
     if (!strcmp(action, "delete") || !strcmp(action, "forget")) {
         if (strcmp(j->status, "cancelled")) {
@@ -526,7 +526,7 @@ int job_action_locked(Job *j, const char *action, bool remove, char *err, size_t
             return 409;
         }
     } else if (!strcmp(action, "resume") || !strcmp(action, "retry")) {
-        if (orbit.library_storage_busy) {
+        if (orbit.library_storage_busy || orbit.files_storage_busy) {
             copy_text(err, cap, "Wait for the library storage operation to finish before resuming downloads.");
             return 409;
         }

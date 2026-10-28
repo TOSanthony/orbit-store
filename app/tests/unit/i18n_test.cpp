@@ -51,24 +51,27 @@ TEST_F(I18nTest, EnglishIsTheKeyAndTheFallback)
     EXPECT_EQ(trn(1200, "{count} game", "{count} games"), "1,200 games");
 }
 
-TEST_F(I18nTest, ChoosingALanguageSwitchesAndAutomaticFollowsTheConsole)
+TEST_F(I18nTest, ChoosingFollowsTheConsoleAndKeepsEarlierTextReadable)
 {
-    std::ofstream(dir_ + "/fr.json", std::ios::binary) << R"({"Back":"Retour"})";
-    std::ofstream(dir_ + "/de.json", std::ios::binary) << R"({"Back":"Zur\u00fcck"})";
-    ASSERT_TRUE(i18n::load(dir_, "en"));
-    EXPECT_EQ(i18n::choice_count(), 11u);
-    EXPECT_EQ(i18n::resolve("fr", 1), "fr");
-    EXPECT_EQ(i18n::resolve("auto", 4), "de"); // the console's German
-    EXPECT_EQ(i18n::resolve("", 2), "fr");
-    EXPECT_EQ(i18n::resolve("xx", 1), "en"); // an unknown saved code follows the console
-
-    EXPECT_TRUE(i18n::apply(dir_, "fr", 1));
-    const char *retour = tr("Back");
-    EXPECT_STREQ(retour, "Retour");
-    EXPECT_FALSE(i18n::apply(dir_, "fr", 1)); // nothing changed
-    EXPECT_TRUE(i18n::apply(dir_, "auto", 4)); // the console speaks German
-    EXPECT_STREQ(tr("Back"), "Zur\xC3\xBC" "ck");
-    EXPECT_STREQ(retour, "Retour"); // text taken earlier is still valid
+    use("de", R"({"Language":"Sprache"})");
+    std::ofstream(dir_ + "/fr.json", std::ios::binary) << R"({"Language":"Langue"})";
+    const char *german = tr("Language");
+    const std::uint64_t before = i18n::revision();
+    i18n::set_system("fr");
+    ASSERT_TRUE(i18n::choose("")); // Automatic: the console's language
+    EXPECT_EQ(i18n::language(), "fr");
+    EXPECT_STREQ(tr("Language"), "Langue");
+    EXPECT_GT(i18n::revision(), before);
+    EXPECT_STREQ(german, "Sprache"); // still readable until the screen redraws
+    ASSERT_TRUE(i18n::choose("en"));
+    EXPECT_STREQ(tr("Language"), "Language");
+    const std::uint64_t english = i18n::revision();
+    ASSERT_TRUE(i18n::choose("en")); // unchanged: nothing reloads
+    EXPECT_EQ(i18n::revision(), english);
+    i18n::set_system("ja"); // not shipped: Automatic is English
+    EXPECT_EQ(i18n::system(), "en");
+    EXPECT_EQ(i18n::languages().size(), 11u);
+    EXPECT_EQ(i18n::languages()[8].name, "Portugu\xC3\xAAs (Brasil)");
 }
 
 TEST_F(I18nTest, UnknownOrMissingLanguagesStayInEnglish)

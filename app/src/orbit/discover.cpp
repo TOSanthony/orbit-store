@@ -1,8 +1,9 @@
-// Orbit Store TV app - Discover: featured art, latest releases and a paged game grid.
+// Orbit Store TV app - Discover: featured art, latest releases and the full game grid.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "orbit/screens.hpp"
 #include "orbit/i18n.hpp"
+#include "orbit/look.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -20,7 +21,6 @@ constexpr float kTile = 268.333f;
 constexpr float kTileGap = 22.0f;
 constexpr float kStep = kTile + kTileGap;
 constexpr int kColumns = 6;
-constexpr int kPageSize = 96;
 constexpr float kGridRowStep = 338.0f;
 constexpr float kFirstRail = 615.0f;  // first rail's heading baseline
 constexpr float kRailPitch = 420.0f;  // heading to heading
@@ -104,13 +104,10 @@ void DiscoverScreen::rebuild()
     all.grid = true;
     BrowseFilters all_filters;
     all_filters.sort = Sort::size_desc;
-    all_filters.with_apps = true; // Discover: games and apps; never DLC or updates
-    all_games_ = browse(state.games, all_filters, {});
-    all.note = trn(static_cast<long>(all_games_.size()), "{count} game", "{count} games");
-    if (!all_games_.empty())
+    all.games = browse(state.games, all_filters, {});
+    all_games_ = all.games;
+    if (!all.games.empty())
         rails_.push_back(std::move(all));
-
-    rebuild_grid();
 
     columns_.resize(rails_.size(), 0);
     rail_scroll_.resize(rails_.size());
@@ -129,27 +126,6 @@ void DiscoverScreen::rebuild()
                         : state.games[static_cast<std::size_t>(rails_[0].games[0])].id;
         hero_in_.snap(1.0f);
     }
-}
-
-int DiscoverScreen::page_count() const
-{
-    return std::max(1, (static_cast<int>(all_games_.size()) + kPageSize - 1) / kPageSize);
-}
-
-bool DiscoverScreen::on_pager() const
-{
-    return page_count() > 1 && row_ == static_cast<int>(rails_.size()) + 1;
-}
-
-void DiscoverScreen::rebuild_grid()
-{
-    page_ = std::clamp(page_, 0, page_count() - 1);
-    if (rails_.empty() || !rails_.back().grid)
-        return;
-    Rail &all = rails_.back();
-    const int first = page_ * kPageSize;
-    const int end = std::min(first + kPageSize, static_cast<int>(all_games_.size()));
-    all.games.assign(all_games_.begin() + first, all_games_.begin() + end);
 }
 
 const Game *DiscoverScreen::game_at(int row, int column) const
@@ -174,9 +150,8 @@ float DiscoverScreen::row_top(int row) const
         return kRailPitch * static_cast<float>(row - 1);
     const float top = kFirstRail + kRailPitch * static_cast<float>(rails_.size() - 1) + kCoversBelow;
     const int rows = (static_cast<int>(rails_.back().games.size()) + kColumns - 1) / kColumns;
-    const float bottom = top + static_cast<float>(rows) * kGridRowStep + (page_count() > 1 ? 100.0f : 0.0f);
-    const float wanted = on_pager() ? bottom - 950.0f
-                                   : top + static_cast<float>(columns_.back() / kColumns) * kGridRowStep - 308.0f;
+    const float bottom = top + static_cast<float>(rows) * kGridRowStep;
+    const float wanted = top + static_cast<float>(columns_.back() / kColumns) * kGridRowStep - 308.0f;
     return std::clamp(wanted, 0.0f, std::max(0.0f, bottom - 980.0f));
 }
 
@@ -188,6 +163,24 @@ void DiscoverScreen::focus()
 
 void DiscoverScreen::return_to(const std::string &game_id)
 {
+    if (look::is(look::Interface::panorama))
+    {
+        // Back on the tile the game was opened from, in whichever group shows it.
+        const pano::Page page = panorama_page();
+        const std::string here = pano_.focused_key(page);
+        if (here.size() > 2 && here.compare(2, std::string::npos, game_id) == 0)
+            return;
+        for (const char *prefix : {"n:", "l:", "a:"})
+            if (pano_.focus_key(page, prefix + game_id))
+                return;
+        return;
+    }
+    if (look::is(look::Interface::crossbar))
+    {
+        // The row stays focused while its game is open; nothing moves.
+        featured_ = game_id;
+        return;
+    }
     if (row_ >= 1 && row_ <= static_cast<int>(rails_.size()))
     {
         const Game *game = game_at(row_, columns_[static_cast<std::size_t>(row_ - 1)]);
@@ -199,75 +192,45 @@ void DiscoverScreen::return_to(const std::string &game_id)
 
 Intent DiscoverScreen::update(const InputFrame &input, float dt, Feedback &feedback, bool focused)
 {
+    if (look::is(look::Interface::cinema))
+        return update_cinema(input, dt, feedback, focused);
+    if (look::is(look::Interface::panorama))
+        return update_panorama(input, dt, feedback, focused);
+    if (look::is(look::Interface::crossbar))
+        return update_crossbar(input, dt, feedback, focused);
     Intent intent;
     if (catalog_serial_ != ctx_.store.state().catalog_serial)
         rebuild();
 
     if (focused && !rails_.empty())
     {
-        if (on_pager())
+        if (row_ >= 1 && rails_[static_cast<std::size_t>(row_ - 1)].grid)
         {
-            if (input.nav == Direction::up)
+            int &index = columns_.back();
+            const int count = static_cast<int>(rails_.back().games.size());
+            int next = index;
+            if (input.is_pressed(Action::jump_prev) || input.is_pressed(Action::jump_next))
             {
-                --row_;
-                feedback.play(hui::audio::Cue::focus);
-            }
-            else if (input.nav == Direction::left || input.nav == Direction::right)
-            {
-                const int next = input.nav == Direction::right ? 1 : 0;
-                const bool enabled = next == 0 ? page_ > 0 : page_ + 1 < page_count();
-                if (next != page_button_ && enabled)
+                // L2 / R2 skip through the grid; the camera cuts rather than
+                // sliding past (and loading) every cover in between.
+                next = grid_jump(index, count, kColumns,
+                                 input.is_pressed(Action::jump_next) ? kGridJumpRows : -kGridJumpRows);
+                if (next != index)
                 {
-                    page_button_ = next;
+                    index = next;
+                    scroll_.snap(row_top(row_));
                     feedback.play(hui::audio::Cue::focus);
                 }
                 else
                     refuse(feedback, input);
             }
-            else if (input.nav == Direction::down)
-                refuse(feedback, input);
-            if (input.is_pressed(Action::confirm))
-            {
-                const int next = page_ + (page_button_ == 1 ? 1 : -1);
-                if (next >= 0 && next < page_count())
-                {
-                    page_ = next;
-                    rebuild_grid();
-                    columns_.back() = 0;
-                    tile_focus_.back().assign(rails_.back().games.size(), 0.0f);
-                    row_ = static_cast<int>(rails_.size());
-                    const Game *first = game_at(row_, 0);
-                    if (first != nullptr)
-                        featured_ = first->id;
-                    scroll_.snap(row_top(row_));
-                    feedback.play(hui::audio::Cue::select);
-                }
-                else
-                    refuse(feedback, input);
-                return intent; // changing a page must never open its first game
-            }
-        }
-        else if (row_ >= 1 && rails_[static_cast<std::size_t>(row_ - 1)].grid)
-        {
-            int &index = columns_.back();
-            const int count = static_cast<int>(rails_.back().games.size());
-            int next = index;
-            if (input.nav == Direction::up && index < kColumns)
+            else if (input.nav == Direction::up && index < kColumns)
             {
                 --row_;
                 feedback.play(hui::audio::Cue::focus);
             }
             else if (input.nav == Direction::down && index / kColumns == (count - 1) / kColumns)
-            {
-                if (page_count() > 1)
-                {
-                    ++row_;
-                    page_button_ = page_ + 1 < page_count() ? 1 : 0;
-                    feedback.play(hui::audio::Cue::focus);
-                }
-                else
-                    refuse(feedback, input);
-            }
+                refuse(feedback, input);
             else if (input.nav != Direction::none)
             {
                 if (input.nav == Direction::left)
@@ -337,7 +300,7 @@ Intent DiscoverScreen::update(const InputFrame &input, float dt, Feedback &feedb
             }
         }
 
-        if (row_ >= 1 && !on_pager())
+        if (row_ >= 1)
         {
             // The hero follows the focus; nothing changes it otherwise.
             const Game *game = game_at(row_, columns_[static_cast<std::size_t>(row_ - 1)]);
@@ -349,7 +312,7 @@ Intent DiscoverScreen::update(const InputFrame &input, float dt, Feedback &feedb
             }
         }
 
-        if ((input.is_pressed(Action::confirm) || input.is_pressed(Action::west)) && !on_pager())
+        if (input.is_pressed(Action::confirm) || input.is_pressed(Action::west))
         {
             const Game *game = row_ == 0
                                    ? ctx_.store.state().game(featured_)
@@ -409,7 +372,21 @@ Intent DiscoverScreen::update(const InputFrame &input, float dt, Feedback &feedb
 
 void DiscoverScreen::draw(Frame &frame, bool focused) const
 {
-    (void)focused;
+    if (look::is(look::Interface::cinema))
+    {
+        draw_cinema(frame);
+        return;
+    }
+    if (look::is(look::Interface::panorama))
+    {
+        draw_panorama(frame, focused);
+        return;
+    }
+    if (look::is(look::Interface::crossbar))
+    {
+        draw_crossbar(frame);
+        return;
+    }
     hui::gfx::DrawList &list = frame.scene;
     const Snapshot &state = ctx_.store.state();
     const ui::Type &type = ctx_.type;
@@ -443,14 +420,11 @@ void DiscoverScreen::draw(Frame &frame, bool focused) const
         list.bordered_rect(view, 30.0f, ui::Color{0, 0, 0, 0}, 1.0f,
                            ui::color::text.with_alpha(0.35f));
         const ui::Rect favourite{left + 252.0f, button_top - scroll, 60.0f, 60.0f};
-        ui::button(list, type, favourite, "", ui::ButtonKind::secondary, favourite_focus_.value);
-        list.bordered_rect(favourite, 30.0f, ui::Color{0, 0, 0, 0}, 1.0f,
-                           ui::color::text.with_alpha(0.35f));
-        if (state.favourite(game->id))
-            ui::icon_heart_filled(list, favourite.cx(), favourite.cy(), 25.0f, ui::color::heart);
-        else
-            ui::icon_heart(list, favourite.cx(), favourite.cy(), 25.0f,
-                           favourite_focus_.value > 0.5f ? ui::Color::rgb(0x080808) : ui::color::text);
+        ui::focus_ring(list, favourite, 30.0f, favourite_focus_.value);
+        list.bordered_rect(favourite, 30.0f, ui::color::night1.with_alpha(0.45f), 1.5f,
+                           ui::color::text2.with_alpha(0.6f));
+        icons::draw(list, state.favourite(game->id) ? icons::Icon::heart_fill : icons::Icon::heart,
+                    favourite.cx(), favourite.cy(), 25.0f, ui::color::text);
         if (!ctx_.store.favourite_action().error.empty())
             ui::text_fit(list, type.regular, tr(ctx_.store.favourite_action().error), left,
                          kHeroBottom + 26.0f - scroll, 16.0f, 840.0f, ui::color::bad);
@@ -489,24 +463,11 @@ void DiscoverScreen::draw(Frame &frame, bool focused) const
                     if (state.favourite(tile_game.id))
                     {
                         list.circle(x + kTile - 25.0f, y + 25.0f, 15.0f, ui::Color::rgb(0x141414, 0.87f));
-                        list.star(x + kTile - 25.0f, y + 25.5f, 8.0f, ui::Color::rgb(0xffffff));
+                        icons::draw(list, icons::Icon::heart_fill, x + kTile - 25.0f, y + 25.0f, 18.0f, ui::Color::rgb(0xffffff));
                     }
                     draw_tile_caption(ctx_, list, tile_game,
                                       game_state(tile_game, state.jobs, state.library_games()).label,
                                       x, y + kTile, kTile, amount, false);
-                }
-            }
-            if (page_count() > 1)
-            {
-                const float y = top + static_cast<float>((count + kColumns - 1) / kColumns) * kGridRowStep + 10.0f;
-                if (y >= 106.0f && y < 1032.0f)
-                {
-                    ui::button(list, type, {620.0f, y, 190.0f, 58.0f}, tr("Previous"), ui::ButtonKind::secondary,
-                               focused && on_pager() && page_button_ == 0 ? 1.0f : 0.0f, page_ > 0);
-                    const std::string page = tr("Page {page} of {pages}", {{"page", i18n::count(page_ + 1)}, {"pages", i18n::count(page_count())}});
-                    ui::text(list, type.regular, page, 960.0f, y + 36.0f, 20.0f, ui::color::text2, ui::Align::center);
-                    ui::button(list, type, {1110.0f, y, 190.0f, 58.0f}, tr("Next"), ui::ButtonKind::secondary,
-                               focused && on_pager() && page_button_ == 1 ? 1.0f : 0.0f, page_ + 1 < page_count());
                 }
             }
             list.pop_clip();
@@ -547,15 +508,23 @@ void DiscoverScreen::draw(Frame &frame, bool focused) const
 
 std::vector<hui::ui::Hint> DiscoverScreen::hints() const
 {
+    if (look::is(look::Interface::cinema))
+        return cinema_hints();
+    if (look::is(look::Interface::crossbar))
+        return crossbar_hints();
+    if (look::is(look::Interface::panorama))
+        return panorama_hints();
     std::vector<hui::ui::Hint> hints{
-        {hui::ui::Button::cross, on_pager() ? tr("Change page") : tr("Open game")}};
+        {hui::ui::Button::cross, tr("Open game")}};
     const Snapshot &state = ctx_.store.state();
-    const Game *game = on_pager() ? nullptr : row_ == 0 ? state.game(featured_)
-        : game_at(row_, columns_[static_cast<std::size_t>(row_ - 1)]);
+    const Game *game = row_ == 0 ? state.game(featured_)
+                                 : game_at(row_, columns_[static_cast<std::size_t>(row_ - 1)]);
     if (game && state.paired)
         hints.push_back({hui::ui::Button::square,
                          state.favourite(game->id) ? tr("Remove from favourites")
                                                    : tr("Add to favourites")});
+    if (row_ >= 1 && rails_[static_cast<std::size_t>(row_ - 1)].grid)
+        hints.push_back({hui::ui::Button::l2, tr("Jump"), hui::ui::Button::r2});
     hints.push_back({hui::ui::Button::l1, tr("Tabs"), hui::ui::Button::r1});
     return hints;
 }

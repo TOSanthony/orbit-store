@@ -71,6 +71,11 @@ float draw_tile_caption(Context &ctx, hui::gfx::DrawList &list, const Game &game
     const ui::Color ink = hui::gfx::mix(ui::color::text2, ui::color::text, focus);
     float y = ui::paragraph(list, type.regular, game.title, x, cover_bottom + 30.0f, 20.0f, width,
                             27.0f, ink, 1);
+    if (!game.addon_id.empty()) {
+        ui::text_fit(list, type.regular, game.base_title, x, y + 2, 15, width, ui::color::text2);
+        ui::text_fit(list, type.regular, addon_type_label(game.addon_type), x, y + 21, 14, width, ui::color::text3);
+        return y + 42;
+    }
     if (state != nullptr && state[0] != '\0')
     {
         ui::text(list, type.medium, state, x, y + 2.0f, 15.0f, ui::Color::rgb(0xd0d0d0));

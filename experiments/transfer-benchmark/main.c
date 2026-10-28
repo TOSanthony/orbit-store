@@ -26,6 +26,8 @@ static struct {
 static volatile sig_atomic_t interrupted;
 static void stop_signal(int value) { (void)value; interrupted = 1; }
 void orbit_request_stop(void) { atomic_store(&orbit.stop, true); }
+bool orbit_is_stopping(void) { return atomic_load(&orbit.stop); }
+void orbit_restart_after_stop(int loader) { (void)loader; }
 static enum MHD_Result reply(struct MHD_Connection *c, unsigned status, cJSON *value) {
     char *body = cJSON_PrintUnformatted(value);
     cJSON_Delete(value);

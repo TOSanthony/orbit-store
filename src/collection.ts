@@ -71,7 +71,7 @@ export function releaseState(
     .sort((a, b) => rank[a.status] - rank[b.status])[0];
   if (job && job.status !== "complete")
     return { label: labels[job.status], kind: "download", job };
-  const candidates = games.filter(
+  const candidates = (release.addonId ? [] : games).filter(
     (g) =>
       g.titleId === release.titleId &&
       g.platform === gamePlatform(release) &&
@@ -100,6 +100,15 @@ export function releaseState(
       kind: "related",
       libraryGame: candidates[0],
     };
+}
+// A copy of the game installed on the PS5 or on one of its drives, as Library
+// lists it: the same title ID and platform as one of its options. Add-ons don't count.
+export function inLibrary(game: Game, games: LibraryGame[]): boolean {
+  return game.releases.some(
+    (release) =>
+      !release.addonId &&
+      games.some((g) => g.titleId === release.titleId && g.platform === gamePlatform(release) && (g.onDrive || g.installed)),
+  );
 }
 export function gameState(
   game: Game,

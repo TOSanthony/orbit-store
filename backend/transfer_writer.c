@@ -102,12 +102,19 @@ static void publish_progress(TransferWriter *w) {
     w->job->speed = elapsed > 0 ? (w->written - w->initial) / elapsed : 0;
     pthread_mutex_unlock(&orbit.mutex);
 }
+/* A write's worth: TRANSFER_WRITE_BYTES, or half a range's buffer when the
+ * download has so many ranges that its buffer is small (8 MiB over 64 is 128 KiB).
+ * Half, not all: curl's uneven pieces block a producer before its buffer is
+ * exactly full, and the writer must not wait out its coalescing on it. */
+static size_t full(const TransferWriter *w) {
+    return w->capacity / 2 < TRANSFER_WRITE_BYTES ? w->capacity / 2 : TRANSFER_WRITE_BYTES;
+}
 static unsigned ready_range(const TransferWriter *w, unsigned next) {
     unsigned first = next;
     bool found = false;
     for (unsigned i = 0; i < w->count; i++) {
         unsigned index = (next + i) % w->count;
-        if (w->ranges[index].used >= TRANSFER_WRITE_BYTES) return index;
+        if (w->ranges[index].used >= full(w)) return index;
         if (!found && w->ranges[index].used) { first = index; found = true; }
     }
     return first;
@@ -130,9 +137,9 @@ static void *writer_main(void *arg) {
          * already has a full write ready. Blocking one curl callback for buffer
          * space also blocks its sibling handles on the shared network thread. */
         double coalesce_until = now() + .05;
-        while (b->used && b->used < TRANSFER_WRITE_BYTES && !w->closing && now() < coalesce_until) {
+        while (b->used && b->used < full(w) && !w->closing && now() < coalesce_until) {
             unsigned ready = ready_range(w, next);
-            if (w->ranges[ready].used >= TRANSFER_WRITE_BYTES) {
+            if (w->ranges[ready].used >= full(w)) {
                 index = ready; b = &w->ranges[index]; break;
             }
             wait_briefly(w);

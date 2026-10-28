@@ -1,6 +1,6 @@
 # Orbit Store for TV (native app)
 
-Native TV app **1.4.0**, bundled with the **Orbit Store 1.1.0 service**.
+The native TV app **1.9.1** is included with the **Orbit Store 1.5.0 service**.
 
 A full-screen PS5 app for Orbit's storefront, drawn by the GPU instead of
 the console browser. It is a client of the Orbit backend payload. Downloads,
@@ -17,16 +17,25 @@ screen for screen:
 
 - **Discover** (the opening page): the focused game's art behind the hero,
   then New on Orbit, Latest releases and an All games grid, largest downloads first,
-  with 96 games per page.
+  that scrolls through the whole catalogue. L2 / R2 jump 16 rows at a time.
 - **Browse**: search, All games or Favourites, Source,
   Platform, Format, Region, Download size and Sort by (release date, newest first, by default),
-  Reset filters, and a grid of covers with each game's state.
+  Reset filters, Saved filters (save the filters, sort and search under a name on the
+  keyboard, apply one, or Square to delete it; shared with the browser and Orbit Zero),
+  and a grid of covers with each game's state.
+- **Add-ons (1.5.0)**: a separate page after Browse for DLC, activation
+  packages and bundles. Search by add-on or base-game name; filter by Platform,
+  Type, Source and Region. **Add-ons (count)** on a game’s details opens its
+  extras. All four layouts share requirements and explicit package selection.
+  See [Add-ons](../docs/addons.md).
 - **Quick favourites**: press Square on the selected game in Browse or Discover
   to save it or remove it from your favourites.
 - **Library**: the games ShadowMount reports on the console and its drives,
   with the status views, search, Location and Format; a game's details with
   Mount/Unmount and Copy/Move to drive (the same confirmations as the web);
-  Storage with each drive's games and Measure game sizes; Scan for games.
+  Scan for games (Library reads, scans and measures sizes on its own). **Files** (in Library) browses
+  Orbit's drives: open, unpack, install, copy, move, rename and delete, with
+  the operation's progress in a dialog. See [Files](../docs/library.md#files).
 - **Downloads**: Active, Finished, Failed and Cancelled, with pause, resume,
   retry, cancel (keep or delete the partial file) and remove from history.
 - **Game page**: full-width artwork, the tagline and description, a primary
@@ -43,21 +52,24 @@ Connect TorBox in the browser's **App settings → Debrid**, then select
 Without an account, **Set up TorBox** opens the browser with your game, source and destination preserved. The queue labels these jobs **via TorBox**. Account connection and host/file
 limits still apply. See [TorBox connection and recovery](../docs/debrid.md).
 
-For Vikingfile, choose the download option and save location, then select
-**Open Vikingfile on PS5**. This opens Vikingfile directly in the PS5 browser.
-Complete any verification and select **Download**, then return to the native
-Orbit Store app. Orbit checks the file and adds it to your chosen drive’s queue.
+For Vikingfile, **Open Vikingfile account** and **Check sign-in** are available in settings. Orbit uses only the active user’s Vikingfile session to request a matching direct link before opening a download page. A real premium account remains untested.
+
+For a Vikingfile or AkiraBox download that needs a provider page, choose the download option and save location, then
+open the provider page on PS5. Complete any verification and wait without
+pressing Download. Orbit checks the ready file link, closes its provider window
+and adds the download to your chosen drive’s queue.
 The native app shows verification progress, cancellation and **View download**
 when the file is ready. Going back from the progress panel keeps verification
 running; only **Cancel verification** stops it. Your game, source and drive stay
-selected. Opening a page alone does not add a download.
+selected. A download is added only after the matching file link is validated.
 
 Orbit’s download service runs in the background; you do not need to open its
 browser interface first. If a source or drive is no longer available, choose an
 available option explicitly. An older service without provider-browser support
 shows an update message.
-Auto-start, payload managers and diagnostics stay in the browser version;
-App settings → More settings opens it.
+Auto-start and payload-manager setup remain in the browser version;
+App settings → More settings opens it. In 1.5.0, **Save diagnostic report** also
+saves a report directly from the native app to the selected drive.
 
 ## App settings
 
@@ -76,7 +88,11 @@ right (Right or Cross to enter it, Circle or Left to leave).
   section opens and after Orbit restarts.
 - **Game catalogue**: games, catalogue revision, when it was last checked,
   and Refresh catalogue (with Orbit's cooldown).
-- **Updates**: two cards, because the two parts update separately.
+- **Updates**: **Update Orbit** updates the TV app and download service together.
+  The service restarts itself through the local ELF loader on port 9021 and
+  resumes interrupted downloads. **Restart Orbit** can restart the service
+  separately. Keep the loader running; manual payload launch remains the fallback.
+  Separate TV app and service controls remain available:
   - **TV app**: this app's version (from `contentVersion`, `01.000.000` is
     1.0.0), the latest release and **Update TV app**. A copy placed by hand
     in `/data/homebrew` is replaced only after **Replace with this
@@ -86,13 +102,18 @@ right (Right or Cross to enter it, Circle or Left to leave).
     console if the old version still opens.
   - **Download service** (Orbit): running, saved for next start and latest
     versions; **Install update**; and **Restart download service**, after a
-    confirmation, because it pauses downloads. The app asks Orbit to stop,
-    waits for its port to close and four seconds more, then sends the saved
-    copy to the ELF loader, as when it starts Orbit (it tries once more if
-    Orbit doesn't answer within 15 seconds). Without a loader it says to run
-    `/data/orbit-store/orbit_store.elf` from a payload manager, and
-    reconnects by itself. A toast names the version that came back.
-- **More settings**: Open browser version, and both versions side by side.
+    confirmation, because it briefly interrupts transfers. Orbit saves its queue
+    and starts the saved replacement through the local ELF loader. Without a
+    loader, run `/data/orbit-store/orbit_store.elf` from a payload manager.
+    The app reconnects and checks the running version.
+- **More settings**: Open browser version, version information and **Save diagnostic report**.
+  Reports omit game titles, filenames, paths, links, passwords and tokens. They are
+  saved locally and are never uploaded automatically.
+
+The 1.5.0 Storage settings also include download completion/failure notifications.
+Download options show known firmware requirements and list incompatible choices
+last with a warning; they remain selectable. Completed downloads offer explicit
+package installation or ShadowMount registration status. See [installation](../docs/package-installation.md).
 
 When the app opens it asks Orbit to look for updates of both parts (the
 same automatic check the browser makes, with a shared six-hour cooldown).
@@ -126,6 +147,12 @@ Orbit never replaces a newer saved copy with an older one, so an older
 package can't downgrade an Orbit you updated. The log records each
 attempt (`[ORBIT] start: ...`).
 
+## Install downloaded games (1.5.0)
+
+In **Downloads**, open a completed game’s **Downloaded files** or **Install on PS5**. Choose a PKG/FPKG and select **Install on PS5**. Bundles require an explicit choice for each package; installation progress is separate from the download, and the original files are kept. Use the matching ELF as well as the native app.
+
+New exFAT, FFPFSC and extracted game-folder downloads or transfers automatically request a scan when a compatible ShadowMount local API is running. If it was unavailable, start it and select **Scan with ShadowMount** in the download’s details when offered. This behavior is shared by Store, Crossbar, Cinema and Panorama. See [installing downloaded games](../docs/package-installation.md) for requirements and recovery.
+
 ## Install on the PS5
 
 1. Stop a running Orbit first (App settings, Stop Orbit, in the browser
@@ -145,7 +172,7 @@ attempt (`[ORBIT] start: ...`).
    "Orbit isn't running" with the reason; start Orbit from a payload manager
    and the app reconnects by itself, or press **Try again**.
 
-Title ID `PPSA99177`, content version `01.004.000`. To update, replace the
+Title ID `PPSA99177`, content version `01.009.003`. To update, replace the
 image or folder and, as ShadowMountPlus stages `param.json` and the icon
 once, also replace its staged copies if the tile text or icon changed.
 
@@ -169,6 +196,7 @@ The interface translations share `i18n/` with the browser. The build packages th
 | Cross | Select |
 | Circle | Back: leaves a game page, closes the keyboard or a dialog |
 | L1 / R1 | Previous / next tab |
+| L2 / R2 | In the Browse and Discover game grids: jump 16 rows (96 games) up / down, keeping the column |
 | Square | On a selected Browse or Discover game: toggle Favourite. In search: delete. In Browse's field: clear the search. In Library: cancel a running copy or move. On a game page: About. |
 | Triangle | In search: space. In the Browse grid: search again. On a game page: toggle Favourite. |
 
@@ -262,7 +290,7 @@ tooling/, tools/ the native PS5 build: compile, link, FSELF signing, packaging
 
 ## Installing from Orbit
 
-Once a release carries the app, people install it from the browser version:
+Install the TV app from the browser version:
 **App settings → TV app → Install on this PS5**, and update it there or in
 the app itself (**App settings → Updates**). Orbit downloads the image,
 checks it and places it in `/data/homebrew/` (see the TV app installer in
@@ -273,10 +301,10 @@ Orbit finds the app through `tv-app.json` at the root of the public
 repository's `main` branch:
 
 `npm run release:package` generates the exact feed. It contains `name`,
-`filename`, the app's own semantic `version` (1.4.0), the official FFPKG
+`filename`, the app's own semantic `version` (1.9.3), the official FFPKG
 release `url`, its SHA-256 `checksum` and byte `size`. The app version is
-derived from content version `01.004.000`; the release/service version is
-1.1.0. Do not hand-copy example hashes or sizes into the live feed.
+derived from content version `01.009.003`; the release/service version is
+1.6.0-beta.3. Do not hand-copy example hashes or sizes into the live feed.
 
 Upload `dist/PPSA99177.ffpkg` to the release first, then publish the feed.
 Until the feed exists, the panel says the app hasn't been published yet.
@@ -322,4 +350,8 @@ These controls require the matching Orbit Store 1.0.0 FFPKG, receiver ELF and Or
 
 Pair Orbit Zero on the computer with the running, matching Orbit ELF. In the TV app, open **App settings → Orbit Zero → Enable Orbit Zero**. The native storefront then uses the computer's catalogue and artwork; Download follows the computer's saved preference. Downloads shows the internet rate and the transfer rate to the PS5 separately. Keep the computer and Orbit Zero running while it transfers. Vikingfile verification opens on the computer, with a prompt to continue there. Turning this mode off affects new downloads; existing computer transfers retain their original route.
 
-**Computer** is the default preference. **Prefer PS5** probes the selected source before starting a new direct console download and falls back to the computer when the console cannot fetch it. The computer and PS5 may use Wi-Fi or Ethernet on the same reachable local network; only direct console downloads require the PS5 to have internet access. See the [companion API](../docs/api.md#native-orbit-zero-controls-development) for registration, routing and token boundaries.
+**Computer** is the default preference. **Prefer PS5** probes the selected source before starting a new direct console download and falls back to the computer when the console cannot fetch it. The computer and PS5 may use Wi-Fi or Ethernet on the same reachable local network; only direct console downloads require the PS5 to have internet access. See the [companion API](../docs/api.md#native-orbit-zero-controls) for registration, routing and token boundaries.
+
+## Files navigation in 1.7.0
+
+Select a folder to open it directly. In Store and Cinema, move right to the separate **…** control for folder actions. Files open their actions. Crossbar and Panorama retain their own selected-item controls. **Circle** closes a dialog first, then returns to the parent folder; from the drive list it returns to Library.

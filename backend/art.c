@@ -10,6 +10,7 @@
 #include "orbit.h"
 #include "provider_network.h"
 #include <curl/curl.h>
+#include <strings.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -150,8 +151,8 @@ static size_t urls_for(const char *game_id, bool hero, char out[2][2048]) {
     size_t count = 0;
     pthread_mutex_lock(&orbit.mutex);
     const cJSON *entry;
-    const cJSON *lists[2] = {orbit.catalog, orbit.nas_catalog};
-    for (size_t l = 0; l < 2 && !count; l++)
+    const cJSON *lists[3] = {orbit.catalog, orbit.addons, orbit.nas_catalog};
+    for (size_t l = 0; l < 3 && !count; l++)
     cJSON_ArrayForEach(entry, lists[l]) {
         if (strcmp(json_text(entry, "gameId"), game_id) ||
             !source_enabled_locked(release_find(json_text(entry, "id"))))
@@ -168,7 +169,7 @@ static size_t urls_for(const char *game_id, bool hero, char out[2][2048]) {
             const char *url = keys[k] ? json_text(entry, keys[k]) : "";
             /* My NAS artwork is only fetched from the NAS's own address. */
             if (!strncmp(url, "https://", 8) && strlen(url) < 2048 &&
-                (l == 0 || nas_url_allowed(url)))
+                (l != 2 || nas_url_allowed(url)))
                 copy_text(out[count++], 2048, url);
         }
         break;

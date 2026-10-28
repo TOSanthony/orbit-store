@@ -1,5 +1,6 @@
 import type { Game, Release } from "./types";
 import { gamePlatform } from "./platform";
+import { compatibleFirst } from "./firmware";
 
 // A curated identity joins regions, sources and formats without guessing from titles.
 export function groupGames(releases: Release[]): Game[] {
@@ -9,6 +10,10 @@ export function groupGames(releases: Release[]): Game[] {
     if (!game) {
       game = {
         id: release.gameId,
+        addonId: release.addonId, baseGameId: release.baseGameId,
+        baseGameTitle: release.baseGameTitle, addonType: release.addonType,
+        contents: release.contents,
+
         platform: gamePlatform(release),
         title: release.title,
         genre: release.genre,
@@ -29,5 +34,6 @@ export function groupGames(releases: Release[]): Game[] {
     }
     game.releases.push(release);
   }
+  for (const game of games.values()) game.releases = compatibleFirst(game.releases);
   return [...games.values()];
 }

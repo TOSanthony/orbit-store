@@ -11,6 +11,7 @@ unsigned source_flag(const char *id) {
     if (!strcmp(id, "akirabox")) return ORBIT_SOURCE_AKIRABOX;
     if (!strcmp(id, "datanodes")) return ORBIT_SOURCE_DATANODES;
     if (!strcmp(id, "nas")) return ORBIT_SOURCE_NAS;
+    if (!strcmp(id, "1fichier")) return ORBIT_SOURCE_ONEFICHIER;
     return 0;
 }
 
@@ -40,16 +41,19 @@ cJSON *sources_json_locked(void) {
     for (size_t i = 0; i < sizeof providers / sizeof providers[0]; i++) {
         if (acknowledged && (orbit.sources.enabled & source_flag(providers[i].id)))
             cJSON_AddItemToArray(enabled, cJSON_CreateString(providers[i].id));
-        unsigned count = 0;
+        unsigned count = 0, addon_count = 0;
         for (size_t j = 0; j < orbit.release_count; j++)
-            if (!strcmp(orbit.releases[j].source, providers[i].id))
-                count++;
+            if (!strcmp(orbit.releases[j].source, providers[i].id)) {
+                if (orbit.releases[j].addon_id[0]) addon_count++;
+                else count++;
+            }
         if (!strcmp(providers[i].id, "nas"))
             count = (unsigned)nas_count_locked();
         cJSON *p = cJSON_CreateObject();
         cJSON_AddStringToObject(p, "id", providers[i].id);
         cJSON_AddStringToObject(p, "label", providers[i].label);
         cJSON_AddNumberToObject(p, "releaseCount", count);
+        cJSON_AddNumberToObject(p, "addonReleaseCount", addon_count);
         cJSON_AddBoolToObject(p, "downloadReady", providers[i].ready);
         cJSON_AddItemToArray(options, p);
     }

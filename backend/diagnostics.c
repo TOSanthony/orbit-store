@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -99,7 +100,7 @@ static Event job_event(const Job *j) {
     if (!j) return e;
     for (size_t i = 0; i < orbit.job_count; i++)
         if (j == &orbit.jobs[i]) e.download = (unsigned)i + 1;
-    e.provider = ALLOWED(j->release.source, "archive", "vikingfile", "akirabox", "datanodes");
+    e.provider = ALLOWED(j->release.source, "archive", "vikingfile", "akirabox", "datanodes", "1fichier");
     e.status = ALLOWED(j->status, "queued", "downloading", "verifying", "inspecting", "extracting", "retrying", "paused", "cancelled", "complete", "error");
     e.reason = reason(j->error);
     e.attempts = j->attempts;
@@ -112,7 +113,7 @@ static Event job_event(const Job *j) {
 void diagnostics_event_locked(const char *phase, const Job *j, long http_status, int curl_code) {
     Event e = job_event(j);
     if (!started) started = e.at;
-    e.phase = ALLOWED(phase, "startup", "catalogue-cache", "https", "saved-state", "process-identity", "pairing", "firmware", "listener", "listener-recovery", "download-worker", "launcher", "integrations", "catalogue", "updates", "library", "browser", "tv-app", "artwork", "notification", "ready", "shutdown", "browser-modules", "browser-user-service", "browser-launch", "browser-user-cleanup", "queued", "pause", "resume", "retry", "cancel", "transfer-start", "transfer-end", "extract-start");
+    e.phase = ALLOWED(phase, "startup", "catalogue-cache", "https", "saved-state", "process-identity", "pairing", "firmware", "listener", "listener-recovery", "download-worker", "launcher", "integrations", "catalogue", "updates", "library", "browser", "tv-app", "artwork", "notification", "ready", "shutdown", "browser-modules", "browser-user-service", "browser-launch", "browser-user-cleanup", "browser-native-identity", "browser-native-identity-cleanup", "browser-native-return", "queued", "pause", "resume", "retry", "cancel", "transfer-start", "transfer-end", "extract-start");
     e.http_status = http_status >= 100 && http_status <= 599 ? http_status : 0;
     e.curl_code = curl_code >= 0 && curl_code <= 999 ? curl_code : 0;
     events[event_next] = e;
@@ -123,7 +124,7 @@ void diagnostics_stage(const char *phase, const char *status, int result) {
     pthread_mutex_lock(&orbit.mutex);
     diagnostics_event_locked(phase, NULL, 0, 0);
     Event *e = &events[(event_next + EVENT_LIMIT - 1) % EVENT_LIMIT];
-    e->status = ALLOWED(status, "started", "ok", "error", "skipped");
+    e->status = ALLOWED(status, "started", "ok", "error", "skipped", "requested");
     e->result = result;
     trace_write(e);
     pthread_mutex_unlock(&orbit.mutex);
@@ -191,4 +192,123 @@ cJSON *diagnostics_snapshot(void) {
     cJSON_AddNumberToObject(o, "eventLimit", EVENT_LIMIT);
     cJSON_AddItemToObject(o, "storage", storage_diagnostics());
     return o;
+}
+
+/* A short word (a version, a stage, a language), never free text. */
+static bool short_word(const char *value) {
+    size_t n = strlen(value);
+    return n && n <= 32 && strspn(value, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .-_") == n;
+}
+/* The last start's final stage, as diagnostics_begin kept it: shows how a crashed session ended.
+ * Rebuilt from the fields trace_write writes, so nothing else in the file reaches the report. */
+static cJSON *previous_start(void) {
+    if (orbit.state_fd < 0) return NULL;
+    struct stat st;
+    if (fstatat(orbit.state_fd, "startup-previous.json", &st, AT_SYMLINK_NOFOLLOW) ||
+        !S_ISREG(st.st_mode) || st.st_nlink != 1 || st.st_size > 1024)
+        return NULL;
+    int fd = openat(orbit.state_fd, "startup-previous.json", O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) return NULL;
+    char text[1025];
+    ssize_t n = read(fd, text, sizeof text - 1);
+    close(fd);
+    if (n <= 0) return NULL;
+    text[n] = 0;
+    cJSON *saved = cJSON_Parse(text), *o = NULL;
+    const char *phase = json_text(saved, "phase"), *status = json_text(saved, "status");
+    if (cJSON_IsObject(saved) && short_word(phase) && short_word(status)) {
+        o = cJSON_CreateObject();
+        static const char *const numbers[] = {"schema", "at", "result"};
+        for (size_t i = 0; i < sizeof numbers / sizeof *numbers; i++) {
+            const cJSON *value = cJSON_GetObjectItemCaseSensitive(saved, numbers[i]);
+            if (cJSON_IsNumber(value)) cJSON_AddNumberToObject(o, numbers[i], value->valuedouble);
+        }
+        if (short_word(json_text(saved, "version"))) cJSON_AddStringToObject(o, "version", json_text(saved, "version"));
+        cJSON_AddStringToObject(o, "phase", phase);
+        cJSON_AddStringToObject(o, "status", status);
+    }
+    cJSON_Delete(saved);
+    return o;
+}
+/* What a client says about itself: short words only, never free text. */
+static cJSON *client_info(const cJSON *input) {
+    cJSON *o = cJSON_CreateObject();
+    static const char *const keys[] = {"app", "version", "language", "interface"};
+    for (size_t i = 0; i < sizeof keys / sizeof *keys; i++) {
+        const char *value = json_text(cJSON_GetObjectItemCaseSensitive(input, "client"), keys[i]);
+        if (short_word(value)) cJSON_AddStringToObject(o, keys[i], value);
+    }
+    return o;
+}
+/* Saves the report as readable JSON on a drive, for a bug report: the requested drive, else the
+ * first external one, else internal storage. 0 with the path, or an HTTP status. */
+int diagnostics_export(const cJSON *input, cJSON **result, char *error, size_t cap) {
+    Storage drives[ORBIT_MAX_STORAGE];
+    size_t n = storage_list(drives);
+    const char *wanted = json_text(input, "storageId");
+    const Storage *drive = NULL;
+    for (size_t i = 0; i < n && !drive; i++)
+        if (*wanted ? !strcmp(drives[i].id, wanted) : drives[i].external) drive = &drives[i];
+    if (!drive && !*wanted && n) drive = &drives[n - 1];
+    if (!drive) {
+        copy_text(error, cap, *wanted ? "That drive is unavailable. Connect it or choose another."
+                                      : "Connect a writable drive to your PS5.");
+        return 409;
+    }
+    char folder[600], path[700], stamp[48], name[64];
+    snprintf(folder, sizeof folder, "%s/orbit-diagnostics", drive->root);
+    int dir = mkdir(folder, 0755) && errno != EEXIST ? -1 : open(folder, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    if (dir < 0) {
+        copy_text(error, cap, "Could not save the diagnostic report on that drive.");
+        return 503;
+    }
+    time_t now = time(NULL);
+    struct tm utc;
+    gmtime_r(&now, &utc);
+    strftime(stamp, sizeof stamp, "orbit-diagnostics-%Y%m%d-%H%M%S", &utc);
+    cJSON *report = cJSON_CreateObject();
+    cJSON_AddStringToObject(report, "report", "orbit-diagnostics");
+    cJSON *excluded = cJSON_AddArrayToObject(report, "excludes");
+    static const char *const never[] = {"game titles", "download links", "file paths", "passwords", "tokens"};
+    for (size_t i = 0; i < sizeof never / sizeof *never; i++)
+        cJSON_AddItemToArray(excluded, cJSON_CreateString(never[i]));
+    cJSON_AddItemToObject(report, "client", client_info(input));
+    cJSON *previous = previous_start();
+    if (previous) cJSON_AddItemToObject(report, "previousStart", previous);
+    cJSON_AddItemToObject(report, "service", diagnostics_snapshot());
+    char *text = cJSON_Print(report);
+    cJSON_Delete(report);
+    /* Two saves in the same second each get their own file. */
+    int fd = -1;
+    for (int copy = 1; text && fd < 0 && copy <= 9; copy++) {
+        if (copy == 1) snprintf(name, sizeof name, "%s.txt", stamp);
+        else snprintf(name, sizeof name, "%s-%d.txt", stamp, copy);
+        fd = openat(dir, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0644);
+        if (fd < 0 && errno != EEXIST) break;
+    }
+    size_t length = text ? strlen(text) : 0, sent = 0;
+    bool ok = fd >= 0;
+    while (ok && sent < length) {
+        ssize_t count = write(fd, text + sent, length - sent);
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) ok = false;
+        else sent += (size_t)count;
+    }
+    if (fd >= 0) {
+        if (ok && fsync(fd)) ok = false;
+        if (close(fd)) ok = false;
+        if (!ok) unlinkat(dir, name, 0);
+    }
+    close(dir);
+    free(text);
+    if (!ok) {
+        copy_text(error, cap, "Could not save the diagnostic report on that drive.");
+        return 503;
+    }
+    snprintf(path, sizeof path, "%s/%s", folder, name);
+    *result = cJSON_CreateObject();
+    cJSON_AddStringToObject(*result, "path", path);
+    cJSON_AddStringToObject(*result, "storageId", drive->id);
+    cJSON_AddStringToObject(*result, "label", drive->label);
+    return 0;
 }

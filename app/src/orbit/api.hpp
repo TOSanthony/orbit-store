@@ -40,6 +40,7 @@ enum class ArtKind : std::uint8_t
 {
     cover,
     hero,
+    thumbnail, // the hero endpoint, decoded and cached at tile size
 };
 
 struct Art
@@ -70,9 +71,13 @@ class Client
     Result<Sources> sources();
     Result<Debrid> debrid();
     Result<BrowserSession> browser_session();
-    Result<BrowserSession> start_browser(std::string_view release_id, std::string_view storage_id);
-    Result<BrowserSession> cancel_browser(std::string_view session_id);
+    Result<BrowserSession> start_browser(std::string_view release_id, std::string_view storage_id,
+                                         std::string_view client_id = {}, bool account = false, bool check_account = false);
+    Result<BrowserSession> browser_opened(std::string_view session_id, std::string_view client_id);
+    Result<BrowserSession> cancel_browser(std::string_view session_id, std::string_view client_id = {},
+                                        std::string_view failure = {}, int error_code = 0);
     Result<std::vector<Release>> catalog();
+    Result<std::vector<Release>> addons();
     // The console's own session: its token, the pairing code and the console's
     // address (loopback callers only). Orbit saves its state on each call, so
     // ask only when these are needed.
@@ -85,11 +90,16 @@ class Client
     // pause, resume, retry, cancel or remove; the value is the updated queue.
     Result<std::vector<Job>> job_action(std::string_view job_id, std::string_view action,
                                         bool delete_partial = false, std::string_view password = {});
+    // Removes finished ("complete") or cancelled entries from history at once; the reply is the queue.
+    Result<std::vector<Job>> clear_history(std::string_view status);
     // Catalogue artwork through the backend (GET /api/v1/art/<gameId>/<kind>).
     Result<Art> art(std::string_view game_id, ArtKind kind);
     // Favourites: the saved game IDs, shared with every paired client.
     Result<std::vector<std::string>> favourites();
     Result<std::vector<std::string>> set_favourite(std::string_view game_id, bool favourite);
+    // Browse's saved filters; a change answers with the whole list.
+    Result<std::vector<SavedFilter>> saved_filters();
+    Result<std::vector<SavedFilter>> change_saved_filters(std::string body);
     // Library: refresh asks for a read sooner (POST {}), subject to the shared cooldown.
     Result<LibrarySnapshot> library(bool refresh);
     Result<LibraryStorage> library_storage(bool refresh);
@@ -106,6 +116,20 @@ class Client
         std::string request_id;
     };
     Result<LibrarySnapshot> library_action(const LibraryRequest &request);
+    // Files: a folder of a drive, the running operation, and one action on an
+    // entry (docs/api.md#files). Empty fields are left out.
+    Result<FileListing> files_list(const std::string &storage_id, const std::string &path);
+    struct FileRequest
+    {
+        std::string action; // folder, rename, delete, copy, move, unpack, install, measure, pause, resume, cancel, password
+        std::string storage_id, path, name;
+        std::string to_storage_id, to_path;
+        std::string id;       // the operation, for pause, resume, cancel and password
+        std::string password; // never logged
+    };
+    // The operation after the request, or none.
+    Result<FileOperation> files_status();
+    Result<FileOperation> files_action(const FileRequest &request);
 
     // ---- settings ----
     // Saves the source choice with the download notice accepted.
@@ -120,13 +144,21 @@ class Client
     Result<bool> set_sounds_off(bool off); // 404: an older Orbit
     Result<int> set_sound_volume(int percent); // 404: an older Orbit
     Result<bool> set_ps4_hidden(bool hidden); // 404: an older Orbit
-    Result<bool> set_delete_pkgs(bool enabled); // 404: an older Orbit
-    Result<bool> set_install_pkgs(bool enabled); // 404: an older Orbit
     Result<bool> set_own_dns(bool enabled);      // 404: an older Orbit
     Result<std::string> set_appearance(const std::string &id);
     Result<std::string> set_language(const std::string &code);
     Result<std::string> set_keyboard(const std::string &layout);
+    // Saves the service's diagnostic report on a drive (an external one first); the path it wrote.
+    Result<std::string> save_diagnostics(const std::string &version, const std::string &language,
+                                         const std::string &interface);
+    Result<ArchiveAccount> archive_account();
+    // The email and password go to the console once; it keeps only
+    // Archive.org's session.
+    Result<ArchiveAccount> archive_sign_in(const std::string &email, const std::string &password);
+    Result<ArchiveAccount> archive_sign_out();
     Result<int> set_download_limit(int limit);
+    Result<int> set_download_connections(int connections);
+    Result<int> set_download_recovery(int field, int value);
     Result<CatalogueStatus> catalogue_status();
     Result<CatalogueStatus> refresh_catalogue();
     // Updates: Orbit's own (/updates) and this app's (/tv-app).
@@ -149,6 +181,18 @@ class Client
     Result<ServiceUpdate> service_action(const UpdateRequest &request);
     // The copy of Orbit the service saved, for starting it again. An older service answers 404.
     Result<SavedPayload> saved_payload();
+    // Installs the releases the owner was shown: this app first, then Orbit, which restarts.
+    Result<ServiceUpdate> update_all(const ServiceUpdate &service, const TvAppStatus &tv);
+    Result<bool> set_download_notifications(bool enabled);
+    // The diagnostics shown on screen (the saved report has the same).
+    Result<DiagnosticsReport> diagnostics();
+    // Chooses one of kNotificationEvents; the reply holds all of them.
+    Result<std::array<bool, 5>> set_notification_event(int index, bool on);
+    Result<bool> set_delete_packages(bool enabled);
+    Result<NtfySettings> ntfy();
+    // The body is the whole settings object, password included; it is wiped after sending.
+    Result<NtfySettings> save_ntfy(std::string body);
+    Result<bool> test_ntfy();
     Result<TvAppStatus> tv_app();
     Result<TvAppStatus> tv_app_action(const UpdateRequest &request);
 

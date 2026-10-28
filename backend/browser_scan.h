@@ -6,6 +6,11 @@
 
 /* Bounded read-only scanner. Matchers must return only the selected file. */
 #define PROBE_CHUNK 65536U
+/* Cumulative reads, not resident memory. Cover the entire verification window
+ * at the bounded 8 MiB/s scan rate, including a late human verification. */
+#define PROBE_READ_DELAY_NS 8000000L
+#define PROBE_SESSION_SECONDS 120
+#define PROBE_SESSION_BUDGET (1024ULL * 1024ULL * 1024ULL)
 #define PROBE_MARKER_MAX 256U
 #define PROBE_MATCH_MAX 2048U /* Bounded generated route, including NUL. */
 typedef struct {

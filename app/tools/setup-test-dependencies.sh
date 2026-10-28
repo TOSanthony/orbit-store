@@ -17,7 +17,7 @@ url="https://github.com/google/googletest/archive/refs/tags/v$version.tar.gz"
 mirror_url="https://github.com/TOSanthony/Orbit-Store-PS5/releases/download/deps-v1/googletest-$version.tar.gz" # the project's own copy; the hash checks either
 hash="65fab701d9829d38cb77c14acdc431d2108bfdbf8979e40eb8ae567edf10b27c"
 
-for command in wget sha256sum tar; do
+for command in sha256sum tar; do
     command -v "$command" >/dev/null || {
         echo "missing required command: $command" >&2
         exit 2
@@ -32,7 +32,14 @@ fi
 if [[ ! -f $archive ]]; then
     temporary="$archive.download"
     rm -f -- "$temporary"
-    wget -q "$mirror_url" -O "$temporary" || wget -q "$url" -O "$temporary"
+    if command -v wget >/dev/null; then
+        wget -q "$url" -O "$temporary"
+    elif command -v curl >/dev/null; then
+        curl --fail --location --silent --show-error "$url" -o "$temporary"
+    else
+        echo "missing required command: wget or curl" >&2
+        exit 2
+    fi
     printf '%s  %s\n' "$hash" "$temporary" | sha256sum --check --strict >/dev/null
     mv "$temporary" "$archive"
 fi

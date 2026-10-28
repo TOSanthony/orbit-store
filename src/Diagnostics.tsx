@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { api } from "./api";
 import { bytes } from "./types";
-import { formatDate, t } from "./i18n";
+import { formatDate, language, t } from "./i18n";
 
 type Event = {
   at: number;
@@ -36,6 +36,8 @@ export function Diagnostics() {
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
   const [showText, setShowText] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState("");
   const text = useRef<HTMLTextAreaElement>(null);
   async function load() {
     setBusy(true);
@@ -47,6 +49,23 @@ export function Diagnostics() {
       setError((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+  // As the TV app saves it: a report file on a PS5 drive, to attach to a bug report.
+  async function save() {
+    setSaving(true);
+    setError("");
+    setFeedback("");
+    try {
+      const result = await api<{ path: string }>("/diagnostics/export", {
+        // The look is on the root element (interfaces/choice.ts).
+        client: { app: "browser", language: language(), interface: document.documentElement.dataset.interface || "store" },
+      });
+      setSaved(result.path);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
   async function copy() {
@@ -87,7 +106,15 @@ export function Diagnostics() {
             {t("Copy diagnostic report")}
           </button>
         )}
+        <button disabled={saving} onClick={() => void save()}>
+          {saving ? t("Saving…") : t("Save diagnostic report")}
+        </button>
       </div>
+      {saved && (
+        <p className="notice" role="status">
+          {t("Saved to {path}", { path: saved })}
+        </p>
+      )}
       {error && (
         <p className="form-error" role="alert">
           {error}

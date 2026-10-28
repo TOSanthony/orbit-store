@@ -1,0 +1,4924 @@
+/* Crossbar, Cinema and Panorama. Store keeps styles.css unchanged; every rule
+   here is scoped to an interface (the .iface-* class on the app, or the
+   data-interface attribute on <html> for menus drawn outside it). */
+
+/* ------------------------------------------------------------------ */
+/* Fonts (SIL Open Font License; see licenses/)                         */
+/* ------------------------------------------------------------------ */
+@font-face {
+  font-family: "Inter Tight";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/inter-tight-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Inter Tight";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/inter-tight-latin-ext-wght-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Inter Tight";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/inter-tight-cyrillic-wght-normal.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Inter Tight";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/inter-tight-cyrillic-ext-wght-normal.woff2") format("woff2");
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: "Sora";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("./fonts/sora-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Sora";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("./fonts/sora-latin-ext-wght-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared: App settings → Appearance, the keep check, the notice        */
+/* ------------------------------------------------------------------ */
+.appearance-settings {
+  flex-direction: column;
+  align-items: stretch !important;
+  gap: 0.9rem;
+}
+.iface-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+.iface-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  padding: 0.5rem 0.5rem 0.7rem;
+  border-radius: 14px;
+  text-align: left;
+  background: var(--field);
+  box-shadow: var(--field-edge);
+}
+.iface-card.selected {
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+.iface-name {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0 0.2rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.iface-in-use {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #080808;
+}
+.iface-summary {
+  padding: 0 0.2rem;
+  color: var(--text-3);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+.iface-thumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 9px;
+}
+.iface-thumb i {
+  position: absolute;
+  display: block;
+}
+.iface-thumb-store {
+  background: linear-gradient(120deg, #3a1d10, #b5501f 55%, #2a1208);
+}
+.iface-thumb-store .t-hero {
+  left: 8%;
+  top: 18%;
+  width: 34%;
+  height: 12%;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.85);
+}
+.iface-thumb-store .t-row {
+  left: 8%;
+  right: 8%;
+  bottom: 12%;
+  height: 26%;
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.55) 0 14%, transparent 14% 17%);
+  border-radius: 3px;
+}
+.iface-thumb-crossbar {
+  background: linear-gradient(158deg, #0b1633 0%, #1c2257 38%, #45286b 70%, #8a3a68 100%);
+}
+.iface-thumb-crossbar .t-bar {
+  left: 14%;
+  right: 30%;
+  top: 22%;
+  height: 8%;
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.85) 0 7%, transparent 7% 20%);
+}
+.iface-thumb-crossbar .t-list {
+  left: 20%;
+  top: 44%;
+  width: 46%;
+  height: 40%;
+  background: repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0 18%, transparent 18% 30%);
+}
+.iface-thumb-cinema {
+  background: radial-gradient(60% 80% at 70% 30%, #6d5c3a, #1a140c 70%, #000);
+}
+.iface-thumb-cinema .t-title {
+  left: 8%;
+  bottom: 34%;
+  width: 46%;
+  height: 12%;
+  border-radius: 2px;
+  background: #f7f3ec;
+  transform: skewX(-12deg);
+}
+.iface-thumb-cinema .t-strip {
+  right: 6%;
+  bottom: 10%;
+  width: 46%;
+  height: 16%;
+  background: repeating-linear-gradient(90deg, rgba(247, 243, 236, 0.7) 0 22%, transparent 22% 26%);
+}
+.iface-thumb-panorama {
+  background: #0c0d10;
+}
+.iface-thumb-panorama .t-word {
+  left: 6%;
+  top: 8%;
+  width: 60%;
+  height: 22%;
+  border-bottom: 3px solid rgba(255, 255, 255, 0.85);
+}
+.iface-thumb-panorama .t-tiles {
+  left: 6%;
+  right: 6%;
+  top: 42%;
+  bottom: 10%;
+  background:
+    linear-gradient(90deg, #1ba1e2 0 26%, transparent 26% 28%, #d80073 28% 46%, transparent 46% 48%, #3a3c42 48% 66%, transparent 66% 68%, #25272c 68%);
+}
+.appearance-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+}
+.appearance-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.appearance-option > span {
+  margin-right: 0.4rem;
+  color: var(--text-2);
+  font-size: 0.85rem;
+}
+.appearance-option button {
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+  background: var(--field);
+}
+.appearance-option button[aria-pressed="true"] {
+  background: #f5f5f5;
+  color: #080808;
+}
+.appearance-option button i {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-right: 0.4rem;
+  border-radius: 2px;
+  vertical-align: -0.05rem;
+}
+.accent-blue i {
+  background: #1ba1e2;
+}
+.accent-magenta i {
+  background: #d80073;
+}
+.accent-green i {
+  background: #339933;
+}
+.accent-orange i {
+  background: #f09609;
+}
+@media (max-width: 760px) {
+  .iface-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.keep-interface {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.72);
+}
+.keep-interface-band {
+  width: 100%;
+  padding: 2.4rem var(--gutter);
+  background: #161616;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.6);
+}
+.keep-interface h2 {
+  font-size: 2rem;
+  font-weight: 300;
+}
+.keep-interface p {
+  margin-top: 0.5rem;
+  color: var(--text-2);
+}
+.interface-notice {
+  z-index: 15;
+}
+
+/* Every new interface: a full-height frame its own header sits in. */
+.iface-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+.iface-main {
+  position: relative;
+  /* Above the header, so a dialog's scrim dims the header too. */
+  z-index: 5;
+  flex: 1;
+  min-width: 0;
+}
+.iface-hints {
+  position: relative;
+  z-index: 3;
+}
+/* Store pins its own footer with a dark fade on Discover, Browse and
+   Library; the interfaces' hints sit in the page on its own background. */
+.iface-shell .iface-hints {
+  position: relative;
+  left: auto;
+  right: auto;
+  width: auto;
+  max-width: none;
+  background: none;
+  pointer-events: auto;
+}
+.progress-ring .ring-track {
+  stroke: rgba(255, 255, 255, 0.22);
+}
+.progress-ring .ring-fill {
+  stroke: currentColor;
+}
+.glyph-icon {
+  display: block;
+  flex: none;
+}
+
+/* ================================================================== */
+/* Panorama                                                             */
+/* ================================================================== */
+.iface-panorama,
+html[data-interface="panorama"] .select-menu {
+  --pn-acc: #1ba1e2;
+  --pn-tile: #25272c;
+  --pn-band: #1d1e22;
+  --night-0: #0c0d10;
+  --night-1: #0c0d10;
+  --night-2: #25272c;
+  --night-3: #303238;
+  --action: var(--pn-acc);
+  --action-hi: var(--pn-acc);
+  --action-text: #ffffff;
+  --ring: 0 0 0 4px #ffffff;
+  --field: rgba(255, 255, 255, 0.1);
+  --field-hover: rgba(255, 255, 255, 0.16);
+  --field-open: rgba(255, 255, 255, 0.2);
+  --field-edge: inset 0 -2px 0 rgba(255, 255, 255, 0.35);
+  --field-focus: 0 0 0 3px #ffffff;
+  --glass: rgba(29, 30, 34, 0.94);
+  --glass-on: rgba(48, 50, 56, 0.96);
+  --popover: #1d1e22;
+  --popover-shadow: inset 0 0 0 2px #3a3c42;
+}
+html[data-accent="magenta"] .iface-panorama,
+html[data-accent="magenta"][data-interface="panorama"] .select-menu {
+  --pn-acc: #d80073;
+}
+html[data-accent="green"] .iface-panorama,
+html[data-accent="green"][data-interface="panorama"] .select-menu {
+  --pn-acc: #339933;
+}
+html[data-accent="orange"] .iface-panorama,
+html[data-accent="orange"][data-interface="panorama"] .select-menu {
+  --pn-acc: #f09609;
+}
+html[data-interface="panorama"] body {
+  background: #0c0d10;
+}
+.iface-panorama button,
+.iface-panorama input,
+.iface-panorama select,
+.iface-panorama textarea,
+.iface-panorama .search-field,
+.iface-panorama .modal,
+.iface-panorama .cover,
+.iface-panorama .select-trigger,
+.iface-panorama .browse .collection-tabs,
+html[data-interface="panorama"] .select-menu,
+html[data-interface="panorama"] .select-option {
+  border-radius: 0 !important;
+}
+.iface-panorama .primary {
+  background: var(--pn-acc);
+  color: #ffffff;
+}
+html:not(.pointer) .iface-panorama button:focus {
+  box-shadow: 0 0 0 3px #ffffff;
+}
+html:not(.pointer) .iface-panorama .primary:focus {
+  transform: none;
+  background: #ffffff;
+  color: #000000;
+}
+.iface-panorama .modal {
+  border: 0;
+  background: var(--pn-band);
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.5);
+}
+.iface-panorama .modal > h1,
+.iface-panorama .page h1 {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-weight: 200;
+  text-transform: lowercase;
+  letter-spacing: -0.03em;
+}
+.iface-panorama .modal > h1 {
+  font-size: 3rem;
+}
+.pn-shell .backdrop {
+  opacity: 0.18;
+}
+.pn-shell .backdrop::after {
+  background: linear-gradient(180deg, rgba(12, 13, 16, 0.2), #0c0d10 72%) !important;
+}
+.pn-head {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.1rem var(--gutter) 0;
+}
+.pn-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.7rem;
+}
+.pn-nav button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 -0.35rem;
+  padding: 0.35rem;
+  border-radius: 0;
+  background: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+/* The current section's accent rule, under its words only. */
+.pn-nav button::after {
+  content: "";
+  position: absolute;
+  left: 0.35rem;
+  right: calc(0.35rem + 0.08em);
+  bottom: 0.1rem;
+  height: 2px;
+}
+.pn-nav button.active {
+  color: #ffffff;
+}
+.pn-nav button.active::after {
+  background: var(--pn-acc);
+}
+html.pointer .pn-nav button:hover {
+  background: none;
+  color: rgba(255, 255, 255, 0.85);
+}
+html.pointer .pn-nav button.active:hover {
+  color: #ffffff;
+}
+html:not(.pointer) .pn-nav button:focus {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 0 2px #ffffff;
+}
+.pn-nav .nav-dot {
+  position: absolute;
+  top: 0.3rem;
+  right: -0.1rem;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-acc);
+}
+.nav-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #ffffff;
+  letter-spacing: 0;
+}
+.nav-live .progress-ring {
+  color: var(--pn-acc);
+}
+.pn-tools {
+  margin-left: auto;
+}
+.pn-tools .icon-button {
+  width: 2.3rem;
+  height: 2.3rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.1);
+}
+.pn-titles {
+  position: relative;
+  z-index: 2;
+  /* Sizes here that follow the width also stop at their height share of a
+     900 px window, so a short window (the PS5 browser's is 1540 x 700)
+     shows the whole page; at 900 px and taller they are the design's. */
+  height: min(8.6rem, 14.3vh);
+  margin-top: 0.2rem;
+  padding: 0 var(--gutter);
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.pn-word {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-weight: 200;
+  font-size: min(8rem, 13.3vh);
+  line-height: 1;
+  letter-spacing: -0.05em;
+  text-transform: lowercase;
+}
+.pn-word {
+  display: inline-block;
+  margin-left: -0.45rem;
+}
+.pn-shell main .update-notice,
+.pn-shell > .update-notice {
+  border-radius: 0;
+}
+.pn-page {
+  display: flex;
+  align-items: flex-start;
+  gap: 2.4rem;
+  padding: 0.6rem var(--gutter) min(2.4rem, 4vh);
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-padding-inline: var(--gutter);
+}
+.pn-page::-webkit-scrollbar {
+  display: none;
+}
+.pn-group {
+  flex: none;
+}
+.pn-group h2 {
+  margin-bottom: 0.8rem;
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-size: 1.6rem;
+  font-weight: 300;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+.pn-group h2 span {
+  opacity: 0.45;
+}
+/* Panorama's tile unit: 150px at 1440 wide, three rows to a group. In a
+   short window (the PS5 browser's is 1540 x 700) it is what leaves room for
+   the header, the titles, a group's name and the hints. */
+.pn-shell {
+  --pn-unit: min(10rem, calc((81.7vh - 12.2rem) / 3));
+  --pn-gap: 0.5rem;
+}
+.pn-shell .iface-tiles,
+.pn-tiles {
+  display: grid;
+  grid-template-columns: none;
+  grid-template-rows: repeat(3, var(--pn-unit));
+  grid-auto-flow: column dense;
+  grid-auto-columns: var(--pn-unit);
+  gap: var(--pn-gap);
+  margin: 0;
+  padding: 0;
+}
+/* Browse's two rows of filters come out of its tiles' share... */
+.pn-shell .pn-browse {
+  --pn-unit: min(10rem, calc((81.7vh - 18.3rem) / 3));
+}
+/* Library's bar (views, search, Location) takes about 3.2rem above its
+   groups, so in a short window its tiles give that back: three rows still
+   fit above the hints. */
+.pn-shell .pn-library {
+  --pn-unit: min(10rem, calc((81.7vh - 15.4rem) / 3));
+}
+/* ...except in a short window, where its grid keeps two rows of tiles the
+   same size as Discover's instead (it scrolls sideways either way). */
+@media (max-height: 820px) {
+  .pn-shell .pn-browse {
+    --pn-unit: min(10rem, calc((81.7vh - 12.2rem) / 3));
+  }
+  .pn-shell .pn-browse .iface-tiles {
+    grid-template-rows: repeat(2, var(--pn-unit));
+  }
+}
+/* Every group opens on a large tile, as designed (All games and Browse too). */
+.pn-group .iface-tiles > .game-tile:first-child {
+  grid-row: span 2;
+  grid-column: span 2;
+}
+.pn-shell .game-tile {
+  position: relative;
+  display: block;
+  flex: none;
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--pn-tile);
+  scroll-margin-inline: var(--gutter);
+}
+.pn-shell .game-tile .cover {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  aspect-ratio: auto;
+  box-shadow: none;
+  border-radius: 0;
+  transition: none;
+}
+.pn-shell .game-tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.72), transparent 58%);
+  pointer-events: none;
+}
+.pn-shell .tile-title {
+  position: absolute;
+  left: 0.65rem;
+  right: 0.65rem;
+  bottom: 0.5rem;
+  z-index: 1;
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+.pn-group .iface-tiles > .game-tile:first-child .tile-title {
+  font-size: 1.15rem;
+}
+.pn-shell .tile-collection-state,
+.pn-shell .tile-date {
+  position: absolute;
+  left: 0.65rem;
+  bottom: 2.1rem;
+  z-index: 1;
+  padding: 0.12rem 0.4rem;
+  border-radius: 0;
+  background: var(--pn-acc);
+  color: #ffffff;
+  font-size: 0.66rem;
+}
+.pn-shell .tile-platform {
+  border-radius: 0;
+}
+.pn-shell .tile-favorite {
+  z-index: 1;
+}
+/* Panorama names a game (and dates it) only on the tile in focus; the
+   others are artwork alone, so small tiles aren't covered in text. */
+.pn-shell .game-tile :is(.tile-title, .tile-date, .tile-addon-info),
+.pn-shell .game-tile::after,
+.pn-tile.pn-game-tile.has-art .pn-tile-text,
+.pn-tile.pn-game-tile.has-art::after {
+  opacity: 0;
+}
+.pn-shell .game-tile[aria-current="true"] :is(.tile-title, .tile-date, .tile-addon-info),
+.pn-shell .game-tile[aria-current="true"]::after,
+html:not(.pointer) .pn-shell .game-tile:focus :is(.tile-title, .tile-date, .tile-addon-info),
+html:not(.pointer) .pn-shell .game-tile:focus::after,
+html.pointer .pn-shell .game-tile:hover :is(.tile-title, .tile-date, .tile-addon-info),
+html.pointer .pn-shell .game-tile:hover::after,
+.pn-tile.pn-game-tile.has-art:is(.current, :focus-within) .pn-tile-text,
+.pn-tile.pn-game-tile.has-art:is(.current, :focus-within)::after,
+html.pointer .pn-tile.pn-game-tile.has-art:hover .pn-tile-text,
+html.pointer .pn-tile.pn-game-tile.has-art:hover::after {
+  opacity: 1;
+}
+html:not(.pointer) .pn-shell .game-tile:focus,
+.pn-shell .game-tile[aria-current="true"] {
+  box-shadow: 0 0 0 4px #ffffff;
+  z-index: 3;
+}
+html:not(.pointer) .pn-shell .game-tile:focus .cover,
+html.pointer .pn-shell .game-tile:hover .cover {
+  transform: none;
+  box-shadow: none;
+}
+html.pointer .pn-shell .game-tile:hover {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.6);
+}
+.pn-browse {
+  padding: 0;
+}
+.pn-browse-bar {
+  position: relative;
+  z-index: 5;
+  padding: 0 var(--gutter);
+}
+.pn-browse-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 0.8rem;
+}
+.pn-browse-bar .browse-controls {
+  display: contents;
+}
+.pn-browse-bar .collection-tabs {
+  order: 0;
+  margin: 0;
+}
+.pn-browse-bar .page-heading {
+  order: 1;
+  margin: 0;
+}
+.pn-browse-bar .browse-selects {
+  order: 2;
+}
+.pn-browse-bar .browse-controls > .fine {
+  order: 3;
+}
+.pn-browse-bar .page-heading .search-field {
+  flex: 0 1 19rem;
+  max-width: 19rem;
+  height: 2.3rem;
+  margin-left: 0;
+}
+.pn-browse-bar .search-field input {
+  height: 100%;
+  padding-block: 0;
+  font-size: 0.86rem;
+}
+.pn-browse-bar .collection-tabs {
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+.pn-browse-bar .collection-tabs button {
+  height: 2.3rem;
+  min-height: 2.3rem;
+  padding: 0 0.95rem;
+  font-size: 0.86rem;
+}
+.pn-browse-bar .browse-selects .select-trigger {
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+}
+html:not(.pointer) .pn-browse-bar .browse-selects .select-trigger:focus,
+.pn-browse-bar .browse-selects .select-trigger[aria-expanded="true"] {
+  background: var(--pn-acc);
+  color: #ffffff;
+  box-shadow: none;
+}
+.pn-browse-bar .browse-selects .reset-filters,
+.pn-browse-bar .browse-selects .saved-filters-open {
+  border-radius: 0;
+  color: var(--pn-acc);
+}
+.pn-shell .browse .collection-tabs [aria-pressed="true"] {
+  background: #ffffff;
+  color: #000000;
+}
+.pn-shell .select-trigger {
+  background: rgba(255, 255, 255, 0.1);
+}
+.pn-shell .iface-main > .page,
+.pn-shell .iface-main > section.page,
+.pn-shell .iface-main > div > .page {
+  padding-top: 0.4rem;
+}
+.pn-shell .page > h1:first-child {
+  display: none;
+}
+
+/* ================================================================== */
+/* Cinema                                                               */
+/* ================================================================== */
+.iface-cinema,
+html[data-interface="cinema"] .select-menu {
+  --cn-gold: #dcbc84;
+  --cn-paper: #f7f3ec;
+  --night-0: #000000;
+  --night-1: #000000;
+  --text: #f7f3ec;
+  --text-2: rgba(247, 243, 236, 0.8);
+  --text-3: rgba(247, 243, 236, 0.55);
+  --action: #f7f3ec;
+  --action-hi: #ffffff;
+  --action-text: #0b0907;
+  --ring: 0 0 0 3px #f7f3ec, 0 0 34px 4px rgba(247, 243, 236, 0.32);
+  --glass: rgba(14, 12, 10, 0.72);
+  --glass-on: rgba(40, 34, 28, 0.84);
+  --popover: rgba(18, 15, 12, 0.94);
+}
+html[data-interface="cinema"] body {
+  background: #000000;
+}
+.iface-cinema .modal {
+  border: 0;
+  border-radius: 30px;
+  background: rgba(14, 12, 10, 0.86);
+  backdrop-filter: blur(30px) saturate(1.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 40px 90px rgba(0, 0, 0, 0.6);
+}
+.iface-cinema .modal > h1,
+.iface-cinema .page h1,
+.iface-cinema .details h1 {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.iface-cinema .modal h2,
+.iface-cinema .section-heading h2 {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-weight: 600;
+}
+.cn-shell .backdrop::after {
+  background:
+    linear-gradient(0deg, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.5) 34%, rgba(0, 0, 0, 0) 62%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.42) 38%, rgba(0, 0, 0, 0) 64%) !important;
+}
+.cn-shell.cn-dim .backdrop::after {
+  background: rgba(0, 0, 0, 0.82) !important;
+}
+.cn-head {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  padding: 1.6rem var(--gutter) 0;
+}
+.cn-wordmark {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-weight: 600;
+  font-style: normal;
+  font-size: 1.5rem;
+}
+.cn-wordmark img {
+  width: 1.5rem;
+}
+.cn-chapters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.6rem;
+}
+.cn-chapters button {
+  position: relative;
+  margin: 0 -0.45rem;
+  padding: 0.3rem 0.45rem 0.55rem;
+  border-radius: 0.45rem;
+  background: none;
+  color: rgba(247, 243, 236, 0.5);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+/* The current chapter's gold rule, under its letters only. */
+.cn-chapters button::after {
+  content: "";
+  position: absolute;
+  left: 0.45rem;
+  right: calc(0.45rem + 0.22em);
+  bottom: 0.15rem;
+  height: 2px;
+}
+.cn-chapters button.active {
+  color: var(--cn-paper);
+}
+.cn-chapters button.active::after {
+  background: var(--cn-gold);
+}
+html.pointer .cn-chapters button:hover {
+  background: none;
+  color: rgba(247, 243, 236, 0.82);
+}
+html.pointer .cn-chapters button.active:hover {
+  color: var(--cn-paper);
+}
+html:not(.pointer) .cn-chapters button:focus {
+  color: var(--cn-paper);
+  background: rgba(247, 243, 236, 0.12);
+  box-shadow: 0 0 0 2px var(--cn-paper);
+}
+.cn-chapters .nav-dot {
+  position: absolute;
+  top: 0.12rem;
+  right: -0.15rem;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--cn-gold);
+}
+.cn-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-left: auto;
+}
+.cn-tools .icon-button {
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+.cn-capsule {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 1rem 0.35rem 0.4rem;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(16px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cn-capsule .progress-ring {
+  color: var(--cn-paper);
+}
+.cn-speed {
+  color: rgba(247, 243, 236, 0.66);
+  font-weight: 400;
+}
+/* The page: a stage over full-bleed art, the collection line under the
+   header, and a strip of large frames along the bottom right. The art (in
+   the page) sits behind the header: the shell is its own stacking context
+   and the page isn't raised over the header (dialogs' scrims are above it). */
+.cn-shell {
+  min-height: 100vh;
+  isolation: isolate;
+}
+.cn-shell .iface-main {
+  z-index: auto;
+}
+.cn-shell .iface-main {
+  display: flex;
+  flex-direction: column;
+}
+.cn-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* The space between the header and the hints. */
+  flex: 1;
+  /* Sizes below that follow the width also stop at their height share of a
+     900 px window, so a short window (the PS5 browser's is 1540 x 700)
+     shows the whole page; at 900 px and taller they are the design's. */
+  padding: 0 var(--gutter) min(2.2rem, 3.9vh);
+}
+.cn-collections {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.9rem;
+  min-height: 2rem;
+}
+.cn-step {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: none;
+  color: rgba(247, 243, 236, 0.7);
+}
+.cn-step:disabled {
+  opacity: 0.25;
+}
+.cn-collection-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+.cn-dots {
+  display: flex;
+  gap: 0.35rem;
+  margin-left: 0.6rem;
+}
+.cn-dots i {
+  display: block;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 0.2rem;
+  background: rgba(247, 243, 236, 0.35);
+}
+.cn-dots i.on {
+  width: 1.4rem;
+  background: var(--cn-paper);
+}
+.cn-filterline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+  margin-top: 0.8rem;
+}
+.cn-filterline .search-field {
+  width: min(22rem, 100%);
+  margin: 0;
+  background: rgba(12, 10, 8, 0.72);
+  backdrop-filter: blur(12px);
+}
+.cn-filterline .browse-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+}
+/* The collection arrows replace All games / Favourites. */
+.cn-filterline .collection-tabs {
+  display: none !important;
+}
+.cn-filterline .browse-selects .select-trigger {
+  background: rgba(12, 10, 8, 0.72);
+  box-shadow: none;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+html:not(.pointer) .cn-filterline .browse-selects .select-trigger:focus,
+.cn-filterline .browse-selects .select-trigger[aria-expanded="true"] {
+  background: var(--cn-paper);
+  color: #0b0907;
+  box-shadow: none;
+}
+.cn-filterline .browse-selects .reset-filters,
+.cn-filterline .browse-selects .saved-filters-open {
+  color: var(--cn-gold);
+}
+.cn-stage {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  flex: 1;
+  min-height: 46vh;
+  padding: min(2.4rem, calc(9.6vh - 50px)) 0 min(1.4rem, 2.5vh);
+  max-width: 62rem;
+}
+.cn-kicker {
+  color: var(--cn-gold);
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+}
+.cn-shell .cn-stage .cn-title {
+  margin-top: 0.6rem;
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-style: normal;
+  font-weight: 600;
+  /* The design's size down to a 900 px window, smaller below so two lines
+     still fit (63px at 700); a long name takes two lines rather than more
+     than 45% of the width over the art. */
+  max-width: 45vw;
+  font-size: clamp(min(3.4rem, 5.7vh), min(7vw, calc(18.9vh - 69.3px)), 8rem);
+  line-height: 0.98;
+  letter-spacing: -0.025em;
+  text-shadow: 0 2px 28px rgba(0, 0, 0, 0.35);
+}
+.cn-tagline {
+  max-width: 44rem;
+  margin-top: 1rem;
+  color: rgba(247, 243, 236, 0.9);
+  font-size: 1.35rem;
+}
+.cn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem;
+  margin-top: min(1.6rem, 2.8vh);
+}
+.cn-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 3.1rem;
+  padding: 0 1.4rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.32);
+  box-shadow: inset 0 0 0 1.5px rgba(247, 243, 236, 0.45);
+  color: var(--cn-paper);
+  font-size: 1rem;
+  font-weight: 500;
+  list-style: none;
+  cursor: pointer;
+}
+.cn-button.primary,
+.cn-shell .cn-actions .primary {
+  background: var(--cn-paper);
+  box-shadow: none;
+  color: #0b0907;
+}
+.cn-button::-webkit-details-marker {
+  display: none;
+}
+.cn-actions .iface-favorite {
+  width: 3.1rem;
+  height: 3.1rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.32);
+  box-shadow: inset 0 0 0 1.5px rgba(247, 243, 236, 0.45);
+}
+html:not(.pointer) .cn-button:focus,
+html:not(.pointer) .cn-actions .iface-favorite:focus {
+  box-shadow: var(--ring);
+}
+/* The strip: large frames, bottom right, the chosen one ringed. */
+.cn-shell {
+  --cn-frame-w: min(clamp(15rem, 17vw, 22rem), 27.2vh);
+}
+.cn-strip {
+  align-self: flex-end;
+  width: min(100%, calc(var(--cn-frame-w) * 3.6));
+  margin-right: calc(var(--gutter) * -1);
+}
+/* Browse's and Library's collection line and filters: two rows, or one in
+   a short or wide window (the PS5 browser's is 1540 x 700; 16:9 is wide),
+   where there is room beside the collection line. */
+.cn-pagehead {
+  display: contents;
+}
+/* Their stage grows into the free space but asks for no more than it shows. */
+.cn-shell .cn-browse .cn-stage,
+.cn-shell .cn-library .cn-stage {
+  min-height: 0;
+}
+@media (max-height: 820px), (min-aspect-ratio: 17/10) {
+  .cn-shell .cn-pagehead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 1.2rem;
+    margin-top: 0.9rem;
+  }
+  .cn-pagehead > .cn-collections,
+  .cn-pagehead > .cn-filterline {
+    margin-top: 0;
+  }
+  .cn-pagehead .browse-controls {
+    margin-bottom: 0;
+  }
+  /* Location's name beside its menu, not above it. */
+  .cn-pagehead .select-field {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0;
+  }
+}
+/* A two-line title still fits with the filters above it. */
+@media (max-height: 940px), (min-aspect-ratio: 17/10) {
+  .cn-shell .cn-browse .cn-stage,
+  .cn-shell .cn-library .cn-stage {
+    padding-top: 0.8rem;
+    padding-bottom: 0.6rem;
+  }
+}
+.cn-strip-label {
+  margin: 0 0 0.6rem;
+  color: rgba(247, 243, 236, 0.55);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.cn-frames {
+  display: flex;
+  gap: 1rem;
+  padding: 0.5rem var(--gutter) 0.8rem 0.4rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-padding-inline: 0.4rem var(--gutter);
+}
+.cn-frames::-webkit-scrollbar {
+  display: none;
+}
+.cn-frame {
+  position: relative;
+  flex: 0 0 var(--cn-frame-w);
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: rgba(247, 243, 236, 0.08);
+  opacity: 0.72;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.cn-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cn-frame.on,
+html:not(.pointer) .cn-frame:focus {
+  opacity: 1;
+  box-shadow:
+    0 0 0 3px var(--cn-paper),
+    0 24px 48px rgba(0, 0, 0, 0.6);
+}
+.cn-frame-text {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 0.8rem;
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-weight: 600;
+  font-style: normal;
+  font-size: 1.2rem;
+}
+.cn-badge {
+  position: absolute;
+  left: 0.6rem;
+  bottom: 0.6rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.72);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.cn-frame-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: rgba(247, 243, 236, 0.22);
+}
+.cn-frame-bar i {
+  display: block;
+  height: 100%;
+  background: var(--cn-gold);
+}
+/* Discover and Browse: the stage at the top (no buttons: the focus is on a
+   frame, Cross opens its game) and rows under it, as the live Store has them
+   (New on Orbit, Latest releases, All games; Browse's results). Five frames
+   across inside the gutters, fewer in a narrow window. The page fits the
+   window; the rows scroll under the stage. */
+.cn-shell {
+  --cn-cols: 5;
+  --cn-gap: 1.1rem;
+}
+@media (max-width: 1099px) {
+  .cn-shell {
+    --cn-cols: 4;
+  }
+}
+@media (max-width: 799px) {
+  .cn-shell {
+    --cn-cols: 3;
+  }
+}
+.cn-shell.cn-tab-discover,
+.cn-shell.cn-tab-browse {
+  height: 100vh;
+  overflow: hidden;
+}
+.cn-tab-discover .iface-main,
+.cn-tab-browse .iface-main {
+  min-height: 0;
+  overflow-y: auto;
+}
+.cn-rowspage {
+  min-height: 0;
+  padding-bottom: 0;
+}
+/* The stage keeps one height for every game: kicker, a title line, a
+   tagline line and the buttons. */
+.cn-shell .cn-rowspage .cn-stage {
+  flex: none;
+  justify-content: flex-start;
+  min-height: 0;
+  max-width: none;
+  /* The stage shows a good part of the art above the rows. */
+  padding: min(5.6rem, 10vh) 0 0;
+}
+.cn-shell .cn-rowspage.cn-browse .cn-stage {
+  padding-top: min(2.4rem, 4vh);
+}
+.cn-shell .cn-rowspage .cn-kicker {
+  min-height: 1.3em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cn-shell .cn-rowspage .cn-stage .cn-title {
+  --cn-title: clamp(min(4rem, 6.8vh), min(8.4vw, calc(22.7vh - 83px)), 9.6rem);
+  max-width: 54vw;
+  height: calc(var(--cn-title) * 1.04);
+  margin-top: 0.4rem;
+  font-size: var(--cn-title);
+  /* A name set smaller sits in the middle of the line, not at its top. */
+  line-height: calc(var(--cn-title) * 1.04);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.cn-shell .cn-rowspage .cn-stage .cn-title.two {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  line-height: calc(var(--cn-title) * 0.52);
+}
+.cn-shell .cn-rowspage .cn-tagline {
+  max-width: 60vw;
+  height: 1.5em;
+  margin-top: min(0.7rem, 1vh);
+  font-size: min(1.5rem, 3vh);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cn-results {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cn-rows {
+  flex: 1;
+  min-height: 0;
+  margin: min(1.6rem, 2.6vh) calc(var(--gutter) * -1) 0;
+  padding: 0.6rem var(--gutter) 1rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  /* Rows slide up under the stage, fading at its foot. */
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 0.6rem);
+  mask-image: linear-gradient(180deg, transparent 0, #000 0.6rem);
+}
+.cn-rows::-webkit-scrollbar {
+  display: none;
+}
+.cn-row {
+  padding-bottom: min(1.1rem, 1.6vh);
+}
+.cn-row .cn-strip-label {
+  margin-bottom: 0.2rem;
+}
+.cn-row-frames {
+  --cn-tile: calc((100% - (var(--cn-cols) - 1) * var(--cn-gap)) / var(--cn-cols));
+}
+/* A strip runs off the right edge; its frames line up with the grid's. */
+.cn-row-strip .cn-row-frames {
+  position: relative;
+  display: flex;
+  gap: var(--cn-gap);
+  margin: 0 calc(var(--gutter) * -1) 0 -0.4rem;
+  padding: 0.4rem var(--gutter) 0.5rem 0.4rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.cn-row-strip .cn-row-frames::-webkit-scrollbar {
+  display: none;
+}
+.cn-row-strip .cn-frame {
+  flex: 0 0 var(--cn-tile);
+}
+.cn-row-grid .cn-row-frames {
+  display: grid;
+  grid-template-columns: repeat(var(--cn-cols), minmax(0, 1fr));
+  gap: min(1.4rem, 2.2vh) var(--cn-gap);
+  padding: 0.4rem 0 0.5rem;
+}
+.cn-row .cn-frame {
+  border-radius: 10px;
+}
+.cn-row .cn-frame.on,
+html:not(.pointer) .cn-row .cn-frame:focus {
+  box-shadow:
+    0 0 0 3px var(--cn-paper),
+    0 14px 32px rgba(0, 0, 0, 0.55);
+}
+.cn-row .cn-badge {
+  left: 0.5rem;
+  bottom: 0.5rem;
+  font-size: 0.62rem;
+}
+.cn-more {
+  position: relative;
+}
+.cn-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 0.6rem);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  min-width: 15rem;
+  padding: 0.5rem;
+  border-radius: 18px;
+  background: rgba(18, 15, 12, 0.94);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5);
+}
+.cn-menu button {
+  justify-content: flex-start;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  background: none;
+  text-align: left;
+}
+html:not(.pointer) .cn-menu button:focus {
+  background: var(--cn-paper);
+  color: #0b0907;
+}
+/* Downloads, Library and the other staged pages: the chosen item's art behind. */
+.cn-art {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.cn-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cn-art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(0deg, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.5) 34%, rgba(0, 0, 0, 0) 62%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.42) 40%, rgba(0, 0, 0, 0) 66%);
+}
+.cn-art-empty {
+  background: radial-gradient(70% 80% at 70% 30%, #2a2015, #000 70%);
+}
+.cn-body {
+  max-width: 44rem;
+  margin-top: 0.8rem;
+  color: rgba(247, 243, 236, 0.82);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.cn-body code {
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+}
+.cn-error {
+  color: #ffb4a8;
+}
+.cn-progress {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  margin-top: 1.4rem;
+  color: rgba(247, 243, 236, 0.82);
+}
+.cn-percent {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 3.6rem;
+  line-height: 1;
+  color: var(--cn-paper);
+}
+.cn-bar {
+  width: min(28rem, 100%);
+  height: 4px;
+  margin-top: 1rem;
+  appearance: none;
+  border: 0;
+  border-radius: 2px;
+  background: rgba(247, 243, 236, 0.22);
+}
+.cn-bar::-webkit-progress-bar {
+  background: rgba(247, 243, 236, 0.22);
+  border-radius: 2px;
+}
+.cn-bar::-webkit-progress-value {
+  background: var(--cn-gold);
+  border-radius: 2px;
+}
+.cn-bar::-moz-progress-bar {
+  background: var(--cn-gold);
+}
+.cn-toast {
+  position: fixed;
+  top: 5.6rem;
+  right: var(--gutter);
+  z-index: 8;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  max-width: 24rem;
+  padding: 0.85rem 1.1rem;
+  border-radius: 18px;
+  background: rgba(18, 15, 12, 0.9);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(247, 243, 236, 0.12);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+.cn-toast .glyph-icon {
+  flex: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0.2rem;
+  border-radius: 50%;
+  background: #7ad0a0;
+  color: #0b0907;
+}
+.cn-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.9rem;
+  margin-top: 2rem;
+}
+.cn-card {
+  padding: 1rem 1.2rem;
+  border-radius: 14px;
+  background: rgba(247, 243, 236, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(247, 243, 236, 0.1);
+}
+.cn-card-kicker {
+  color: rgba(247, 243, 236, 0.55);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.cn-card-title {
+  margin-top: 0.4rem;
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-weight: 600;
+  font-style: normal;
+  font-size: 1.15rem;
+}
+.cn-card-body {
+  margin-top: 0.3rem;
+  color: rgba(247, 243, 236, 0.6);
+  font-size: 0.8rem;
+}
+/* Library on the stage */
+.cn-details {
+  position: absolute;
+  top: 3.6rem;
+  right: var(--gutter);
+  z-index: 3;
+  width: min(30rem, 42vw);
+  padding: 1.1rem 1.3rem;
+  border-radius: 18px;
+  background: rgba(14, 12, 10, 0.86);
+  backdrop-filter: blur(20px);
+  box-shadow: inset 0 0 0 1px rgba(247, 243, 236, 0.12), 0 30px 60px rgba(0, 0, 0, 0.5);
+}
+.cn-details dl {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.8rem 0 0;
+}
+.cn-details dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.82rem;
+}
+.cn-details dt {
+  color: rgba(247, 243, 236, 0.55);
+}
+.cn-details dd {
+  margin: 0;
+  text-align: right;
+}
+.cn-game-actions .library-game-actions > .dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin-top: 1.6rem;
+}
+.cn-game-actions .library-game-actions > .dialog-actions button {
+  min-height: 3.1rem;
+  padding: 0 1.4rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.32);
+  box-shadow: inset 0 0 0 1.5px rgba(247, 243, 236, 0.45);
+  color: var(--cn-paper);
+}
+.cn-game-actions .library-game-actions > .dialog-actions button.primary {
+  background: var(--cn-paper);
+  box-shadow: none;
+  color: #0b0907;
+}
+.cn-game-actions .fine {
+  margin-top: 0.8rem;
+  color: rgba(247, 243, 236, 0.6);
+}
+/* Copy, move and unmount confirm over the dimmed page, as Cinema's dialogs do. */
+.cn-game-actions .library-action-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem max(var(--gutter), calc(50vw - 26rem));
+  background: rgba(0, 0, 0, 0.84);
+  backdrop-filter: blur(6px);
+  text-align: center;
+}
+.cn-game-actions .library-action-confirm h3 {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-style: normal;
+  font-weight: 600;
+  font-size: 2.4rem;
+}
+.cn-game-actions .library-action-confirm h3::before {
+  content: "";
+  display: block;
+  width: 2.2rem;
+  height: 2px;
+  margin: 0 auto 1.4rem;
+  background: var(--cn-gold);
+}
+.cn-game-actions .library-action-confirm p {
+  max-width: 40rem;
+  color: rgba(247, 243, 236, 0.8);
+}
+.cn-game-actions .library-action-confirm .dialog-actions {
+  justify-content: center;
+}
+.cn-game-actions .library-action-confirm .dialog-actions button {
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.32);
+  box-shadow: inset 0 0 0 1.5px rgba(247, 243, 236, 0.45);
+}
+.cn-game-actions .library-action-confirm .dialog-actions button.primary {
+  background: var(--cn-paper);
+  box-shadow: none;
+  color: #0b0907;
+}
+.drive-choices {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.8rem;
+  margin: 1rem 0;
+}
+.drive-choices-label {
+  flex-basis: 100%;
+  color: var(--cn-gold);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.drive-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  min-width: 15rem;
+  padding: 0.9rem 1.1rem;
+  border-radius: 14px;
+  background: rgba(247, 243, 236, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(247, 243, 236, 0.16);
+  text-align: left;
+}
+.drive-choice[aria-checked="true"] {
+  box-shadow: inset 0 0 0 2px var(--cn-paper);
+}
+.drive-choice small {
+  color: rgba(247, 243, 236, 0.6);
+}
+.cn-capacity {
+  display: flex;
+  gap: 1.4rem;
+  margin-top: 0.6rem;
+  color: rgba(247, 243, 236, 0.55);
+  font-size: 0.78rem;
+}
+.cn-toast-wide {
+  max-width: 28rem;
+}
+.cn-toast-wide p {
+  margin-top: 0.3rem;
+  color: rgba(247, 243, 236, 0.7);
+}
+.cn-toast-wide .cn-actions {
+  margin-top: 0.8rem;
+}
+.cn-toast-wide .cn-button {
+  min-height: 2.4rem;
+  padding: 0 1rem;
+  font-size: 0.85rem;
+}
+/* A game: the title on the stage, its line, a few lines about it and its
+   buttons under it. Download raises a sheet across the bottom with its
+   choices (About, the facts), over the page dimmed behind it. */
+.cn-game,
+.cn-shell .product.native-game.cn-game {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  /* Store's page padding off: the stage and the text keep Cinema's gutter. */
+  padding: 0;
+}
+.cn-game-page {
+  display: flex;
+  flex-direction: column;
+  transition: opacity 200ms ease;
+}
+.cn-game.cn-sheet-up .cn-game-page {
+  opacity: 0.35;
+}
+.cn-game-intro {
+  max-width: calc(46rem + var(--gutter));
+  padding: 0 var(--gutter) 2rem;
+}
+.cn-game-intro .cn-body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  margin-top: 0.8rem;
+}
+.cn-game-intro .cn-actions {
+  margin-top: min(1.6rem, 2.8vh);
+}
+.cn-game .cn-stage {
+  flex: 0 0 auto;
+  min-height: 0;
+  padding: 1.2rem var(--gutter) 2rem;
+  justify-content: flex-start;
+}
+.cn-game .cn-title {
+  font-size: clamp(3rem, 5.4vw, 6rem);
+}
+.cn-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 2fr);
+  gap: 2.4rem;
+  max-height: 80vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1.8rem var(--gutter) 2.4rem;
+  border-radius: 28px 28px 0 0;
+  background: rgba(20, 22, 30, 0.92);
+  backdrop-filter: blur(28px) saturate(1.2);
+  box-shadow:
+    inset 0 1px 0 rgba(247, 243, 236, 0.1),
+    0 -24px 60px rgba(0, 0, 0, 0.45);
+  animation: cn-sheet-rise 260ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.cn-sheet.cn-sheet-about {
+  display: block;
+}
+.cn-sheet .cn-about,
+html:not(.pointer) .cn-sheet .cn-about:focus {
+  max-width: 62rem;
+  outline: none;
+  box-shadow: none;
+}
+@keyframes cn-sheet-rise {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+}
+.cn-game .cn-button.hub-primary {
+  width: auto;
+  min-width: 0;
+  min-height: 3.1rem;
+  height: auto;
+  padding: 0 1.4rem;
+  font-size: 1rem;
+  box-shadow: none;
+}
+.cn-game .cn-button.hub-primary svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+.cn-sheet .provider-browser-option li strong {
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--cn-paper);
+}
+.cn-sheet-tagline {
+  font-size: 1.3rem;
+  font-weight: 500;
+}
+.cn-note {
+  margin-top: 0.9rem;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  background: rgba(247, 243, 236, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(247, 243, 236, 0.12);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+.cn-note.warn {
+  color: #f0b46a;
+}
+.cn-footnote {
+  margin-top: 0.9rem;
+  color: rgba(247, 243, 236, 0.5);
+  font-size: 0.78rem;
+}
+.cn-section-label {
+  margin: 0 0 0.6rem;
+  color: var(--cn-gold);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.cn-section-label ~ .cn-section-label {
+  margin-top: 1.2rem;
+}
+.cn-choices {
+  margin-top: 0;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+}
+.cn-choice {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  min-height: 5.6rem;
+  padding: 0.9rem 2.4rem 0.9rem 1rem;
+  border-radius: 14px;
+  background: rgba(247, 243, 236, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(247, 243, 236, 0.14);
+  text-align: left;
+  color: var(--cn-paper);
+}
+.cn-choice small {
+  color: rgba(247, 243, 236, 0.66);
+  font-size: 0.78rem;
+}
+.cn-choice strong {
+  font-size: 1rem;
+}
+.cn-choice[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 2px var(--cn-paper);
+}
+.cn-choice .glyph-icon {
+  position: absolute;
+  top: 0.9rem;
+  right: 0.9rem;
+}
+.cn-choice-note {
+  color: rgba(247, 243, 236, 0.45) !important;
+}
+.cn-choice-note.firmware-note.warn {
+  color: #f0b46a !important;
+}
+.cn-meter {
+  display: block;
+  align-self: stretch;
+  height: 3px;
+  margin: 0.4rem 0 0.2rem;
+  border-radius: 2px;
+  background: rgba(247, 243, 236, 0.18);
+}
+.cn-meter i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--cn-gold);
+}
+.cn-sheet .sheet-budget {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.6rem;
+  margin: 0.9rem 0 0;
+  font-size: 0.8rem;
+}
+.cn-sheet .sheet-budget div {
+  display: flex;
+  gap: 0.4rem;
+}
+.cn-sheet .sheet-budget dt {
+  color: rgba(247, 243, 236, 0.55);
+}
+.cn-sheet .sheet-budget dd {
+  margin: 0;
+  font-weight: 600;
+}
+.cn-sheet .provider-browser-option {
+  margin-top: 0.9rem;
+}
+.cn-sheet .provider-browser-option > strong {
+  color: var(--cn-gold);
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.cn-sheet .provider-browser-option ol {
+  margin: 0.6rem 0 0;
+  padding-left: 1.4rem;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.cn-sheet .provider-browser-option li::marker {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-weight: 600;
+  font-style: normal;
+  font-size: 1.2em;
+}
+.cn-about .facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: 0.9rem 1.4rem;
+  margin: 0 0 1rem;
+}
+.cn-about dt {
+  color: var(--cn-gold);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.cn-about dd {
+  margin: 0.3rem 0 0;
+}
+@media (max-width: 900px) {
+  .cn-sheet {
+    grid-template-columns: 1fr;
+  }
+}
+/* Settings: grouped sections on the left, the chosen one on a panel. */
+.settings-page {
+  display: grid;
+  grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr);
+  gap: 2.4rem;
+  padding: 1.6rem var(--gutter) 2.4rem;
+}
+.settings-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.settings-group-label {
+  margin: 0 0 0.4rem;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+.settings-section {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 0;
+  padding: 0.25rem 0;
+  background: none;
+  text-align: left;
+}
+.settings-panel {
+  min-width: 0;
+}
+.settings-section-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+}
+.settings-section-label {
+  min-width: 0;
+}
+.settings-section-value {
+  overflow: hidden;
+  max-width: 10rem;
+  margin-left: auto;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8rem;
+  font-weight: 400;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.settings-section .nav-dot {
+  flex: none;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+}
+/* Cinema lists sections as words; Updates carries a gold dot. */
+.cn-shell .settings-section-icon,
+.cn-shell .settings-section-value {
+  display: none;
+}
+.cn-shell .settings-section .nav-dot {
+  margin-left: 0.5rem;
+  background: var(--cn-gold);
+}
+.cn-shell .settings-section {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 1.02rem;
+  color: rgba(247, 243, 236, 0.6);
+}
+.cn-shell .settings-section[aria-current="page"] {
+  font-style: italic;
+  font-size: 1.5rem;
+  color: var(--cn-paper);
+}
+.cn-shell .settings-section[aria-current="page"]::before {
+  content: "";
+  width: 1.2rem;
+  height: 1px;
+  margin-right: 0.3rem;
+  background: var(--cn-paper);
+}
+html:not(.pointer) .cn-shell .settings-section:focus {
+  color: var(--cn-paper);
+  box-shadow: none;
+  text-decoration: underline;
+  text-decoration-color: var(--cn-gold);
+  text-underline-offset: 0.35em;
+}
+.cn-shell .settings-group-label {
+  color: var(--cn-gold);
+  opacity: 1;
+}
+.cn-shell .settings-panel {
+  padding: 1.6rem 1.8rem 2rem;
+  border-radius: 24px;
+  background: rgba(20, 18, 16, 0.72);
+  backdrop-filter: blur(24px);
+  box-shadow: inset 0 0 0 1px rgba(247, 243, 236, 0.08);
+}
+.cn-shell .settings-panel :is(h1, h2) {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-style: normal;
+  font-weight: 600;
+}
+/* Those headings lose their top margin, so the Notifications sections after the first keep a gap. */
+.cn-shell .settings-panel > section:is(.ntfy-setting, .notification-events) {
+  margin-top: 1.6rem;
+}
+.cn-shell .settings-panel > .settings-title,
+.cn-shell .settings-panel > section > h1:first-child,
+.cn-shell .settings-panel > section > h2:first-child,
+.cn-shell .settings-panel > h1:first-child,
+.cn-shell .settings-panel > h2:first-child {
+  margin: 0 0 0.6rem;
+  font-size: 2.1rem;
+}
+.cn-browse > #browse-results {
+  display: contents;
+}
+.cn-tools .search-field {
+  width: min(20rem, 30vw);
+  height: 2.4rem;
+  margin: 0;
+  background: rgba(12, 10, 8, 0.72);
+  backdrop-filter: blur(12px);
+}
+/* Opening, unreachable, no sources and empty results: a quiet stage. */
+.cn-shell .iface-main > .empty,
+.cn-shell .cn-browse .empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 2rem var(--gutter);
+  text-align: left;
+}
+.cn-shell .iface-main > .empty > svg,
+.cn-shell .cn-browse .empty > svg {
+  display: none;
+}
+.cn-shell .iface-main > .empty h1,
+.cn-shell .iface-main > .empty h2,
+.cn-shell .cn-browse .empty h2 {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-style: normal;
+  font-weight: 600;
+  font-size: clamp(2.6rem, 5vw, 4.4rem);
+  line-height: 1.02;
+}
+.cn-shell .iface-main > .empty p,
+.cn-shell .cn-browse .empty p {
+  max-width: 40rem;
+  margin-top: 0.8rem;
+  color: rgba(247, 243, 236, 0.75);
+}
+.cn-shell .iface-main > .empty button,
+.cn-shell .cn-browse .empty button {
+  margin-top: 1.2rem;
+  border-radius: 999px;
+  background: var(--cn-paper);
+  color: #0b0907;
+}
+/* Notices and problems: glass cards at the top right. */
+.cn-shell .update-notice,
+.cn-shell .native-app-notice,
+.cn-shell .interface-notice {
+  position: fixed;
+  top: 5.2rem;
+  right: var(--gutter);
+  z-index: 9;
+  max-width: 24rem;
+  border-radius: 18px;
+  background: rgba(18, 15, 12, 0.9);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(247, 243, 236, 0.12);
+}
+.cn-shell .connection-error {
+  margin: 0.8rem var(--gutter) 0;
+  border-radius: 999px;
+  background: rgba(18, 15, 12, 0.86);
+  box-shadow: inset 0 0 0 1px rgba(240, 180, 106, 0.4);
+}
+/* Pairing: the question in serif over the dimmed page, the code wide. */
+.iface-cinema .pairing-modal h1 {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-style: normal;
+  font-weight: 600;
+  font-size: 2.6rem;
+}
+.iface-cinema .pairing-modal .code-input,
+.iface-cinema .pairing-panel .code-input {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 2.2rem;
+  letter-spacing: 0.5em;
+  text-align: center;
+}
+.iface-cinema .pairing-code strong {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 4.4rem;
+  letter-spacing: 0.08em;
+}
+/* Cinema's dialogs: no panel, a short gold rule, the question in italic serif, centred
+   over the dimmed page. */
+.iface-cinema .scrim {
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(6px);
+}
+.iface-cinema .modal:not(.storage-modal):not(.library-details):not(.sources-modal) {
+  max-width: 52rem;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  text-align: center;
+}
+.iface-cinema .modal:not(.storage-modal):not(.library-details):not(.sources-modal) > h2:first-of-type,
+.iface-cinema .modal:not(.storage-modal):not(.library-details):not(.sources-modal) > h1:first-of-type,
+.iface-cinema .modal .archive-password-form h2 {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-style: normal;
+  font-weight: 600;
+  font-size: 2.6rem;
+}
+.iface-cinema .modal:not(.storage-modal):not(.library-details):not(.sources-modal) > h2:first-of-type::before,
+.iface-cinema .modal:not(.storage-modal):not(.library-details):not(.sources-modal) > h1:first-of-type::before {
+  content: "";
+  display: block;
+  width: 2.2rem;
+  height: 2px;
+  margin: 0 auto 1.6rem;
+  background: var(--cn-gold);
+}
+.iface-cinema .modal:not(.storage-modal):not(.library-details):not(.sources-modal) > .close {
+  display: none;
+}
+.iface-cinema .modal .dialog-actions {
+  justify-content: center;
+}
+/* Details stay a left-aligned panel; their buttons follow the text. */
+.iface-cinema .library-details .dialog-actions {
+  justify-content: flex-start;
+}
+.iface-cinema .modal .dialog-actions button {
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.32);
+  box-shadow: inset 0 0 0 1.5px rgba(247, 243, 236, 0.45);
+}
+.iface-cinema .modal .dialog-actions button:first-child {
+  background: var(--cn-paper);
+  box-shadow: none;
+  color: #0b0907;
+}
+.cn-shell .select-trigger {
+  background: rgba(12, 10, 8, 0.72);
+  backdrop-filter: blur(12px);
+}
+.cn-shell .page > h1:first-child,
+.cn-shell .page-heading h1 {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-style: normal;
+  font-weight: 600;
+  font-size: 3.6rem;
+}
+
+/* Library (with Files) and Downloads use Store's layouts in Cinema: its paper
+   for chosen tabs, gold for small labels and bars, Inter Tight for headings. */
+.cn-shell .library-tabs button[aria-pressed="true"],
+.cn-shell .download-tabs [aria-pressed="true"] {
+  background: var(--cn-paper);
+  color: #0b0907;
+}
+.cn-shell .library-eyebrow,
+.cn-shell .queue-title .status {
+  color: var(--cn-gold);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.cn-shell .storage-overview-heading h2,
+.cn-shell .storage-overview-heading h3,
+.cn-shell .queue-title h2,
+.cn-shell .library-title,
+.cn-shell .library-details h1 {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.cn-shell .storage-meter span {
+  background: var(--cn-gold);
+}
+.cn-shell .queue-info progress::-webkit-progress-value,
+.cn-shell .file-activity progress::-webkit-progress-value {
+  background: var(--cn-gold);
+}
+.cn-shell .queue-info progress::-moz-progress-bar,
+.cn-shell .file-activity progress::-moz-progress-bar {
+  background: var(--cn-gold);
+}
+
+/* ================================================================== */
+/* Crossbar                                                             */
+/* ================================================================== */
+.iface-crossbar,
+html[data-interface="crossbar"] .select-menu {
+  --night-0: #0b1633;
+  --night-1: #141b45;
+  --night-2: rgba(255, 255, 255, 0.1);
+  --text: #ffffff;
+  --text-2: rgba(255, 255, 255, 0.82);
+  --text-3: rgba(255, 255, 255, 0.62);
+  --action: #ffffff;
+  --action-text: #141433;
+  --glass: rgba(20, 22, 58, 0.62);
+  --glass-on: rgba(255, 255, 255, 0.16);
+  --popover: rgba(24, 24, 64, 0.94);
+  --field: rgba(255, 255, 255, 0.12);
+}
+.iface-crossbar {
+  font-family: "Sora", system-ui, sans-serif;
+}
+html[data-interface="crossbar"] body {
+  background: linear-gradient(158deg, #0b1633 0%, #1c2257 38%, #45286b 70%, #8a3a68 100%) fixed;
+}
+.iface-crossbar .modal {
+  border: 0;
+  border-radius: 22px;
+  background: rgba(20, 22, 58, 0.86);
+  backdrop-filter: blur(28px) saturate(1.3);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    0 40px 90px rgba(0, 0, 0, 0.5);
+}
+.xb-shell {
+  overflow-x: hidden;
+}
+.xb-ribbons {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  color: #ffffff;
+  pointer-events: none;
+}
+html[data-motion="full"] .xb-ribbons path {
+  animation: xb-drift 18s ease-in-out infinite alternate;
+}
+@keyframes xb-drift {
+  to {
+    transform: translateY(-14px);
+  }
+}
+.xb-head {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.2rem var(--gutter) 0.4rem;
+}
+.xb-wordmark {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+.xb-wordmark img {
+  width: 1.5rem;
+}
+.xb-bar {
+  display: flex;
+  gap: 1.8rem;
+  margin: 0 auto;
+}
+.xb-bar button {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0.4rem 0.45rem;
+  background: none;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.78rem;
+}
+.xb-bar .nav-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 1.75rem;
+}
+/* The current category's icon is larger, as on the PS5. */
+.xb-bar .nav-icon svg {
+  width: 1.45rem;
+  height: 1.45rem;
+  transition:
+    width 0.16s var(--ease),
+    height 0.16s var(--ease);
+}
+.xb-bar button.active .nav-icon svg {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+.xb-bar button.active {
+  color: #ffffff;
+  font-weight: 600;
+}
+.xb-bar button::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 22px;
+  height: 3px;
+  margin-left: -11px;
+  border-radius: 2px;
+}
+.xb-bar button.active::after {
+  background: #ffffff;
+}
+html.pointer .xb-bar button:hover {
+  background: none;
+  color: rgba(255, 255, 255, 0.88);
+}
+html.pointer .xb-bar button.active:hover {
+  color: #ffffff;
+}
+html:not(.pointer) .xb-bar button:focus {
+  color: #ffffff;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 0 2px #ffffff;
+}
+.xb-badge {
+  position: absolute;
+  top: -0.4rem;
+  left: calc(100% - 0.35rem);
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #18183a;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+.xb-bar .nav-dot {
+  position: absolute;
+  top: -0.1rem;
+  right: -0.4rem;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ffd27a;
+}
+.xb-tools .icon-button {
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+/* The page never scrolls: the list moves inside its track under the bar. */
+.xb-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+/* Settings and a game's page in Cinema and Panorama fit the window the same
+   way: the header and the hints stay, and the page scrolls between them. */
+.cn-shell.cn-tab-settings,
+.pn-shell.pn-tab-settings,
+.cn-shell.cn-tab-game,
+.pn-shell.pn-tab-game {
+  height: 100vh;
+  overflow: hidden;
+}
+.cn-tab-settings .iface-main,
+.pn-tab-settings .iface-main,
+.cn-tab-game .iface-main,
+.pn-tab-game .iface-main {
+  min-height: 0;
+  overflow-y: auto;
+}
+.xb-shell .iface-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* The Store layout makes Discover's main a block (.app.discover main);
+   Crossbar's and Cinema's pages keep their column there too. */
+.app.discover .xb-shell .iface-main,
+.app.discover .cn-shell .iface-main {
+  display: flex;
+  flex-direction: column;
+}
+.xb-tab-settings .iface-main,
+.xb-tab-game .iface-main {
+  overflow-y: auto;
+}
+.xb-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.xb-tools .search-field {
+  width: min(18rem, 24vw);
+  height: 2.4rem;
+  margin: 0;
+  background: rgba(255, 255, 255, 0.1);
+}
+.xb-split {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 2.4rem;
+  padding: 1.2rem var(--gutter) 0;
+}
+.xb-column {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.xb-breadcrumb {
+  margin: 0 0 0.6rem;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.8rem;
+}
+.xb-track {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 2.4rem, #000 calc(100% - 3rem), transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 2.4rem, #000 calc(100% - 3rem), transparent 100%);
+}
+.xb-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 2.4rem 0.2rem 50vh;
+  transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.xb-label-row {
+  margin: 0.4rem 0 0.2rem 0.6rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.xb-row {
+  border-radius: 18px;
+  transition: opacity 200ms ease;
+}
+.xb-row.above {
+  opacity: 0.32;
+}
+.xb-row.off {
+  opacity: 0.45;
+}
+.xb-row-main {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  min-height: 0;
+  padding: 0.45rem 0.7rem;
+  border-radius: 16px;
+  background: none;
+  color: #ffffff;
+  text-align: left;
+}
+.xb-row-art {
+  flex: none;
+  width: 3.6rem;
+  height: 3.6rem;
+  overflow: hidden;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.xb-row-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.xb-row-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 3.6rem;
+  height: 3.6rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+.xb-row-icon.warn {
+  color: #ffd27a;
+}
+/* A game's download row: a white tile, as on the design. */
+.xb-row-icon.xb-primary-icon {
+  background: #ffffff;
+  color: #141433;
+  box-shadow: none;
+}
+/* Folders end in a chevron; settings rows end in their value. */
+.xb-row-main > .glyph-icon:last-child {
+  margin-left: auto;
+  opacity: 0.6;
+}
+.xb-row-value {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.92rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.xb-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.xb-row-title {
+  overflow: hidden;
+  font-size: 1.13rem;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.xb-row-sub {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.86rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.xb-row-sub.warn {
+  color: #ffd27a;
+}
+.xb-row-fine {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.xb-row-text .xb-tag {
+  margin-left: 0.6rem;
+}
+.xb-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  vertical-align: middle;
+}
+.xb-progress {
+  display: block;
+  height: 5px;
+  margin: 0.5rem 0 0.2rem;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.2);
+}
+.xb-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #ffffff;
+}
+/* The focused row: a glass card with the cover large at its left and the
+   text, then the buttons, beside it. The cover sits on the row so the
+   buttons (outside the row's own button) line up under the text. */
+.xb-row {
+  position: relative;
+}
+.xb-row.on {
+  min-height: calc(6.9rem + 1.4rem);
+  padding-bottom: 0.8rem;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.xb-row.on .xb-row-main {
+  align-items: flex-start;
+  padding: 0.75rem 0.9rem 0 calc(0.7rem + 6.9rem + 1.1rem);
+}
+.xb-row.on .xb-row-art,
+.xb-row.on .xb-row-icon {
+  position: absolute;
+  top: 0.7rem;
+  left: 0.7rem;
+  width: 6.9rem;
+  height: 6.9rem;
+  border-radius: 14px;
+}
+.xb-row.on .xb-row-art {
+  box-shadow: 0 0 0 2px #ffffff, 0 0 26px rgba(255, 255, 255, 0.25);
+  /* Only the focused cover grows; a row leaving the focus is its resting
+     size at once, so the list measures where the focused row really is. */
+  transition: width 200ms ease, height 200ms ease;
+}
+.xb-row.on .xb-row-icon {
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.xb-row.on .xb-row-icon.xb-primary-icon {
+  background: #ffffff;
+}
+.xb-row.on .xb-row-icon .glyph-icon {
+  width: 2.2rem;
+  height: 2.2rem;
+}
+.xb-row.on .xb-row-title {
+  font-size: 1.6rem;
+  font-weight: 600;
+  white-space: normal;
+}
+.xb-row.on .xb-row-sub {
+  margin-top: 0.2rem;
+  font-size: 0.92rem;
+  white-space: normal;
+}
+.xb-row.on .xb-row-value {
+  align-self: center;
+}
+.xb-row.on.compact {
+  min-height: 0;
+  padding-bottom: 0;
+  border-radius: 18px;
+}
+.xb-row.on.compact .xb-row-main {
+  align-items: center;
+  padding: 0.45rem 0.9rem 0.45rem 0.7rem;
+}
+.xb-row.on.compact .xb-row-icon {
+  position: static;
+  width: 3.6rem;
+  height: 3.6rem;
+  border-radius: 12px;
+}
+.xb-row.on.compact .xb-row-icon .glyph-icon {
+  width: 22px;
+  height: 22px;
+}
+.xb-row.on.compact .xb-row-title {
+  font-size: 1.13rem;
+  font-weight: 600;
+}
+html:not(.pointer) .xb-row-main:focus {
+  box-shadow: none;
+}
+.xb-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.7rem 0.9rem 0 calc(0.7rem + 6.9rem + 1.1rem);
+}
+.xb-pill,
+.xb-row-actions .iface-favorite,
+.xb-row-actions button,
+.xb-card-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  min-height: 2.3rem;
+  height: auto;
+  padding: 0 1rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.xb-game .xb-row-actions .hub-primary {
+  width: auto;
+  min-width: 0;
+  min-height: 2.3rem;
+  margin: 0;
+  padding: 0 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.xb-game .xb-row-actions .hub-primary svg {
+  width: 15px;
+  height: 15px;
+}
+.xb-pill.primary,
+.xb-row-actions .primary,
+.xb-card-actions .primary {
+  background: #ffffff;
+  color: #141433;
+}
+.xb-row-actions .iface-favorite {
+  width: 2.3rem;
+  padding: 0;
+  justify-content: center;
+}
+html:not(.pointer) .xb-row-actions button:focus {
+  box-shadow: 0 0 0 2px #ffffff;
+}
+.xb-search-summary {
+  margin: 0.5rem 0 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.8rem;
+}
+.xb-preview {
+  position: relative;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding-top: 2.4rem;
+}
+.xb-preview-art {
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 20px;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.35);
+}
+/* The preview stays in view in a short window (the PS5 browser's is 1540 x
+   700): the list and the preview keep to the height under the bar, and the
+   art gives up height first so the text and chips stay above the hints. */
+.xb-shell:not(.xb-tab-settings) .xb-split {
+  grid-template-rows: minmax(0, 1fr);
+}
+.xb-preview {
+  max-height: 100%;
+}
+.xb-preview-art {
+  flex: 0 1 auto;
+  min-height: 0;
+}
+.xb-preview-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.xb-preview h2 {
+  font-size: 1.3rem;
+  font-weight: 500;
+}
+.xb-preview-text {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+.xb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.xb-chips span {
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 0.74rem;
+}
+.xb-browse {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.xb-browse-bar {
+  padding: 0.6rem var(--gutter) 0;
+}
+.xb-browse-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 0.9rem;
+}
+.xb-browse-bar .browse-controls {
+  display: contents;
+}
+.xb-browse-bar .collection-tabs {
+  order: 0;
+  margin: 0;
+}
+.xb-filter-count {
+  order: 1;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.86rem;
+}
+.xb-browse-bar .browse-selects {
+  order: 2;
+}
+.xb-browse-bar .browse-controls > .fine {
+  order: 3;
+}
+/* A search's count takes the count's place beside the collections. */
+.xb-browse-bar .xb-search-summary {
+  order: 1;
+  margin: 0;
+  font-size: 0.86rem;
+}
+.xb-browse-bar .browse-selects .select-trigger {
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+html:not(.pointer) .xb-browse-bar .browse-selects .select-trigger:focus,
+.xb-browse-bar .browse-selects .select-trigger[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+.xb-browse-bar .browse-selects .reset-filters,
+.xb-browse-bar .browse-selects .saved-filters-open {
+  color: #ffffff;
+}
+@media (max-width: 900px) {
+  .xb-split {
+    grid-template-columns: 1fr;
+  }
+  .xb-preview {
+    display: none;
+  }
+}
+
+/* Reduced motion keeps everything still. */
+html[data-motion="reduced"] .iface-shell *,
+html[data-motion="reduced"] .iface-shell .backdrop-layer {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* ------------------------------------------------------------------ */
+/* Screens shared with Store: titles and headings in each interface     */
+/* ------------------------------------------------------------------ */
+.sr-title,
+.pn-shell .page-heading h1,
+.pn-shell .native-game #product-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.pn-shell .native-game .hub-heading {
+  padding-top: 0;
+}
+.cn-shell .native-game #product-title {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-style: normal;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: -0.025em;
+}
+.cn-shell .hub-release,
+.cn-shell .hub-release span {
+  color: var(--cn-gold);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.xb-shell .native-game #product-title {
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: -0.02em;
+}
+.cn-shell .page-heading h1,
+.xb-shell .page-heading h1 {
+  font-size: 3rem;
+}
+.xb-shell .page-heading h1 {
+  font-weight: 600;
+}
+.iface-card .iface-name {
+  flex-wrap: wrap;
+}
+.pn-browse-bar .page-heading,
+.cn-browse-bar .page-heading,
+.xb-browse-bar .page-heading {
+  justify-content: flex-start;
+}
+.pn-browse-bar .search-field,
+.cn-browse-bar .search-field,
+.xb-browse-bar .search-field {
+  margin-left: 0 !important;
+  flex: 0 1 34rem;
+}
+
+/* Appearance options: art behind menus and pages, and Crossbar's ribbons. */
+html[data-art-behind="on"] .cn-tab-settings .backdrop img {
+  filter: blur(36px) brightness(0.45);
+  transform: scale(1.1);
+}
+html[data-art-behind="off"] .cn-tab-settings .backdrop,
+html[data-art-behind="off"] .pn-shell .backdrop {
+  display: none;
+}
+html[data-interface="crossbar"][data-ribbons="dawn"] body {
+  background: linear-gradient(158deg, #1b1838 0%, #4a3470 40%, #b2607c 74%, #f0a27a 100%) fixed;
+}
+html[data-interface="crossbar"][data-ribbons="day"] body {
+  background: linear-gradient(158deg, #0a2a4a 0%, #145a86 40%, #2f8fb2 72%, #7cc8d6 100%) fixed;
+}
+html[data-interface="crossbar"][data-ribbons="dusk"] body {
+  background: linear-gradient(158deg, #0b1633 0%, #1c2257 38%, #45286b 70%, #8a3a68 100%) fixed;
+}
+html[data-interface="crossbar"][data-ribbons="night"] body {
+  background: linear-gradient(158deg, #02040b 0%, #070d22 42%, #10173a 74%, #1c1d48 100%) fixed;
+}
+/* Crossbar's background takes the focused game's colours: its banner, drawn
+   small, blurred and scaled up (as Store's colour wash, so the PS5 browser
+   blurs little), darkened under the ribbons. It fades as the focus moves;
+   with no game it's the time of day's gradient. */
+.xb-art .backdrop-layer img,
+.xb-art .backdrop-layer.wide img,
+.xb-art .backdrop-layer.ambient img {
+  position: absolute;
+  inset: -12%;
+  width: 12.4%;
+  height: 12.4%;
+  max-width: none;
+  object-position: 50% 40%;
+  filter: blur(5px) saturate(1.35);
+  transform: scale(10);
+  transform-origin: top left;
+  opacity: 1;
+}
+.xb-shell .xb-art .backdrop {
+  position: fixed;
+  height: 100%;
+}
+.xb-art .backdrop::after {
+  background: linear-gradient(158deg, rgba(0, 0, 0, 0.62), rgba(0, 0, 0, 0.38)) !important;
+}
+
+/* Store's game page sets larger type and its own margins. The other
+   interfaces keep one scale and margin on every page, so the header and
+   the section bar don't jump when a game opens. */
+html[data-interface]:not([data-interface="store"]).details-open {
+  font-size: clamp(15px, 1.04vw, 20px);
+}
+html[data-interface]:not([data-interface="store"]) .screen-details {
+  --gutter: 5.2vw;
+}
+@media (max-width: 1100px) {
+  html[data-interface]:not([data-interface="store"]) .screen-details {
+    --gutter: 32px;
+  }
+}
+@media (max-width: 700px) {
+  html[data-interface]:not([data-interface="store"]).details-open {
+    font-size: 15px;
+  }
+  html[data-interface]:not([data-interface="store"]) .screen-details {
+    --gutter: 20px;
+  }
+}
+
+/* Browse filters in Crossbar, Cinema and Panorama: always on screen as one
+   row of compact chips, each label before its value, Reset filters at the
+   end. The count is shown once, outside this row. */
+.iface-shell .filter-toggle {
+  display: none !important;
+}
+.iface-shell .browse-selects,
+.iface-shell .browse-selects.expanded {
+  display: flex;
+  flex: 0 0 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+/* Wide enough for every label and value, e.g. "Download size 100 GB or more". */
+.iface-shell .browse-selects .field {
+  flex: 0 1 auto;
+  min-width: 10rem;
+  max-width: 16rem;
+  margin: 0;
+}
+.iface-shell .browse-selects .select-trigger {
+  height: 2.2rem;
+  min-height: 2.2rem;
+  gap: 0.4rem;
+  padding: 0 0.7rem 0 0.8rem;
+  font-size: 0.8rem;
+}
+.iface-shell .browse-selects .select-trigger svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+.select-inline-label {
+  margin-right: 0.4em;
+  opacity: 0.6;
+}
+.iface-shell .browse-selects .reset-filters,
+.iface-shell .browse-selects .saved-filters-open {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.2rem;
+  padding: 0 0.6rem;
+  background: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.iface-shell .browse-controls > .fine {
+  position: static;
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.76rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Crossbar pages: Downloads, Library, a game                           */
+/* ------------------------------------------------------------------ */
+.xb-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.xb-breadcrumb .xb-crumb {
+  min-height: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font-size: inherit;
+}
+html.pointer .xb-breadcrumb .xb-crumb:hover {
+  background: none;
+  color: #ffffff;
+}
+.xb-aside {
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  margin-top: 2.4rem;
+}
+.xb-aside:empty {
+  display: none;
+}
+.xb-card {
+  padding: 1.4rem 1.5rem;
+  border-radius: 22px;
+  background: rgba(10, 12, 44, 0.62);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 24px 60px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  color: #ffffff;
+}
+.xb-card > * + * {
+  margin-top: 0.75rem;
+}
+.xb-card h2 {
+  margin: 0.55rem 0 0;
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+.xb-card .xb-facts {
+  margin-top: 1.3rem;
+}
+.xb-card p,
+.xb-card li {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+.xb-card .xb-card-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.xb-card-kicker .xb-tag {
+  margin-left: auto;
+}
+.xb-card .xb-card-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1.6rem;
+  color: #ffffff;
+}
+.xb-card-line > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.xb-card .xb-card-fine {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.78rem;
+}
+.xb-card .xb-card-error {
+  color: #ffd27a;
+}
+.xb-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.xb-card .progress-ring .ring-track {
+  stroke: rgba(255, 255, 255, 0.22);
+}
+.xb-card .progress-ring .ring-fill {
+  stroke: #ffffff;
+}
+.xb-card-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.xb-card-list li {
+  display: grid;
+  grid-template-columns: 2.4rem minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+.xb-card-list li > span:nth-child(3) {
+  color: rgba(255, 255, 255, 0.6);
+}
+.xb-card-list li > span:last-child {
+  text-align: right;
+}
+.xb-card-art {
+  width: 2.4rem;
+  height: 2.4rem;
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.xb-card-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.xb-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 1.6rem;
+}
+.xb-facts dt {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.78rem;
+}
+.xb-facts dd {
+  margin: 0.25rem 0 0;
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
+}
+.xb-empty {
+  padding: 2.4rem 0.7rem;
+}
+.xb-empty h2 {
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+.xb-empty p {
+  max-width: 36rem;
+  margin: 0.6rem 0 1.2rem;
+  color: rgba(255, 255, 255, 0.72);
+}
+.xb-empty .warn {
+  color: #ffd27a;
+}
+
+/* More and the game's choices: a menu beside the row. */
+.xb-menu-anchor {
+  position: relative;
+  display: inline-flex;
+}
+.xb-row-actions .xb-more {
+  width: 2.3rem;
+  padding: 0;
+  justify-content: center;
+}
+.xb-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 19rem;
+  padding: 0.5rem;
+  border-radius: 18px;
+  background: rgba(22, 22, 64, 0.97);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    0 24px 60px rgba(0, 0, 0, 0.45);
+}
+.xb-row-actions .xb-menu button,
+.xb-menu button {
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  min-height: 2.9rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 12px;
+  background: none;
+  color: #ffffff;
+  font-size: 0.92rem;
+  text-align: left;
+}
+.xb-menu button > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.xb-menu button strong {
+  font-weight: 500;
+}
+.xb-menu button small {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.76rem;
+}
+html.pointer .xb-menu button:hover:not(:disabled),
+html:not(.pointer) .xb-menu button:focus {
+  background: #ffffff;
+  color: #141433;
+  box-shadow: none;
+}
+html.pointer .xb-menu button:hover:not(:disabled) small,
+html:not(.pointer) .xb-menu button:focus small {
+  color: rgba(20, 20, 51, 0.6);
+}
+.xb-menu-title,
+.xb-menu-foot {
+  padding: 0.35rem 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.xb-menu-foot {
+  padding-top: 0.5rem;
+  font-size: 0.76rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.xb-radio {
+  flex: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px currentColor;
+}
+[aria-checked="true"] > .xb-radio {
+  background: radial-gradient(circle, currentColor 0 34%, transparent 38%);
+}
+
+/* A game: its rows on the left, the art (or the provider's steps) and the
+   storage estimate on the right. */
+.xb-shell .xb-game {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  background: none;
+}
+.xb-game .xb-column {
+  position: relative;
+}
+.xb-shell .xb-game #product-title {
+  display: inline;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.85);
+  font: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.xb-choice-menu {
+  top: 4.4rem;
+  left: 22rem;
+  min-width: 23rem;
+  max-height: calc(100% - 5rem);
+  overflow-y: auto;
+}
+.xb-note {
+  display: block;
+  margin-top: 0.4rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: normal;
+}
+.xb-note.warn {
+  color: #ffd27a;
+}
+.xb-game .xb-preview {
+  gap: 1rem;
+}
+.xb-estimate .sheet-budget {
+  display: grid;
+  gap: 0.65rem;
+  margin: 1rem 0 0;
+}
+.xb-estimate .sheet-budget div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.92rem;
+}
+.xb-estimate .sheet-budget dd {
+  margin: 0;
+}
+.xb-estimate .sheet-budget div:last-child {
+  font-weight: 600;
+}
+.xb-meter {
+  display: block;
+  width: 100%;
+  height: 5px;
+  margin-top: 1rem;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.2);
+  -webkit-appearance: none;
+  appearance: none;
+}
+.xb-meter::-webkit-meter-bar {
+  height: 5px;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.2);
+}
+.xb-meter::-webkit-meter-optimum-value,
+.xb-meter::-webkit-meter-suboptimum-value,
+.xb-meter::-webkit-meter-even-less-good-value {
+  border-radius: 3px;
+  background: #ffffff;
+}
+.xb-meter::-moz-meter-bar {
+  border-radius: 3px;
+  background: #ffffff;
+}
+/* The provider's steps, numbered in circles. */
+.xb-steps .provider-browser-option {
+  margin: 0;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+.xb-steps .provider-browser-option > strong {
+  display: block;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.xb-steps ol {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: xb-step;
+}
+.xb-steps li {
+  position: relative;
+  padding-left: 2.1rem;
+  color: #ffffff;
+  counter-increment: xb-step;
+}
+.xb-steps li::before {
+  content: counter(xb-step);
+  position: absolute;
+  top: 0.05rem;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.xb-steps li strong {
+  font-weight: 500;
+}
+.xb-footnote {
+  padding: 0 0.2rem;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.78rem;
+}
+
+/* Crossbar Settings: sections as rows with their values, the chosen one as a
+   glass card; the section on a glass panel. */
+.xb-shell .settings-page {
+  grid-template-columns: minmax(16rem, 23rem) minmax(0, 1fr);
+  gap: 2.4rem;
+  padding: 1.2rem var(--gutter) 2rem;
+}
+.xb-shell .settings-sections {
+  gap: 0.6rem;
+}
+.xb-shell .settings-group {
+  align-items: stretch;
+  gap: 0.15rem;
+}
+.xb-shell .settings-group-label {
+  margin: 0 0 0.35rem 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  opacity: 1;
+}
+.xb-shell .settings-section-label {
+  white-space: nowrap;
+}
+.xb-shell .settings-section-value {
+  max-width: 8.5rem;
+}
+.xb-shell .settings-section {
+  width: 100%;
+  gap: 0.9rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 14px;
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+.xb-shell .settings-section-icon {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+.xb-shell .settings-section[aria-current="page"] {
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+}
+html.pointer .xb-shell .settings-section:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+html:not(.pointer) .xb-shell .settings-section:focus {
+  box-shadow: 0 0 0 2px #ffffff;
+}
+.xb-shell .settings-section .nav-dot {
+  margin-left: 0.4rem;
+  background: #ffd27a;
+}
+.xb-shell .settings-section-value + .nav-dot {
+  margin-left: -0.4rem;
+}
+.xb-shell .settings-panel {
+  align-self: start;
+  padding: 1.6rem 1.8rem 2rem;
+  border-radius: 24px;
+  background: rgba(10, 12, 44, 0.62);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+.xb-shell .settings-panel .settings-title {
+  margin: 0 0 0.6rem;
+  font-size: 2rem;
+  font-weight: 600;
+}
+
+/* Settings → Appearance as a page: cards, then each option as a row. */
+.appearance-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+.appearance-intro {
+  max-width: 48rem;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.5;
+}
+.appearance-page .iface-card {
+  padding: 0.55rem 0.55rem 0.7rem;
+  border-radius: 16px;
+}
+.iface-default {
+  margin-left: auto;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+.appearance-rows {
+  display: flex;
+  flex-direction: column;
+}
+.appearance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.95rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.appearance-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.appearance-row-text strong {
+  font-size: 1.02rem;
+  font-weight: 500;
+}
+.appearance-row-text small {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8rem;
+}
+.appearance-row .field {
+  flex: none;
+  width: auto;
+  margin: 0;
+}
+.appearance-row .field > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.appearance-row .select-trigger {
+  width: auto;
+  min-height: 2.2rem;
+  gap: 0.4rem;
+  padding: 0 0.5rem 0 0.8rem;
+  background: none;
+  box-shadow: none;
+  color: #ffffff;
+  font-size: 0.92rem;
+}
+.appearance-row .select-trigger svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+html.pointer .appearance-row .select-trigger:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+html:not(.pointer) .appearance-row .select-trigger:focus {
+  box-shadow: 0 0 0 2px #ffffff;
+}
+.cn-shell .appearance-row .select-trigger {
+  color: var(--cn-paper);
+}
+.cn-shell .appearance-row {
+  border-top-color: rgba(247, 243, 236, 0.1);
+}
+/* Panorama puts the value under the name, in the accent colour. */
+.pn-shell .appearance-row {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  border-top: 0;
+}
+.pn-shell .appearance-row-text {
+  display: contents;
+}
+.pn-shell .appearance-row-text strong {
+  order: 0;
+}
+.pn-shell .appearance-row .field {
+  order: 1;
+}
+.pn-shell .appearance-row-text small {
+  order: 2;
+}
+.pn-shell .appearance-row .select-trigger {
+  min-height: 1.8rem;
+  padding: 0;
+  color: var(--pn-acc);
+}
+.pn-shell .appearance-row .select-trigger svg {
+  display: none;
+}
+.pn-shell .appearance-row-text strong {
+  font-size: 1.35rem;
+  font-weight: 300;
+}
+.appearance-page .settings-title {
+  margin-bottom: 0;
+}
+/* The cards on the Settings page say Default and In use quietly, as designed. */
+.appearance-page .iface-in-use {
+  margin-left: auto;
+  padding: 0;
+  background: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+}
+
+/* Panorama Settings: the sections are pivots across the page (the current
+   group's name above them), the section below with no panel. */
+.pn-shell .settings-page {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.4rem;
+  padding-top: 0.4rem;
+}
+.pn-shell .settings-sections {
+  position: relative;
+  flex-direction: row;
+  gap: 0 1.7rem;
+  padding-top: 1.3rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.pn-shell .settings-sections::-webkit-scrollbar {
+  display: none;
+}
+.pn-shell .settings-group {
+  display: contents;
+}
+.pn-shell .settings-group-label {
+  display: none;
+}
+.pn-shell .settings-group.current .settings-group-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  color: rgba(255, 255, 255, 0.6);
+  opacity: 1;
+}
+.pn-shell .settings-section {
+  flex: none;
+  padding: 0.1rem 0;
+  border-radius: 0;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 1.75rem;
+  font-weight: 300;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+.pn-shell .settings-section[aria-current="page"] {
+  color: #ffffff;
+}
+html.pointer .pn-shell .settings-section:hover {
+  background: none;
+  color: rgba(255, 255, 255, 0.8);
+}
+html:not(.pointer) .pn-shell .settings-section:focus {
+  color: #ffffff;
+  box-shadow: inset 0 -2px 0 var(--pn-acc);
+}
+.pn-shell .settings-section-icon,
+.pn-shell .settings-section-value {
+  display: none;
+}
+.pn-shell .settings-section .nav-dot {
+  align-self: flex-start;
+  margin: 0.5rem 0 0 0.3rem;
+  background: var(--pn-acc);
+}
+/* The pivot names the section, so its own first heading goes. */
+.pn-shell .settings-panel > .settings-title,
+.pn-shell .appearance-page > .settings-title {
+  display: none;
+}
+
+/* Crossbar's dialogs: a band across the dimmed page, as on the PS5. The
+   question is large and left-aligned; the buttons sit under it. Larger
+   panels (storage, library details, sources) keep their panel. */
+.iface-crossbar .scrim {
+  padding: 2rem 0;
+  background: rgba(4, 6, 24, 0.62);
+  backdrop-filter: blur(6px);
+}
+.iface-crossbar .modal:not(.storage-modal):not(.library-details):not(.sources-modal) {
+  max-width: none;
+  padding: 2.4rem 18% 2.6rem;
+  border: 0;
+  border-radius: 0;
+  background: rgba(12, 14, 46, 0.94);
+  box-shadow:
+    0 -1px 0 rgba(255, 255, 255, 0.16),
+    0 1px 0 rgba(255, 255, 255, 0.16),
+    0 40px 90px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+.iface-crossbar .modal:not(.storage-modal):not(.library-details):not(.sources-modal) > .close {
+  display: none;
+}
+.iface-crossbar .modal:not(.storage-modal):not(.library-details):not(.sources-modal) > h2:first-of-type,
+.iface-crossbar .modal:not(.storage-modal):not(.library-details):not(.sources-modal) > h1:first-of-type,
+.iface-crossbar .modal .archive-password-form h2 {
+  padding-right: 0;
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.iface-crossbar .modal:not(.storage-modal):not(.library-details):not(.sources-modal) p {
+  max-width: 46rem;
+  color: rgba(255, 255, 255, 0.82);
+}
+.iface-crossbar .modal .dialog-actions button,
+.iface-crossbar .modal .actions button {
+  min-height: 2.6rem;
+  padding: 0 1.3rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+  font-weight: 600;
+}
+.iface-crossbar .modal .dialog-actions button.primary,
+.iface-crossbar .modal .actions button.primary,
+.iface-crossbar .modal .dialog-actions button:first-child:not(.danger) {
+  background: #ffffff;
+  box-shadow: none;
+  color: #141433;
+}
+html:not(.pointer) .iface-crossbar .modal .dialog-actions button:focus,
+html:not(.pointer) .iface-crossbar .modal .actions button:focus {
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 5px rgba(255, 255, 255, 0.25);
+}
+
+/* ------------------------------------------------------------------ */
+/* Panorama tiles: Downloads, Library and a game                        */
+/* ------------------------------------------------------------------ */
+.pn-tile {
+  position: relative;
+  min-width: 0;
+  overflow: visible;
+  background: var(--pn-tile);
+  color: #ffffff;
+}
+.pn-tile.large {
+  grid-row: span 2;
+  grid-column: span 2;
+}
+.pn-tile.wide {
+  grid-column: span 2;
+}
+.pn-tile.accent {
+  background: var(--pn-acc);
+}
+.pn-tile.red {
+  background: #e51400;
+}
+.pn-tile.dark {
+  background: #26262b;
+}
+.pn-tile.off {
+  opacity: 0.45;
+}
+.pn-tile-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.pn-tile.has-art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.78), rgba(0, 0, 0, 0) 58%);
+  pointer-events: none;
+}
+.pn-tile.has-art.current.large::after {
+  background:
+    linear-gradient(0deg, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0) 52%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0) 38%);
+}
+.pn-tile-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border-radius: 0 !important;
+  background: none;
+}
+html.pointer .pn-tile-hit:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+html:not(.pointer) .pn-tile-hit:focus,
+.pn-tile.current > .pn-tile-hit {
+  box-shadow: 0 0 0 4px #ffffff !important;
+}
+.pn-tile.current,
+.pn-tile:focus-within {
+  z-index: 3;
+}
+.pn-tile-glyph {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 2;
+  pointer-events: none;
+}
+.pn-tile-number {
+  position: absolute;
+  top: 0.2rem;
+  right: 0.7rem;
+  z-index: 2;
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-size: 3.6rem;
+  font-weight: 200;
+  line-height: 1;
+  pointer-events: none;
+}
+.pn-tile-kicker {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  right: 0.75rem;
+  z-index: 2;
+  overflow: hidden;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.pn-tile-actions {
+  position: absolute;
+  top: 2.4rem;
+  left: 0.75rem;
+  right: 0.75rem;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.pn-tile.wide .pn-tile-actions,
+.pn-tile.small .pn-tile-actions {
+  top: 0.6rem;
+}
+.pn-tile-actions > button,
+.pn-tile-actions > .pn-flyout-anchor > button {
+  flex: none;
+  width: auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.75rem;
+  padding: 0 0.55rem;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 0 0 1.5px #ffffff;
+  color: #ffffff;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+.pn-tile-actions > button.primary {
+  background: #ffffff;
+  color: #000000;
+}
+html:not(.pointer) .pn-tile-actions button:focus {
+  background: var(--pn-acc);
+  box-shadow: inset 0 0 0 1.5px var(--pn-acc);
+  color: #ffffff;
+}
+.pn-tile-text {
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: 0.7rem;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  pointer-events: none;
+}
+.pn-tile-title {
+  overflow: hidden;
+  font-size: 0.95rem;
+  font-weight: 400;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+}
+.pn-tile.wide .pn-tile-title {
+  font-size: 1.15rem;
+  white-space: nowrap;
+}
+.pn-tile.large .pn-tile-title {
+  font-size: 1.35rem;
+}
+.pn-tile-sub {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.pn-tile.large .pn-tile-sub {
+  font-size: 0.86rem;
+}
+.pn-tile-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -0.32rem;
+  z-index: 2;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+}
+.pn-tile-bar i {
+  display: block;
+  height: 100%;
+  background: #ffffff;
+}
+/* More: a flat flyout beside the tile. */
+.pn-flyout-anchor {
+  position: relative;
+  display: inline-flex;
+}
+.pn-flyout {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 18rem;
+  padding: 0.4rem;
+  background: #1f1f23;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    0 20px 50px rgba(0, 0, 0, 0.55);
+}
+.pn-flyout button {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  width: 100%;
+  min-height: 2.6rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: #ffffff;
+  font-size: 0.92rem;
+  text-align: left;
+}
+.pn-flyout button > span {
+  display: flex;
+  flex-direction: column;
+}
+.pn-flyout button strong {
+  font-weight: 400;
+}
+.pn-flyout button small {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.74rem;
+}
+html.pointer .pn-flyout button:hover:not(:disabled),
+html:not(.pointer) .pn-flyout button:focus {
+  background: var(--pn-acc);
+  box-shadow: none;
+}
+/* Nothing in progress, and the empty groups as quiet cards below. */
+.pn-downloads {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+.pn-kicker {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.pn-hero-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.2rem var(--gutter) 1.6rem;
+}
+.pn-hero-empty h2 {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-size: 4rem;
+  font-weight: 200;
+  line-height: 1.05;
+}
+.pn-hero-empty p {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 1.05rem;
+}
+.pn-hero-empty .primary {
+  min-height: 2.8rem;
+  padding: 0 1.4rem;
+  border-radius: 0;
+}
+.pn-empty-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--pn-gap);
+  padding: 0 var(--gutter) 1.6rem;
+}
+.pn-empty-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem;
+  background: #26262b;
+}
+.pn-empty-card strong {
+  font-size: 1.15rem;
+  font-weight: 300;
+}
+.pn-empty-card small {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.76rem;
+}
+.pn-status {
+  padding: 0 var(--gutter);
+}
+.pn-status.warn {
+  color: #ffd27a;
+}
+
+/* Panorama Library: tabs, search and location in one row over the page. */
+.pn-library {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.pn-library-bar .collection-tabs {
+  display: flex;
+  gap: 2px;
+}
+.pn-library-bar .collection-tabs button {
+  min-height: 2.3rem;
+  padding: 0 0.95rem;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+  font-size: 0.86rem;
+}
+.pn-library-bar .collection-tabs [aria-pressed="true"] {
+  background: #ffffff;
+  color: #000000;
+}
+.pn-library-bar .browse-selects {
+  flex: 0 0 auto;
+  order: 2;
+}
+.pn-library-bar .browse-selects .field {
+  min-width: 12rem;
+}
+.pn-snapshot {
+  order: 3;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.8rem;
+}
+.pn-library-status:empty {
+  display: none;
+}
+.pn-library-status {
+  padding: 0 var(--gutter);
+}
+.pn-library-status .warn,
+.pn-hero-empty .warn {
+  color: #ffd27a;
+}
+.pn-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0 var(--gutter);
+  padding: 1rem 1.2rem;
+  background: #26262b;
+  box-shadow: inset 4px 0 0 var(--pn-acc);
+}
+.pn-notice p {
+  max-width: 52rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.86rem;
+}
+.pn-notice-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.pn-notice-actions button {
+  min-height: 2.2rem;
+  padding: 0 1rem;
+  border-radius: 0;
+}
+.pn-empty-card.wide {
+  grid-column: span 2;
+  justify-content: flex-end;
+}
+/* The game's actions become tiles in its group. */
+.pn-game-group .library-game-actions,
+.pn-game-group .library-game-actions > .dialog-actions {
+  display: contents;
+}
+.pn-action {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.15rem;
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.75rem;
+  border-radius: 0 !important;
+  background: #26262b;
+  box-shadow: none;
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 400;
+  text-align: left;
+}
+.pn-action.wide {
+  grid-column: span 2;
+}
+.pn-action.accent {
+  background: var(--pn-acc);
+}
+.pn-action > .glyph-icon {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+}
+.pn-action.wide .pn-action-label {
+  font-size: 1.15rem;
+}
+.pn-action small {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.72rem;
+}
+html.pointer .pn-action:hover:not(:disabled) {
+  background: #303036;
+}
+html.pointer .pn-action.accent:hover:not(:disabled) {
+  background: var(--pn-acc);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.6);
+}
+html:not(.pointer) .pn-action:focus {
+  box-shadow: 0 0 0 4px #ffffff !important;
+  z-index: 3;
+}
+.pn-game-group .library-game-actions > .fine,
+.pn-game-group .library-game-actions > .library-feedback,
+.pn-game-group .library-game-actions > .storage-progress {
+  grid-column: span 2;
+  align-self: start;
+  margin: 0;
+  font-size: 0.78rem;
+}
+.pn-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem;
+  overflow: auto;
+}
+.pn-details dl {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+}
+.pn-details dl > div {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 0.6rem;
+  font-size: 0.76rem;
+}
+.pn-details dt {
+  color: rgba(255, 255, 255, 0.6);
+}
+.pn-details dd {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.pn-group-fine {
+  grid-column: span 2;
+  max-width: 21rem;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+.pn-text-group {
+  max-width: 30rem;
+}
+.pn-text-group h2 {
+  white-space: normal;
+}
+.pn-text-lead {
+  margin-bottom: 0.8rem;
+  font-size: 1.3rem;
+  font-weight: 300;
+  line-height: 1.35;
+}
+.pn-text-group .pn-group-fine {
+  max-width: none;
+  font-size: 0.82rem;
+}
+/* Copy, move and unmount ask in a band across the page. */
+.pn-shell .library-action-confirm {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 16rem;
+  z-index: 30;
+  max-height: calc(100vh - 18rem);
+  margin: 0;
+  padding: 1.8rem var(--gutter) 2rem;
+  overflow: auto;
+  border-radius: 0;
+  background: #222226;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.62);
+}
+.pn-shell .library-action-confirm h3 {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-size: 2.1rem;
+  font-weight: 300;
+}
+.pn-shell .library-action-confirm > p {
+  max-width: 52rem;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 1rem;
+}
+.pn-shell .drive-choices {
+  max-width: 38rem;
+}
+.pn-shell .drive-choice {
+  border-radius: 0 !important;
+  background: none;
+  box-shadow: none;
+}
+.pn-shell .drive-choice[aria-checked="true"] {
+  background: #2c2c31;
+  box-shadow: inset 4px 0 0 var(--pn-acc);
+}
+.pn-shell .drive-choice[aria-checked="true"] small {
+  color: var(--pn-acc);
+}
+.pn-shell .library-action-confirm .dialog-actions button {
+  border-radius: 0;
+}
+/* The game's group stacks as designed: its main action, then the other two,
+   then its details in the third row, one tile high like the design (the rest
+   of the list scrolls inside it), so the group keeps the page's three rows. */
+.pn-game-group .pn-tiles {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(2, var(--pn-unit));
+  grid-template-rows: repeat(2, var(--pn-unit));
+  grid-auto-rows: var(--pn-unit);
+  grid-auto-columns: unset;
+}
+.pn-details-note {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.72rem;
+}
+.pn-game-group .pn-details {
+  grid-column: span 2;
+  grid-row: auto;
+  overflow: auto;
+}
+.pn-shell .drive-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pn-shell .drive-choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 1rem;
+  width: 100%;
+  min-height: 3.6rem;
+  padding: 0.55rem 1rem;
+  text-align: left;
+}
+.pn-shell .drive-choice strong {
+  font-size: 1.05rem;
+  font-weight: 400;
+}
+.pn-shell .drive-choice::after {
+  content: "";
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.7);
+}
+.pn-shell .drive-choice[aria-checked="true"]::after {
+  background: radial-gradient(circle, #ffffff 0 32%, transparent 36%);
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+
+/* Panorama: a game. Back replaces the sections; groups run sideways. */
+.pn-nav-hidden {
+  display: none;
+}
+.pn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2rem;
+  padding: 0 0.4rem;
+  margin-left: -0.4rem;
+  border-radius: 0;
+  background: none;
+  font-size: 0.86rem;
+  font-weight: 500;
+}
+html.pointer .pn-back:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.pn-shell .pn-game {
+  margin: 0;
+  padding: 0;
+  background: none;
+}
+.pn-tile.lower .pn-tile-title {
+  text-transform: lowercase;
+}
+/* A chosen option: a white corner with a check. */
+.pn-tile-check {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  width: 1.7rem;
+  height: 1.7rem;
+  background: linear-gradient(225deg, #ffffff 50%, transparent 50%);
+  pointer-events: none;
+}
+.pn-tile-check::after {
+  content: "";
+  position: absolute;
+  top: 0.28rem;
+  right: 0.24rem;
+  width: 0.5rem;
+  height: 0.28rem;
+  border-left: 2px solid #000000;
+  border-bottom: 2px solid #000000;
+  transform: rotate(-45deg);
+}
+.pn-group-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-width: calc(4 * var(--pn-unit) + 3 * var(--pn-gap));
+  margin-top: 0.9rem;
+}
+.pn-game-tagline {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-size: 1.35rem;
+  font-weight: 300;
+  line-height: 1.3;
+}
+.pn-game-text {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+.pn-note {
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+.pn-note.warn {
+  color: #f0a30a;
+}
+.pn-game-meta {
+  opacity: 0.55;
+}
+.pn-group-foot .pn-group-fine {
+  grid-column: auto;
+  max-width: none;
+}
+/* Space: the estimate as large numbers under small labels. */
+.pn-space {
+  max-width: 21rem;
+}
+.pn-space .sheet-budget {
+  display: grid;
+  gap: 0.8rem;
+  margin: 0 0 0.9rem;
+}
+.pn-space .sheet-budget div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.pn-space .sheet-budget dt {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.pn-space .sheet-budget dd {
+  margin: 0;
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-size: 1.45rem;
+  font-weight: 300;
+}
+/* The provider's steps, with large accent numbers. */
+.pn-steps {
+  max-width: 34rem;
+}
+.pn-steps .provider-browser-option {
+  margin: 0;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+.pn-steps .provider-browser-option > strong {
+  display: block;
+  margin-bottom: 0.8rem;
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-size: 1.6rem;
+  font-weight: 300;
+  text-transform: lowercase;
+}
+.pn-steps ol {
+  display: grid;
+  gap: 0.9rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: pn-step;
+}
+.pn-steps li {
+  position: relative;
+  padding-left: 2.6rem;
+  font-size: 1rem;
+  line-height: 1.5;
+  counter-increment: pn-step;
+}
+.pn-steps li::before {
+  content: counter(pn-step);
+  position: absolute;
+  top: -0.35rem;
+  left: 0;
+  color: var(--pn-acc);
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-size: 2.2rem;
+  font-weight: 200;
+  line-height: 1;
+}
+/* About: every fact in a grid of four. */
+.pn-about {
+  max-width: 44rem;
+  outline: none;
+}
+.pn-about .facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem 1.4rem;
+  margin: 0 0 1rem;
+}
+.pn-about .facts div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.pn-about .facts dt {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.pn-about .facts dd {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 300;
+  overflow-wrap: anywhere;
+}
+/* The download group in the design's places: art 2×2, the main action wide
+   beside it, favourite and about under that, anything else after. */
+.pn-game-download .pn-tiles {
+  grid-auto-flow: row dense;
+  grid-template-columns: repeat(4, var(--pn-unit));
+  grid-template-rows: repeat(2, var(--pn-unit));
+  grid-auto-rows: var(--pn-unit);
+  grid-auto-columns: unset;
+}
+/* A kicker on a tile with an icon sits under the icon. */
+.pn-tile-glyph + .pn-tile-kicker,
+.pn-tile-glyph ~ .pn-tile-kicker {
+  top: 2.7rem;
+}
+
+/* Panorama's dialogs: a flat band across the dimmed page, aligned with the
+   page's text; square buttons, the first in the accent colour. */
+.iface-panorama .scrim {
+  padding: 2rem 0;
+  background: rgba(0, 0, 0, 0.66);
+  backdrop-filter: none;
+}
+.iface-panorama .modal:not(.storage-modal):not(.library-details):not(.sources-modal) {
+  max-width: none;
+  padding: 2rem var(--gutter) 2.2rem;
+  border: 0;
+  background: #222226;
+  box-shadow: none;
+}
+.iface-panorama .modal:not(.storage-modal):not(.library-details):not(.sources-modal) > .close {
+  display: none;
+}
+.iface-panorama .modal:not(.storage-modal):not(.library-details):not(.sources-modal) > h2:first-of-type,
+.iface-panorama .modal:not(.storage-modal):not(.library-details):not(.sources-modal) > h1:first-of-type,
+.iface-panorama .modal .archive-password-form h2 {
+  padding-right: 0;
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-size: 2.1rem;
+  font-weight: 300;
+}
+.iface-panorama .modal:not(.storage-modal):not(.library-details):not(.sources-modal) p {
+  max-width: 52rem;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 1rem;
+}
+.iface-panorama .modal .dialog-actions button,
+.iface-panorama .modal .actions button {
+  min-height: 2.6rem;
+  padding: 0 1.2rem;
+  background: none;
+  box-shadow: inset 0 0 0 2px #ffffff;
+  font-weight: 400;
+}
+.iface-panorama .modal .dialog-actions button:first-child:not(.danger),
+.iface-panorama .modal .dialog-actions button.primary,
+.iface-panorama .modal .actions button.primary {
+  background: var(--pn-acc);
+  box-shadow: none;
+  color: #ffffff;
+}
+html:not(.pointer) .iface-panorama .modal .dialog-actions button:focus,
+html:not(.pointer) .iface-panorama .modal .actions button:focus {
+  box-shadow: 0 0 0 3px #ffffff;
+}
+
+/* Settings → Download sources: each source a row with a switch. */
+.source-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0.4rem 0 1rem;
+}
+.source-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  min-height: 0;
+  padding: 0.85rem 0.3rem;
+  border-radius: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: none;
+  text-align: left;
+}
+.source-row:first-child {
+  border-top: 0;
+}
+html.pointer .source-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.source-row-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.source-row-text strong {
+  font-size: 1rem;
+  font-weight: 500;
+}
+.source-row-text small {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.78rem;
+}
+.source-switch-state {
+  display: none;
+}
+.source-switch {
+  position: relative;
+  flex: none;
+  width: 2.6rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  transition: background 0.16s;
+}
+.source-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: calc(1.5rem - 6px);
+  height: calc(1.5rem - 6px);
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform 0.16s var(--ease);
+}
+.source-row[aria-checked="true"] > .source-switch {
+  background: var(--switch-on, #ffffff);
+}
+.source-row[aria-checked="true"] > .source-switch::after {
+  transform: translateX(1.1rem);
+}
+.cn-shell {
+  --switch-on: var(--cn-gold);
+}
+.cn-shell .source-row[aria-checked="true"] > .source-switch::after {
+  background: #0b0907;
+}
+.xb-shell {
+  --switch-on: #6fe3b4;
+}
+/* Cinema and Panorama put the acknowledgement's check at the right. */
+.cn-shell .source-acknowledgement,
+.pn-shell .source-acknowledgement {
+  flex-direction: row-reverse;
+  justify-content: space-between;
+  width: 100%;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.9rem 0.3rem;
+  text-align: left;
+}
+/* Panorama: a square switch with On / Off beside it; the count in the accent. */
+.pn-shell .source-row {
+  border-top: 0;
+}
+.pn-shell .source-row-text strong {
+  font-size: 1.2rem;
+  font-weight: 300;
+}
+.pn-shell .source-row-text small {
+  color: var(--pn-acc);
+}
+.pn-shell .source-switch-state {
+  display: inline;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.82rem;
+}
+.pn-shell .source-switch {
+  width: 2.8rem;
+  height: 1.25rem;
+  border-radius: 0;
+  background: none;
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+.pn-shell .source-switch::after {
+  top: 0;
+  left: 0;
+  width: 0.7rem;
+  height: 1.25rem;
+  border-radius: 0;
+  background: #ffffff;
+}
+.pn-shell .source-row[aria-checked="true"] > .source-switch {
+  background: var(--pn-acc);
+  background-clip: content-box;
+  padding: 4px;
+}
+.pn-shell .source-row[aria-checked="true"] > .source-switch::after {
+  transform: translateX(2.1rem);
+}
+
+/* Settings → Updates: the three versions as cards with large numbers. */
+.iface-shell .update-versions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0.9rem 0;
+}
+.iface-shell .update-versions > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  padding: 0.75rem 0.9rem 0.85rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+.iface-shell .update-versions dt {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.72rem;
+}
+.iface-shell .update-versions dd {
+  margin: 0;
+  text-align: left;
+  font-size: 1.45rem;
+  font-weight: 500;
+}
+.cn-shell .update-versions dd {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-weight: 500;
+}
+.pn-shell .update-versions > div {
+  border-radius: 0;
+  background: #26262b;
+  box-shadow: none;
+}
+.pn-shell .update-versions dd {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-size: 1.9rem;
+  font-weight: 200;
+}
+
+/* Settings → Pair devices: the code left-aligned and large under a small
+   label, as designed. */
+.settings-panel .persistent-code {
+  padding: 1rem 0 0.4rem;
+  text-align: left;
+}
+.settings-panel .pairing-code span {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.settings-panel .persistent-code strong {
+  margin: 0.3rem 0 0.5rem;
+  font-size: 3.2rem;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.cn-shell .settings-panel .pairing-code span {
+  color: var(--cn-gold);
+}
+.cn-shell .settings-panel .persistent-code strong {
+  font-size: 4.2rem;
+  font-weight: 300;
+}
+.pn-shell .settings-panel .persistent-code strong {
+  font-family: "Inter Tight", system-ui, sans-serif;
+  font-size: 4.6rem;
+  font-weight: 200;
+}
+/* The favourite notice in each look, as designed: Crossbar's glass note and
+   Cinema's capsule at the top right, Panorama's magenta strip across the top. */
+.iface-crossbar .favorite-notice,
+.iface-cinema .favorite-notice {
+  top: 5.6rem;
+  right: var(--gutter);
+  bottom: auto;
+  left: auto;
+  padding: 0.55rem 1.1rem 0.55rem 0.55rem;
+  border-radius: 18px;
+  backdrop-filter: blur(20px);
+  font-weight: 600;
+  transform: none;
+}
+.iface-crossbar .favorite-notice {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(30, 28, 66, 0.74);
+  box-shadow: 0 18px 40px rgba(8, 6, 30, 0.45);
+}
+.iface-cinema .favorite-notice {
+  border: 1px solid rgba(247, 243, 236, 0.12);
+  background: rgba(18, 15, 12, 0.9);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  color: #f7f3ec;
+}
+.iface-crossbar .favorite-notice-icon {
+  background: #ffffff;
+  color: #141433;
+}
+.iface-cinema .favorite-notice-icon {
+  background: #f7f3ec;
+  color: #15120e;
+}
+.iface-panorama .favorite-notice {
+  top: 0;
+  right: 0;
+  bottom: auto;
+  left: 0;
+  padding: 0.7rem var(--gutter);
+  border-radius: 0;
+  background: #d80073;
+  box-shadow: none;
+  font-weight: 600;
+  transform: none;
+}
+.iface-panorama .favorite-notice-icon {
+  width: auto;
+  height: auto;
+  background: none;
+  color: #ffffff;
+}
+/* Panorama's focused game on Discover: Download · size, View game and the
+   heart under the page, at the left of the hints line (the PS5 app has them
+   in its app bar). Later than the page, so above it at the same level. */
+.pn-focusbar {
+  position: absolute;
+  left: var(--gutter);
+  bottom: 0.9rem;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.pn-focus-button,
+.pn-focusbar .iface-favorite {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  min-height: 2rem;
+  height: 2rem;
+  padding: 0 0.85rem;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.pn-focus-button.primary {
+  background: #ffffff;
+  color: #000000;
+}
+.pn-focusbar .iface-favorite {
+  width: 2rem;
+  padding: 0;
+  justify-content: center;
+}
+.pn-focusbar .iface-favorite[aria-pressed="true"] {
+  color: #d80073;
+}
+
+.cn-frame .cn-favorite {
+  position: absolute; top: 10px; right: 10px; width: 30px; height: 30px;
+  display: grid; place-items: center; border-radius: 50%;
+  color: #fff; background: #101010df; pointer-events: none;
+}

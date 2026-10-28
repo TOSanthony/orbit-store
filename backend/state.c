@@ -1,5 +1,6 @@
 #include "network.h"
 #include "orbit.h"
+#include "packages.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -10,19 +11,43 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
-Orbit orbit = {.mutex = PTHREAD_MUTEX_INITIALIZER,
+/* Keep the large empty catalogue in BSS. Embedding it in the initialized Orbit
+ * object writes megabytes of zeroes into both the runtime and public ELF. */
+static Release releases[ORBIT_MAX_RELEASES + 1];
+/* The range splits older builds can read; a finished download is saved as one range. */
+static bool legacy_ranges(const Job *j) {
+    unsigned n = j->range_count;
+    return n == 1 || n == 2 || n == 4 || n == 8;
+}
+static bool whole_range(const Job *j) { return !strcmp(j->status, "complete") && !legacy_ranges(j); }
+Orbit orbit = {.releases = releases,
+               .mutex = PTHREAD_MUTEX_INITIALIZER,
                .changed = PTHREAD_COND_INITIALIZER,
                .port = ORBIT_HTTP_PORT,
                .state_fd = -1,
                .delete_archives = true,
                .own_dns = true, /* Sony's hosts resolved through Orbit's own DNS (changeable in Settings) */
-               .install_pkgs = true, /* a downloaded .pkg is installed, then removed (changeable in Settings) */
-               .delete_pkgs = true,
                .sound_volume = 50,
-               .concurrent_downloads = ORBIT_DEFAULT_DOWNLOADS};
+               .download_notifications = true,
+               .notify_events = NOTIFY_EVENTS_ALL,
+               .download_policy = DOWNLOAD_POLICY_DEFAULT,
+               .concurrent_downloads = ORBIT_DEFAULT_DOWNLOADS,
+               .download_connections = ORBIT_DEFAULT_CONNECTIONS};
 void copy_text(char *to, size_t cap, const char *s) {
     if (cap)
         snprintf(to, cap, "%s", s ? s : "");
+}
+bool utf8_text(const char *s) {
+    const unsigned char *p = (const unsigned char *)s;
+    while (*p) {
+        if (*p < 0x20 || *p == 0x7f) return false;
+        int n = *p < 0x80 ? 0 : (*p & 0xe0) == 0xc0 ? 1 : (*p & 0xf0) == 0xe0 ? 2 : (*p & 0xf8) == 0xf0 ? 3 : -1;
+        if (n < 0 || (n == 1 && *p < 0xc2)) return false;
+        p++;
+        for (int i = 0; i < n; i++, p++)
+            if ((*p & 0xc0) != 0x80) return false;
+    }
+    return true;
 }
 const char *json_text(const cJSON *o, const char *k) {
     const cJSON *v = cJSON_GetObjectItemCaseSensitive(o, k);
@@ -83,7 +108,18 @@ static cJSON *job_json(const Job *j, bool private_fields) {
     cJSON_AddNumberToObject(o, "speed", j->speed);
     cJSON_AddNumberToObject(o, "retryAt", (double)j->retry_at);
     cJSON_AddNumberToObject(o, "order", j->order);
-    cJSON_AddStringToObject(o, "title", j->release.title);
+    char display_title[512];
+    release_download_title(&j->release, display_title, sizeof display_title);
+    cJSON_AddStringToObject(o, "title", display_title);
+    if (j->release.addon_id[0]) {
+        cJSON_AddStringToObject(o, "addonId", j->release.addon_id);
+        cJSON_AddStringToObject(o, "addonTitle", j->release.title);
+        cJSON_AddStringToObject(o, "baseGameId", j->release.base_game_id);
+        cJSON_AddStringToObject(o, "baseGameTitle", j->release.base_title);
+        cJSON_AddStringToObject(o, "addonType", j->release.addon_type);
+        cJSON_AddStringToObject(o, "contentId", j->release.content_id);
+        cJSON_AddItemToObject(o, "requirements", cJSON_Parse(j->release.requirements));
+    }
     cJSON_AddStringToObject(o, "titleId", j->release.title_id);
     cJSON_AddStringToObject(o, "format", j->release.format);
     cJSON_AddStringToObject(o, "gameId", j->release.game_id);
@@ -111,6 +147,8 @@ static cJSON *job_json(const Job *j, bool private_fields) {
     char path[700];
     snprintf(path, sizeof path, "%s/homebrew/%s", j->root, j->output[0] ? j->output : j->filename);
     cJSON_AddStringToObject(o, "path", path);
+    if (!private_fields && !strcmp(j->status, "complete"))
+        cJSON_AddItemToObject(o, "installation", packages_for_download(j->id));
     if (private_fields) {
         if (!strcmp(j->delivery, "torbox")) {
             S("debridAccount", debrid_account);
@@ -120,10 +158,14 @@ static cJSON *job_json(const Job *j, bool private_fields) {
         }
         if (j->segmented) {
             cJSON *ranges = cJSON_AddArrayToObject(o, "rangeReceived");
-            for (unsigned i = 0; i < j->range_count; i++)
-                cJSON_AddItemToArray(ranges, cJSON_CreateNumber((double)j->range_received[i]));
+            if (whole_range(j))
+                cJSON_AddItemToArray(ranges, cJSON_CreateNumber((double)j->received));
+            else
+                for (unsigned i = 0; i < j->range_count; i++)
+                    cJSON_AddItemToArray(ranges, cJSON_CreateNumber((double)j->range_received[i]));
         }
         if (j->archive_ready) cJSON_AddBoolToObject(o, "archiveReady", true);
+        if (j->resume_after_restart) cJSON_AddBoolToObject(o, "resumeAfterRestart", true);
         if (j->archive_password[0]) { S("archivePassword", archive_password); }
         cJSON_AddItemToObject(o, "release", release_json(&j->release));
         S("root", root);
@@ -170,6 +212,11 @@ int state_save_locked(void) {
     /* Older builds would treat a compressed download as a finished plain file. */
     for (size_t i = 0; i < orbit.job_count; i++)
         if (orbit.jobs[i].id[0] && orbit.jobs[i].release.compression[0]) schema = 6;
+    /* Older builds only read splits of 1, 2, 4 or 8 ranges: an unfinished
+     * download with another split needs this build to resume it. */
+    for (size_t i = 0; i < orbit.job_count; i++)
+        if (orbit.jobs[i].id[0] && orbit.jobs[i].segmented && !legacy_ranges(&orbit.jobs[i]) && !whole_range(&orbit.jobs[i]))
+            schema = 7;
     cJSON_AddNumberToObject(o, "schema", schema);
     cJSON_AddStringToObject(o, "preferredStorage", orbit.preferred_storage);
     cJSON_AddStringToObject(o, "appearance", orbit.appearance);
@@ -179,12 +226,19 @@ int state_save_locked(void) {
     cJSON_AddNumberToObject(o, "soundVolume", orbit.sound_volume);
     cJSON_AddBoolToObject(o, "ps4Hidden", orbit.ps4_hidden);
     cJSON_AddBoolToObject(o, "ownDns", orbit.own_dns);
-    cJSON_AddBoolToObject(o, "installPkgs", orbit.install_pkgs);
-    cJSON_AddBoolToObject(o, "deletePkgs", orbit.delete_pkgs);
     cJSON_AddBoolToObject(o, "deleteArchives", orbit.delete_archives);
+    cJSON_AddBoolToObject(o, "downloadNotifications", orbit.download_notifications);
+    cJSON *events = cJSON_AddArrayToObject(o, "notificationEvents");
+    for (unsigned i = 0; notify_event_name(i); i++)
+        if (orbit.notify_events & (1u << i)) cJSON_AddItemToArray(events, cJSON_CreateString(notify_event_name(i)));
+    cJSON_AddStringToObject(o, "notifiedUpdate", orbit.notified_update);
+    cJSON_AddBoolToObject(o, "deletePackages", orbit.delete_packages);
     cJSON_AddNumberToObject(o, "concurrentDownloads", orbit.concurrent_downloads);
+    cJSON_AddNumberToObject(o, "downloadConnections", orbit.download_connections);
+    download_policy_json(o, &orbit.download_policy);
     cJSON_AddNumberToObject(o, "debridNextCreate", (double)orbit.debrid_next_create);
     cJSON_AddItemToObject(o, "favorites", favorites_json_locked());
+    cJSON_AddItemToObject(o, "savedFilters", saved_filters_json_locked());
     cJSON *sources = cJSON_AddObjectToObject(o, "sources");
     cJSON_AddNumberToObject(sources, "enabled", orbit.sources.enabled);
     cJSON_AddNumberToObject(sources, "noticeVersion", orbit.sources.notice_version);
@@ -269,7 +323,8 @@ int state_load(void) {
     const cJSON *schema_value = cJSON_GetObjectItemCaseSensitive(o, "schema");
     if (!cJSON_IsNumber(schema_value) ||
         (schema_value->valuedouble != 1 && schema_value->valuedouble != 2 && schema_value->valuedouble != 3 &&
-         schema_value->valuedouble != 4 && schema_value->valuedouble != 5 && schema_value->valuedouble != 6)) {
+         schema_value->valuedouble != 4 && schema_value->valuedouble != 5 && schema_value->valuedouble != 6 &&
+         schema_value->valuedouble != 7)) {
         free(s);
         cJSON_Delete(o);
         return -1;
@@ -304,16 +359,31 @@ int state_load(void) {
     if (cJSON_IsBool(ps4_hidden)) orbit.ps4_hidden = cJSON_IsTrue(ps4_hidden);
     const cJSON *own_dns = cJSON_GetObjectItemCaseSensitive(o, "ownDns");
     if (cJSON_IsBool(own_dns)) orbit.own_dns = cJSON_IsTrue(own_dns);
-    const cJSON *install_pkgs = cJSON_GetObjectItemCaseSensitive(o, "installPkgs");
-    if (cJSON_IsBool(install_pkgs)) orbit.install_pkgs = cJSON_IsTrue(install_pkgs);
-    const cJSON *delete_pkgs = cJSON_GetObjectItemCaseSensitive(o, "deletePkgs");
-    if (cJSON_IsBool(delete_pkgs)) orbit.delete_pkgs = cJSON_IsTrue(delete_pkgs);
     const cJSON *delete_archives = cJSON_GetObjectItemCaseSensitive(o, "deleteArchives");
     if (cJSON_IsBool(delete_archives)) orbit.delete_archives = cJSON_IsTrue(delete_archives);
+    const cJSON *notifications = cJSON_GetObjectItemCaseSensitive(o, "downloadNotifications");
+    if (cJSON_IsBool(notifications)) orbit.download_notifications = cJSON_IsTrue(notifications);
+    /* Without the list (1.5.0 and older), every event stays on. Unknown names are a newer build's. */
+    const cJSON *events = cJSON_GetObjectItemCaseSensitive(o, "notificationEvents"), *event;
+    if (cJSON_IsArray(events)) {
+        orbit.notify_events = 0;
+        cJSON_ArrayForEach(event, events)
+            for (unsigned i = 0; cJSON_IsString(event) && notify_event_name(i); i++)
+                if (!strcmp(event->valuestring, notify_event_name(i))) orbit.notify_events |= 1u << i;
+    }
+    const char *notified = json_text(o, "notifiedUpdate");
+    if (strlen(notified) < sizeof orbit.notified_update) copy_text(orbit.notified_update, sizeof orbit.notified_update, notified);
+    const cJSON *delete_packages = cJSON_GetObjectItemCaseSensitive(o, "deletePackages");
+    if (cJSON_IsBool(delete_packages)) orbit.delete_packages = cJSON_IsTrue(delete_packages);
+    download_policy_load(o, &orbit.download_policy);
     const cJSON *limit = cJSON_GetObjectItemCaseSensitive(o, "concurrentDownloads");
     if (cJSON_IsNumber(limit) && limit->valuedouble >= 1 &&
         limit->valuedouble <= ORBIT_MAX_DOWNLOADS && limit->valuedouble == limit->valueint)
         orbit.concurrent_downloads = (unsigned)limit->valueint;
+    const cJSON *connections = cJSON_GetObjectItemCaseSensitive(o, "downloadConnections");
+    if (cJSON_IsNumber(connections) && connections->valuedouble >= 1 &&
+        connections->valuedouble <= ORBIT_MAX_RANGES && connections->valuedouble == connections->valueint)
+        orbit.download_connections = (unsigned)connections->valueint;
     const cJSON *sources = cJSON_GetObjectItemCaseSensitive(o, "sources");
     if (json_int(sources, "noticeVersion") == ORBIT_SOURCE_NOTICE_VERSION &&
         json_int(sources, "acknowledgedAt") > 0 && json_int(sources, "enabled") >= 0 &&
@@ -329,6 +399,7 @@ int state_load(void) {
         if (cJSON_IsString(x) && strlen(x->valuestring) == 64 && orbit.token_count < 16)
             copy_text(orbit.tokens[orbit.token_count++], 65, x->valuestring);
     }
+    saved_filters_load_locked(cJSON_GetObjectItemCaseSensitive(o, "savedFilters"));
     cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(o, "favorites")) {
         if (!cJSON_IsString(x) || !*x->valuestring || strlen(x->valuestring) >= 64 ||
             orbit.favorite_count >= ORBIT_MAX_RELEASES)
@@ -401,7 +472,7 @@ int state_load(void) {
             const cJSON *web = cJSON_GetObjectItemCaseSensitive(x, "debridId"),
                         *file = cJSON_GetObjectItemCaseSensitive(x, "debridFile");
             const char *account = json_text(x, "debridAccount");
-            if ((schema != 3 && schema != 5 && schema != 6) || strlen(account) != 64 || strspn(account, "0123456789abcdef") != 64 ||
+            if ((schema != 3 && schema != 5 && schema != 6 && schema != 7) || strlen(account) != 64 || strspn(account, "0123456789abcdef") != 64 ||
                 !cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(x, "debridSubmitted")) ||
                 !cJSON_IsNumber(web) || !cJSON_IsNumber(file) ||
                 !(web->valuedouble >= -1 && web->valuedouble <= 9007199254740991.0) ||
@@ -421,7 +492,8 @@ int state_load(void) {
         if (ranges) {
             int count = cJSON_GetArraySize(ranges);
             if (!cJSON_IsArray(ranges) ||
-                !(((schema == 2 || schema == 3) && count == 2) || ((schema >= 4) && (count == 1 || count == 2 || count == 4 || count == 8))) ||
+                !(((schema == 2 || schema == 3) && count == 2) || ((schema >= 4) && (count == 1 || count == 2 || count == 4 || count == 8)) ||
+                  (schema >= 7 && count >= 1)) ||
                 count > ORBIT_MAX_RANGES ||
                 (count > 1 && (!j->etag[0] || !strncmp(j->etag, "W/", 2)))) {
                 cJSON_Delete(o);
@@ -451,6 +523,13 @@ int state_load(void) {
         if (job_active(j)) {
             copy_text(j->status, sizeof j->status, "paused");
             copy_text(j->error, sizeof j->error, "Interrupted. Resume to continue.");
+        }
+        /* Downloads Orbit paused to restart itself continue where they were. */
+        if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(x, "resumeAfterRestart")) &&
+            !strcmp(j->status, "paused")) {
+            copy_text(j->status, sizeof j->status, "queued");
+            j->error[0] = 0;
+            j->retry_at = 0;
         }
         if (!source_enabled_locked(r) &&
             (!strcmp(j->status, "queued") || !strcmp(j->status, "retrying") ||

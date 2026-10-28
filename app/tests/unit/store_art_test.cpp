@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <ctime>
 
 namespace orbit
@@ -254,6 +255,74 @@ TEST(Art, MarksFailuresAndEvictsTheLeastRecentlyDrawn)
     art.tick(); // two uploads per frame
     // Eviction never takes what was drawn in the last half second.
     EXPECT_EQ(sink.live.size(), 6u);
+}
+
+TEST(Art, ScrollingThumbnailsKeepTheirPictureWhenFullSizeBackgroundsAreEvicted)
+{
+    host::Fixture fixture(host::FixtureMode::normal);
+    ScriptedTransport transport;
+    transport.reply = [&](const http::Request &request) { return fixture.send(request); };
+    test::FakeSink sink;
+    ArtLimits limits;
+    limits.max_heroes = 1;
+    ArtCache art(transport, sink, limits);
+    art.set_token("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    art.get("tidewater", api::ArtKind::thumbnail);
+    art.work_once();
+    art.tick();
+    const Artwork *tile = art.get("tidewater", api::ArtKind::thumbnail);
+    ASSERT_NE(tile, nullptr);
+    const auto texture = tile->texture;
+    EXPECT_LE(tile->width, limits.thumbnail_width);
+    EXPECT_LE(tile->height, limits.thumbnail_height);
+    EXPECT_GT(tile->width, tile->height);
+    EXPECT_EQ(tile->ambient, 0u);
+    art.get("tidewater", api::ArtKind::hero);
+    art.work_once();
+    art.tick();
+    const auto hero = art.get("tidewater", api::ArtKind::hero)->texture;
+    timespec age{0, 550000000};
+    nanosleep(&age, nullptr);
+    for (const char *game : {"frostline", "echo-valley"})
+    {
+        art.get(game, api::ArtKind::hero);
+        art.work_once();
+        art.tick();
+    }
+    EXPECT_EQ(std::count(sink.live.begin(), sink.live.end(), hero), 0);
+    ASSERT_NE(art.get("tidewater", api::ArtKind::thumbnail), nullptr);
+    EXPECT_EQ(art.get("tidewater", api::ArtKind::thumbnail)->texture, texture);
+    EXPECT_EQ(transport.count("/api/v1/art/tidewater/hero"), 2); // thumbnail + full background
+    EXPECT_EQ(transport.count("/api/v1/art/tidewater/cover"), 0); // no cover/banner flicker
+}
+
+TEST(Art, AThumbnailWaitsForItsCoverFallbackWithoutRevertingToTheBrokenBanner)
+{
+    host::Fixture fixture(host::FixtureMode::normal);
+    ScriptedTransport transport;
+    int pending = 1;
+    transport.reply = [&](const http::Request &request)
+    {
+        if (request.path.ends_with("/hero"))
+            return json_reply(404, "{}");
+        if (request.path.ends_with("/cover") && pending-- > 0)
+            return json_reply(202, R"({"pending":true})");
+        return fixture.send(request);
+    };
+    test::FakeSink sink;
+    ArtCache art(transport, sink);
+    art.set_token("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    art.get("tidewater", api::ArtKind::thumbnail);
+    for (int i = 0; i < 300 && art.get("tidewater", api::ArtKind::thumbnail) == nullptr; ++i)
+    {
+        art.work_once();
+        art.tick();
+        timespec pause{0, 5000000};
+        nanosleep(&pause, nullptr);
+    }
+    ASSERT_NE(art.get("tidewater", api::ArtKind::thumbnail), nullptr);
+    EXPECT_EQ(transport.count("/api/v1/art/tidewater/hero"), 1);
+    EXPECT_EQ(transport.count("/api/v1/art/tidewater/cover"), 2);
 }
 
 // ---- settings ----

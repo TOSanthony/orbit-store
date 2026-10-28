@@ -7,6 +7,7 @@
 // so screens read a plain snapshot and never wait on the network.
 
 #pragma once
+#include "orbit/native_provider.hpp"
 
 #include "orbit/api.hpp"
 #include "orbit/model.hpp"
@@ -67,11 +68,13 @@ struct Snapshot
     bool have_sources = false;
     Sources sources;
     Debrid debrid;
+    ArchiveAccount archive_account; // read with the settings statuses
+    NtfySettings ntfy;              // read with the settings statuses
     bool have_browser = false;
     BrowserSession browser;
     std::string browser_error;
     bool have_catalog = false;
-    std::vector<Game> games;
+    std::vector<Game> games, addons;
     std::uint64_t catalog_serial = 0; // changes when games are replaced
 
     bool paired = false; // the console session is open
@@ -88,11 +91,19 @@ struct Snapshot
 
     bool have_favourites = false;
     std::vector<std::string> favourites; // game IDs, shared with paired clients
+    bool have_saved_filters = false;
+    std::vector<SavedFilter> saved_filters; // Browse's, shared with paired clients
     bool have_library = false;
     LibrarySnapshot library;
     std::string library_error; // why the last Library read failed
     bool have_library_storage = false;
     LibraryStorage library_storage;
+    // Files: the folder last read, and the running (or last) operation.
+    bool have_files = false;
+    FileListing files;
+    std::string files_error;
+    bool have_file_operation = false;
+    FileOperation file_operation;
 
     // Settings: the console session's pairing code and address, the catalogue,
     // and updates for the download service (Orbit) and this app.
@@ -106,6 +117,8 @@ struct Snapshot
     TvAppStatus tv_app;
     Restart restart = Restart::idle;
     std::string restart_detail;
+    std::string diagnostics_path; // where the last diagnostic report was saved
+    DiagnosticsReport diagnostics;  // the last one read to show on screen
 
     std::uint64_t serial = 0; // changes with any update
 
@@ -132,19 +145,26 @@ enum class Setting : std::uint8_t
     service_restart,
     tv_check,
     tv_install,
+    update_all,
     archives,
+    notifications,
+    notification_event,
+    packages,
+    ntfy_save,
+    ntfy_test,
+    diagnostics,
+    diagnostics_report, // read to show, not saved
     download_limit,
-    appearance,
-    language,
-    keyboard,
     sounds,
     sound_volume,
     ps4,
-    install_pkgs,
     own_dns,
-    delete_pkgs,
     game_updates,
     game_update_job,
+    download_connections,
+    download_recovery,
+    archive_sign_in,
+    archive_sign_out,
 };
 
 struct SettingResult
@@ -209,8 +229,12 @@ class Store
     void download(const std::string &release_id, const std::string &storage_id,
                   bool torbox = false);
     void job_action(const std::string &job_id, const std::string &action, bool delete_partial, const std::string &password = {});
+    // Removes every finished ("complete") or cancelled entry from history, as the browser can.
+    void clear_history(const std::string &status);
     const ActionState &browser_action() const { return browser_action_; }
-    void start_browser(const std::string &release_id, const std::string &storage_id);
+    void start_browser(const std::string &release_id, const std::string &storage_id, bool account = false, bool check_account = false);
+    void set_provider_window(ProviderWindow *window) { native_provider_.set_window(window); }
+    bool provider_dialog_visible() const { return native_provider_.visible(); }
     void cancel_browser(const std::string &session_id);
 
     // Favourites and the Library each report their own outcome, so an error
@@ -224,12 +248,27 @@ class Store
         return library_;
     }
     void set_favourite(const std::string &game_id, bool favourite);
+    // Save (saved_filter_body()) or delete ({"action":"delete","id":…}) a saved filter.
+    void change_saved_filters(std::string body);
+    const ActionState &saved_filters_action() const
+    {
+        return saved_filters_;
+    }
     void refresh_library();
     // A request_id is filled in here.
     void run_library_action(api::Client::LibraryRequest request);
     // Library storage (drives and copy/move destinations) is read only while
     // a screen needs it; refresh asks for a read sooner.
     void want_library_storage(bool wanted, bool refresh = false);
+    // Files: reads a drive's folder (an empty drive clears the listing). The
+    // operation is read on every poll while Files is open.
+    void open_files(const std::string &storage_id, const std::string &path);
+    void want_files(bool wanted);
+    void run_file_action(api::Client::FileRequest request);
+    const ActionState &file_action() const
+    {
+        return files_;
+    }
 
     // ---- settings: each command reports to setting_result() ----
     const SettingResult &setting_result() const
@@ -254,19 +293,32 @@ class Store
     // every poll; otherwise about once a minute, for the update badge.
     void want_settings(bool wanted);
     void set_zero(bool enabled) { send_setting(Setting::zero, {}, {}, enabled); }
+    void set_download_recovery(int field, int value) { send_setting(Setting::download_recovery, std::to_string(field), std::to_string(value)); }
     void set_download_limit(int limit) { send_setting(Setting::download_limit, std::to_string(limit)); }
     void set_sounds_off(bool off) { send_setting(Setting::sounds, {}, {}, off); }
     void set_sound_volume(int percent) { send_setting(Setting::sound_volume, std::to_string(percent)); }
     void set_ps4_hidden(bool hidden) { send_setting(Setting::ps4, {}, {}, hidden); }
-    void set_delete_pkgs(bool enabled) { send_setting(Setting::delete_pkgs, {}, {}, enabled); }
-    void set_install_pkgs(bool enabled) { send_setting(Setting::install_pkgs, {}, {}, enabled); }
     void set_own_dns(bool enabled) { send_setting(Setting::own_dns, {}, {}, enabled); }
-    void set_appearance(const std::string &id) { send_setting(Setting::appearance, id); }
-    void set_language(const std::string &code) { send_setting(Setting::language, code); }
-    void set_keyboard(const std::string &layout) { send_setting(Setting::keyboard, layout); }
-    // The interface language changed: screens that keep translated text build it again.
-    void language_changed();
+    void set_download_connections(int connections) { send_setting(Setting::download_connections, std::to_string(connections)); }
     void set_delete_archives(bool enabled) { send_setting(Setting::archives, {}, {}, enabled); }
+    void set_download_notifications(bool enabled) { send_setting(Setting::notifications, {}, {}, enabled); }
+    void set_notification_event(int index, bool on) { send_setting(Setting::notification_event, std::to_string(index), {}, on); }
+    void load_diagnostics() { send_setting(Setting::diagnostics_report); }
+    void set_delete_packages(bool enabled) { send_setting(Setting::packages, {}, {}, enabled); }
+    void save_ntfy(std::string body) { send_setting(Setting::ntfy_save, std::move(body)); }
+    void test_ntfy() { send_setting(Setting::ntfy_test); }
+    // Both parts in one press: checks again what was found a while ago, then installs it all.
+    void update_orbit() { send_setting(Setting::update_all); }
+    // The client fields go in the report: this app's version, language and interface.
+    void save_diagnostics(std::string version, std::string language_and_interface)
+    {
+        send_setting(Setting::diagnostics, std::move(version), std::move(language_and_interface));
+    }
+    void sign_in_archive(std::string email, std::string password)
+    {
+        send_setting(Setting::archive_sign_in, std::move(email), std::move(password));
+    }
+    void sign_out_archive() { send_setting(Setting::archive_sign_out); }
     // Reads the console session again (a fresh pairing code after a restart).
     void refresh_session();
     // The frame has shown a finished restart.
@@ -282,6 +334,11 @@ class Store
     {
         restart_grace_ = seconds;
     }
+    // Tests: how long Orbit restarting itself has to answer before a copy is sent (15 s).
+    void set_self_restart_wait(double seconds)
+    {
+        restart_self_wait_ = seconds;
+    }
 
     // ---- worker steps (public for tests) ----
     void poll_once();
@@ -294,27 +351,39 @@ class Store
         {
             download,
             job_action,
+            clear_history,
             favourite,
+            saved_filters,
             library_refresh,
             library_action,
             setting,
             browser_start,
             browser_cancel,
+            browser_opened,
+            files_list,
+            file_action,
         } kind = Kind::download;
         Setting setting = Setting::none;
         std::string a; // release, job or game ID
         std::string b; // storage ID or action name
+        std::string browser_client;
+        std::string browser_failure;
+        int browser_error_code = 0;
         std::string password; // transient archive-password command; never logged
         bool flag = false;
+        bool browser_check_account = false;
         api::Client::LibraryRequest library;
+        api::Client::FileRequest file;
     };
     void run_aside(Command &command);
+    void run_files(Command &command);
     void run_setting(Command &command);
     void run_browser(Command &command);
     void poll_browser();
     void send_setting(Setting setting, std::string a = {}, std::string b = {}, bool flag = false);
     void poll_settings();
     void poll_game_updates();
+    void follow_update_restart(const ServiceUpdate &service);
     void post_restart(Restart restart, std::string detail);
     void continue_restart(bool unreachable);
 
@@ -333,8 +402,13 @@ class Store
     Snapshot state_;
     ActionState action_;
     ActionState favourite_;
+    ActionState saved_filters_;
     ActionState library_;
+    ActionState files_;
     ActionState browser_action_;
+    NativeProvider native_provider_;
+    std::string provider_error_;
+    bool browser_observed_ = false;
     SettingResult setting_;
     int pending_actions_ = 0; // frame thread: queued actions without a result yet
     std::uint64_t request_count_ = 0;
@@ -347,7 +421,9 @@ class Store
     bool start_requested_ = false;
     bool stopping_ = false;
     std::atomic<bool> fast_{false};
+    std::atomic<bool> provider_poll_{false};
     std::atomic<bool> want_storage_{false};
+    std::atomic<bool> want_files_{false};
     std::atomic<bool> storage_refresh_{false};
     std::atomic<bool> want_settings_{false};
     std::atomic<bool> session_refresh_{false};
@@ -368,11 +444,16 @@ class Store
     Link worker_link_ = Link::connecting;
     Restart restart_ = Restart::idle;
     double restart_grace_ = 4.0;
+    double restart_self_wait_ = 30.0;
     double restart_since_ = 0.0;   // when the current restart step began
     double restart_send_at_ = 0.0; // when to send Orbit to the loader
     double restart_deadline_ = 0.0;
     int restart_attempts_ = 0;
     bool restart_sent_ = false;
+    // Orbit restarts itself (a "restart" action, or the end of an update): give it time to come
+    // back before sending a copy to the loader.
+    bool restart_self_ = false;
+    bool service_self_restart_ = false; // the running service can
     std::string observed_version_, observed_instance_;
     std::string restart_expected_version_, restart_previous_instance_;
 };

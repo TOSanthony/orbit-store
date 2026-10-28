@@ -12,7 +12,7 @@ static const unsigned char prefix[10] = {'O','R','B','I','T','E','N','C',1,1};
 enum { HEADER = 24, TAG = 16 };
 
 static int valid_purpose(unsigned purpose) {
-    return purpose >= CATALOG_PURPOSE_FEED && purpose <= CATALOG_PURPOSE_RELEASES;
+    return purpose >= CATALOG_PURPOSE_FEED && purpose <= CATALOG_PURPOSE_ADDONS;
 }
 
 int catalog_seal(const void *data, size_t size, unsigned purpose,

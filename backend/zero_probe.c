@@ -1,5 +1,6 @@
 /* Source-specific, bounded preflight for the user's Prefer PS5 setting. */
 #include "zero_probe.h"
+#include "archive_account.h"
 #include "ca.h"
 #include "provider_network.h"
 #include <curl/curl.h>
@@ -72,6 +73,9 @@ static bool test_source(const Release *r) {
     curl_easy_setopt(c, CURLOPT_ACCEPT_ENCODING, "identity");
     curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 4L);
     curl_easy_setopt(c, CURLOPT_TIMEOUT, 8L);
+    /* A login-only Archive.org file is reachable when the console is signed in. */
+    if (!strcmp(r->source, "archive"))
+        archive_account_apply(c);
     curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, body);
     curl_easy_setopt(c, CURLOPT_WRITEDATA, &probe);

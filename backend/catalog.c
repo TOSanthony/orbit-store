@@ -17,10 +17,9 @@
 #include <time.h>
 #include <unistd.h>
 
-/* v6 adds compressed options and AkiraBox/DataNodes. Older clients keep v5 (no archives), PS5-only v4
- * or format-compatible v3, since one unknown row rejects a whole feed. */
-#define CATALOG_URL "https://raw.githubusercontent.com/saawant12/orbit-store-ps5/main/catalogue-v6.enc"
-#define CATALOG_FEED_VERSION 6
+/* v8 keeps add-ons separate from the unchanged base-game catalogue response. */
+#define CATALOG_URL "https://raw.githubusercontent.com/saawant12/orbit-store-ps5/main/catalogue-v8.enc"
+#define CATALOG_FEED_VERSION 8
 #define CATALOG_LIMIT (CATALOG_SEAL_LIMIT + CATALOG_SEAL_OVERHEAD)
 #define CHECK_INTERVAL (6 * 60 * 60)
 static struct {
@@ -67,6 +66,60 @@ static bool identifier(const char *id) {
             return false;
     return true;
 }
+/* Display and installation context is never a transfer path or proof of compatibility. */
+int release_context_parse(const cJSON *x, Release *r) {
+    if (!x || cJSON_IsNull(x)) return 0;
+    if (!cJSON_IsObject(x)) return -1;
+#define FIELD(k, f) if (!text_field(x, k, r->f, sizeof r->f, false)) return -1
+    FIELD("title", title); FIELD("titleId", title_id); FIELD("platform", platform);
+    FIELD("gameId", game_id); FIELD("format", format);
+    FIELD("addonId", addon_id); FIELD("baseGameId", base_game_id);
+    FIELD("baseGameTitle", base_title); FIELD("addonType", addon_type); FIELD("contentId", content_id);
+#undef FIELD
+    const cJSON *requirements = cJSON_GetObjectItemCaseSensitive(x, "requirements");
+    if (r->addon_id[0]) {
+        if (!identifier(r->addon_id) || strcmp(r->addon_id, r->game_id) ||
+            !identifier(r->base_game_id) || !strcmp(r->base_game_id, r->game_id) || !r->base_title[0] ||
+            (strcmp(r->addon_type, "expansion") && strcmp(r->addon_type, "content-pack") &&
+             strcmp(r->addon_type, "activation") && strcmp(r->addon_type, "bundle")) ||
+            (strcmp(r->format, "PKG") && strcmp(r->format, "FPKG") && strcmp(r->format, "Unknown")) ||
+            !cJSON_IsObject(requirements)) return -1;
+        if (r->content_id[0]) {
+            if ((strlen(r->content_id) < 21 || strlen(r->content_id) > 36) || r->content_id[6] != '-' || r->content_id[16] != '_' ||
+                r->content_id[19] != '-' || strncmp(r->content_id + 7, r->title_id, 9)) return -1;
+            for (const char *p = r->content_id; *p; p++)
+                if (!(*p >= 'A' && *p <= 'Z') && !isdigit((unsigned char)*p) && *p != '_' && *p != '-') return -1;
+        }
+        const cJSON *tids = cJSON_GetObjectItemCaseSensitive(requirements, "titleIds");
+        const cJSON *tid = cJSON_GetArrayItem(tids, 0);
+        char edition[256], minimum[32], notes[1024];
+        if (!cJSON_IsArray(tids) || cJSON_GetArraySize(tids) != 1 || !cJSON_IsString(tid) ||
+            strcmp(tid->valuestring, r->title_id) ||
+            !text_field(requirements, "edition", edition, sizeof edition, false) ||
+            !text_field(requirements, "minimumVersion", minimum, sizeof minimum, false) ||
+            !text_field(requirements, "notes", notes, sizeof notes, false)) return -1;
+        char *encoded = cJSON_PrintUnformatted(requirements);
+        if (!encoded) return -1;
+        bool fits = strlen(encoded) < sizeof r->requirements;
+        if (fits) copy_text(r->requirements, sizeof r->requirements, encoded);
+        free(encoded);
+        if (!fits) return -1;
+    } else if (r->base_game_id[0] || r->base_title[0] || r->addon_type[0] || r->content_id[0] || requirements) return -1;
+    return 0;
+}
+cJSON *release_context_json(const Release *r) {
+    cJSON *o = cJSON_CreateObject();
+#define FIELD(k, f) cJSON_AddStringToObject(o, k, r->f)
+    FIELD("title", title); FIELD("titleId", title_id); FIELD("platform", platform);
+    FIELD("gameId", game_id); FIELD("format", format);
+    if (r->addon_id[0]) {
+        FIELD("addonId", addon_id); FIELD("baseGameId", base_game_id); FIELD("baseGameTitle", base_title);
+        FIELD("addonType", addon_type); FIELD("contentId", content_id);
+        cJSON_AddItemToObject(o, "requirements", cJSON_Parse(r->requirements));
+    }
+#undef FIELD
+    return o;
+}
 int release_parse(const cJSON *x, Release *r, bool diagnostic) {
     memset(r, 0, sizeof *r);
     if (!cJSON_IsObject(x))
@@ -85,6 +138,11 @@ int release_parse(const cJSON *x, Release *r, bool diagnostic) {
     FIELD("browserUrl", browser_url, false);
     FIELD("compression", compression, false);
     FIELD("archivePassword", archive_password, false);
+    FIELD("addonId", addon_id, false);
+    FIELD("baseGameId", base_game_id, false);
+    FIELD("baseGameTitle", base_title, false);
+    FIELD("addonType", addon_type, false);
+    FIELD("contentId", content_id, false);
 #undef FIELD
     const cJSON *size = cJSON_GetObjectItemCaseSensitive(x, "sizeBytes");
     if (!identifier(r->id) || !cJSON_IsNumber(size) || !isfinite(size->valuedouble) ||
@@ -113,6 +171,13 @@ int release_parse(const cJSON *x, Release *r, bool diagnostic) {
                              : !strcmp(r->compression, "7z") ? ".7z"
                              : !strcmp(r->compression, "rar") ? ".rar" : NULL;
         size_t length = strlen(r->filename), k = suffix ? strlen(suffix) : 0;
+        /* Preserve a provider's .7z name when the actual decoder is RAR.
+         * Extraction continues to require RAR data. */
+        if (suffix && !strcmp(r->compression, "rar") && length > 3 &&
+            !strcasecmp(r->filename + length - 3, ".7z")) {
+            suffix = ".7z";
+            k = 3;
+        }
         if (!suffix || length <= k || strcasecmp(r->filename + length - k, suffix) ||
             (r->archive_unverified ? extracted && !cJSON_IsNull(extracted) :
              !cJSON_IsNumber(extracted) || !isfinite(extracted->valuedouble) ||
@@ -137,8 +202,9 @@ int release_parse(const cJSON *x, Release *r, bool diagnostic) {
     const char *platform = !strncmp(r->title_id, "CUSA", 4) ? "ps4" : "ps5";
     if ((*r->platform && strcmp(r->platform, platform)) ||
         (!strcmp(platform, "ps4") && strcmp(r->format, "FPKG") && strcmp(r->format, "PKG") && !r->archive_unverified) ||
-        (!strcmp(platform, "ps5") && !strcmp(r->format, "PKG"))) return -1;
+        (!strcmp(platform, "ps5") && !strcmp(r->format, "PKG") && !r->addon_id[0])) return -1;
     copy_text(r->platform, sizeof r->platform, platform);
+    if (release_context_parse(x, r)) return -1;
     const char *prefixes[] = {"PPSA", "CUSA"};
     for (size_t k = 0; k < 2; k++)
         for (const char *p = strstr(r->filename, prefixes[k]); p; p = strstr(p + 4, prefixes[k]))
@@ -156,6 +222,12 @@ cJSON *release_json(const Release *r) {
     FIELD("gameId", game_id); FIELD("filename", filename); FIELD("url", url);
     FIELD("platform", platform);
     FIELD("sha256", sha256); FIELD("sourceId", source); FIELD("format", format);
+    if (r->addon_id[0]) {
+        FIELD("addonId", addon_id); FIELD("baseGameId", base_game_id);
+        FIELD("baseGameTitle", base_title); FIELD("addonType", addon_type);
+        if (r->content_id[0]) { FIELD("contentId", content_id); }
+        cJSON_AddItemToObject(o, "requirements", cJSON_Parse(r->requirements));
+    }
     if (r->browser_url[0]) { FIELD("browserUrl", browser_url); }
     if (r->compression[0]) {
         FIELD("compression", compression);
@@ -166,6 +238,10 @@ cJSON *release_json(const Release *r) {
 #undef FIELD
     cJSON_AddNumberToObject(o, "sizeBytes", (double)r->size);
     return o;
+}
+void release_download_title(const Release *r, char *out, size_t cap) {
+    if (r->addon_id[0]) snprintf(out, cap, "%s · %s · DLC", r->base_title, r->title);
+    else copy_text(out, cap, r->title);
 }
 static Release *parse_entries(cJSON *entries, size_t *count) {
     if (!cJSON_IsArray(entries) || cJSON_GetArraySize(entries) < 1 ||
@@ -202,6 +278,16 @@ static Release *parse_entries(cJSON *entries, size_t *count) {
             (!cJSON_IsNumber(rank) || rank->valuedouble < 1 || rank->valuedouble > 100 ||
              rank->valuedouble != rank->valueint))
             goto invalid;
+        /* Browse's tags: up to eight short ids. Ones this build has no label for are kept
+         * and ignored by the apps, so a newer catalogue's tags never break it. */
+        const cJSON *tags = cJSON_GetObjectItemCaseSensitive(entry, "tags"), *tag;
+        if (tags && !cJSON_IsNull(tags)) {
+            if (!cJSON_IsArray(tags) || cJSON_GetArraySize(tags) > 8) goto invalid;
+            cJSON_ArrayForEach(tag, tags) {
+                size_t n = cJSON_IsString(tag) ? strlen(tag->valuestring) : 0;
+                if (!n || n > 32 || strspn(tag->valuestring, "abcdefghijklmnopqrstuvwxyz0123456789-") != n) goto invalid;
+            }
+        }
         char provider[128], layout[16];
         if (!text_field(entry, "provider", provider, sizeof provider, true) ||
             !text_field(entry, "artworkLayout", layout, sizeof layout, true) ||
@@ -227,6 +313,50 @@ invalid:
     free(releases);
     return NULL;
 }
+static Release *parse_feed_entries(cJSON *entries, cJSON *addons, size_t *count) {
+    if (!cJSON_IsArray(entries) || !cJSON_IsArray(addons) ||
+        cJSON_GetArraySize(entries) + cJSON_GetArraySize(addons) > ORBIT_MAX_RELEASES) return NULL;
+    cJSON *combined = cJSON_Duplicate(entries, true), *entry;
+    if (!combined) return NULL;
+    cJSON_ArrayForEach(entry, entries)
+        if (*json_text(entry, "addonId")) { cJSON_Delete(combined); return NULL; }
+    cJSON_ArrayForEach(entry, addons) {
+        const char *aid = json_text(entry, "addonId"), *base = json_text(entry, "baseGameId");
+        bool found = false;
+        if (!*aid || strcmp(aid, json_text(entry, "gameId"))) goto invalid;
+        cJSON *game;
+        cJSON_ArrayForEach(game, entries) {
+            if (!strcmp(json_text(game, "gameId"), aid)) goto invalid;
+            if (!strcmp(json_text(game, "gameId"), base) &&
+                !strcmp(json_text(game, "title"), json_text(entry, "baseGameTitle")) &&
+                !strcmp(json_text(game, "platform"), json_text(entry, "platform"))) found = true;
+        }
+        const cJSON *contents = cJSON_GetObjectItemCaseSensitive(entry, "contents");
+        if (!found || !cJSON_IsArray(contents) || cJSON_GetArraySize(contents) < 1 || cJSON_GetArraySize(contents) > 128) goto invalid;
+        const cJSON *item;
+        cJSON_ArrayForEach(item, contents)
+            if (!cJSON_IsString(item) || !*item->valuestring || strlen(item->valuestring) >= 256) goto invalid;
+        const cJSON *prior;
+        cJSON_ArrayForEach(prior, combined) {
+            const char *previous = json_text(prior, "addonId");
+            if (!*previous) continue;
+            if (!strcmp(previous, aid)) {
+                const char *keys[] = {"baseGameId", "baseGameTitle", "title", "addonType"};
+                for (size_t k = 0; k < sizeof keys / sizeof keys[0]; k++)
+                    if (strcmp(json_text(prior, keys[k]), json_text(entry, keys[k]))) goto invalid;
+            } else if (*json_text(entry, "contentId") &&
+                       !strcmp(json_text(prior, "contentId"), json_text(entry, "contentId"))) goto invalid;
+        }
+        cJSON *copy = cJSON_Duplicate(entry, true);
+        if (!copy || !cJSON_AddItemToArray(combined, copy)) { cJSON_Delete(copy); goto invalid; }
+    }
+    Release *result = parse_entries(combined, count);
+    cJSON_Delete(combined);
+    return result;
+invalid:
+    cJSON_Delete(combined);
+    return NULL;
+}
 int catalog_init(void) {
     unsigned char *plain = NULL;
     size_t length = 0;
@@ -239,11 +369,13 @@ int catalog_init(void) {
     OPENSSL_cleanse(plain, length);
     free(plain);
     cJSON *entries = cJSON_DetachItemFromObjectCaseSensitive(feed, "releases");
+    cJSON *addons = cJSON_DetachItemFromObjectCaseSensitive(feed, "addons");
     cJSON_Delete(feed);
     size_t count;
-    Release *releases = valid ? parse_entries(entries, &count) : NULL;
-    if (!releases) { cJSON_Delete(entries); return -1; }
+    Release *releases = valid ? parse_feed_entries(entries, addons, &count) : NULL;
+    if (!releases) { cJSON_Delete(entries); cJSON_Delete(addons); return -1; }
     orbit.catalog = entries;
+    orbit.addons = addons;
     orbit.catalog_revision = catalog_revision;
     refresh.feed_version = version;
     orbit.release_count = count;
@@ -302,6 +434,10 @@ static int apply(const char *data, size_t length, bool cache, char *error, size_
     const cJSON *schema = cJSON_GetObjectItemCaseSensitive(feed, "schemaVersion"),
                 *rev = cJSON_GetObjectItemCaseSensitive(feed, "revision");
     cJSON *entries = cJSON_GetObjectItemCaseSensitive(feed, "releases");
+    cJSON *addons = cJSON_GetObjectItemCaseSensitive(feed, "addons");
+    /* Old local caches contain only games. They cannot supply add-on rows. */
+    if (!addons && cache && json_int(feed, "feedVersion") < 8)
+        addons = cJSON_AddArrayToObject(feed, "addons");
     size_t count = 0;
     unsigned version = 0;
     Release *releases = NULL;
@@ -309,7 +445,7 @@ static int apply(const char *data, size_t length, bool cache, char *error, size_
         !cJSON_IsNumber(rev) || !isfinite(rev->valuedouble) || rev->valuedouble < 1 ||
         rev->valuedouble > 2147483647 || floor(rev->valuedouble) != rev->valuedouble ||
         !feed_version(feed, cache, &version) ||
-        !(releases = parse_entries(entries, &count))) {
+        !(releases = parse_feed_entries(entries, addons, &count))) {
         copy_text(error, cap, "The catalogue update is invalid. Your current catalogue is unchanged.");
         cJSON_Delete(feed);
         OPENSSL_cleanse(plain, plain_length);
@@ -345,7 +481,7 @@ static int apply(const char *data, size_t length, bool cache, char *error, size_
         result = 0;
     } else if (revision == orbit.catalog_revision &&
                !(!cache && version > refresh.feed_version)) {
-        if (!cJSON_Compare(entries, orbit.catalog, true))
+        if (!cJSON_Compare(entries, orbit.catalog, true) || !cJSON_Compare(addons, orbit.addons, true))
             copy_text(error, cap, "The catalogue changed without a new revision. Keeping the saved copy.");
         else result = 0;
     } else if (orbit.stop || refresh.stop) {
@@ -355,8 +491,11 @@ static int apply(const char *data, size_t length, bool cache, char *error, size_
         copy_text(error, cap, "Could not save the catalogue. Your current catalogue is unchanged.");
     } else {
         cJSON_DetachItemViaPointer(feed, entries);
+        cJSON_DetachItemViaPointer(feed, addons);
         cJSON_Delete(orbit.catalog);
+        cJSON_Delete(orbit.addons);
         orbit.catalog = entries;
+        orbit.addons = addons;
         memcpy(orbit.releases, releases, count * sizeof *releases);
         orbit.release_count = count;
         orbit.catalog_revision = revision;
@@ -533,13 +672,13 @@ void catalog_stop(void) {
 cJSON *catalog_status(void) {
     cJSON *o = cJSON_CreateObject();
     pthread_mutex_lock(&orbit.mutex);
-    size_t games = 0;
+    size_t games = 0, addons = 0;
     for (size_t i = 0; i < orbit.release_count; i++) {
         if (!*orbit.releases[i].game_id) continue;
         bool seen = false;
         for (size_t j = 0; j < i; j++)
             if (!strcmp(orbit.releases[i].game_id, orbit.releases[j].game_id)) { seen = true; break; }
-        if (!seen) games++;
+        if (!seen) { if (orbit.releases[i].addon_id[0]) addons++; else games++; }
     }
     cJSON_AddBoolToObject(o, "available", refresh.started);
     cJSON_AddBoolToObject(o, "busy", refresh.busy || refresh.pending || nas_busy_locked());
@@ -547,6 +686,7 @@ cJSON *catalog_status(void) {
     cJSON_AddNumberToObject(o, "revision", orbit.catalog_revision);
     cJSON_AddNumberToObject(o, "feedVersion", refresh.feed_version);
     cJSON_AddNumberToObject(o, "gameCount", (double)games);
+    cJSON_AddNumberToObject(o, "addonCount", (double)addons);
     cJSON_AddNumberToObject(o, "checkedAt", (double)refresh.checked);
     cJSON_AddNumberToObject(o, "updatedAt", (double)refresh.updated);
     cJSON_AddNumberToObject(o, "checkAfter", (double)refresh.check_after);

@@ -334,13 +334,31 @@ struct Console
     std::string failure = "connection refused";
     std::string version = "0.6.0", instance, saved;
     bool stopping = false;
+    bool self_restart = false; // the service restarts itself through the ELF loader
+    std::string update_phase;  // an update the browser started: "restarting" near its end
     Console()
     {
         transport.reply = [this](const http::Request &request)
         {
             if (online && request.method == "POST" && request.path == "/api/v1/updates")
-                return test::json_reply(202, "{\"phase\":\"stopping\",\"instanceId\":\"" + instance +
+                return test::json_reply(202, "{\"phase\":\"" + std::string(self_restart ? "restarting" : "stopping") +
+                    "\",\"instanceId\":\"" + instance +
                     "\",\"runningVersion\":\"" + version + "\",\"savedVersion\":\"" + saved + "\"}");
+            if (online && request.method == "GET" && request.path == "/api/v1/updates" &&
+                (self_restart || !update_phase.empty()))
+            {
+                auto response = fixture.send(request);
+                response.body.insert(response.body.find('{') + 1,
+                    std::string("\"selfRestart\":") + (self_restart ? "true," : "false,") +
+                    (update_phase.empty() ? "" : "\"updateAll\":true,\"instanceId\":\"" + instance + "\",") );
+                if (!update_phase.empty())
+                {
+                    const auto at = response.body.find("\"phase\":\"");
+                    const auto end = response.body.find('"', at + 9);
+                    response.body.replace(at + 9, end - at - 9, update_phase);
+                }
+                return response;
+            }
             if (online && request.path == "/api/v1/system")
             {
                 // Preserve the fixture's session and catalogue fields.
@@ -515,110 +533,104 @@ TEST(StoreRestart, StopsOrbitThenStartsTheSavedCopyAndReportsItsVersion)
     EXPECT_EQ(starter.calls, 1);
 }
 
-struct AnnounceSpy final : public starter::Starter
-{
-    std::vector<std::pair<std::string, std::size_t>> announced;
-    starter::Result start() override
-    {
-        starter::Result result;
-        result.outcome = Outcome::sent;
-        return result;
-    }
-    void announce(std::string version, std::string image) override
-    {
-        announced.emplace_back(std::move(version), image.size());
-    }
-};
-
-TEST(StoreRestart, FetchesTheServiceCopyBeforeStoppingItAndHandsItToTheStarter)
+TEST(StoreRestart, OrbitRestartingItselfComesBackWithoutTheAppSendingACopy)
 {
     Console console;
     console.online = true;
-    console.saved = "0.6.0";
-    const auto base = console.transport.reply;
-    const std::string image = elf_bytes(4096, 'z');
-    bool stopped = false;
-    console.transport.reply = [&](const http::Request &request)
+    console.self_restart = true;
+    console.instance = "old";
+    CountingStarter starter;
+    Store store(console.transport, &starter);
+    store.set_restart_grace(0.0);
+    store.poll_once();
+    store.tick();
+    store.restart_service();
+    store.run_next_action();
+    store.tick();
+    EXPECT_EQ(store.state().restart, Restart::stopping);
+    int restarts = 0;
+    for (const http::Request &request : console.transport.seen)
+        restarts += request.body == R"({"action":"restart","confirmed":true})" ? 1 : 0;
+    EXPECT_EQ(restarts, 1);
+    console.online = false;
+    store.poll_once(); // stopped
+    store.poll_once(); // Orbit is starting itself: nothing is sent
+    store.tick();
+    EXPECT_EQ(store.state().restart, Restart::starting);
+    EXPECT_EQ(starter.calls, 0);
+    console.instance = "new";
+    console.online = true;
+    store.poll_once();
+    store.tick();
+    EXPECT_EQ(store.state().restart, Restart::done);
+    EXPECT_EQ(starter.calls, 0);
+}
+
+TEST(StoreRestart, WithoutALoaderARestartStopsOrbitForThisAppToStart)
+{
+    Console console;
+    console.online = true;
+    console.self_restart = true; // it could restart itself when the status was read
+    console.instance = "old";
+    const auto service = console.transport.reply;
+    console.transport.reply = [&service](const http::Request &request)
     {
-        if (request.path == "/api/v1/system/payload")
-        {
-            if (stopped)
-                return test::json_reply(503, R"({"error":"stopping"})");
-            http::Response response;
-            response.status = 200;
-            response.body = image;
-            response.orbit_version = "0.7.0";
-            return response;
-        }
         if (request.method == "POST" && request.path == "/api/v1/updates" &&
-            request.body.find("\"stop\"") != std::string::npos)
-            stopped = true;
-        return base(request);
+            request.body.find("\"restart\"") != std::string::npos)
+            return test::json_reply(409, R"({"error":"Orbit can't restart itself because no ELF loader answers on port 9021."})");
+        return service(request);
     };
-    AnnounceSpy spy;
-    Store store(console.transport, &spy);
+    CountingStarter starter;
+    Store store(console.transport, &starter);
     store.set_restart_grace(0.0);
     store.poll_once();
+    store.tick();
+    console.self_restart = false;
     store.restart_service();
     store.run_next_action();
-    ASSERT_EQ(spy.announced.size(), 1u);
-    EXPECT_EQ(spy.announced[0].first, "0.7.0");
-    EXPECT_EQ(spy.announced[0].second, image.size());
-    EXPECT_EQ(console.transport.count("/api/v1/system/payload"), 1);
+    store.tick();
+    EXPECT_EQ(store.state().restart, Restart::stopping);
+    EXPECT_TRUE(store.setting_result().error.empty());
+    int stops = 0;
+    for (const http::Request &request : console.transport.seen)
+        stops += request.body == R"({"action":"stop","confirmed":true})" ? 1 : 0;
+    EXPECT_EQ(stops, 1);
+    console.online = false;
+    store.poll_once(); // stopped
+    store.poll_once(); // this app starts it
+    EXPECT_EQ(starter.calls, 1);
 }
 
-TEST(StoreRestart, AnOldServiceWithoutTheEndpointStillRestartsWithTheBundledCopy)
+TEST(StoreRestart, AnUpdateThatDoesNotComeBackIsStartedFromTheSavedCopy)
 {
     Console console;
     console.online = true;
-    console.saved = "0.6.0";
-    const auto base = console.transport.reply;
-    console.transport.reply = [&](const http::Request &request)
-    {
-        if (request.path == "/api/v1/system/payload")
-            return test::json_reply(404, R"({"error":"Not found."})");
-        return base(request);
-    };
-    AnnounceSpy spy;
-    Store store(console.transport, &spy);
+    console.instance = "old";
+    console.update_phase = "downloading"; // "Update Orbit" from the browser
+    CountingStarter starter;
+    Store store(console.transport, &starter);
     store.set_restart_grace(0.0);
+    store.set_self_restart_wait(0.0);
     store.poll_once();
-    store.restart_service();
-    store.run_next_action();
-    ASSERT_EQ(spy.announced.size(), 1u);
-    EXPECT_EQ(spy.announced[0].first, "0.6.0"); // the version Stop reported
-    EXPECT_EQ(spy.announced[0].second, 0u);     // no image: the bundle is used
-}
-
-TEST(Api, SavedPayloadAcceptsOnlyAnX86ElfAndKeepsItsVersion)
-{
-    test::ScriptedTransport transport;
-    api::Client client(transport);
-    transport.reply = [](const http::Request &)
-    {
-        http::Response response;
-        response.status = 200;
-        response.body = elf_bytes(128, 'e');
-        response.orbit_version = "1.0.0";
-        return response;
-    };
-    auto good = client.saved_payload();
-    ASSERT_TRUE(good.ok());
-    EXPECT_EQ(good.value.version, "1.0.0");
-    EXPECT_EQ(good.value.image.size(), 128u);
-    transport.reply = [](const http::Request &)
-    {
-        http::Response response;
-        response.status = 200;
-        response.body = "<html>not an ELF at all, just a captive portal page padding padding padding padding</html>";
-        return response;
-    };
-    EXPECT_FALSE(client.saved_payload().ok());
-    transport.reply = [](const http::Request &)
-    {
-        return test::json_reply(404, R"({"error":"Orbit has no saved copy to send."})");
-    };
-    EXPECT_FALSE(client.saved_payload().ok());
+    store.tick();
+    EXPECT_EQ(store.state().restart, Restart::idle);
+    console.update_phase = "restarting"; // at its end
+    console.stopping = true;             // as /system says from then on
+    store.poll_once();
+    store.tick();
+    EXPECT_EQ(store.state().restart, Restart::stopping);
+    console.online = false;
+    store.poll_once(); // stopped
+    store.poll_once(); // it didn't come back in time: send the saved copy
+    store.tick();
+    EXPECT_EQ(starter.calls, 1);
+    console.update_phase.clear();
+    console.stopping = false;
+    console.instance = "new";
+    console.online = true;
+    store.poll_once();
+    store.tick();
+    EXPECT_EQ(store.state().restart, Restart::done);
 }
 
 TEST(StoreRestart, WithoutALoaderItAsksForAPayloadManagerAndWaits)

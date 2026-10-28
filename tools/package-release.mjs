@@ -96,13 +96,13 @@ writeFileSync(`${out}RELEASE-NOTES.md`, `# Orbit Store ${status.version} (Beta)
 
 ${review ? `UNRELEASED REVIEW BUNDLE. Outstanding gates: ${blockers.join(', ') || 'none'}. Do not publish this review folder.\n\n` : ''}${versionNotes}
 
-## Install the native TV app
+## Install the native TV app (Games)
 
 Download \`PPSA99177.ffpkg\` and its \`.sha256\` file, verify the checksum, then copy the FFPKG to \`/data/homebrew/\` on your PS5. Let ShadowMountPlus register it and open **Orbit Store** from the **Games row**. Discover opens first. Choose your sources in the native app's setup screen or **App settings → Download sources**.
 
 If an older Orbit service is already running, stop it deliberately before opening the app so its new bundled service can start. The app preserves a newer saved service. The native app version is **${status.tvAppVersion}**, bundled with Orbit service **${status.version}**.
 
-## Use or update the browser version
+## Use or update the browser version (Media)
 
 Download \`orbit_store.elf\` and its checksum, then run it through your payload manager or ELF loader. Open the Orbit shortcut in the **Media tab**, or pair a phone at \`http://<ps5-ip>:34177/\` on the same network.
 
@@ -118,7 +118,7 @@ In the browser, **App settings → TV app** installs the native app from the off
 
 Run \`shasum -a 256 -c <filename>.sha256\` beside each binary to verify it. Source-bundle contents have their own \`SOURCE-SHA256SUMS\`.
 
-Orbit Store is in **beta**. The game catalogue offers single-file FFPFSC, exFAT, FPKG and PKG options. Package downloads save a \`.pkg\` file; install downloaded game packages separately. The native app FFPKG is Orbit itself. Keep the PS5 awake during downloads. Library actions require a compatible ShadowMount v1 local API. See the [guides](https://github.com/saawant12/orbit-store-ps5/tree/main/guides) for setup and troubleshooting.
+Orbit Store is in **beta**. The game catalogue offers single-file FFPFSC, exFAT, FPKG and PKG options. After downloading or transferring a package to PS5, choose **Install on PS5**. For bundles, select each package explicitly; the downloaded files are retained. The native app FFPKG is Orbit itself. Keep the PS5 awake during downloads. Library actions require a compatible ShadowMount v1 local API. See the [guides](https://github.com/saawant12/orbit-store-ps5/tree/main/guides) for setup and troubleshooting.
 
 Orbit Store is free software under GPL-3.0-or-later. The application source is built from commit \`${commit}\`; component sources and licences are listed in \`THIRD-PARTY-NOTICES.md\` and \`SOURCES.json\`.
 `);

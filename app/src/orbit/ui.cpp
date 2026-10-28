@@ -4,11 +4,27 @@
 #include "orbit/ui.hpp"
 #include "orbit/i18n.hpp"
 
+#include "gfx/font.hpp"
+
 #include <algorithm>
 #include <cmath>
 
 namespace orbit::ui
 {
+
+const hui::ui::FontRef &face(const hui::ui::FontRef &face, const hui::ui::FontRef &fallback,
+                             std::string_view value)
+{
+    if (face.font == nullptr)
+        return fallback;
+    for (std::size_t i = 0; i < value.size();)
+    {
+        const std::uint32_t codepoint = hui::gfx::next_codepoint(value, &i);
+        if (codepoint > 0x20 && !face.font->has_glyph(codepoint))
+            return fallback;
+    }
+    return face;
+}
 
 float text(DrawList &list, const hui::ui::FontRef &font, std::string_view value, float x,
            float baseline, float size, Color color, Align align)
@@ -31,6 +47,36 @@ float fit_size(const hui::ui::FontRef &font, std::string_view value, float size,
     while (size > smallest && font.measure(value, size) > max_width)
         size -= 2.0f;
     return size;
+}
+
+void color::use_cinema(bool cinema)
+{
+    // Store's values, then Cinema's paper (#f7f3ec), warm blacks and gold.
+    static bool current = false;
+    if (cinema == current)
+        return;
+    current = cinema;
+    const Color paper = Color::rgb(0xf7f3ec);
+    color::night0 = Color::rgb(0x000000);
+    color::night1 = cinema ? Color::rgb(0x000000) : Color::rgb(0x080808);
+    color::night2 = cinema ? Color::rgb(0x14110e) : Color::rgb(0x151515);
+    color::night3 = cinema ? Color::rgb(0x221e19) : Color::rgb(0x242424);
+    color::glow = cinema ? Color::rgb(0x18150f) : Color::rgb(0x181818);
+    color::text = cinema ? paper : Color::rgb(0xffffff);
+    color::text2 = cinema ? paper.with_alpha(0.8f) : Color::rgb(0xd0d0d0);
+    color::text3 = cinema ? paper.with_alpha(0.55f) : Color::rgb(0xa1a1a1);
+    color::action = cinema ? paper : Color::rgb(0xffffff);
+    color::action_hi = cinema ? Color::rgb(0xffffff) : Color::rgb(0xe0e0e0);
+    color::ok = cinema ? paper : Color::rgb(0xffffff);
+    color::bad = cinema ? paper : Color::rgb(0xffffff);
+    color::line = cinema ? paper.with_alpha(0.16f) : Color::rgb(0xffffff, 0.16f);
+    color::field = cinema ? paper.with_alpha(0.075f) : Color::rgb(0xffffff, 0.075f);
+    color::field_open = cinema ? paper.with_alpha(0.145f) : Color::rgb(0xffffff, 0.145f);
+    color::field_edge = cinema ? paper.with_alpha(0.06f) : Color::rgb(0xffffff, 0.06f);
+    color::glass = cinema ? Color::rgb(0x0e0c0a, 0.72f) : Color::rgb(0x080808, 0.62f);
+    color::glass_on = cinema ? Color::rgb(0x28221c, 0.84f) : Color::rgb(0x202020, 0.82f);
+    color::popover = cinema ? Color::rgb(0x120f0c, 0.94f) : Color::rgb(0x141414, 0.9f);
+    color::accent = cinema ? Color::rgb(0xdcbc84) : Color::rgb(0xffffff);
 }
 
 float paragraph(DrawList &list, const hui::ui::FontRef &font, std::string_view value, float x,
@@ -275,7 +321,7 @@ void select_field(DrawList &list, const Type &type, const Rect &r, std::string_v
 
 void select_menu(DrawList &list, const Type &type, const Rect &trigger,
                  const std::vector<std::string> &options, int selected, int active, float in,
-                 std::uint32_t glass_texture)
+                 std::uint32_t glass_texture, const std::vector<bool> *checked)
 {
     if (in <= 0.01f || options.empty())
         return;
@@ -315,7 +361,8 @@ void select_menu(DrawList &list, const Type &type, const Rect &trigger,
         const Rect row{menu.x + kPad, menu.y + kPad + static_cast<float>(r) * kRow,
                        menu.w - 2.0f * kPad, kRow};
         const bool is_active = i == active;
-        const bool is_selected = i == selected;
+        const bool is_selected = checked != nullptr ? i < static_cast<int>(checked->size()) && (*checked)[static_cast<std::size_t>(i)]
+                                                    : i == selected;
         // The controller's option is the cursor: solid white, like a focused tile.
         if (is_active)
             list.rounded_rect(row, 13.0f, Color::rgb(0xf4f4f4));
@@ -633,42 +680,62 @@ float glyph(DrawList &list, const Type &type, hui::ui::Button button, float x, C
 
 } // namespace
 
-void hints(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &items,
-           std::uint32_t glass_texture)
+void hints(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &items, const HintStyle &style)
 {
-    // Right-aligned at the gutter, 1.6 rem apart, 0.85 rem labels.
-    constexpr float kLabel = 17.0f;
-    constexpr float kPad = 28.0f;
-    constexpr float kPillHeight = 56.0f;
-    const auto item_width = [&](const hui::ui::Hint &h)
-    {
-        float width = glyph_width(type, h.button) + 10.0f + type.regular.measure(h.label, kLabel);
-        if (h.second != hui::ui::Button::none)
-            width += glyph_width(type, h.second) + 6.0f;
-        return width;
-    };
-    if (items.empty())
-        return;
-    // A pill in the game popups' glass behind the controls: it grows with their
-    // number and with the width of their labels.
-    float total = 2.0f * kPad + 32.0f * static_cast<float>(items.size() - 1);
-    for (const hui::ui::Hint &h : items)
-        total += item_width(h);
-    const Rect pill{1920.0f - kGutter - total, kHintY - kPillHeight * 0.5f, total, kPillHeight};
-    // The same frosted glass as the game popups.
-    glass_modal(list, pill, glass_texture, kPillHeight * 0.5f);
-    float x = 1920.0f - kGutter - kPad;
+    // Right-aligned at the gutter, 1.6 rem apart, 0.85 rem labels. Glyphs
+    // are drawn at the footer's size, then scaled and moved to the style's.
+    const float scale = style.glyph / kHintGlyph;
+    float x = 1920.0f - kGutter;
     for (auto it = items.rbegin(); it != items.rend(); ++it)
     {
-        const float width = item_width(*it);
-        float at = x - width;
-        at += glyph(list, type, it->button, at, color::text);
+        const float label = type.regular.measure(it->label, style.label);
+        float glyphs = glyph_width(type, it->button);
         if (it->second != hui::ui::Button::none)
-            at += 6.0f + glyph(list, type, it->second, at + 6.0f, color::text);
-        orbit::ui::text(list, type.regular, it->label, at + 10.0f, kHintY + 6.0f, kLabel,
-                        color::text);
+            glyphs += glyph_width(type, it->second) + 6.0f;
+        const float width = glyphs * scale + style.gap + label;
+        const float at = x - width;
+        // The footer's own size draws untransformed, exactly as before the styles.
+        const bool moved = scale != 1.0f || style.y != kHintY;
+        if (moved)
+            list.push_transform(scale, at, kHintY, 0.0f, style.y - kHintY);
+        float g = at + glyph(list, type, it->button, at, style.ink);
+        if (it->second != hui::ui::Button::none)
+            glyph(list, type, it->second, g + 6.0f, style.ink);
+        if (moved)
+            list.pop_transform();
+        orbit::ui::text(list, type.regular, it->label, at + glyphs * scale + style.gap, style.y + style.label * (6.0f / 17.0f),
+                        style.label, style.ink);
         x -= width + 32.0f;
     }
+}
+
+float hint_at(DrawList &list, const Type &type, const hui::ui::Hint &item, float x, const HintStyle &style)
+{
+    // As hints() draws each item, from the left.
+    const float scale = style.glyph / kHintGlyph;
+    float glyphs = glyph_width(type, item.button);
+    if (item.second != hui::ui::Button::none)
+        glyphs += glyph_width(type, item.second) + 6.0f;
+    list.push_transform(scale, x, kHintY, 0.0f, style.y - kHintY);
+    const float g = x + glyph(list, type, item.button, x, style.ink);
+    if (item.second != hui::ui::Button::none)
+        glyph(list, type, item.second, g + 6.0f, style.ink);
+    list.pop_transform();
+    const float label = orbit::ui::text(list, type.regular, item.label, x + glyphs * scale + style.gap,
+                                        style.y + style.label * (6.0f / 17.0f), style.label, style.ink);
+    return glyphs * scale + style.gap + label;
+}
+
+float controls_grid(DrawList *list, const Type &type, const std::vector<hui::ui::Hint> &items, float x, float y, float width,
+                    float step, HintStyle style)
+{
+    const int rows = (static_cast<int>(items.size()) + 1) / 2;
+    for (int i = 0; list != nullptr && i < static_cast<int>(items.size()); ++i)
+    {
+        style.y = y + step * 0.5f + static_cast<float>(i / 2) * step;
+        hint_at(*list, type, items[static_cast<std::size_t>(i)], x + static_cast<float>(i % 2) * width * 0.5f, style);
+    }
+    return static_cast<float>(rows) * step;
 }
 
 void Ease::update(float dt, float rate)

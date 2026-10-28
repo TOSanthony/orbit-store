@@ -14,10 +14,10 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
-FEED, GAMES, RELEASES = range(1, 4)
+FEED, GAMES, RELEASES, ADDONS = range(1, 5)
 # Compatibility generation, independent of the envelope encoding and revision.
-FEED_VERSION = 6
-LIMIT, OVERHEAD = 8 * 1024 * 1024, 40
+FEED_VERSION = 8
+LIMIT, OVERHEAD = 16 * 1024 * 1024, 40
 
 
 def helper():
@@ -87,8 +87,10 @@ def sealed_bytes(value, purpose, existing=None):
     return seal(plain, purpose)
 
 
-def source_envelopes(directory, games, releases, rows, revision):
+def source_envelopes(directory, games, releases, rows, revision, addons=None, addon_rows=None):
     values = [('games.enc', games, GAMES), ('releases.enc', releases, RELEASES),
-              ('catalog.enc', {'schemaVersion': 1, 'feedVersion': FEED_VERSION, 'revision': revision, 'releases': rows}, FEED)]
+              ('addons.enc', addons or [], ADDONS),
+              ('catalog.enc', {'schemaVersion': 1, 'feedVersion': FEED_VERSION, 'revision': revision,
+                               'releases': rows, 'addons': addon_rows or []}, FEED)]
     return [(directory / name, sealed_bytes(value, purpose, directory / name))
             for name, value, purpose in values]
