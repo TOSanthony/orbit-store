@@ -98,9 +98,21 @@ void BrowseScreen::refilter()
             {
                 Game group = addon;
                 // The tile shows the game's own art when the catalogue has the game, else its first add-on's.
-                const bool known = std::any_of(state.games.begin(), state.games.end(),
-                                               [&](const Game &g) { return g.id == addon.base_game_id; });
-                group.id = known ? addon.base_game_id : addon.id;
+                // The game is found by its id, else by the title ID the add-on belongs to.
+                const auto owns = [&](const Game &g)
+                {
+                    if (g.id == addon.base_game_id)
+                        return true;
+                    return std::any_of(g.releases.begin(), g.releases.end(), [&](const Release &r)
+                    {
+                        return !r.title_id.empty() && r.addon_id.empty() &&
+                               (r.title_id == addon.releases.front().title_id ||
+                                std::find(addon.required_title_ids.begin(), addon.required_title_ids.end(), r.title_id) !=
+                                    addon.required_title_ids.end());
+                    });
+                };
+                const auto owner = std::find_if(state.games.begin(), state.games.end(), owns);
+                group.id = owner != state.games.end() ? owner->id : addon.id;
                 group.title = addon.base_title.empty() ? addon.title : addon.base_title;
                 group.addon_type.clear();
                 groups_.push_back(std::move(group));

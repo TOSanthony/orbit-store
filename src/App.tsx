@@ -275,7 +275,10 @@ export default function App() {
     for (const addon of ordered) {
       const base = addon.baseGameId || addon.id;
       if (!groupCounts.has(base)) {
-        const owner = orbit.games.find((g) => g.id === base); // the game's own art when the catalogue lists it
+        // The game's own art when the catalogue lists it: by its id, else by the title ID the add-on belongs to.
+        const ids = [addon.releases[0]?.titleId, ...(addon.releases[0]?.requirements?.titleIds || [])].filter(Boolean);
+        const owner = orbit.games.find((g) => g.id === base) ||
+          orbit.games.find((g) => g.releases.some((r) => ids.includes(r.titleId)));
         groups.push({ ...addon, id: base, title: addon.baseGameTitle || addon.title, addonId: undefined, addonType: undefined,
           cover: owner?.cover ?? addon.cover, coverFallback: owner?.coverFallback ?? addon.coverFallback });
       }
