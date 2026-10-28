@@ -29,6 +29,7 @@
 #define PATH_BYTES 1200
 #define MARGIN (16 * 1024 * 1024)
 #define REPORT_BYTES (4 * 1024 * 1024)
+pthread_mutex_t extraction_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static bool stopped(const Extraction *x) {
     return (x->pause && atomic_load(x->pause)) || (x->cancel && atomic_load(x->cancel)) ||
@@ -191,9 +192,53 @@ static int write_all(int fd, const unsigned char *data, size_t size, int64_t off
     }
     return 0;
 }
+/* Some dumps wrap the game in one or more empty enclosing folders. Only
+ * unwrap a single-child chain that ends at an actual game root. Stop at the
+ * first root; never flatten game data or discard sibling files/notes. */
+static void game_root(Extraction *x, int stage, const char *staging, const char *top,
+                      char selected[MAX_PATH_BYTES + 1]) {
+    char candidate[MAX_PATH_BYTES + 1];
+    snprintf(candidate, sizeof candidate, "%s", top);
+    int fd = openat(stage, top, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    for (unsigned depth = 0; fd >= 0 && depth < MAX_DEPTH; depth++) {
+        struct stat boot, param;
+        int sys = openat(fd, "sce_sys", O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        bool game = !fstatat(fd, "eboot.bin", &boot, AT_SYMLINK_NOFOLLOW) && S_ISREG(boot.st_mode) && sys >= 0 &&
+            ((!fstatat(sys, "param.json", &param, AT_SYMLINK_NOFOLLOW) && S_ISREG(param.st_mode)) ||
+             (!fstatat(sys, "param.sfo", &param, AT_SYMLINK_NOFOLLOW) && S_ISREG(param.st_mode)));
+        if (sys >= 0) close(sys);
+        if (game) { snprintf(selected, MAX_PATH_BYTES + 1, "%s", candidate); break; }
+        char full[PATH_BYTES], child[256] = "";
+        if (snprintf(full, sizeof full, "%s/%s/%s", x->path, staging, candidate) >= (int)sizeof full) break;
+        DIR *dir = opendir(full);
+        if (!dir) break;
+        struct dirent *e;
+        unsigned count = 0;
+        errno = 0;
+        while ((e = readdir(dir))) {
+            if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+            if (++count > 1) break;
+            snprintf(child, sizeof child, "%s", e->d_name);
+        }
+        int scan_error = errno;
+        closedir(dir);
+        if (scan_error || count != 1 || !extract_name_ok(child)) break;
+        size_t used = strlen(candidate), n = strlen(child);
+        if (used + n + 1 >= sizeof candidate) break;
+        int next = openat(fd, child, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        if (next < 0) break;
+        candidate[used] = '/'; memcpy(candidate + used + 1, child, n + 1);
+        close(fd); fd = next;
+    }
+    if (fd >= 0) close(fd);
+}
 static int publish(Extraction *x, int stage, const char *staging, const char *top, bool several,
                    char *error, size_t cap) {
-    const char *name = several ? x->folder : top;
+    char selected[MAX_PATH_BYTES + 1];
+    snprintf(selected, sizeof selected, "%s", top);
+    if (!several) game_root(x, stage, staging, top, selected);
+    const char *leaf = strrchr(selected, '/');
+    const char *name = several ? x->folder : leaf ? leaf + 1 : selected;
     struct stat st;
     if (!name[0] || !strncmp(name, ".orbit-", 7)) {
         snprintf(error, cap, "The archive has no usable top-level name.");
@@ -206,14 +251,14 @@ static int publish(Extraction *x, int stage, const char *staging, const char *to
     int rc;
     if (several)
         rc = renameat(x->dir, staging, x->dir, name);
-    else if (fstatat(stage, top, &st, AT_SYMLINK_NOFOLLOW))
+    else if (fstatat(stage, selected, &st, AT_SYMLINK_NOFOLLOW))
         rc = -1;
     else {
         /* A folder can only replace an empty folder, so a check-then-rename is
          * enough; files use an exclusive reservation instead. */
-        rc = S_ISDIR(st.st_mode) ? renameat(stage, top, x->dir, name)
-                                 : extract_publish_file(stage, top, x->dir, name);
-        if (!rc) unlinkat(x->dir, staging, AT_REMOVEDIR);
+        rc = S_ISDIR(st.st_mode) ? renameat(stage, selected, x->dir, name)
+                                 : extract_publish_file(stage, selected, x->dir, name);
+        if (!rc) extract_discard(x->dir, x->path, x->job_id);
     }
     if (rc) {
         snprintf(error, cap, "Could not move the extracted files into place.");
@@ -555,7 +600,7 @@ int extract_archive(Extraction *x, char *error, size_t cap) {
     int rc = extract_unencrypted(x, error, cap);
     if (rc != -1 || !strstr(error, "Password-protected")) return rc;
     const char *passwords[] = {x->password, "DLPSGAME.COM", "[DLPSGAME.COM]", "SuperPSX",
-                               "www.DLPSGAME.COM", "downloadgameps3.com", "hako"};
+                               "www.DLPSGAME.COM", "downloadgameps3.com", "hako", "pippo"};
     for (size_t i = 0; i < sizeof passwords / sizeof passwords[0]; i++) {
         if (!passwords[i] || !*passwords[i]) continue;
         bool duplicate = false;
@@ -671,7 +716,7 @@ invalid:
 }
 int inspect_archive(Extraction *x, int64_t *bytes, char format[12], char *error, size_t cap) {
     const char *passwords[] = {x->password ? x->password : "", "DLPSGAME.COM", "[DLPSGAME.COM]", "SuperPSX",
-                               "www.DLPSGAME.COM", "downloadgameps3.com", "hako"};
+                               "www.DLPSGAME.COM", "downloadgameps3.com", "hako", "pippo"};
     *bytes = 0; format[0] = 0;
     for (size_t i = 0; i < sizeof passwords / sizeof passwords[0]; i++) {
         if (stopped(x)) return 1;

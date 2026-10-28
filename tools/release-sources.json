@@ -88,5 +88,10 @@
   "name": "7z2603-src.7z",
   "url": "https://github.com/ip7z/7zip/releases/download/26.03/7z2603-src.7z",
   "sha256": "41e2a7c0e9f838351c625e01f0f581a2188bb3dda10c8e0b4a852da26546ffe2"
+ },
+ {
+  "name": "sqlite-amalgamation-3540100.zip",
+  "url": "https://www.sqlite.org/2026/sqlite-amalgamation-3540100.zip",
+  "sha256": "0a9c8e34352dad46006aa82836d5383bff9dc6bc9ce5a60553c05aa30e6ad1f9"
  }
 ]

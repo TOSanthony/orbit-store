@@ -7,7 +7,9 @@
 // the same way.
 #pragma once
 
+#include <cstdint>
 #include <initializer_list>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -31,6 +33,21 @@ std::string_view from_system(int system_language);
 bool load(const std::string &dir, std::string_view code);
 std::string_view language();
 
+// The languages to choose from, by their own names, as the browser lists them.
+struct Language
+{
+    std::string_view code, name;
+};
+std::span<const Language> languages();
+// The console's language, which Automatic follows.
+void set_system(std::string_view code);
+std::string_view system();
+// Switches to a language from App settings ("" follows the console), from the
+// folder the last load() read. Text from before stays readable until it's redrawn.
+bool choose(std::string_view code);
+// Changes with every load(), so screens can redo text they keep.
+std::uint64_t revision();
+
 // The translation, or the English; valid until the next load. A literal
 // gives a C string, so it fits wherever the screens keep text.
 const char *tr(const char *english);
@@ -48,6 +65,8 @@ std::string decimal(double value);
 // One decimal and the percent sign where the language puts it: 12.5%,
 // 12,5 % in German, %12,5 in Turkish.
 std::string percent(double value);
+// The same for a whole percentage, rounded down (38%, as the interfaces' large figures).
+std::string whole_percent(double value);
 // GB and MB as the language writes them (ГБ in Russian, Go in French).
 std::string_view unit(bool giga);
 // Drive and location names from Orbit and ShadowMount, numbered ones too.

@@ -13,7 +13,7 @@ import urllib.request
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
-from catalog_crypto import FEED, FEED_VERSION, GAMES, RELEASES, unseal, source_envelopes
+from catalog_crypto import FEED, FEED_VERSION, GAMES, RELEASES, ADDONS, unseal, source_envelopes
 
 ROOT = Path(__file__).resolve().parent.parent
 CATALOG = ROOT / "catalog"
@@ -23,6 +23,10 @@ FORMAT_SUFFIXES = {'FFPFSC': '.ffpfsc', 'exFAT': '.exfat', 'FPKG': '.pkg', 'PKG'
 CONTENT_FORMATS = (*FORMAT_SUFFIXES, 'Game folder', 'Unknown')
 # A compressed option keeps the format of the file(s) inside it in `format`.
 COMPRESSION_SUFFIXES = {'zip': '.zip', '7z': '.7z', 'rar': '.rar'}
+# Game tags Browse can filter by. Each needs a label in the apps (browse.ts TAGS,
+# the TV app's tag_label, Zero's catalogue-filter.mjs TAGS) before it is used here.
+KNOWN_TAGS = ('exclusive', 'local-coop', 'split-screen', 'open-world', 'story-driven',
+              'soulslike', 'psvr-supported', 'psvr2-supported')
 MULTIPART = re.compile(r'\.(?:part\d+\.rar|r\d\d|z\d\d|(?:7z|zip)\.\d{3})$', re.IGNORECASE)
 
 
@@ -66,7 +70,8 @@ def check_region(r):
     valid = isinstance(evidence, list) and len(evidence) > 0
     for item in evidence if valid else ():
         item = item if isinstance(item, dict) else {}
-        match = re.fullmatch(content_id(r['titleId']), item.get('contentId', ''))
+        pattern = (r'([A-Z]{2})\d{4}-' + re.escape(r['titleId']) + r'_\d{2}-[A-Z0-9_]{1,16}') if r.get('addonId') else content_id(r['titleId'])
+        match = re.fullmatch(pattern, item.get('contentId', ''))
         expected = region_of(match[1]) if match else None
         if item.get('provider') == 'Prosperopatches':
             agrees = (expected is not None and item.get('pageRegion') == expected[1] and bool(item.get('checkedAt'))
@@ -74,6 +79,11 @@ def check_region(r):
         elif item.get('provider') == 'PlayStation Store':
             agrees = expected is not None and bool(
                 re.fullmatch(STORE_PRODUCT + re.escape(item['contentId']) + '/?', item.get('sourceUrl', '')))
+        elif item.get('provider') == 'Package header' and r.get('addonId'):
+            header = r.get('importEvidence', {}).get('packageHeader', {})
+            agrees = (header.get('status') == 'verified' and header.get('contentId') == item.get('contentId') == r.get('contentId')
+                      and header.get('sfo', {}).get('TITLE_ID') == r['titleId'] and bool(header.get('checkedAt'))
+                      and item.get('sourceUrl') == r['url'])
         else:
             agrees = False
         valid = valid and agrees and expected[0] == region
@@ -85,7 +95,10 @@ def read(name):
     path = CATALOG / name
     if path.exists():
         return json.loads(path.read_text())
-    purpose = {'games.json': GAMES, 'releases.json': RELEASES, 'catalog.json': FEED}[name]
+    purpose = {'games.json': GAMES, 'releases.json': RELEASES, 'catalog.json': FEED,
+               'addons.json': ADDONS, 'addons-catalog.json': FEED}[name]
+    if name == 'addons-catalog.json':
+        return json.loads(unseal((CATALOG / 'catalog.enc').read_bytes(), purpose))['addons']
     value = json.loads(unseal(path.with_suffix('.enc').read_bytes(), purpose))
     return value['releases'] if name == 'catalog.json' else value
 
@@ -411,6 +424,7 @@ def provider_page(source, url):
     patterns = {
         'akirabox': r'https://akirabox\.(?:com|to)/[A-Za-z0-9]{12}/file',
         'datanodes': r'https://datanodes\.to/[A-Za-z0-9]{12}',
+        '1fichier': r'https://1fichier\.com/\?[A-Za-z0-9]{20}',
     }
     if source == 'vikingfile':
         return viking_page(url)
@@ -462,7 +476,7 @@ def verify_viking_release(client, r):
 
 
 def verify_release(client, r):
-    if r.get('sourceId') in ('akirabox', 'datanodes'):
+    if r.get('sourceId') in ('akirabox', 'datanodes', '1fichier'):
         raise ValueError('Review exact filename and byte size on the public file page; download validation happens after the user completes its browser steps')
     if r.get('sourceId') == 'vikingfile':
         if viking_page(r['url']):
@@ -535,10 +549,15 @@ def download_suffix(r):
         raise ValueError('Compressed options need zip, 7z or rar and their extracted size')
     if MULTIPART.search(r['filename']):
         raise ValueError('Multi-part archives are not supported')
+    # Some providers retain a .7z name for an independently identified RAR.
+    # Keep the published filename, but declare the actual decoder as RAR.
+    # The extractor still rejects data that is not the declared format.
+    if compression == 'rar' and r['filename'].lower().endswith('.7z'):
+        return '.7z'
     return COMPRESSION_SUFFIXES[compression]
 
 
-def compile_catalog(games, releases):
+def compile_catalog(games, releases, *, _addon=False):
     by_id = {g["id"]: g for g in games}
     if len(by_id) != len(games) or not 1 <= len(games) <= MAX_RELEASES:
         raise ValueError("Expected unique game identities within the console capacity")
@@ -548,6 +567,8 @@ def compile_catalog(games, releases):
     title_ids = {}
     platforms = {}
     for r in releases:
+        if not _addon and any(k in r for k in ('addonId', 'baseGameId', 'addonType', 'contentId', 'requirements')):
+            raise ValueError('Add-ons belong in the separate add-on catalogue')
         platform = title_platform(r.get('titleId'))
         if r.get('platform', platform) != platform:
             raise ValueError('Release platform/title ID mismatch')
@@ -558,6 +579,10 @@ def compile_catalog(games, releases):
         rank = g.get('newOnOrbitRank')
         if rank is not None and (type(rank) is not int or not 1 <= rank <= 100):
             raise ValueError('New on Orbit rank must be an integer from 1 to 100')
+        tags = g.get('tags')
+        if tags is not None and (type(tags) is not list or not tags or len(tags) > 8 or len(set(tags)) != len(tags) or
+                                 any(t not in KNOWN_TAGS for t in tags)):
+            raise ValueError(f"Tags must be a list of known tags ({', '.join(KNOWN_TAGS)})")
         if g.get('platform', platforms.get(g['id'])) != platforms.get(g['id']):
             raise ValueError('Game platform/title ID mismatch')
         if g.get('externalArtwork'):
@@ -593,17 +618,17 @@ def compile_catalog(games, releases):
                 raise ValueError("Artwork fallback must be a bounded external HTTPS URL")
         if g["artworkLayout"] not in ("wide", "ambient"):
             raise ValueError("Unsupported artwork layout")
-        if r["url"] in urls or r["sourceId"] not in ("archive", "vikingfile", "akirabox", "datanodes") or r["format"] not in CONTENT_FORMATS:
+        if r["url"] in urls or r["sourceId"] not in ("archive", "vikingfile", "akirabox", "datanodes", "1fichier") or r["format"] not in CONTENT_FORMATS:
             raise ValueError("Duplicate or unsupported download source")
         if platforms[g['id']] == 'ps4' and r['format'] not in ('FPKG', 'PKG', 'Unknown'):
             raise ValueError('PS4 catalogue options currently require a raw package')
-        if platforms[g['id']] == 'ps5' and r['format'] == 'PKG':
+        if platforms[g['id']] == 'ps5' and r['format'] == 'PKG' and not _addon:
             raise ValueError('Generic PKG options currently require PS4 identity')
         if 'notes' in r and (not isinstance(r['notes'], str) or len(r['notes'].encode()) > 2048 or
                              any(ord(c) < 32 or ord(c) == 127 for c in r['notes'])):
             raise ValueError('Source notes must be bounded plain text')
         viking = r['sourceId'] == 'vikingfile'
-        generated = r['sourceId'] in ('akirabox', 'datanodes')
+        generated = r['sourceId'] in ('akirabox', 'datanodes', '1fichier')
         if 'browserUrl' in r and not provider_page(r['sourceId'], r['browserUrl']):
             raise ValueError('Unsupported provider browser URL')
         browser_only = provider_page(r['sourceId'], r['url'])
@@ -621,7 +646,7 @@ def compile_catalog(games, releases):
         viking_filename(r)
         if viking and r['provider'] != 'Vikingfile':
             raise ValueError('Vikingfile format/provider/title identity mismatch')
-        if generated and r['provider'] != {'akirabox': 'AkiraBox', 'datanodes': 'DataNodes'}[r['sourceId']]:
+        if generated and r['provider'] != {'akirabox': 'AkiraBox', 'datanodes': 'DataNodes', '1fichier': '1fichier'}[r['sourceId']]:
             raise ValueError('Provider label/source mismatch')
         if (filename != r["filename"] or "/" in filename or "\\" in filename or ".." in filename
                 or any(ord(c) < 32 or ord(c) == 127 for c in filename)
@@ -636,7 +661,12 @@ def compile_catalog(games, releases):
             raise ValueError(f"Missing matching source verification: {r['id']}")
         if not viking and not generated and source_path != filename and evidence.get('sourcePath') != source_path:
             raise ValueError('Missing exact Archive.org subfolder verification')
-        if generated:
+        if r['sourceId'] == '1fichier':
+            if (evidence.get('kind') != 'file-metadata' or evidence.get('exists') is not True or
+                    evidence.get('metadataUrl') != 'https://1fichier.com/check_links.pl' or
+                    evidence.get('httpStatus') != 200):
+                raise ValueError('Missing exact 1fichier metadata evidence')
+        elif generated:
             if (evidence.get('kind') != 'file-page' or evidence.get('exists') is not True or
                     evidence.get('metadataUrl') != r['url'] or evidence.get('httpStatus') != 200):
                 raise ValueError('Missing exact public file-page evidence')
@@ -656,6 +686,9 @@ def compile_catalog(games, releases):
         row.pop('newOnOrbitRank', None)
         if g.get('newOnOrbitRank') is not None:
             row['newOnOrbitRank'] = g['newOnOrbitRank']
+        row.pop('tags', None)
+        if g.get('tags'):
+            row['tags'] = list(g['tags'])
         row['platform'] = platforms[g['id']]
         row["sourceCheckedAt"] = evidence["checkedAt"]
         row["consoleVerified"] = evidence.get("consoleVerified", False)
@@ -684,24 +717,30 @@ def main():
             print(f"Verified single file: {r['id']}", flush=True)
     else:
         rows = compile_catalog(games, releases)
+        from addons import compile_addons
+        addon_path = CATALOG / 'addons.json'
+        addons = read('addons.json') if addon_path.exists() or addon_path.with_suffix('.enc').exists() else []
+        addon_rows = compile_addons(games, releases, addons)
         if args.command == "build":
             save("catalog.json", rows)
+            save("addons-catalog.json", addon_rows)
             revision = json.loads((CATALOG / 'revision.json').read_text())['revision']
-            for path, data in source_envelopes(CATALOG, games, releases, rows, revision):
+            for path, data in source_envelopes(CATALOG, games, releases, rows, revision, addons, addon_rows):
                 temporary = path.with_suffix('.tmp')
                 temporary.write_bytes(data)
                 temporary.replace(path)
-        elif rows != read("catalog.json"):
+        elif rows != read("catalog.json") or addon_rows != read("addons-catalog.json"):
             raise ValueError("Embedded catalogue is stale; run catalog:build")
         else:
             revision = json.loads((CATALOG / 'revision.json').read_text())['revision']
-            expected = [('games.enc', games, GAMES), ('releases.enc', releases, RELEASES),
-                        ('catalog.enc', {'schemaVersion': 1, 'feedVersion': FEED_VERSION, 'revision': revision, 'releases': rows}, FEED)]
+            expected = [('games.enc', games, GAMES), ('releases.enc', releases, RELEASES), ('addons.enc', addons, ADDONS),
+                        ('catalog.enc', {'schemaVersion': 1, 'feedVersion': FEED_VERSION, 'revision': revision,
+                                         'releases': rows, 'addons': addon_rows}, FEED)]
             for name, value, purpose in expected:
                 path = CATALOG / name
                 if not path.exists() or json.loads(unseal(path.read_bytes(), purpose)) != value:
                     raise ValueError('Encrypted catalogue is stale; run catalog:build')
-        print(f"Catalogue: {len(games)} games, {len(rows)} validated options; artwork URLs only")
+        print(f"Catalogue: {len(games)} games, {len(rows)} game options; {len(addons)} add-ons, {len(addon_rows)} add-on options")
 
 
 if __name__ == "__main__":

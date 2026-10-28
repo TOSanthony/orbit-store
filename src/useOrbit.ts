@@ -3,6 +3,7 @@ import { api, ApiError, setToken } from "./api";
 import { groupGames } from "./catalog";
 import { t } from "./i18n";
 import { useSnapshot } from "./useSnapshot";
+import type { SavedFilter } from "./browse";
 import type {
   BrowserSession,
   Game,
@@ -14,8 +15,10 @@ import type {
   System,
 } from "./types";
 export function useOrbit() {
+  const [addons, setAddons] = useState<Game[]>([]);
   const [games, setGames] = useState<Game[]>([]),
     [favorites, setFavorites] = useSnapshot<string[]>([]),
+    [savedFilters, setSavedFilters] = useSnapshot<SavedFilter[]>([]),
     [jobs, setJobs] = useSnapshot<Job[]>([]),
     [storage, setStorage] = useSnapshot<Storage[]>([]);
   const [ready, setReady] = useState(false);
@@ -48,9 +51,10 @@ export function useOrbit() {
           ]),
         ]);
         if (catalogKey.current !== key) {
-          const catalogue = await api<Release[]>("/catalog");
+          const [catalogue, extra] = await Promise.all([api<Release[]>("/catalog"), api<Release[]>("/addons").catch(e => { if (e instanceof ApiError && e.status === 404) return []; throw e; })]);
           if (!alive.current) return;
           setGames(groupGames(catalogue));
+          setAddons(groupGames(extra));
           catalogKey.current = key;
         }
         setSources(sourceSettings);
@@ -67,23 +71,26 @@ export function useOrbit() {
           sys.paired = true;
         }
         if (sys.paired) {
-          const [queue, drives, savedFavorites, providerBrowser] =
+          const [queue, drives, savedFavorites, filters, providerBrowser] =
             await Promise.all([
               api<Job[]>("/downloads"),
               api<Storage[]>("/storage"),
               api<string[]>("/favorites"),
+              api<SavedFilter[]>("/filters"),
               api<BrowserSession>("/browser"),
             ]);
           if (alive.current) {
             setJobs(queue);
             setStorage(drives);
             setFavorites(savedFavorites);
+            setSavedFilters(filters);
             setBrowser(providerBrowser);
           }
         } else {
           setJobs([]);
           setStorage([]);
           setFavorites([]);
+          setSavedFilters([]);
           setBrowser(null);
         }
         if (!alive.current) return;
@@ -103,7 +110,7 @@ export function useOrbit() {
     })();
     polling.current = request;
     return request;
-  }, [setBrowser, setFavorites, setJobs, setSources, setStorage, setSystem]);
+  }, [setBrowser, setFavorites, setJobs, setSavedFilters, setSources, setStorage, setSystem]);
   useEffect(() => {
     alive.current = true;
     void refresh();
@@ -160,10 +167,17 @@ export function useOrbit() {
     await polling.current;
     await refresh();
   };
+  // The last favourite added or removed, for the notice every look shows.
+  const [favoriteNotice, setFavoriteNotice] = useState<{ added: boolean; at: number } | null>(null);
   const favorite = async (gameId: string, value: boolean) => {
     await api<string[]>("/favorites", { gameId, favorite: value });
+    setFavoriteNotice({ added: value, at: Date.now() });
     await polling.current;
     await refresh();
+  };
+  // Save or delete a saved filter; the answer is the whole list.
+  const changeSavedFilters = async (body: Record<string, unknown>) => {
+    setSavedFilters(await api<SavedFilter[]>("/filters", body));
   };
   const saveSources = async (enabled: SourceId[], noticeVersion: number) => {
     await api("/sources", { enabled, acknowledged: true, noticeVersion });
@@ -172,13 +186,16 @@ export function useOrbit() {
     await refresh();
   };
   return {
-    games,
+    games, addons,
     browser,
     ready,
     openProvider,
     cancelProvider,
     favorites,
     favorite,
+    favoriteNotice,
+    savedFilters,
+    changeSavedFilters,
     clearHistory,
     jobs,
     storage,

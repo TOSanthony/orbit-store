@@ -4,6 +4,7 @@
 #include "fixture.hpp"
 
 #include "orbit/json.hpp"
+#include "orbit/model.hpp"
 
 #include "../third_party/stb/stb_image_write.h"
 
@@ -11,6 +12,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 
@@ -275,6 +277,44 @@ std::string error_body(const char *message)
     return std::string("{\"error\":") + json::quote(message) + "}";
 }
 
+// Files: invented folders on the fixture's two drives (docs/api.md#files).
+struct FixtureFile
+{
+    const char *folder; // "<drive>:<path>"
+    const char *name;
+    const char *type;
+    double size; // < 0: a folder
+    int days;    // modified this many days before the fixture's date
+    const char *locked;
+};
+constexpr double kGB = 1e9;
+const FixtureFile kFiles[] = {
+    {"usb0:", "homebrew", "folder", -1, 1, ""},
+    {"usb0:", "Backups", "folder", -1, 12, ""},
+    {"usb0:", "orbit-diagnostics", "folder", -1, 3, ""},
+    {"usb0:", "Copper Circuit (PS4).pkg", "package", 10.8 * kGB, 5, ""},
+    {"usb0:", "Glass Orchard.7z", "archive", 3.4 * kGB, 2, ""},
+    {"usb0:homebrew", "Lantern Keep", "folder", -1, 15, ""},
+    {"usb0:homebrew", "Quiet Harbour", "game", -1, 9, "game"},
+    {"usb0:homebrew", "Tidewater.ffpfsc", "image", 48.2 * kGB, 20, "game"},
+    {"usb0:homebrew", "Starfall Rally.exfat", "image", 38.9 * kGB, 4, ""},
+    {"usb0:homebrew", "Frostline.rar", "archive", 31.0 * kGB, 1, ""},
+    {"usb0:homebrew", "Copper Circuit.pkg", "package", 10.8 * kGB, 6, ""},
+    {"usb0:homebrew", "notes.txt", "file", 2048, 30, ""},
+    {"usb0:homebrew/Lantern Keep", "sce_sys", "folder", -1, 15, ""},
+    {"usb0:homebrew/Lantern Keep", "data", "folder", -1, 15, ""},
+    {"usb0:homebrew/Lantern Keep", "eboot.bin", "file", 48.6e6, 15, ""},
+    {"usb0:homebrew/Lantern Keep", "Lantern Keep.dat", "file", 22.4 * kGB, 15, ""},
+    {"usb0:homebrew/Lantern Keep/sce_sys", "about", "folder", -1, 15, ""},
+    {"usb0:homebrew/Lantern Keep/sce_sys", "param.json", "file", 18432, 15, ""},
+    {"usb0:homebrew/Lantern Keep/sce_sys", "icon0.png", "file", 412000, 15, ""},
+    {"usb0:homebrew/Lantern Keep/sce_sys", "pic0.png", "file", 2.1e6, 15, ""},
+    {"internal:", "homebrew", "folder", -1, 2, ""},
+    {"internal:", "orbit-store", "folder", -1, 0, "orbit"},
+    {"internal:", "shadowmount", "folder", -1, 7, ""},
+    {"internal:homebrew", "Glass Orchard", "game", -1, 2, "game"},
+};
+
 } // namespace
 
 Fixture::Fixture(FixtureMode mode) : mode_(mode)
@@ -459,6 +499,15 @@ std::string Fixture::library_json() const
                    ",\"managed\":true,\"canManageSource\":true,\"installedSizeBytes\":null," +
                    "\"sizeBytes\":null,\"sizeStatus\":\"unknown\"}";
     }
+    // ORBIT_FOUND_PKG adds a game installed from a PKG that an older ShadowMount doesn't
+    // list, as Orbit reports it after finding it itself.
+    if (std::getenv("ORBIT_FOUND_PKG") != nullptr)
+        entries += ",{\"titleId\":\"CUSA90012\",\"title\":\"Copper Circuit\",\"platform\":\"ps4\","
+                   "\"format\":\"PKG\",\"path\":\"/user/app/CUSA90012/app.pkg\",\"runtimePath\":\"\","
+                   "\"sourceKey\":\"" + std::string(64, 'c') + "\",\"location\":\"Console storage\","
+                   "\"installed\":true,\"mounted\":false,\"onDrive\":true,\"managed\":false,"
+                   "\"canManageSource\":false,\"installedSizeBytes\":null,\"sizeBytes\":10845000000,"
+                   "\"sizeStatus\":\"ready\",\"foundByOrbit\":true}";
     return "{\"status\":\"ready\",\"message\":\"\",\"provider\":\"ShadowMount\","
            "\"providerVersion\":\"1.7\",\"busy\":false,\"stale\":false,\"checkedAt\":1791100000,"
            "\"updatedAt\":1791100000,\"refreshAfter\":30,\"games\":[" +
@@ -467,7 +516,38 @@ std::string Fixture::library_json() const
            "\"copy_game_source\",\"move_game_source\",\"storage_job_status\","
            "\"storage_job_cancel\"],\"action\":" +
            (library_action_.empty() ? std::string("null") : library_action_) +
-           ",\"storageJob\":null,\"storageError\":\"\",\"storageBusy\":false}";
+           ",\"storageJob\":null,\"storageError\":\"\",\"storageBusy\":false" +
+           // ORBIT_LIBRARY_AUTO shows a scan and a measure Orbit started on its own.
+           (std::getenv("ORBIT_LIBRARY_AUTO") != nullptr ? ",\"scanning\":true,\"measuring\":true}" : "}");
+}
+
+std::string Fixture::files_json(const std::string &storage, const std::string &path) const
+{
+    const std::string folder = storage + ":" + path;
+    std::string entries;
+    for (const FixtureFile &file : kFiles)
+    {
+        if (folder != file.folder)
+            continue;
+        if (!entries.empty())
+            entries += ",";
+        const bool is_folder = file.size < 0.0;
+        entries += "{\"name\":" + json::quote(file.name) + ",\"folder\":" +
+                   (is_folder || std::string(file.type) == "game" ? "true" : "false") + ",\"type\":" + json::quote(file.type) +
+                   ",\"sizeBytes\":" + (is_folder ? std::string("null") : std::to_string(static_cast<long long>(file.size))) +
+                   ",\"modifiedAt\":" + std::to_string(1791100000 - file.days * 86400) + ",\"locked\":" + json::quote(file.locked) +
+                   "}";
+    }
+    return "{\"storageId\":" + json::quote(storage) + ",\"path\":" + json::quote(path) + ",\"entries\":[" + entries +
+           "],\"truncated\":false}";
+}
+
+std::string Fixture::events_json() const
+{
+    std::string out = "{";
+    for (std::size_t i = 0; i < events_.size(); ++i)
+        out += (i ? "," : "") + json::quote(kNotificationEvents[i].name) + (events_[i] ? ":true" : ":false");
+    return out + "}";
 }
 
 std::string Fixture::sources_json() const
@@ -505,7 +585,8 @@ std::string Fixture::service_json() const
            ",\"error\":\"\",\"busy\":false,\"restartRequired\":" +
            (saved_ != running_ ? "true" : "false") +
            ",\"received\":0,\"retryAt\":0,\"checkedAt\":" + number(service_checked_) +
-           ",\"checkAfter\":0}";
+           ",\"checkAfter\":0,\"updateAll\":" + (update_all_ ? "true" : "false") +
+           ",\"tvAppUpdated\":" + json::quote(tv_updated_) + "}";
 }
 
 std::string Fixture::tv_app_json() const
@@ -544,6 +625,8 @@ http::Response Fixture::send(const http::Request &request)
         running_ = saved_;
         service_phase_ = "idle";
         service_checked_ = 0.0;
+        update_all_ = false;
+        tv_updated_.clear();
     }
     response.status = 200;
     response.content_type = "application/json";
@@ -557,12 +640,20 @@ http::Response Fixture::send(const http::Request &request)
             ",\"platform\":\"fixture\",\"paired\":" + (authorised ? "true" : "false") +
             ",\"localSessionAvailable\":true,\"stateHealthy\":true,\"catalogueRevision\":7,"
             "\"preferredStorage\":" +
-            json::quote(preferred_) + ",\"httpPort\":34177}";
+            json::quote(preferred_) + ",\"httpPort\":34177,\"downloadNotifications\":" +
+            (notifications_ ? "true" : "false") + ",\"notificationEvents\":" + events_json() +
+            ",\"deletePackages\":" + (delete_packages_ ? "true" : "false") +
+            ",\"downloadConnections\":" + std::to_string(connections_) + "}";
         return response;
     }
     if (get && path == "/api/v1/sources")
     {
         response.body = sources_json();
+        return response;
+    }
+    if (get && path == "/api/v1/addons")
+    {
+        response.body = "[]";
         return response;
     }
     if (get && path == "/api/v1/catalog")
@@ -601,6 +692,8 @@ http::Response Fixture::send(const http::Request &request)
                            ",\"artworkLayout\":" + json::quote(game.wide ? "wide" : "ambient") +
                            ",\"publisher\":" + json::quote(game.publisher) +
                            ",\"releaseDate\":" + (game.date[0] ? json::quote(game.date) : "null") +
+                           // One tagged game, so Browse offers its Tags filter.
+                           (std::strcmp(game.id, "tidewater") == 0 ? ",\"tags\":[\"exclusive\"]" : "") +
                            ",\"consoleVerified\":false}";
                 }
             }
@@ -647,6 +740,54 @@ http::Response Fixture::send(const http::Request &request)
     json::Value input;
     if (!get)
         json::parse(request.body, &input);
+    if (path == "/api/v1/archive-account")
+    {
+        // Signs in with the password "orbit"; anything else is refused.
+        if (!get && input.text("action") == "sign-in")
+        {
+            if (input.text("password") != "orbit")
+            {
+                response.status = 409;
+                response.body = error_body("Archive.org didn't accept this email or password.");
+                return response;
+            }
+            archive_name_ = "Player One";
+        }
+        else if (!get && input.text("action") == "sign-out")
+            archive_name_.clear();
+        response.body = std::string("{\"signedIn\":") + (archive_name_.empty() ? "false" : "true") +
+                        ",\"name\":" + json::quote(archive_name_) + ",\"busy\":false}";
+        return response;
+    }
+    if (path == "/api/v1/settings/ntfy")
+    {
+        if (!get)
+        {
+            if (input.flag("enabled") && input.text("topic").empty())
+            {
+                response.status = 400;
+                response.body = error_body("Enter a topic of up to 64 letters, numbers, hyphens or underscores.");
+                return response;
+            }
+            ntfy_server_ = input.flag("enabled") ? input.text("server") : std::string();
+            ntfy_topic_ = input.flag("enabled") ? input.text("topic") : std::string();
+        }
+        const bool on = !ntfy_server_.empty() && !ntfy_topic_.empty();
+        response.body = std::string("{\"enabled\":") + (on ? "true" : "false") + ",\"server\":" + json::quote(ntfy_server_) +
+                        ",\"topic\":" + json::quote(ntfy_topic_) + ",\"username\":\"\",\"hasPassword\":false}";
+        return response;
+    }
+    if (path == "/api/v1/settings/ntfy/test" && !get)
+    {
+        if (ntfy_topic_.empty())
+        {
+            response.status = 409;
+            response.body = error_body("Save an ntfy server and topic first.");
+            return response;
+        }
+        response.body = "{\"sent\":true}";
+        return response;
+    }
     if (path == "/api/v1/browser")
     {
         if (!get && input.text("action") == "start")
@@ -729,6 +870,24 @@ http::Response Fixture::send(const http::Request &request)
             saved_ = mode_ == FixtureMode::updates ? "0.6.1" : running_;
             service_phase_ = "saved";
         }
+        else if (action == "update-all")
+        {
+            // The TV app, then Orbit; without a loader Orbit stays saved for a restart.
+            update_all_ = true;
+            if (!input.text("tvAppVersion").empty())
+            {
+                tv_installed_ = mode_ == FixtureMode::updates ? "1.1.0" : tv_installed_;
+                tv_phase_ = "installed";
+                tv_updated_ = input.text("tvAppVersion");
+            }
+            if (!input.text("serviceVersion").empty())
+            {
+                saved_ = mode_ == FixtureMode::updates ? "0.6.1" : running_;
+                service_phase_ = "saved";
+            }
+            else
+                service_phase_ = "updated";
+        }
         else if (action == "stop")
         {
             service_phase_ = "stopping";
@@ -740,6 +899,65 @@ http::Response Fixture::send(const http::Request &request)
         if (!get)
             response.status = 202;
         response.body = service_json();
+        return response;
+    }
+    if (path == "/api/v1/settings/downloads")
+    {
+        if (!get && input.has("downloadConnections"))
+        {
+            const auto connections = input["downloadConnections"].as_int();
+            if (connections < 1 || connections > 64)
+            {
+                response.status = 400;
+                response.body = error_body("Choose 1 to 64 connections per download.");
+                return response;
+            }
+            connections_ = static_cast<int>(connections);
+        }
+        response.body = "{\"concurrentDownloads\":1,\"downloadConnections\":" + std::to_string(connections_) + "}";
+        return response;
+    }
+    if (path == "/api/v1/settings/installation")
+    {
+        if (!get)
+            delete_packages_ = input.flag("deletePackages", delete_packages_);
+        response.body = std::string("{\"deletePackages\":") + (delete_packages_ ? "true" : "false") + "}";
+        return response;
+    }
+    if (path == "/api/v1/settings/notifications")
+    {
+        if (!get)
+        {
+            notifications_ = input.flag("console", input.flag("downloadNotifications", notifications_));
+            for (std::size_t i = 0; i < events_.size(); ++i)
+                events_[i] = input["events"].flag(kNotificationEvents[i].name, events_[i]);
+        }
+        const std::string on = notifications_ ? "true" : "false";
+        response.body = "{\"console\":" + on + ",\"downloadNotifications\":" + on + ",\"events\":" + events_json() + "}";
+        return response;
+    }
+    if (path == "/api/v1/diagnostics" && get)
+    {
+        // A session with one failed download, as the browser's diagnostics shows it.
+        const double now = static_cast<double>(std::time(nullptr));
+        const auto at = [&](double ago) { return std::to_string(static_cast<long long>(now - ago)); };
+        response.body =
+            "{\"version\":" + json::quote(running_) + ",\"generatedAt\":" + at(0) +
+            ",\"platform\":\"ps5\",\"firmware\":\"13.60\",\"stateHealthy\":true,\"catalogueRevision\":7,"
+            "\"launcher\":{\"status\":\"installed\",\"method\":\"shadowmount\"},"
+            "\"downloads\":[{\"download\":3,\"provider\":\"archive\",\"status\":\"error\",\"reason\":\"source-unavailable\"},"
+            "{\"download\":1,\"provider\":\"archive\",\"status\":\"downloading\",\"reason\":\"none\"}],"
+            "\"events\":[{\"at\":" + at(1500) + ",\"phase\":\"start\",\"provider\":\"orbit\",\"status\":\"none\",\"reason\":\"none\",\"download\":0},"
+            "{\"at\":" + at(600) + ",\"phase\":\"transfer-end\",\"provider\":\"archive\",\"status\":\"error\","
+            "\"reason\":\"source-unavailable\",\"download\":3,\"httpStatus\":503,\"received\":1048576,\"total\":5200000000},"
+            "{\"at\":" + at(30) + ",\"phase\":\"transfer-start\",\"provider\":\"archive\",\"status\":\"none\","
+            "\"reason\":\"none\",\"download\":1,\"received\":2100000000,\"total\":9800000000}]}";
+        return response;
+    }
+    if (path == "/api/v1/diagnostics/export" && !get)
+    {
+        response.body = "{\"path\":\"/mnt/usb0/orbit-diagnostics/orbit-diagnostics-20261004-120000.txt\","
+                        "\"storageId\":\"usb0\",\"label\":\"USB storage 1\"}";
         return response;
     }
     if (path == "/api/v1/tv-app")
@@ -775,6 +993,36 @@ http::Response Fixture::send(const http::Request &request)
         response.body = favourites_json();
         return response;
     }
+    if (path == "/api/v1/filters")
+    {
+        json::Value body;
+        if (!get && json::parse(request.body, &body))
+        {
+            // Delete by ID; save replaces the page's filter of the same name.
+            const bool save = body.text("action") == "save";
+            std::erase_if(saved_filters_, [&](const std::string &raw)
+                          {
+                              json::Value entry;
+                              json::parse(raw, &entry);
+                              return save ? entry.text("page") == body.text("page") && entry.text("name") == body.text("name")
+                                          : entry.text("id") == body.text("id");
+                          });
+            const std::size_t at = request.body.find("\"filters\":");
+            if (save && at != std::string::npos)
+            {
+                char id[24];
+                std::snprintf(id, sizeof id, "f%016d", next_filter_++);
+                saved_filters_.push_back("{\"id\":\"" + std::string(id) + "\",\"name\":" + json::quote(body.text("name")) +
+                                         ",\"page\":" + json::quote(body.text("page")) + "," +
+                                         request.body.substr(at, request.body.rfind('}') - at) + "}");
+            }
+        }
+        std::string out = "[";
+        for (std::size_t i = 0; i < saved_filters_.size(); ++i)
+            out += (i ? "," : "") + saved_filters_[i];
+        response.body = out + "]";
+        return response;
+    }
     if (path == "/api/v1/library")
     {
         response.body = library_json();
@@ -800,6 +1048,54 @@ http::Response Fixture::send(const http::Request &request)
             "\",\"path\":\"/data/homebrew\",\"label\":\"Internal storage\",\"readOnly\":false,"
             "\"freeBytes\":41200000000}],\"busy\":false,\"stale\":false,\"updatedAt\":1791100000,"
             "\"error\":\"\"}";
+        return response;
+    }
+    if (!get && path == "/api/v1/files/list")
+    {
+        json::Value body;
+        if (!json::parse(request.body, &body))
+        {
+            response.status = 400;
+            response.body = error_body("Choose a drive.");
+            return response;
+        }
+        response.body = files_json(body.text("storageId"), body.text("path"));
+        return response;
+    }
+    if (get && path == "/api/v1/files/status")
+    {
+        response.body = "{\"operation\":" + file_operation_ + "}";
+        return response;
+    }
+    if (!get && path == "/api/v1/files/action")
+    {
+        json::Value body;
+        json::parse(request.body, &body);
+        const std::string action = body.text("action");
+        const std::string from = body.text("path");
+        const std::string name = from.substr(from.rfind('/') == std::string::npos ? 0 : from.rfind('/') + 1);
+        if (action == "pause" || action == "resume" || action == "cancel")
+        {
+            const std::string state = action == "pause" ? "paused" : action == "resume" ? "running" : "cancelled";
+            const std::size_t at = file_operation_.find("\"state\":\"");
+            if (at != std::string::npos)
+            {
+                const std::size_t end = file_operation_.find('"', at + 9);
+                file_operation_.replace(at + 9, end - at - 9, state);
+            }
+        }
+        else if (action != "rename" && action != "folder" && action != "password")
+        {
+            // Copy, move, delete, unpack, install and measure: running, two fifths done.
+            file_operation_ = "{\"id\":\"op-" + action + "\",\"action\":" + json::quote(action) +
+                              ",\"state\":\"running\",\"name\":" + json::quote(name) + ",\"storageId\":" +
+                              json::quote(body.text("storageId")) + ",\"path\":" + json::quote(from) +
+                              ",\"toStorageId\":" + json::quote(body.text("toStorageId")) + ",\"toPath\":" +
+                              json::quote(body.text("toPath")) +
+                              ",\"processedBytes\":12400000000,\"totalBytes\":31000000000,\"speed\":96000000,"
+                              "\"error\":\"\",\"sizeBytes\":null}";
+        }
+        response.body = "{\"operation\":" + file_operation_ + "}";
         return response;
     }
     if (!get && path == "/api/v1/library/actions")
@@ -864,6 +1160,23 @@ http::Response Fixture::send(const http::Request &request)
         }
         response.status = 404;
         response.body = error_body("Unknown release.");
+        return response;
+    }
+    if (!get && path == "/api/v1/downloads/clear-history")
+    {
+        // Finished history goes; cancelled entries go unless they keep a partial file.
+        const std::string status = input.text("status");
+        if (status != "complete" && status != "cancelled")
+        {
+            response.status = 400;
+            response.body = error_body("Choose finished or cancelled history.");
+            return response;
+        }
+        jobs_.erase(std::remove_if(jobs_.begin(), jobs_.end(),
+                                   [&](const Job &job)
+                                   { return job.status == status && (status == "complete" || job.received <= 0.0); }),
+                    jobs_.end());
+        response.body = jobs_json();
         return response;
     }
     if (!get && path.rfind("/api/v1/downloads/", 0) == 0)

@@ -1,5 +1,7 @@
 #include "ca.h"
 #include "orbit.h"
+#include "packages.h"
+#include "archive_account.h"
 #include "debrid.h"
 #include "extract.h"
 #include <openssl/crypto.h>
@@ -33,6 +35,7 @@ typedef struct Transfer {
     int64_t live[ORBIT_MAX_RANGES];
     TransferWriter *writer;
     unsigned char *window_buffer;
+    unsigned connections; /* this download's share of the setting, before retries halve it */
     struct Transfer *owner;
     int segment;
     char etag[256], modified[128], type[128], error[256];
@@ -43,6 +46,10 @@ typedef struct Transfer {
     CURL *handle;
     char disposition[512];
     double started;
+    DownloadPolicy policy;
+    DownloadHealth health;
+    int64_t network_bytes;
+    bool stalled;
 #ifdef ORBIT_BENCHMARK
     int64_t sample_span;
     double deadline;
@@ -242,7 +249,7 @@ static size_t headers(char *s, size_t a, size_t b, void *arg) {
                       "Provider returned a page instead of a downloadable file.");
         }
         bool generated_provider = !strcmp(t->release->source, "akirabox") ||
-                                  !strcmp(t->release->source, "datanodes");
+                                  !strcmp(t->release->source, "datanodes") || !strcmp(t->release->source, "1fichier");
         if ((t->capture_probe && generated_provider && t->accepted && !t->disposition[0])) {
             t->accepted = false;
             copy_text(t->error, sizeof t->error, "Provider did not identify the selected filename.");
@@ -284,15 +291,19 @@ static size_t body(char *data, size_t a, size_t b, void *arg) {
     }
     /* USB ranges stay in a bounded memory window until the entire response
      * validates. Only adjacent, verified bytes are handed to the disk writer. */
+    Transfer *owner = t->owner ? t->owner : t;
+    owner->network_bytes += (int64_t)n;
     if (t->window_buffer) {
         memcpy(t->window_buffer + t->written, data, n);
         t->written += (int64_t)n;
         return n;
     }
-    Transfer *owner = t->owner ? t->owner : t;
     if (owner->error[0])
         return 0;
+    double before_write = seconds();
     if (transfer_writer_enqueue(owner->writer, (unsigned)t->segment, data, n)) return 0;
+    if (seconds() - before_write > 0.25)
+        owner->health = (DownloadHealth){seconds(), owner->network_bytes};
     t->written += (int64_t)n;
     unsigned count = t->job->range_count;
     owner->live[t->segment] = t->offset + t->written -
@@ -314,7 +325,15 @@ static int progress(void *arg, curl_off_t dt, curl_off_t dn, curl_off_t ut, curl
     (void)dn;
     (void)ut;
     (void)un;
-    return controlled(arg) ? 1 : 0;
+    Transfer *t = arg, *owner = t->owner ? t->owner : t;
+    if (controlled(t)) return 1;
+    if (!owner->probe && owner->network_bytes < transfer_span(owner) - owner->offset &&
+        owner->policy.timeout && download_stalled(&owner->health, seconds(), owner->network_bytes, &owner->policy)) {
+        owner->stalled = true;
+        copy_text(owner->error, sizeof owner->error, "Download stayed below the minimum speed. Partial file preserved.");
+        return 1;
+    }
+    return owner->stalled ? 1 : 0;
 }
 static int before_request(void *arg, char *remote, char *local, int remote_port, int local_port) {
     (void)remote; (void)local; (void)remote_port; (void)local_port;
@@ -378,13 +397,17 @@ static CURL *request(Transfer *t) {
     curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 20L);
     curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 1024L);
-    curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 60L);
+    curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, (t->owner || !t->probe) ? 0L : 60L);
     curl_easy_setopt(c, CURLOPT_USERAGENT, "OrbitStore/" ORBIT_VERSION);
     /* AkiraBox's file servers require the referring file-page origin. Keep
      * this identical for the one-byte check, every range and resumed requests.
      * Only the public origin is sent, never a signed URL or browser cookies. */
     if (!torbox(t) && !strcmp(t->release->source, "akirabox"))
         curl_easy_setopt(c, CURLOPT_REFERER, "https://akirabox.to/");
+    /* Login-only Archive.org files need its session. The cookies are scoped to
+     * archive.org over HTTPS, so no redirect elsewhere can carry them. */
+    if (!torbox(t) && !strcmp(t->release->source, "archive"))
+        archive_account_apply(c);
     curl_easy_setopt(c, CURLOPT_HEADERFUNCTION, headers);
     curl_easy_setopt(c, CURLOPT_HEADERDATA, t);
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, body);
@@ -546,8 +569,9 @@ static CURLcode run_ranges(Transfer *owner, struct curl_slist *conditions) {
         copy_text(owner->error, sizeof owner->error, "Could not initialize parallel transfer.");
         return CURLE_FAILED_INIT;
     }
-    curl_multi_setopt(multi, CURLMOPT_MAX_TOTAL_CONNECTIONS, (long)count);
-    curl_multi_setopt(multi, CURLMOPT_MAX_HOST_CONNECTIONS, (long)count);
+    const unsigned connections = owner->job->transfer_connections ? owner->job->transfer_connections : 1;
+    curl_multi_setopt(multi, CURLMOPT_MAX_TOTAL_CONNECTIONS, (long)connections);
+    curl_multi_setopt(multi, CURLMOPT_MAX_HOST_CONNECTIONS, (long)connections);
     curl_multi_setopt(multi, CURLMOPT_PIPELINING, 0L);
     for (unsigned i = 0; i < count; i++) {
         int64_t base = range_boundary(transfer_span(owner), count, i);
@@ -567,13 +591,24 @@ static CURLcode run_ranges(Transfer *owner, struct curl_slist *conditions) {
             goto cleanup;
         }
         set_range(handles[i], parts[i].offset, limit, conditions);
-        if (curl_multi_add_handle(multi, handles[i]) != CURLM_OK) {
-            result = CURLE_FAILED_INIT;
-            goto cleanup;
-        }
-        added[i] = true;
     }
-    result = perform_ranges(owner, parts, handles, multi, count);
+    for (unsigned first = 0; first < count; first += connections) {
+        unsigned end = first + connections < count ? first + connections : count;
+        for (unsigned i = first; i < end; i++) {
+            if (!handles[i]) continue;
+            if (curl_multi_add_handle(multi, handles[i]) != CURLM_OK) {
+                result = CURLE_FAILED_INIT;
+                goto cleanup;
+            }
+            added[i] = true;
+        }
+        result = perform_ranges(owner, parts, handles, multi, count);
+        for (unsigned i = first; i < end; i++) {
+            if (added[i]) curl_multi_remove_handle(multi, handles[i]);
+            added[i] = false;
+        }
+        if (result != CURLE_OK) break;
+    }
 cleanup:
     for (unsigned i = 0; i < count; i++) {
 #ifdef ORBIT_BENCHMARK
@@ -632,13 +667,18 @@ static bool usb_destination(const Job *j) {
            j->root[8] == j->storage_id[3];
 }
 static CURLcode run_usb_ranges(Transfer *owner, struct curl_slist *conditions) {
-    const size_t chunk = TRANSFER_BUFFER_BYTES / ORBIT_MAX_RANGES;
+    const unsigned connections = owner->job->transfer_connections ? owner->job->transfer_connections : 1;
+    /* Each request's window shares the 8 MiB, and fits a saved range's writer
+     * buffer; retries send fewer requests, not bigger ones. */
+    const unsigned most = owner->connections > connections ? owner->connections : connections;
+    const unsigned share = most > owner->job->range_count ? most : owner->job->range_count;
+    const size_t chunk = TRANSFER_BUFFER_BYTES / share;
     unsigned char *memory = malloc(TRANSFER_BUFFER_BYTES);
     CURLM *multi = curl_multi_init();
     CURLcode result = CURLE_OK;
     if (!memory || !multi) { result = CURLE_OUT_OF_MEMORY; goto done; }
-    curl_multi_setopt(multi, CURLMOPT_MAX_TOTAL_CONNECTIONS, (long)ORBIT_MAX_RANGES);
-    curl_multi_setopt(multi, CURLMOPT_MAX_HOST_CONNECTIONS, (long)ORBIT_MAX_RANGES);
+    curl_multi_setopt(multi, CURLMOPT_MAX_TOTAL_CONNECTIONS, (long)connections);
+    curl_multi_setopt(multi, CURLMOPT_MAX_HOST_CONNECTIONS, (long)connections);
     curl_multi_setopt(multi, CURLMOPT_PIPELINING, 0L);
     /* Keep old segmented partials intact. Fill each saved range from its own
      * durable cursor; never reinterpret st_size as downloaded progress. */
@@ -653,7 +693,7 @@ static CURLcode run_usb_ranges(Transfer *owner, struct curl_slist *conditions) {
             Transfer parts[ORBIT_MAX_RANGES] = {0};
             unsigned count = 0;
             int64_t next = cursor;
-            for (; count < ORBIT_MAX_RANGES && next < limit; count++) {
+            for (; count < connections && next < limit; count++) {
                 int64_t end = limit - next < (int64_t)chunk ? limit : next + (int64_t)chunk;
                 parts[count] = (Transfer){.job = owner->job, .release = owner->release,
                     .fd = owner->fd, .owner = owner, .segment = (int)segment,
@@ -674,6 +714,7 @@ static CURLcode run_usb_ranges(Transfer *owner, struct curl_slist *conditions) {
                 if (handles[i]) curl_easy_cleanup(handles[i]);
             }
             if (result != CURLE_OK) goto done;
+            double before_write = seconds();
             for (unsigned i = 0; i < count; i++) {
                 if (transfer_writer_enqueue(owner->writer, segment, parts[i].window_buffer,
                                             (size_t)parts[i].written)) {
@@ -681,6 +722,8 @@ static CURLcode run_usb_ranges(Transfer *owner, struct curl_slist *conditions) {
                 }
                 owner->live[segment] += parts[i].written;
             }
+            if (seconds() - before_write > 0.25)
+                owner->health = (DownloadHealth){seconds(), owner->network_bytes};
             cursor = next;
         }
         /* A prior layout can have no saved bytes in its next range. Finish
@@ -761,7 +804,7 @@ cJSON *transfer_benchmark(Job *j, int fd, unsigned count, int64_t bytes, unsigne
     if (!conditions) { rc = CURLE_OUT_OF_MEMORY; goto finish_benchmark; }
     if (!strcmp(j->release.source, "archive") && range_support(&t, conditions, &rc) != 1)
         goto finish_benchmark;
-    j->range_count = count; j->segmented = true; j->total = bytes;
+    j->range_count = count; j->segmented = true; j->total = bytes; j->transfer_connections = count;
     t.sample_span = bytes; t.probe = false;
     if (fsync(fd) || state_save_locked()) {
         copy_text(t.error, sizeof t.error, "Benchmark state could not be saved.");
@@ -822,7 +865,7 @@ static bool checksum(Transfer *t) {
     if (!ctx)
         return false;
     bool ok = EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) == 1;
-    static unsigned char block[65536]; /* One worker thread: kept off its stack. */
+    unsigned char block[65536]; /* Each download worker owns its checksum buffer. */
     unsigned char digest[32] = {0};
     unsigned length = 0;
     while (ok) {
@@ -849,10 +892,19 @@ static bool checksum(Transfer *t) {
         snprintf(hex + 2 * i, 3, "%02x", digest[i]);
     return ok && length == 32 && !strcmp(hex, t->release->sha256);
 }
+static unsigned retry_source(const Job *j) {
+    if (!strcmp(j->delivery, "torbox")) return 5;
+    if (!strcmp(j->release.source, "vikingfile")) return 1;
+    if (!strcmp(j->release.source, "akirabox")) return 2;
+    if (!strcmp(j->release.source, "datanodes")) return 3;
+    if (!strcmp(j->release.source, "1fichier")) return 4;
+    return 0;
+}
 static bool retryable(long status, CURLcode rc) {
-    return status == 429 || status == 500 || status == 503 || status == 502 || status == 504 ||
+    return status == 408 || status == 429 || status == 500 || status == 503 || status == 502 || status == 504 ||
            rc == CURLE_COULDNT_CONNECT || rc == CURLE_COULDNT_RESOLVE_HOST ||
-           rc == CURLE_OPERATION_TIMEDOUT || rc == CURLE_RECV_ERROR || rc == CURLE_PARTIAL_FILE;
+           rc == CURLE_OPERATION_TIMEDOUT || rc == CURLE_RECV_ERROR || rc == CURLE_PARTIAL_FILE ||
+           rc == CURLE_SEND_ERROR || rc == CURLE_GOT_NOTHING;
 }
 typedef struct {
     Job *job;
@@ -876,7 +928,6 @@ static void extraction_progress(void *context, int64_t written) {
 }
 /* The verified archive is still `partial`. Extract it, then delete it or keep it
  * under its own name, as the setting asks. 0 when complete, 1 when paused. */
-static pthread_mutex_t extraction_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int extract_job(Job *j, int dir, const char *partial, char *note, size_t note_cap,
                        char *error, size_t cap) {
     char path[540], folder[160];
@@ -971,6 +1022,9 @@ static void run_job(Job *j) {
                   .limit = r->size,
                   .probe = true};
     memcpy(t.live, j->range_received, sizeof t.live);
+    pthread_mutex_lock(&orbit.mutex);
+    t.policy = orbit.download_policy;
+    pthread_mutex_unlock(&orbit.mutex);
     int dir = -1;
     char partial[192], note[256] = "";
     snprintf(partial, sizeof partial, "%s.part", j->filename);
@@ -1006,6 +1060,25 @@ static void run_job(Job *j) {
     if (t.fd < 0 || fstat(t.fd, &st) || !S_ISREG(st.st_mode) || st.st_nlink != 1) {
         copy_text(t.error, sizeof t.error, "Cannot open a safe partial file.");
         goto finish;
+    }
+    /* O_CREAT may have replaced a manually deleted/renamed partial. An empty
+     * file has no bytes to resume, even if the queue still has durable cursors.
+     * Never infer this from the queue or reset a nonempty file: sparse tails
+     * and intact partials must retain their original ranges and identity. */
+    if (!st.st_size && (j->segmented || j->received || j->etag[0] || j->modified[0])) {
+        pthread_mutex_lock(&orbit.mutex);
+        j->received = 0;
+        j->segmented = false;
+        j->range_count = 0;
+        memset(j->range_received, 0, sizeof j->range_received);
+        j->etag[0] = j->modified[0] = 0;
+        int saved = state_save_locked();
+        pthread_mutex_unlock(&orbit.mutex);
+        memset(t.live, 0, sizeof t.live);
+        if (saved) {
+            copy_text(t.error, sizeof t.error, "Could not persist the download ranges.");
+            goto finish;
+        }
     }
     t.offset = st.st_size;
     int64_t required_length = st.st_size;
@@ -1112,15 +1185,24 @@ static void run_job(Job *j) {
         goto finish;
     }
     bool usb = usb_destination(j), usb_parallel = false;
+    bool single_connection = !strcmp(r->source, "1fichier") && strcmp(j->delivery, "torbox");
+    pthread_mutex_lock(&orbit.mutex);
+    /* The worker reserves this budget before starting. A later settings change
+     * must not let another job overbook connections already in use. */
+    unsigned setting = j->transfer_connections ? j->transfer_connections : 1;
+    pthread_mutex_unlock(&orbit.mutex);
+    t.connections = setting;
     if (!j->segmented) {
-        unsigned count = ORBIT_MAX_RANGES;
+        /* The layout follows the setting when the download starts; a saved
+         * partial keeps its own, and the setting only limits its requests. */
+        unsigned count = setting;
 #ifdef ORBIT_TEST
         const char *connections = getenv("ORBIT_TEST_CONNECTIONS");
         if (connections && !strcmp(connections, "2")) count = 2;
         else if (connections && !strcmp(connections, "4")) count = 4;
 #endif
         bool parallel = false;
-        if (j->etag[0] && t.offset < range_boundary(r->size, count, 1) &&
+        if (!single_connection && j->etag[0] && t.offset < range_boundary(r->size, count, 1) &&
             r->size - t.offset >= PARALLEL_MIN_REMAINING) {
             int supported = viking ? 1 : range_support(&t, conditions, &rc);
             if (supported < 0) goto finish;
@@ -1147,7 +1229,7 @@ static void run_job(Job *j) {
     }
     /* A one-cursor USB job may have used either range windows or a host that
      * ignores ranges. Recheck on resume; do not require a new queue schema. */
-    if (usb && !usb_parallel && j->etag[0] && t.offset < r->size) {
+    if (!single_connection && usb && !usb_parallel && j->etag[0] && t.offset < r->size) {
         int supported = viking ? 1 : range_support(&t, conditions, &rc);
         if (supported < 0) goto finish;
         usb_parallel = supported == 1;
@@ -1155,9 +1237,11 @@ static void run_job(Job *j) {
     if (t.offset < r->size) {
         t.probe = false;
         t.started = seconds();
+        t.health = (DownloadHealth){t.started, 0};
         pthread_mutex_lock(&orbit.mutex);
-        j->transfer_connections = usb && (usb_parallel || j->range_count > 1)
-            ? ORBIT_MAX_RANGES : j->range_count;
+        unsigned wanted = usb && (usb_parallel || j->range_count > 1) ? setting
+                          : j->range_count < setting ? j->range_count : setting;
+        j->transfer_connections = download_connections(wanted, j->attempts);
         pthread_mutex_unlock(&orbit.mutex);
         t.writer = transfer_writer_start(j, t.fd, t.started, t.error, sizeof t.error);
         if (!t.writer) goto finish;
@@ -1266,8 +1350,21 @@ finish:
         }
         close(t.fd);
     }
+    /* Archive.org refuses a login-only file, and one it has taken down, with
+     * 401 or 403. Say which and what to do, not an HTTP code. */
+    if (!done && (t.status == 401 || t.status == 403) && !torbox(&t) && !strcmp(r->source, "archive")) {
+        pthread_mutex_lock(&orbit.mutex);
+        bool stopping = j->cancel || j->pause || orbit.stop;
+        pthread_mutex_unlock(&orbit.mutex);
+        if (!stopping) archive_account_refusal(r->url, t.error, sizeof t.error);
+    }
     pthread_mutex_lock(&orbit.mutex);
     j->speed = 0;
+    if (t.status == 429 || t.status == 503) {
+        time_t until = time(NULL) + orbit.download_policy.delay;
+        if (t.retry_at > until) until = t.retry_at;
+        if (until > orbit.source_retry_at[retry_source(j)]) orbit.source_retry_at[retry_source(j)] = until;
+    }
     if (done) {
         copy_text(j->status, sizeof j->status, "complete");
         copy_text(j->verification, sizeof j->verification, r->sha256[0] ? "sha256" : "size");
@@ -1286,12 +1383,12 @@ finish:
     } else if (debrid_waiting) {
         copy_text(j->status, sizeof j->status, "queued");
         j->retry_at = t.retry_at; j->error[0] = 0;
-    } else if (retryable(t.status, rc) && j->attempts < 3) {
+    } else if ((retryable(t.status, rc) || (t.stalled && rc != CURLE_WRITE_ERROR)) &&
+               j->attempts < orbit.download_policy.retries &&
+               (!j->received || j->etag[0] || j->modified[0])) {
         j->attempts++;
-        time_t fallback = time(NULL) + (time_t)(5U << j->attempts);
+        time_t fallback = time(NULL) + orbit.download_policy.delay;
         j->retry_at = t.retry_at > fallback ? t.retry_at : fallback;
-        /* Concurrent failures must never shorten a sibling's Retry-After. */
-        if (j->retry_at > orbit.host_retry_at) orbit.host_retry_at = j->retry_at;
         copy_text(j->status, sizeof j->status, "retrying");
         copy_text(j->error, sizeof j->error, t.error);
     } else {
@@ -1299,16 +1396,30 @@ finish:
         copy_text(j->error, sizeof j->error, t.error[0] ? t.error : "Transfer interrupted.");
     }
     state_save_locked();
+    if (done) packages_completed(j, j->id, j->output[0] ? j->output : j->filename, true);
     diagnostics_event_locked("transfer-end", j, t.status, (int)rc);
+    char notice[512] = ""; /* a DLC title is "base · title · DLC", as in packages.c */
+    if ((done || !strcmp(j->status, "error")) &&
+        notify_wanted_locked(done ? NOTIFY_DOWNLOAD_FINISHED : NOTIFY_DOWNLOAD_FAILED))
+        release_download_title(&j->release, notice, sizeof notice);
     pthread_cond_broadcast(&orbit.changed);
     pthread_mutex_unlock(&orbit.mutex);
+    if (*notice) notify_download(notice, done);
     if (dir >= 0)
         close(dir);
     OPENSSL_cleanse(resolved.url, sizeof resolved.url);
 }
+/* A job the worker gives up on before it starts; its notice is sent after unlocking. */
+static void fail_waiting_locked(Job *j, char (*notices)[512], size_t *count) {
+    copy_text(j->status, sizeof j->status, "error");
+    if (notify_wanted_locked(NOTIFY_DOWNLOAD_FAILED) && *count < 4)
+        release_download_title(&j->release, notices[(*count)++], sizeof notices[0]);
+}
 void *download_worker(void *unused) {
     (void)unused;
     for (;;) {
+        char notices[4][512];
+        size_t notice_count = 0;
         pthread_mutex_lock(&orbit.mutex);
         if (orbit.stop) {
             pthread_mutex_unlock(&orbit.mutex);
@@ -1316,13 +1427,23 @@ void *download_worker(void *unused) {
         }
         Job *next = NULL;
         time_t now = time(NULL);
-        unsigned active = 0;
+        unsigned active = 0, reserved = 0;
         for (size_t i = 0; i < orbit.job_count; i++)
-            if (job_active(&orbit.jobs[i])) active++;
-        if (active < orbit.concurrent_downloads && now >= orbit.host_retry_at &&
+            if (job_active(&orbit.jobs[i])) {
+                active++;
+                reserved += orbit.jobs[i].transfer_connections ? orbit.jobs[i].transfer_connections : 1;
+            }
+        if (active < orbit.concurrent_downloads && reserved < ORBIT_MAX_RANGES &&
             !orbit.state_failed && !orbit.library_storage_busy && !orbit.receiver_active)
             for (size_t i = 0; i < orbit.job_count; i++) {
                 Job *j = &orbit.jobs[i];
+                if (!strcmp(j->status, "retrying") && j->attempts > orbit.download_policy.retries) {
+                    fail_waiting_locked(j, notices, &notice_count);
+                    j->retry_at = 0;
+                    state_save_locked();
+                    continue;
+                }
+                if (now < orbit.source_retry_at[retry_source(j)]) continue;
                 if ((!strcmp(j->status, "queued") && now >= j->retry_at) ||
                     (!strcmp(j->status, "retrying") && now >= j->retry_at)) {
                     if (!source_enabled_locked(&j->release)) {
@@ -1344,7 +1465,7 @@ void *download_worker(void *unused) {
                         }
                     }
                     if (conflict) {
-                        copy_text(j->status, sizeof j->status, "error");
+                        fail_waiting_locked(j, notices, &notice_count);
                         copy_text(j->error, sizeof j->error,
                                   "Another download uses this filename on that drive. Open Downloads to manage it.");
                         state_save_locked();
@@ -1352,21 +1473,29 @@ void *download_worker(void *unused) {
                 }
             }
         if (next) {
+            unsigned setting = orbit.download_connections ? orbit.download_connections : ORBIT_DEFAULT_CONNECTIONS;
+            const unsigned share = ORBIT_MAX_RANGES / (orbit.concurrent_downloads ? orbit.concurrent_downloads : 1);
+            if (setting > share) setting = share ? share : 1;
+            if (setting > ORBIT_MAX_RANGES - reserved) setting = ORBIT_MAX_RANGES - reserved;
+            next->transfer_connections = setting;
             copy_text(next->status, sizeof next->status, "downloading");
             next->error[0] = 0;
             if (state_save_locked()) {
                 copy_text(next->status, sizeof next->status, "error");
                 copy_text(next->error, sizeof next->error, "Could not persist the download start.");
                 pthread_mutex_unlock(&orbit.mutex);
+                for (size_t i = 0; i < notice_count; i++) notify_download(notices[i], false);
                 continue;
             }
             diagnostics_event_locked("transfer-start", next, 0, 0);
             pthread_mutex_unlock(&orbit.mutex);
+            for (size_t i = 0; i < notice_count; i++) notify_download(notices[i], false);
             run_job(next);
         } else {
             struct timespec deadline = {.tv_sec = now + 1, .tv_nsec = 0};
-            pthread_cond_timedwait(&orbit.changed, &orbit.mutex, &deadline);
+            if (!notice_count) pthread_cond_timedwait(&orbit.changed, &orbit.mutex, &deadline);
             pthread_mutex_unlock(&orbit.mutex);
+            for (size_t i = 0; i < notice_count; i++) notify_download(notices[i], false);
         }
     }
     return NULL;

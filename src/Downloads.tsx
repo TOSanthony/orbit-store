@@ -1,3 +1,4 @@
+import { InstallationDialog, InstallationSummary, installationLabel } from "./Installation";
 import { useEffect, useMemo, useState } from "react";
 import { Icon, Modal } from "./components";
 import { Artwork } from "./Artwork";
@@ -9,21 +10,10 @@ import {
   type Storage,
 } from "./types";
 import { formatNumber, placeName, t, tn } from "./i18n";
-const statusLabels: Record<Job["status"], string> = {
-  queued: "Queued",
-  downloading: "Downloading",
-  retrying: "Retrying",
-  verifying: "Verifying",
-  inspecting: "Inspecting archive",
-  extracting: "Extracting",
-  paused: "Paused",
-  error: "Needs attention",
-  complete: "Complete",
-  cancelled: "Cancelled",
-};
-const inactive = (job: Job) => ["complete", "cancelled"].includes(job.status);
-const waiting = (job: Job) =>
-  ["queued", "paused", "retrying"].includes(job.status);
+import { useInterfacePrefs } from "./interfaces/choice";
+import { CrossbarDownloads } from "./interfaces/CrossbarDownloads";
+import { PanoramaDownloads } from "./interfaces/PanoramaDownloads";
+import { inactive, statusLabels, waiting, type DownloadView } from "./jobs";
 export function Downloads({
   jobs,
   games,
@@ -32,6 +22,9 @@ export function Downloads({
   clearHistory,
   browse,
   targetId,
+  openLibrary,
+  concurrent,
+  deletePackages = false,
 }: {
   jobs: Job[];
   games: Game[];
@@ -40,16 +33,22 @@ export function Downloads({
   clearHistory: (status: "complete" | "cancelled") => Promise<void>;
   browse: () => void;
   targetId: string | null;
+  // Finished downloads can open their game in Library (Cinema, Crossbar, Panorama).
+  openLibrary?: (job: Job) => void;
+  // How many downloads run at once (Panorama's live tile).
+  concurrent?: number;
+  // Whether the PS5 deletes a package once it is installed (App settings → Storage).
+  deletePackages?: boolean;
 }) {
-  const [view, setView] = useState<
-    "Active" | "Finished" | "Failed" | "Cancelled"
-  >("Active");
+  const iface = useInterfacePrefs().prefs.name;
+  const [view, setView] = useState<DownloadView>("Active");
   const [error, setError] = useState(""),
     [busy, setBusy] = useState("");
   const [cancel, setCancel] = useState<Job | null>(null),
     [clear, setClear] = useState(false);
   const [forget, setForget] = useState(false);
   const [message, setMessage] = useState("");
+  const [installationJob, setInstallationJob] = useState("");
   const [passwordJob, setPasswordJob] = useState<Job | null>(null);
   const [archivePassword, setArchivePassword] = useState("");
   async function retryExtraction() {
@@ -107,6 +106,7 @@ export function Downloads({
     });
   }
   async function run(job: Job, name: string, remove = false) {
+    if (name === "packages") { setError(""); setInstallationJob(job.id); return; }
     setBusy(job.id);
     setError("");
     setMessage("");
@@ -142,6 +142,206 @@ export function Downloads({
       restoreFocus();
     }
   }
+  // The dialogs every layout shares: archive password, cancel or delete, clear history.
+  const dialogs = (
+    <>
+      {installationJob && jobs.find(j => j.id === installationJob) && <InstallationDialog
+        job={jobs.find(j => j.id === installationJob)!} close={() => { if (!busy) setInstallationJob(""); }} run={run} busy={!!busy} error={error} deletePackages={deletePackages} />}
+      {passwordJob && <Modal title={t("Enter archive password")} close={() => { if (!busy) { setPasswordJob(null); setArchivePassword(""); } }}>
+        <form className="archive-password-form" onSubmit={e => { e.preventDefault(); void retryExtraction(); }}>
+          <h2>{t("Enter archive password")}</h2>
+          <p>{t("Retry extraction using the downloaded archive. Nothing will be downloaded again.")}</p>
+          <label>{t("Archive password")}<input type="password" autoComplete="off" data-initial-focus autoFocus maxLength={128}
+            value={archivePassword} onChange={e => setArchivePassword(e.target.value)} disabled={!!busy} /></label>
+          {error && <p role="alert">{t(error)}</p>}
+          <div className="actions"><button className="primary" type="submit" disabled={!!busy || !archivePassword}>{t("Retry extraction")}</button>
+            <button type="button" disabled={!!busy} onClick={() => { setPasswordJob(null); setArchivePassword(""); }}>{t("Cancel")}</button></div>
+        </form>
+      </Modal>}
+      {cancel && (
+        <Modal
+          title={
+            cancel.status === "cancelled"
+              ? t("Delete download")
+              : t("Cancel download")
+          }
+          close={() => !busy && setCancel(null)}
+        >
+          <h2>
+            {cancel.status === "cancelled"
+              ? forget
+                ? t("Remove from history?")
+                : t("Delete this cancelled download?")
+              : t("Cancel this download?")}
+          </h2>
+          <p>
+            {cancel.status === "cancelled"
+              ? forget
+                ? t(
+                    "Only the history entry will be removed. Any partial file stays on its drive and must be deleted before downloading there again.",
+                  )
+                : t(
+                    "Delete the partial file and remove this entry. If the file is already gone, the entry will still be removed. Completed files are kept.",
+                  )
+              : t(
+                  "Keep the partial file to resume later, or delete only the partial file. Downloaded files are never deleted through history cleanup.",
+                )}
+          </p>
+          {error && (
+            <p className="job-error" role="alert">
+              {t(error)}
+            </p>
+          )}
+          <div className="dialog-actions">
+            {cancel.status === "cancelled" ? (
+              <>
+                <button
+                  className="danger"
+                  disabled={!!busy}
+                  onClick={() => void run(cancel, forget ? "forget" : "delete")}
+                >
+                  {forget ? t("Remove from history") : t("Delete download")}
+                </button>
+                {!forget && (
+                  <button
+                    disabled={!!busy}
+                    onClick={() => {
+                      setForget(true);
+                      setError("");
+                    }}
+                  >
+                    {t("Remove from history")}
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => void run(cancel, "cancel")}
+                  disabled={!!busy}
+                >
+                  {t("Keep partial file")}
+                </button>
+                <button
+                  className="danger"
+                  onClick={() => void run(cancel, "cancel", true)}
+                  disabled={!!busy}
+                >
+                  {t("Delete partial file")}
+                </button>
+              </>
+            )}
+            <button disabled={!!busy} onClick={() => setCancel(null)}>
+              {t("Go back")}
+            </button>
+          </div>
+        </Modal>
+      )}
+      {clear && (
+        <Modal
+          title={
+            view === "Cancelled"
+              ? t("Clear cancelled history")
+              : t("Clear finished history")
+          }
+          close={() => !busy && setClear(false)}
+        >
+          <h2>
+            {view === "Cancelled"
+              ? t("Clear cancelled history?")
+              : t("Clear finished history?")}
+          </h2>
+          <p>
+            {view === "Cancelled"
+              ? t(
+                  "Remove cancelled entries with no partial file. Kept partials stay listed for recovery.",
+                )
+              : t(
+                  "Remove completed entries from history. Your downloaded files stay on the drive.",
+                )}
+          </p>
+          <div className="dialog-actions">
+            <button
+              className="primary"
+              disabled={!!busy}
+              onClick={() => void clearSelectedHistory()}
+            >
+              {t("Clear history")}
+            </button>
+            <button disabled={!!busy} onClick={() => setClear(false)}>
+              {t("Keep history")}
+            </button>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+  if (iface === "crossbar")
+    return (
+      <CrossbarDownloads
+        groups={groups}
+        queued={queued}
+        view={view}
+        setView={(v) => {
+          setView(v);
+          setMessage("");
+        }}
+        targetId={targetId}
+        gameByRelease={gameByRelease}
+        drives={drives}
+        busy={busy}
+        error={error}
+        message={message}
+        run={run}
+        cancel={(job) => {
+          setForget(false);
+          setError("");
+          setCancel(job);
+        }}
+        password={(job) => {
+          setArchivePassword("");
+          setError("");
+          setPasswordJob(job);
+        }}
+        clear={() => setClear(true)}
+        browse={browse}
+        openLibrary={openLibrary}
+        dialogs={dialogs}
+      />
+    );
+  if (iface === "panorama")
+    return (
+      <PanoramaDownloads
+        groups={groups}
+        queued={queued}
+        targetId={targetId}
+        gameByRelease={gameByRelease}
+        drives={drives}
+        concurrent={concurrent}
+        busy={busy}
+        error={error}
+        message={message}
+        run={run}
+        cancel={(job) => {
+          setForget(false);
+          setError("");
+          setCancel(job);
+        }}
+        password={(job) => {
+          setArchivePassword("");
+          setError("");
+          setPasswordJob(job);
+        }}
+        clear={(v) => {
+          // The clear dialog and its request follow the view.
+          setView(v);
+          setClear(true);
+        }}
+        browse={browse}
+        openLibrary={openLibrary}
+        dialogs={dialogs}
+      />
+    );
   return (
     <section className="page downloads">
       <div className="page-heading">
@@ -341,7 +541,9 @@ export function Downloads({
                       <code dir="ltr">{j.path}</code>
                     </p>
                   )}
+                  <InstallationSummary job={j} />
                   <div className="queue-actions">
+                    {j.status === "complete" && <button disabled={!!busy} onClick={() => void run(j, "packages")}>{installationLabel(j)}</button>}
                     {j.canEnterArchivePassword && <button disabled={!!busy || !drive} onClick={() => {
                       setArchivePassword(""); setError(""); setPasswordJob(j);
                     }}>{t("Enter archive password")}</button>}
@@ -425,133 +627,7 @@ export function Downloads({
           })}
         </div>
       )}
-      {passwordJob && <Modal title={t("Enter archive password")} close={() => { if (!busy) { setPasswordJob(null); setArchivePassword(""); } }}>
-        <form className="archive-password-form" onSubmit={e => { e.preventDefault(); void retryExtraction(); }}>
-          <h2>{t("Enter archive password")}</h2>
-          <p>{t("Retry extraction using the downloaded archive. Nothing will be downloaded again.")}</p>
-          <label>{t("Archive password")}<input type="password" autoComplete="off" data-initial-focus autoFocus maxLength={128}
-            value={archivePassword} onChange={e => setArchivePassword(e.target.value)} disabled={!!busy} /></label>
-          {error && <p role="alert">{t(error)}</p>}
-          <div className="actions"><button className="primary" type="submit" disabled={!!busy || !archivePassword}>{t("Retry extraction")}</button>
-            <button type="button" disabled={!!busy} onClick={() => { setPasswordJob(null); setArchivePassword(""); }}>{t("Cancel")}</button></div>
-        </form>
-      </Modal>}
-      {cancel && (
-        <Modal
-          title={
-            cancel.status === "cancelled"
-              ? t("Delete download")
-              : t("Cancel download")
-          }
-          close={() => !busy && setCancel(null)}
-        >
-          <h2>
-            {cancel.status === "cancelled"
-              ? forget
-                ? t("Remove from history?")
-                : t("Delete this cancelled download?")
-              : t("Cancel this download?")}
-          </h2>
-          <p>
-            {cancel.status === "cancelled"
-              ? forget
-                ? t(
-                    "Only the history entry will be removed. Any partial file stays on its drive and must be deleted before downloading there again.",
-                  )
-                : t(
-                    "Delete the partial file and remove this entry. If the file is already gone, the entry will still be removed. Completed files are kept.",
-                  )
-              : t(
-                  "Keep the partial file to resume later, or delete only the partial file. Downloaded files are never deleted through history cleanup.",
-                )}
-          </p>
-          {error && (
-            <p className="job-error" role="alert">
-              {t(error)}
-            </p>
-          )}
-          <div className="dialog-actions">
-            {cancel.status === "cancelled" ? (
-              <>
-                <button
-                  className="danger"
-                  disabled={!!busy}
-                  onClick={() => void run(cancel, forget ? "forget" : "delete")}
-                >
-                  {forget ? t("Remove from history") : t("Delete download")}
-                </button>
-                {!forget && (
-                  <button
-                    disabled={!!busy}
-                    onClick={() => {
-                      setForget(true);
-                      setError("");
-                    }}
-                  >
-                    {t("Remove from history")}
-                  </button>
-                )}
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => void run(cancel, "cancel")}
-                  disabled={!!busy}
-                >
-                  {t("Keep partial file")}
-                </button>
-                <button
-                  className="danger"
-                  onClick={() => void run(cancel, "cancel", true)}
-                  disabled={!!busy}
-                >
-                  {t("Delete partial file")}
-                </button>
-              </>
-            )}
-            <button disabled={!!busy} onClick={() => setCancel(null)}>
-              {t("Go back")}
-            </button>
-          </div>
-        </Modal>
-      )}
-      {clear && (
-        <Modal
-          title={
-            view === "Cancelled"
-              ? t("Clear cancelled history")
-              : t("Clear finished history")
-          }
-          close={() => !busy && setClear(false)}
-        >
-          <h2>
-            {view === "Cancelled"
-              ? t("Clear cancelled history?")
-              : t("Clear finished history?")}
-          </h2>
-          <p>
-            {view === "Cancelled"
-              ? t(
-                  "Remove cancelled entries with no partial file. Kept partials stay listed for recovery.",
-                )
-              : t(
-                  "Remove completed entries from history. Your downloaded files stay on the drive.",
-                )}
-          </p>
-          <div className="dialog-actions">
-            <button
-              className="primary"
-              disabled={!!busy}
-              onClick={() => void clearSelectedHistory()}
-            >
-              {t("Clear history")}
-            </button>
-            <button disabled={!!busy} onClick={() => setClear(false)}>
-              {t("Keep history")}
-            </button>
-          </div>
-        </Modal>
-      )}
+      {dialogs}
     </section>
   );
 }

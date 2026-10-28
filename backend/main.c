@@ -1,7 +1,11 @@
 #include "orbit.h"
+#include "packages.h"
 #include "receive.h"
 #include "zero_probe.h"
 #include "debrid.h"
+#include "archive_account.h"
+#include "ntfy.h"
+#include "files.h"
 #include <curl/curl.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -12,13 +16,18 @@
 #include <string.h>
 #include <sys/file.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 #ifndef ORBIT_DESKTOP
 #include <ps5/kernel.h>
-extern int sceKernelSendNotificationRequest(int, const void *, size_t, int);
 #endif
-static volatile sig_atomic_t stopping;
+static volatile sig_atomic_t stopping, signalled;
 static atomic_bool stop_requested;
+static atomic_int restart_loader = -1;
+/* Written just before a restart Orbit started itself hands over; the new process waits a
+ * little for the old one's lock and port instead of reporting a running copy. */
+#define HANDOFF "restart-handoff"
+#define HANDOFF_SECONDS 30
 #ifdef ORBIT_INSTALL_LAUNCHER
 #include "install.h"
 #endif
@@ -26,16 +35,6 @@ static atomic_bool stop_requested;
 /* The runtime this payload saves on the console; see launcher/runtime_image.c. */
 extern const unsigned char orbit_runtime_image[], orbit_runtime_image_end[];
 #endif
-static int notify_console(const char *text) {
-#ifndef ORBIT_DESKTOP
-    unsigned char notification[3120] = {0};
-    snprintf((char *)notification + 45, sizeof notification - 45, "%s", text);
-    return sceKernelSendNotificationRequest(0, notification, sizeof notification, 0);
-#else
-    (void)text;
-    return 0;
-#endif
-}
 int pairing_notify(void) {
 #if defined(ORBIT_DESKTOP) && !defined(ORBIT_TEST)
     return -1;
@@ -49,7 +48,30 @@ int pairing_notify(void) {
 }
 static void stop_signal(int n) {
     (void)n;
+    signalled = 1;
     stopping = 1;
+}
+void orbit_restart_after_stop(int loader) {
+    atomic_store(&restart_loader, loader);
+}
+static void handoff_wait(void) {
+    struct timespec quarter = {.tv_nsec = 250000000};
+    nanosleep(&quarter, NULL);
+}
+static bool handoff_pending(int state_fd) {
+    struct stat st;
+    time_t now = time(NULL);
+    return !fstatat(state_fd, HANDOFF, &st, AT_SYMLINK_NOFOLLOW) && S_ISREG(st.st_mode) &&
+           st.st_mtime <= now && now - st.st_mtime < HANDOFF_SECONDS;
+}
+static void handoff_mark(int state_fd) {
+    /* A fresh, empty file: a name linked to anything else is replaced, never written through. */
+    unlinkat(state_fd, HANDOFF, 0);
+    int fd = openat(state_fd, HANDOFF, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+    if (fd >= 0) {
+        fsync(fd);
+        close(fd);
+    }
 }
 void orbit_request_stop(void) {
     atomic_store(&stop_requested, true);
@@ -103,11 +125,21 @@ int main(int argc, char **argv) {
         return 1;
     }
 #ifdef ORBIT_TEST
+    /* The SDK's encoding, e.g. 0x13600000 for 13.60. */
+    const char *test_firmware = getenv("ORBIT_TEST_FIRMWARE");
+    if (test_firmware) orbit.firmware = (uint32_t)strtoul(test_firmware, NULL, 16);
     const char *url = getenv("ORBIT_TEST_URL"), *size = getenv("ORBIT_TEST_SIZE"),
                *sha = getenv("ORBIT_TEST_SHA256");
     if (!url || strncmp(url, "http://127.0.0.1:", 17) || !size) {
         fputs("Tests require a loopback fixture URL and size.\n", stderr);
         return 1;
+    }
+    const char *addon_fixture = getenv("ORBIT_TEST_ADDON");
+    if (addon_fixture) {
+        size_t selected = 0;
+        while (selected < orbit.release_count && strcmp(orbit.releases[selected].id, addon_fixture)) selected++;
+        if (selected == orbit.release_count || !orbit.releases[selected].addon_id[0]) return 1;
+        Release saved = orbit.releases[0]; orbit.releases[0] = orbit.releases[selected]; orbit.releases[selected] = saved;
     }
     copy_text(orbit.releases[0].url, sizeof orbit.releases[0].url, url);
     orbit.releases[0].size = strtoll(size, NULL, 10);
@@ -119,6 +151,11 @@ int main(int argc, char **argv) {
     const char *browser_url = getenv("ORBIT_TEST_BROWSER_URL");
     if (browser_url) copy_text(orbit.releases[0].browser_url, sizeof orbit.releases[0].browser_url, browser_url);
     cJSON *fixture = cJSON_GetArrayItem(orbit.catalog, 0);
+    if (addon_fixture) {
+        cJSON_ArrayForEach(fixture, orbit.addons)
+            if (!strcmp(json_text(fixture, "id"), addon_fixture)) break;
+        if (!fixture) return 1;
+    }
     const char *compression = getenv("ORBIT_TEST_COMPRESSION"), *extracted = getenv("ORBIT_TEST_EXTRACTED_SIZE");
     if (compression) {
         /* The fixture file becomes a compressed option with the same stem. */
@@ -172,8 +209,17 @@ int main(int argc, char **argv) {
         perror("Orbit state lock");
         return 1;
     }
-    if (flock(lock, LOCK_EX | LOCK_NB)) {
-        int error = errno;
+    int busy = flock(lock, LOCK_EX | LOCK_NB), lock_error = errno;
+    bool handoff = handoff_pending(orbit.state_fd);
+    for (int wait = 0; busy && handoff && (lock_error == EWOULDBLOCK || lock_error == EAGAIN) &&
+                       wait < 60; wait++) {
+        handoff_wait();
+        busy = flock(lock, LOCK_EX | LOCK_NB);
+        lock_error = errno;
+    }
+    if (!busy && handoff) unlinkat(orbit.state_fd, HANDOFF, 0);
+    if (busy) {
+        int error = lock_error;
         close(lock);
         close(orbit.state_fd);
         if (error == EWOULDBLOCK || error == EAGAIN) {
@@ -248,9 +294,17 @@ int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
     diagnostics_stage("listener", "started", 0);
     debrid_start();
+    archive_account_load();
+    ntfy_load();
+    packages_init();
     receive_start();
     zero_probe_start();
     startup_result = api_start();
+    /* After a handoff the previous process may still be releasing the port. */
+    for (int wait = 0; startup_result && handoff && wait < 40; wait++) {
+        handoff_wait();
+        startup_result = api_start();
+    }
     diagnostics_stage("listener", startup_result ? "error" : "ok", startup_result);
     if (startup_result) {
         char message[200];
@@ -320,6 +374,8 @@ int main(int argc, char **argv) {
     diagnostics_stage("library", startup_result ? "error" : "ok", startup_result);
     if (startup_result)
         puts("Library worker could not start; the server remains available.");
+    startup_result = packages_start();
+    diagnostics_stage("packages", startup_result ? "error" : "ok", startup_result);
     diagnostics_stage("tv-app", "started", 0);
     startup_result = tvapp_start();
     diagnostics_stage("tv-app", startup_result ? "error" : "ok", startup_result);
@@ -360,17 +416,30 @@ int main(int argc, char **argv) {
     pthread_mutex_unlock(&orbit.mutex);
     art_stop();
     debrid_stop();
+    archive_account_clear();
     tvapp_stop();
     browser_stop();
+    files_stop(); /* before the installer it may be following */
+    packages_stop();
     library_stop();
     updates_stop();
     catalog_stop();
     for (unsigned i = 0; i < orbit.worker_count; i++) pthread_join(orbit.workers[i], NULL);
+    ntfy_stop(); /* after the workers, the last to queue a notification */
     api_stop();
     curl_global_cleanup();
     cJSON_Delete(orbit.catalog);
+    cJSON_Delete(orbit.addons);
     diagnostics_stage("shutdown", "ok", 0);
+    int loader = atomic_load(&restart_loader);
+    /* Told to stop by a signal: that wins over a restart an update asked for around the same time. */
+    if (loader >= 0 && signalled) {
+        close(loader);
+        loader = -1;
+    }
+    if (loader >= 0) handoff_mark(orbit.state_fd);
     close(lock);
     close(orbit.state_fd);
+    if (loader >= 0) updates_restart_send(loader, runtime, runtime_size);
     return 0;
 }

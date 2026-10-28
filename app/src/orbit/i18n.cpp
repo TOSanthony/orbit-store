@@ -12,6 +12,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <map>
+#include <memory>
+#include <vector>
 
 namespace orbit::i18n
 {
@@ -32,9 +34,26 @@ enum Category : std::uint8_t
 };
 using Forms = std::array<std::string, 4>;
 
+struct Catalogue
+{
+    std::map<std::string, std::string, std::less<>> strings;
+    std::map<std::string, Forms, std::less<>> plurals;
+};
+
 std::string current = "en";
-std::map<std::string, std::string, std::less<>> strings;
-std::map<std::string, Forms, std::less<>> plurals;
+std::string system_code = "en";
+std::string folder_path;
+std::uint64_t revision_count = 0;
+// A language chosen in App settings replaces the catalogue while screens may still
+// hold its text, so a replaced catalogue is kept, never freed. English has none.
+std::vector<std::unique_ptr<Catalogue>> kept;
+const Catalogue *active = nullptr;
+const Catalogue no_catalogue;
+
+const Catalogue &catalogue()
+{
+    return active != nullptr ? *active : no_catalogue;
+}
 
 // The integer rules of the shipped languages, as Intl.PluralRules has them.
 // French and Brazilian Portuguese treat 0 as singular; they, Spanish and
@@ -171,9 +190,10 @@ std::string_view from_system(int system_language)
 
 bool load(const std::string &dir, std::string_view code)
 {
-    strings.clear();
-    plurals.clear();
+    active = nullptr;
     current = "en";
+    folder_path = dir;
+    ++revision_count;
     if (!supported(code) || code == "en")
         return code == "en";
     std::string data;
@@ -181,13 +201,14 @@ bool load(const std::string &dir, std::string_view code)
     if (!hui::save::read_file(dir + "/" + std::string(code) + ".json", &data) ||
         !json::parse(data, &root) || !root.is_object())
         return false;
+    auto loaded = std::make_unique<Catalogue>();
     const std::vector<std::string> &keys = root.keys();
     for (std::size_t k = 0; k < keys.size(); ++k)
     {
         const json::Value &value = root[keys[k]];
         if (value.is_string())
         {
-            strings.emplace(keys[k], drawable(value.as_string()));
+            loaded->strings.emplace(keys[k], drawable(value.as_string()));
             continue;
         }
         Forms forms;
@@ -195,10 +216,44 @@ bool load(const std::string &dir, std::string_view code)
         forms[few] = drawable(value.text("few"));
         forms[many] = drawable(value.text("many"));
         forms[other] = drawable(value.text("other"));
-        plurals.emplace(keys[k], std::move(forms));
+        loaded->plurals.emplace(keys[k], std::move(forms));
     }
+    kept.push_back(std::move(loaded));
+    active = kept.back().get();
     current = std::string(code);
     return true;
+}
+
+std::span<const Language> languages()
+{
+    static constexpr Language kLanguages[] = {
+        {"en", "English"},          {"de", "Deutsch"},  {"es", "Espa\xC3\xB1ol"},
+        {"fr", "Fran\xC3\xA7" "ais"}, {"hu", "Magyar"},   {"it", "Italiano"},
+        {"nl", "Nederlands"},       {"pl", "Polski"},   {"pt-BR", "Portugu\xC3\xAAs (Brasil)"},
+        {"ru", "\xD0\xA0\xD1\x83\xD1\x81\xD1\x81\xD0\xBA\xD0\xB8\xD0\xB9"},
+        {"tr", "T\xC3\xBCrk\xC3\xA7" "e"}};
+    return kLanguages;
+}
+
+void set_system(std::string_view code)
+{
+    system_code = supported(code) ? std::string(code) : "en";
+}
+
+std::string_view system()
+{
+    return system_code;
+}
+
+bool choose(std::string_view code)
+{
+    const std::string wanted(code.empty() ? std::string_view(system_code) : code);
+    return wanted != current ? load(folder_path, wanted) : true;
+}
+
+std::uint64_t revision()
+{
+    return revision_count;
 }
 
 std::string_view language()
@@ -208,12 +263,14 @@ std::string_view language()
 
 const char *tr(const char *english)
 {
+    const auto &strings = catalogue().strings;
     const auto found = strings.find(std::string_view(english));
     return found == strings.end() ? english : found->second.c_str();
 }
 
 std::string_view tr(std::string_view english)
 {
+    const auto &strings = catalogue().strings;
     const auto found = strings.find(english);
     return found == strings.end() ? english : std::string_view(found->second);
 }
@@ -227,6 +284,7 @@ std::string trn(long n, std::string_view one_form, std::string_view other_form,
                 std::initializer_list<Var> vars)
 {
     std::string_view text = n == 1 ? one_form : other_form;
+    const auto &plurals = catalogue().plurals;
     const auto found = plurals.find(other_form);
     if (found != plurals.end())
     {
@@ -277,6 +335,16 @@ std::string decimal(double value)
 std::string percent(double value)
 {
     const std::string number = decimal(value);
+    if (current == "tr")
+        return "%" + number;
+    if (current == "de" || current == "es" || current == "fr" || current == "ru")
+        return number + " %";
+    return number + "%";
+}
+
+std::string whole_percent(double value)
+{
+    const std::string number = count(static_cast<long>(std::floor(std::max(0.0, value))));
     if (current == "tr")
         return "%" + number;
     if (current == "de" || current == "es" || current == "fr" || current == "ru")

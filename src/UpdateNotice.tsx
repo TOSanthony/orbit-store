@@ -8,12 +8,17 @@ export function UpdateNotice({
   enabled,
   hidden,
   onViewUpdate,
+  onAvailable,
 }: {
   enabled: boolean;
   hidden: boolean;
   onViewUpdate: () => void;
+  // Crossbar, Cinema and Panorama mark Settings while an update is available.
+  onAvailable?: (available: boolean) => void;
 }) {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
+  const available = enabled && !!status?.updateAvailable;
+  useEffect(() => onAvailable?.(available), [available, onAvailable]);
   const [dismissed, setDismissed] = useState(() => {
     try {
       return sessionStorage.getItem(dismissedKey) || "";

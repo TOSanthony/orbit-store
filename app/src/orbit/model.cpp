@@ -1,3 +1,4 @@
+#include "orbit/download_settings.hpp"
 // Orbit Store TV app - The Orbit API's data, and the storefront rules built on it.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -6,11 +7,24 @@
 #include "orbit/i18n.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
 namespace orbit
 {
+JobProgress job_progress(const Job &job)
+{
+    const auto bytes = [](double value) { return std::isfinite(value) && value > 0.0 ? value : 0.0; };
+    JobProgress p;
+    const bool extracting = job.status == "extracting";
+    p.done = bytes(extracting ? job.extracted : job.received);
+    p.total = bytes(extracting ? job.extract_total : job.send_total > 0.0 ? job.send_total : job.total);
+    p.remaining = std::max(0.0, p.total - p.done);
+    const double speed = bytes(job.speed);
+    if (speed > 0.0) p.minutes = std::ceil(p.remaining / speed / 60.0);
+    return p;
+}
 
 namespace
 {
@@ -118,6 +132,13 @@ int status_rank(std::string_view status)
 BrowserSession parse_browser_session(const json::Value &value)
 {
     BrowserSession session;
+    session.native_dialog_available = value.flag("nativeDialogAvailable");
+    session.dialog_opened = value.flag("dialogOpened");
+    session.viking_account_available = value.flag("vikingAccountAvailable");
+    session.viking_state = value.text("vikingNativeState");
+    session.account_page = value.flag("accountPage");
+    session.client_id = value.text("clientId");
+    session.page_url = value.text("pageUrl");
     session.available = value.flag("available");
     session.active = value.flag("active");
     session.id = value.text("id");
@@ -142,8 +163,32 @@ System parse_system(const json::Value &value)
     system.catalogue_revision = value["catalogueRevision"].as_int();
     system.preferred_storage = value.text("preferredStorage");
     system.delete_archives = value.flag("deleteArchives", true);
+    system.has_download_notifications = value["downloadNotifications"].is_bool();
+    system.download_notifications = value.flag("downloadNotifications", true);
+    {
+        const json::Value &events = value["notificationEvents"];
+        system.has_notification_events = events.is_object();
+        for (std::size_t i = 0; i < system.notification_events.size(); ++i)
+            system.notification_events[i] = events.flag(kNotificationEvents[i].name, true);
+    }
+    system.has_delete_packages = value["deletePackages"].is_bool();
+    system.delete_packages = value.flag("deletePackages", false);
+    system.ntfy_enabled = value.flag("ntfyEnabled", false);
+    {
+        const auto connections = value["downloadConnections"].as_int();
+        system.has_download_connections = connections >= 1 && connections <= 64;
+        system.download_connections = system.has_download_connections ? static_cast<int>(connections) : 8;
+    }
+    system.firmware = value.text("firmware");
     const auto limit = value["concurrentDownloads"].as_int();
     system.concurrent_downloads = limit >= 1 && limit <= 8 ? static_cast<int>(limit) : 1;
+    for (std::size_t i = 0; i < download_settings.size(); ++i) {
+        const auto &setting = download_settings[i];
+        const auto &v = value[setting.key];
+        const auto n = v.as_int();
+        if (v.is_number() && n >= setting.min && n <= setting.max && v.as_number() == n)
+            system.download_recovery[i] = static_cast<int>(n);
+    }
     return system;
 }
 
@@ -183,10 +228,37 @@ Debrid parse_debrid(const json::Value &value)
         host.source_id = item.text("sourceId");
         host.max_file_size = item.number("maxFileSize");
         host.available =
-            item.flag("available") && item["maxFileSize"].is_number() && host.max_file_size >= 0;
+            item.flag("available");
         status.hosts.push_back(std::move(host));
     }
     return status;
+}
+
+ArchiveAccount parse_archive_account(const json::Value &value)
+{
+    ArchiveAccount account;
+    account.known = value["signedIn"].is_bool();
+    account.signed_in = value.flag("signedIn");
+    account.name = value.text("name");
+    return account;
+}
+
+NtfySettings parse_ntfy(const json::Value &value)
+{
+    NtfySettings ntfy;
+    ntfy.known = value["enabled"].is_bool();
+    ntfy.enabled = value.flag("enabled");
+    ntfy.server = value.text("server");
+    ntfy.topic = value.text("topic");
+    ntfy.username = value.text("username");
+    ntfy.has_password = value.flag("hasPassword");
+    return ntfy;
+}
+
+std::string ntfy_address(const NtfySettings &ntfy)
+{
+    const std::size_t scheme = ntfy.server.find("://");
+    return (scheme == std::string::npos ? ntfy.server : ntfy.server.substr(scheme + 3)) + "/" + ntfy.topic;
 }
 
 bool Debrid::supports(const Release &release) const
@@ -195,8 +267,45 @@ bool Debrid::supports(const Release &release) const
         return false;
     for (const Host &host : hosts)
         if (host.source_id == release.source_id && host.available)
-            return host.max_file_size == 0 || release.size_bytes <= host.max_file_size;
+            return true;
     return false;
+}
+
+static void parse_addon(const json::Value &item, AddonInfo &out)
+{
+    out.addon_id = item.text("addonId"); out.base_game_id = item.text("baseGameId");
+    out.base_title = item.text("baseGameTitle"); out.addon_type = item.text("addonType");
+    out.content_id = item.text("contentId");
+    const auto &r = item["requirements"];
+    out.required_edition = r.text("edition"); out.minimum_version = r.text("minimumVersion");
+    out.requirement_notes = r.text("notes");
+    for (const auto &id : r["titleIds"].items()) out.required_title_ids.push_back(id.as_string());
+    for (const auto &entry : item["contents"].items()) out.contents.push_back(entry.as_string());
+}
+std::string addon_type_label(const std::string &type)
+{
+    return tr(type == "expansion" ? "Expansion" : type == "activation" ? "Activation package" : type == "bundle" ? "Bundle" : "Content pack");
+}
+std::string addon_requirements(const AddonInfo &i, const std::vector<LibraryGame> &library)
+{
+    if (i.addon_id.empty()) return {};
+    std::string out = i.base_title + " · " + addon_type_label(i.addon_type) + "\n";
+    if (i.addon_type == "activation") out += std::string(tr("This package activates content already included in the base game. It does not contain that content.")) + "\n";
+    for (const auto &entry : i.contents) out += entry + "\n";
+    std::string ids;
+    for (const auto &id : i.required_title_ids) ids += (ids.empty() ? "" : ", ") + id;
+    out += std::string(tr("Required title ID")) + ": " + (ids.empty() ? std::string(tr("Unknown")) : ids);
+    out += "\n" + std::string(tr("Base-game edition")) + ": " + (i.required_edition.empty() ? tr("Unknown") : i.required_edition);
+    out += "\n" + std::string(tr("Minimum game version")) + ": " + (i.minimum_version.empty() ? tr("Unknown") : i.minimum_version);
+    if (!i.requirement_notes.empty()) out += "\n" + i.requirement_notes;
+    const bool matching = std::any_of(library.begin(), library.end(), [&](const LibraryGame &g)
+    {
+        return (g.installed || g.on_drive) &&
+               std::find(i.required_title_ids.begin(), i.required_title_ids.end(), g.title_id) != i.required_title_ids.end();
+    });
+    out += "\n" + std::string(matching ? tr("A matching base-game title ID was found. This does not confirm edition, version or DLC compatibility.")
+                                       : tr("The required base game could not be confirmed. Check its title ID, edition and version before installing this add-on."));
+    return out + "\n" + tr("You can still download this add-on. Unknown requirements are not a compatibility guarantee.");
 }
 
 std::vector<Release> parse_catalog(const json::Value &value)
@@ -206,6 +315,7 @@ std::vector<Release> parse_catalog(const json::Value &value)
     for (const json::Value &item : value.items())
     {
         Release release;
+        parse_addon(item, release);
         release.id = item.text("id");
         release.game_id = item.text("gameId");
         if (release.id.empty() || release.game_id.empty())
@@ -232,12 +342,18 @@ std::vector<Release> parse_catalog(const json::Value &value)
         const double rank = item.number("newOnOrbitRank");
         if (rank >= 1 && rank <= 100 && rank == static_cast<int>(rank))
             release.new_on_orbit_rank = static_cast<int>(rank);
+        for (const json::Value &tag : item["tags"].items())
+            if (!tag.as_string().empty() && release.tags.size() < 8)
+                release.tags.push_back(tag.as_string());
         release.size_bytes = item.number("sizeBytes");
         release.compression = item.text("compression");
         release.archive_unverified = item.text("archiveContents") == "unverified";
         release.extracted_bytes = item.number("extractedBytes");
         release.browser_available = item.flag("browserAvailable");
         release.direct_available = item.flag("directAvailable", true);
+        release.required_firmware = item.text("requiredFirmware");
+        release.max_firmware = item.text("maxFirmware");
+        release.firmware_issue = item.text("firmwareIssue");
         releases.push_back(std::move(release));
     }
     return releases;
@@ -270,6 +386,7 @@ std::vector<Job> parse_jobs(const json::Value &value)
     for (const json::Value &item : value.items())
     {
         Job job;
+        parse_addon(item, job);
         job.id = item.text("id");
         if (job.id.empty())
             continue;
@@ -285,6 +402,18 @@ std::vector<Job> parse_jobs(const json::Value &value)
         job.error = item.text("error");
         job.verification = item.text("verification");
         job.delivery = item.text("delivery");
+        const auto &installation = item["installation"];
+        job.installation_available = installation.flag("available");
+        job.installation_state = installation.text("state");
+        job.installation_message = installation.text("message");
+        job.shadowmount_state = installation.text("shadowMount");
+        job.shadowmount_message = installation.text("shadowMountMessage");
+        for (const auto &p : installation["packages"].items()) {
+            PackageInstallation pkg;
+            pkg.id = p.text("id"); pkg.filename = p.text("filename"); pkg.platform = p.text("platform");
+            pkg.state = p.text("state"); pkg.message = p.text("message"); pkg.received = p.number("received"); pkg.total = p.number("total");
+            job.packages.push_back(std::move(pkg));
+        }
         job.can_refresh_link = item.flag("canRefreshLink");
         job.can_enter_archive_password = item.flag("canEnterArchivePassword");
         job.delivery_phase = item.text("deliveryPhase");
@@ -304,6 +433,75 @@ std::vector<Job> parse_jobs(const json::Value &value)
     std::stable_sort(jobs.begin(), jobs.end(),
                      [](const Job &a, const Job &b) { return a.order < b.order; });
     return jobs;
+}
+
+namespace
+{
+constexpr const char *kSortIds[] = {"release", "title", "title-desc", "size", "size-desc"};
+constexpr const char *kSizeIds[] = {"", "small", "medium", "large", "huge"};
+
+std::vector<std::string> strings(const json::Value &value)
+{
+    std::vector<std::string> out;
+    for (const json::Value &item : value.items())
+        if (item.is_string() && !item.as_string().empty() && !contains(out, item.as_string()))
+            out.push_back(item.as_string());
+    return out;
+}
+
+std::string string_list(const std::vector<std::string> &values)
+{
+    std::string out = "[";
+    for (std::size_t i = 0; i < values.size(); ++i)
+        out += (i ? "," : "") + json::quote(values[i]);
+    return out + "]";
+}
+} // namespace
+
+std::vector<SavedFilter> parse_saved_filters(const json::Value &value)
+{
+    std::vector<SavedFilter> out;
+    for (const json::Value &item : value.items())
+    {
+        const json::Value &f = item["filters"];
+        if (!item.is_object() || item.text("id").empty() || item.text("name").empty() || !f.is_object())
+            continue;
+        SavedFilter saved;
+        saved.id = item.text("id");
+        saved.name = item.text("name");
+        saved.addons = item.text("page") == "addons";
+        BrowseFilters &b = saved.filters;
+        b.query = f.text("query");
+        b.sources = strings(f["source"]);
+        b.formats = strings(f["format"]);
+        b.tags = strings(f["tags"]);
+        b.region = f.text("region");
+        b.platform = f.text("platform");
+        b.addon_type = f.text("addonType");
+        b.favourites = f.text("collection") == "favorites";
+        b.hide_installed = f.flag("hideInstalled");
+        for (int i = 0; i < static_cast<int>(SizeFilter::count); ++i)
+            if (f.text("size") == kSizeIds[i])
+                b.size = static_cast<SizeFilter>(i);
+        // "added" is the Add-ons page's newest first, Sort::release here.
+        for (int i = 0; i < static_cast<int>(Sort::count); ++i)
+            if (f.text("sort") == kSortIds[i])
+                b.sort = static_cast<Sort>(i);
+        out.push_back(std::move(saved));
+    }
+    return out;
+}
+
+std::string saved_filter_body(std::string_view name, bool addons, const BrowseFilters &f)
+{
+    const char *sort = addons && f.sort == Sort::release ? "added" : kSortIds[static_cast<int>(f.sort)];
+    return "{\"action\":\"save\",\"name\":" + json::quote(name) + ",\"page\":\"" + (addons ? "addons" : "games") +
+           "\",\"filters\":{\"query\":" + json::quote(f.query) + ",\"source\":" + string_list(f.sources) +
+           ",\"format\":" + string_list(f.formats) + ",\"tags\":" + string_list(f.tags) +
+           ",\"region\":" + json::quote(f.region) + ",\"platform\":" + json::quote(f.platform) +
+           ",\"size\":\"" + kSizeIds[static_cast<int>(f.size)] + "\",\"collection\":\"" +
+           (f.favourites ? "favorites" : "all") + "\",\"hideInstalled\":" + (f.hide_installed ? "true" : "false") +
+           ",\"sort\":\"" + sort + "\",\"addonType\":" + json::quote(f.addon_type) + "}}";
 }
 
 std::vector<std::string> parse_favourites(const json::Value &value)
@@ -369,6 +567,7 @@ LibrarySnapshot parse_library(const json::Value &value)
         game.installed = item.flag("installed");
         game.mounted = item.flag("mounted");
         game.on_drive = item.flag("onDrive");
+        game.found_by_orbit = item.flag("foundByOrbit");
         game.managed = item.flag("managed");
         game.can_manage_source = item.flag("canManageSource");
         game.installed_size = optional_bytes(item["installedSizeBytes"]);
@@ -412,6 +611,8 @@ LibrarySnapshot parse_library(const json::Value &value)
     }
     snapshot.storage_error = value.text("storageError");
     snapshot.storage_busy = value.flag("storageBusy");
+    snapshot.scanning = value.flag("scanning");
+    snapshot.measuring = value.flag("measuring");
     return snapshot;
 }
 
@@ -427,6 +628,50 @@ LibraryStorage parse_library_storage(const json::Value &value)
     storage.updated_at = value.number("updatedAt");
     storage.error = value.text("error");
     return storage;
+}
+
+FileListing parse_file_listing(const json::Value &value)
+{
+    FileListing listing;
+    listing.storage_id = value.text("storageId");
+    listing.path = value.text("path");
+    listing.truncated = value.flag("truncated");
+    for (const json::Value &item : value["entries"].items())
+    {
+        FileEntry entry;
+        entry.name = item.text("name");
+        if (entry.name.empty())
+            continue;
+        entry.folder = item.flag("folder");
+        entry.type = item.text("type");
+        entry.size = optional_bytes(item["sizeBytes"]);
+        entry.modified = item.number("modifiedAt");
+        entry.locked = item.text("locked");
+        listing.entries.push_back(std::move(entry));
+    }
+    return listing;
+}
+
+bool parse_file_operation(const json::Value &value, FileOperation *operation)
+{
+    const json::Value &item = value["operation"];
+    *operation = FileOperation{};
+    if (!item.is_object() || item.text("id").empty())
+        return false;
+    operation->id = item.text("id");
+    operation->action = item.text("action");
+    operation->state = item.text("state");
+    operation->name = item.text("name");
+    operation->storage_id = item.text("storageId");
+    operation->path = item.text("path");
+    operation->to_storage_id = item.text("toStorageId");
+    operation->to_path = item.text("toPath");
+    operation->processed = item.number("processedBytes");
+    operation->total = item.number("totalBytes");
+    operation->speed = item.number("speed");
+    operation->size = optional_bytes(item["sizeBytes"]);
+    operation->error = item.text("error");
+    return true;
 }
 
 Session parse_session(const json::Value &value)
@@ -470,6 +715,9 @@ ServiceUpdate parse_service_update(const json::Value &value)
     update.retry_at = value.number("retryAt");
     update.checked_at = value.number("checkedAt");
     update.check_after = value.number("checkAfter");
+    update.self_restart = value.flag("selfRestart");
+    update.update_all = value.flag("updateAll");
+    update.tv_app_updated = value.text("tvAppUpdated");
     return update;
 }
 
@@ -485,6 +733,7 @@ TvAppStatus parse_tv_app(const json::Value &value)
     status.phase = value.text("phase");
     status.error = value.text("error");
     status.busy = value.flag("busy");
+    status.update_available = value.flag("updateAvailable");
     status.received = value.number("received");
     status.retry_at = value.number("retryAt");
     status.checked_at = value.number("checkedAt");
@@ -532,6 +781,7 @@ std::vector<Game> group_games(const std::vector<Release> &releases)
         {
             games.emplace_back();
             game = &games.back();
+            static_cast<AddonInfo &>(*game) = release;
             game->id = release.game_id;
             game->platform = release.platform;
             game->title = release.title;
@@ -544,7 +794,36 @@ std::vector<Game> group_games(const std::vector<Release> &releases)
         }
         game->releases.push_back(release);
     }
+    // Options that run on this PS5 first, so the first one shown is one that will.
+    for (Game &game : games)
+        std::stable_partition(game.releases.begin(), game.releases.end(),
+                              [](const Release &r) { return r.firmware_issue.empty(); });
     return games;
+}
+
+std::string firmware_label(const Release &r)
+{
+    if (r.firmware_issue == "ps5-package")
+        return tr("Needs firmware {version} or lower", {{"version", r.max_firmware}});
+    if (r.firmware_issue == "newer-firmware")
+        return tr("Needs firmware {version} or later", {{"version", r.required_firmware}});
+    std::string text;
+    if (!r.required_firmware.empty())
+        text = tr("Firmware {version} or later", {{"version", r.required_firmware}});
+    if (!r.max_firmware.empty())
+        text += (text.empty() ? "" : " \xC2\xB7 ") + tr("Firmware {version} or lower", {{"version", r.max_firmware}});
+    return text;
+}
+
+std::string firmware_warning(const Release &r, const std::string &current)
+{
+    if (r.firmware_issue == "ps5-package")
+        return tr("This download needs firmware {version} or lower. This PS5 is on {current}.",
+                  {{"version", r.max_firmware}, {"current", current}});
+    if (r.firmware_issue == "newer-firmware")
+        return tr("This download needs firmware {version} or later. This PS5 is on {current}.",
+                  {{"version", r.required_firmware}, {"current", current}});
+    return {};
 }
 
 std::vector<int> latest_games(const std::vector<Game> &games, std::string_view today)
@@ -568,6 +847,14 @@ std::vector<int> latest_games(const std::vector<Game> &games, std::string_view t
     if (result.size() > 20)
         result.resize(20);
     return result;
+}
+
+int grid_jump(int index, int count, int columns, int rows)
+{
+    if (count <= 0 || columns <= 0)
+        return index;
+    const int row = std::clamp(index / columns + rows, 0, (count - 1) / columns);
+    return std::min(row * columns + index % columns, count - 1);
 }
 
 std::vector<int> newly_added_games(const std::vector<Game> &games)
@@ -595,16 +882,16 @@ std::vector<int> newly_added_games(const std::vector<Game> &games)
         const int yr = y.releases.front().new_on_orbit_rank;
         return xr != yr ? xr < yr : compare_folded(x.title, y.title) < 0;
     });
-    if (result.size() > 20)
-        result.resize(20);
+    if (result.size() > 40)
+        result.resize(40);
     std::stable_sort(dated.begin(), dated.end(), [&](const auto &a, const auto &b)
     {
         return a.second != b.second ? a.second > b.second
             : compare_folded(games[static_cast<std::size_t>(a.first)].title,
                              games[static_cast<std::size_t>(b.first)].title) < 0;
     });
-    if (dated.size() > 20 - result.size())
-        dated.resize(20 - result.size());
+    if (dated.size() > 40 - result.size())
+        dated.resize(40 - result.size());
     std::stable_sort(dated.begin(), dated.end(), [&](const auto &a, const auto &b)
     {
         const Game &x = games[static_cast<std::size_t>(a.first)];
@@ -622,7 +909,7 @@ bool matches_query(const Game &game, std::string_view query)
     query = trim(query);
     if (query.empty())
         return true;
-    if (contains_folded(game.title, query))
+    if (contains_folded(game.title, query) || contains_folded(game.base_title, query))
         return true;
     for (const Release &release : game.releases)
     {
@@ -674,8 +961,56 @@ bool contains(const std::vector<std::string> &values, std::string_view value)
     return std::find(values.begin(), values.end(), value) != values.end();
 }
 
+namespace
+{
+constexpr std::pair<const char *, const char *> kTags[] = {
+    {"exclusive", /* i18n */ "PlayStation exclusive"},
+    {"local-coop", /* i18n */ "Local co-op"},
+    {"split-screen", /* i18n */ "Split-screen"},
+    {"open-world", /* i18n */ "Open world"},
+    {"story-driven", /* i18n */ "Story-driven"},
+    {"soulslike", /* i18n */ "Soulslike"},
+    {"psvr-supported", /* i18n */ "PSVR supported"},
+    {"psvr2-supported", /* i18n */ "PSVR2 supported"},
+};
+}
+
+const char *tag_label(std::string_view tag)
+{
+    for (const auto &known : kTags)
+        if (tag == known.first)
+            return known.second;
+    return nullptr;
+}
+
+std::vector<std::string> catalogue_tags(const std::vector<Game> &games)
+{
+    std::vector<std::string> out;
+    for (const auto &known : kTags)
+    {
+        const bool present = std::any_of(games.begin(), games.end(), [&](const Game &game) {
+            return std::any_of(game.releases.begin(), game.releases.end(), [&](const Release &release) {
+                return std::find(release.tags.begin(), release.tags.end(), known.first) != release.tags.end();
+            });
+        });
+        if (present)
+            out.push_back(known.first);
+    }
+    return out;
+}
+
+bool in_library(const Game &game, const std::vector<LibraryGame> &library)
+{
+    for (const Release &release : game.releases)
+        for (const LibraryGame &copy : library)
+            if (release.addon_id.empty() && copy.title_id == release.title_id && copy.platform == release.platform &&
+                (copy.on_drive || copy.installed))
+                return true;
+    return false;
+}
+
 std::vector<int> browse(const std::vector<Game> &games, const BrowseFilters &filters,
-                        const std::vector<std::string> &favourites)
+                        const std::vector<std::string> &favourites, const std::vector<LibraryGame> &library)
 {
     struct Match
     {
@@ -686,19 +1021,29 @@ std::vector<int> browse(const std::vector<Game> &games, const BrowseFilters &fil
     for (int i = 0; i < static_cast<int>(games.size()); ++i)
     {
         const Game &game = games[static_cast<std::size_t>(i)];
+        if ((!filters.addon_base.empty() && game.base_game_id != filters.addon_base) ||
+            (!filters.addon_type.empty() && game.addon_type != filters.addon_type)) continue;
         if (!matches_query(game, filters.query))
             continue;
         if (!filters.platform.empty() && game.platform != filters.platform)
             continue;
         if (filters.favourites && !contains(favourites, game.id))
             continue;
+        if (filters.hide_installed && in_library(game, library))
+            continue;
+        if (!filters.tags.empty() &&
+            std::none_of(game.releases.begin(), game.releases.end(), [&](const Release &release) {
+                return std::any_of(release.tags.begin(), release.tags.end(),
+                                   [&](const std::string &tag) { return contains(filters.tags, tag); });
+            }))
+            continue;
         double smallest = -1.0;
         for (const Release &release : game.releases)
         {
-            if (!filters.source.empty() && release.source_id != filters.source)
+            if (!filters.sources.empty() && !contains(filters.sources, release.source_id))
                 continue;
             const std::string packaging = release.compression == "7z" ? "7z" : release.compression == "zip" ? "ZIP" : release.compression == "rar" ? "RAR" : "";
-            if (!filters.format.empty() && release.format != filters.format && packaging != filters.format)
+            if (!filters.formats.empty() && !contains(filters.formats, release.format) && !contains(filters.formats, packaging))
                 continue;
             if (!filters.region.empty() &&
                 (release.region.empty() ? "unknown" : release.region) != filters.region)
@@ -852,7 +1197,7 @@ CollectionState release_state(const Release &release, const std::vector<Job> &jo
     const LibraryGame *related = nullptr;
     for (const LibraryGame &copy : library)
     {
-        if (copy.title_id != release.title_id || copy.platform != release.platform ||
+        if (!release.addon_id.empty() || copy.title_id != release.title_id || copy.platform != release.platform ||
             !(copy.on_drive || copy.installed))
             continue;
         if (related == nullptr)

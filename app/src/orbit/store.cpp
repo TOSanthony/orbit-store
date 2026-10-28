@@ -64,6 +64,7 @@ const Game *Snapshot::game(std::string_view id) const
         if (game.id == id)
             return &game;
     }
+    for (const Game &game : addons) if (game.id == id) return &game;
     return nullptr;
 }
 
@@ -106,6 +107,23 @@ void Store::stop()
 void Store::tick()
 {
     inbox_.drain();
+    const auto event = native_provider_.tick(state_.browser, browser_observed_ && state_.have_browser && state_.link == Link::online, now_seconds());
+    browser_observed_ = false;
+    if (provider_poll_.exchange(native_provider_.busy()) != native_provider_.busy())
+        refresh_now(); // begin focused polling, or immediately refresh on return
+    if (event.kind != NativeProvider::Event::none) {
+        if (!event.error.empty()) provider_error_ = event.error;
+        browser_action_.busy = true;
+        {
+            Lock lock(mutex_);
+            Command command;
+            command.kind = event.kind == NativeProvider::Event::opened ? Command::Kind::browser_opened : Command::Kind::browser_cancel;
+            command.a = event.id; command.browser_client = event.client_id;
+            command.browser_failure = event.failure; command.browser_error_code = event.error_code;
+            commands_.push_back(std::move(command));
+        }
+        signal_.notify();
+    }
 }
 
 void Store::refresh_now()
@@ -163,6 +181,21 @@ void Store::job_action(const std::string &job_id, const std::string &action, boo
     signal_.notify();
 }
 
+void Store::clear_history(const std::string &status)
+{
+    ++pending_actions_;
+    action_.busy = true;
+    action_.error.clear();
+    {
+        Lock lock(mutex_);
+        Command command;
+        command.kind = Command::Kind::clear_history;
+        command.a = status;
+        commands_.push_back(std::move(command));
+    }
+    signal_.notify();
+}
+
 void Store::set_favourite(const std::string &game_id, bool favourite)
 {
     favourite_.busy = true;
@@ -178,25 +211,59 @@ void Store::set_favourite(const std::string &game_id, bool favourite)
     signal_.notify();
 }
 
-void Store::start_browser(const std::string &release_id, const std::string &storage_id)
+void Store::change_saved_filters(std::string body)
 {
-    if (browser_action_.busy) return;
+    saved_filters_.busy = true;
+    saved_filters_.error.clear();
+    {
+        Lock lock(mutex_);
+        Command command;
+        command.kind = Command::Kind::saved_filters;
+        command.a = std::move(body);
+        commands_.push_back(std::move(command));
+    }
+    signal_.notify();
+}
+
+void Store::start_browser(const std::string &release_id, const std::string &storage_id, bool account, bool check_account)
+{
+    if (browser_action_.busy || native_provider_.busy()) return;
+    provider_error_.clear();
+    std::string client;
+    if (native_provider_.available() && state_.browser.native_dialog_available) {
+        char text[64];
+        std::snprintf(text, sizeof text, "tv-%llx-%llx",
+            static_cast<unsigned long long>(unix_seconds() * 1000000.0),
+            static_cast<unsigned long long>(++request_count_));
+        client = text;
+        native_provider_.begin(client, now_seconds());
+        provider_poll_.store(true);
+    }
     browser_action_.busy = true;
     browser_action_.error.clear();
     if (!state_.browser.active)
     {
         const bool available = state_.browser.available;
+        const bool native_dialog = state_.browser.native_dialog_available;
+        const bool account_available = state_.browser.viking_account_available;
         state_.browser = {};
         state_.browser.available = available;
+        state_.browser.native_dialog_available = native_dialog;
+        state_.browser.viking_account_available = account_available;
+        state_.browser.account_page = account;
         state_.browser.state = "opening";
-        for (const auto &game : state_.games)
-            for (const auto &release : game.releases)
-                if (release.id == release_id) state_.browser.title = game.title;
+        for (const auto *games : {&state_.games, &state_.addons})
+            for (const auto &game : *games)
+                for (const auto &release : game.releases)
+                    if (release.id == release_id) state_.browser.title = game.title;
     }
     {
         Lock lock(mutex_);
         Command command;
         command.kind = Command::Kind::browser_start;
+        command.flag = account;
+        command.browser_check_account = check_account;
+        command.browser_client = client;
         command.a = release_id;
         command.b = storage_id;
         commands_.push_back(std::move(command));
@@ -225,6 +292,7 @@ void Store::poll_browser()
     inbox_.post([this, result = std::move(result)]() mutable
     {
         state_.have_browser = result.ok();
+        browser_observed_ = result.ok();
         state_.browser_error = result.status == 404
             ? tr("Update Orbit to open provider pages.") : result.error;
         if (result.ok()) state_.browser = std::move(result.value);
@@ -235,12 +303,17 @@ void Store::poll_browser()
 void Store::run_browser(Command &command)
 {
     auto result = command.kind == Command::Kind::browser_start
-        ? client_.start_browser(command.a, command.b) : client_.cancel_browser(command.a);
+        ? client_.start_browser(command.a, command.b, command.browser_client, command.flag, command.browser_check_account)
+        : command.kind == Command::Kind::browser_opened ? client_.browser_opened(command.a, command.browser_client)
+        : client_.cancel_browser(command.a, command.browser_client, command.browser_failure, command.browser_error_code);
     // A lost POST response may still have started verification. Read status,
     // never replay the mutation or create an unvalidated queue item here.
     poll_browser();
-    inbox_.post([this, result = std::move(result)]() mutable
+    inbox_.post([this, starting = command.kind == Command::Kind::browser_start,
+                 cancelling = command.kind == Command::Kind::browser_cancel, session_id = command.a,
+                 result = std::move(result)]() mutable
     {
+        if (starting && result.status >= 400 && result.status < 500) native_provider_.abandon();
         if (result.ok())
         {
             // The subsequent GET is fresher; keep it when it succeeded.
@@ -252,7 +325,10 @@ void Store::run_browser(Command &command)
             }
         }
         browser_action_.busy = false;
-        browser_action_.error = result.error;
+        const bool already_queued = cancelling && result.status == 409 && state_.have_browser &&
+            state_.browser.id == session_id && state_.browser.state == "queued" && !state_.browser.job_id.empty();
+        if (already_queued) provider_error_.clear();
+        browser_action_.error = provider_error_.empty() ? (already_queued ? "" : result.error) : provider_error_;
         ++browser_action_.serial;
     });
     refresh_now();
@@ -367,6 +443,47 @@ void Store::refresh_session()
     refresh_now();
 }
 
+void Store::open_files(const std::string &storage_id, const std::string &path)
+{
+    if (storage_id.empty())
+    {
+        state_.have_files = false;
+        state_.files = FileListing{};
+        state_.files_error.clear();
+        ++state_.serial;
+        return;
+    }
+    {
+        Lock lock(mutex_);
+        Command command;
+        command.kind = Command::Kind::files_list;
+        command.a = storage_id;
+        command.b = path;
+        commands_.push_back(std::move(command));
+    }
+    signal_.notify();
+}
+
+void Store::want_files(bool wanted)
+{
+    if (!want_files_.exchange(wanted) && wanted)
+        refresh_now();
+}
+
+void Store::run_file_action(api::Client::FileRequest request)
+{
+    files_.busy = true;
+    files_.error.clear();
+    {
+        Lock lock(mutex_);
+        Command command;
+        command.kind = Command::Kind::file_action;
+        command.file = std::move(request);
+        commands_.push_back(std::move(command));
+    }
+    signal_.notify();
+}
+
 void Store::want_library_storage(bool wanted, bool refresh)
 {
     const bool was = want_storage_.exchange(wanted);
@@ -406,7 +523,7 @@ void Store::worker()
         const bool hurry = start_waiting_ || restart_ == Restart::stopping ||
                            restart_ == Restart::starting ||
                            (want_settings_.load() && settings_busy_);
-        next_poll = now_seconds() + (hurry ? 0.5 : fast_.load() ? 1.0 : 3.0);
+        next_poll = now_seconds() + (provider_poll_.load() ? 0.25 : hurry ? 0.5 : fast_.load() ? 1.0 : 3.0);
     }
 }
 
@@ -473,7 +590,7 @@ void Store::continue_restart(bool unreachable)
         // Orbit's port has closed; give it a moment to release its lock.
         restart_ = Restart::starting;
         restart_since_ = now;
-        restart_send_at_ = now + restart_grace_;
+        restart_send_at_ = now + (restart_self_ ? restart_self_wait_ : restart_grace_);
         restart_attempts_ = 0;
         restart_sent_ = false;
         post_restart(Restart::starting, tr("Orbit stopped."));
@@ -489,6 +606,9 @@ void Store::continue_restart(bool unreachable)
         post_restart(Restart::starting, {});
     }
     if (restart_ != Restart::starting)
+        return;
+    // Orbit is starting itself; this app starts a copy only if it doesn't come back.
+    if (restart_self_ && !restart_sent_ && now < restart_send_at_)
         return;
     if (starter_ == nullptr)
     {
@@ -604,6 +724,13 @@ void Store::post_queue(std::vector<Job> jobs, std::vector<Drive> drives, bool ha
 
 void Store::poll_once()
 {
+    // While our provider dialog owns the screen, only its result matters.
+    // Do not queue it behind catalogue, storage, library or update requests.
+    // The frame thread requests a full refresh when the dialog finishes.
+    if (provider_poll_.load()) {
+        poll_browser();
+        return;
+    }
     api::Result<System> system = client_.system();
     if (!system.ok())
     {
@@ -621,6 +748,13 @@ void Store::poll_once()
         // A chosen shutdown is never answered by automatic relaunch. Keep
         // polling until the old service has flushed and released its workers.
         auto_start_used_ = true;
+        // Unless it's the restart at the end of an update: /system says "stopping" from then on.
+        if (restart_ == Restart::idle)
+        {
+            api::Result<ServiceUpdate> service = client_.service_update();
+            if (service.ok())
+                follow_update_restart(service.value);
+        }
         if (restart_ != Restart::idle && now_seconds() - restart_since_ > kRestartStop)
         {
             restart_ = Restart::idle;
@@ -678,11 +812,12 @@ void Store::poll_once()
 
     const std::string key = catalog_key(system.value, sources.value);
     bool have_games = false;
-    std::vector<Game> games;
+    std::vector<Game> games, addons;
     if (key != catalog_key_)
     {
         api::Result<std::vector<Release>> catalog = client_.catalog();
-        if (catalog.ok())
+        auto extra = client_.addons();
+        if (catalog.ok() && (extra.ok() || extra.status == 404))
         {
             if(system.value.zero_enabled) {
                 auto &rows=catalog.value;
@@ -690,6 +825,13 @@ void Store::poll_once()
                     return !sources.value.acknowledged || !contains(sources.value.enabled,r.source_id);
                 }),rows.end());
             }
+            if(system.value.zero_enabled) {
+                auto &rows=extra.value;
+                rows.erase(std::remove_if(rows.begin(),rows.end(),[&](const Release &r){
+                    return !sources.value.acknowledged || !contains(sources.value.enabled,r.source_id);
+                }),rows.end());
+            }
+            addons = group_games(extra.value);
             games = group_games(catalog.value);
             have_games = true;
             catalog_key_ = key;
@@ -725,7 +867,7 @@ void Store::poll_once()
 
     inbox_.post(
         [this, system = std::move(system.value), sources = std::move(sources.value),
-         games = std::move(games), have_games, token = token_]() mutable
+         games = std::move(games), addons = std::move(addons), have_games, token = token_]() mutable
         {
             if (state_.link != Link::online)
                 state_.link_error.clear();
@@ -737,6 +879,7 @@ void Store::poll_once()
             if (have_games)
             {
                 state_.games = std::move(games);
+                state_.addons = std::move(addons);
                 state_.have_catalog = true;
                 ++state_.catalog_serial;
             }
@@ -774,19 +917,34 @@ void Store::poll_once()
     // Favourites and the Library (cheap reads: the backend answers from its
     // cache and limits ShadowMount reads itself).
     api::Result<std::vector<std::string>> favourites = client_.favourites();
+    api::Result<std::vector<SavedFilter>> saved_filters = client_.saved_filters();
     api::Result<LibrarySnapshot> library = client_.library(false);
     api::Result<LibraryStorage> storage;
     const bool want_storage = want_storage_.load();
     if (want_storage)
         storage = client_.library_storage(storage_refresh_.exchange(false));
+    api::Result<FileOperation> operation;
+    const bool want_files = want_files_.load();
+    if (want_files)
+        operation = client_.files_status();
     inbox_.post(
-        [this, favourites = std::move(favourites), library = std::move(library),
-         storage = std::move(storage), want_storage]() mutable
+        [this, favourites = std::move(favourites), saved_filters = std::move(saved_filters), library = std::move(library),
+         storage = std::move(storage), want_storage, operation = std::move(operation), want_files]() mutable
         {
+            if (want_files && operation.ok())
+            {
+                state_.have_file_operation = !operation.value.id.empty();
+                state_.file_operation = std::move(operation.value);
+            }
             if (favourites.ok())
             {
                 state_.favourites = std::move(favourites.value);
                 state_.have_favourites = true;
+            }
+            if (saved_filters.ok())
+            {
+                state_.saved_filters = std::move(saved_filters.value);
+                state_.have_saved_filters = true;
             }
             if (library.ok())
             {
@@ -827,18 +985,44 @@ void Store::poll_once()
     }
 }
 
+// An update started anywhere (here, the browser or a phone) restarts Orbit at its end: follow
+// it as this app's own restart, so the screen reconnects by itself.
+void Store::follow_update_restart(const ServiceUpdate &service)
+{
+    if (!service.update_all || service.phase != "restarting" || restart_ != Restart::idle)
+        return;
+    restart_expected_version_ = service.saved_version.empty() ? service.running_version : service.saved_version;
+    restart_previous_instance_ = service.instance_id;
+    restart_ = Restart::stopping;
+    restart_self_ = true;
+    restart_since_ = now_seconds();
+    post_restart(Restart::stopping, {});
+}
+
 // The catalogue and update statuses (Settings, and the update badge).
 void Store::poll_settings()
 {
     api::Result<CatalogueStatus> catalogue = client_.catalogue_status();
     api::Result<ServiceUpdate> service = client_.service_update();
     api::Result<TvAppStatus> tv = client_.tv_app();
+    api::Result<ArchiveAccount> archive = client_.archive_account();
+    api::Result<NtfySettings> ntfy = client_.ntfy();
     settings_busy_ = (catalogue.ok() && catalogue.value.busy) ||
                      (service.ok() && service.value.busy) || (tv.ok() && tv.value.busy);
+    if (service.ok())
+    {
+        service_self_restart_ = service.value.self_restart;
+        follow_update_restart(service.value);
+    }
     inbox_.post(
-        [this, catalogue = std::move(catalogue), service = std::move(service),
-         tv = std::move(tv)]() mutable
+        [this, catalogue = std::move(catalogue), service = std::move(service), tv = std::move(tv),
+         archive = std::move(archive), ntfy = std::move(ntfy)]() mutable
         {
+            // An older download service has no Archive.org sign-in, or no ntfy.
+            if (archive.ok() || archive.status == 404)
+                state_.archive_account = archive.ok() ? std::move(archive.value) : ArchiveAccount{};
+            if (ntfy.ok() || ntfy.status == 404)
+                state_.ntfy = ntfy.ok() ? std::move(ntfy.value) : NtfySettings{};
             if (catalogue.ok())
             {
                 state_.catalogue = std::move(catalogue.value);
@@ -868,6 +1052,27 @@ void Store::run_setting(Command &command)
         error = client_.set_zero(command.flag).error;
         catalog_key_.clear();
         break;
+    case Setting::download_recovery:
+    {
+        const int field = std::atoi(command.a.c_str());
+        const auto result = client_.set_download_recovery(field, std::atoi(command.b.c_str()));
+        error = result.status == 404 ? tr("Update the download service to change this here.") : result.error;
+        if (result.ok()) inbox_.post([this, field, value = result.value]() {
+            state_.system.download_recovery[field] = value;
+            ++state_.serial;
+        });
+        break;
+    }
+    case Setting::download_connections:
+    {
+        const auto result = client_.set_download_connections(std::atoi(command.a.c_str()));
+        error = result.status == 404 ? tr("Update the download service to change this here.") : result.error;
+        if (result.ok()) inbox_.post([this, connections = result.value]() {
+            state_.system.download_connections = connections;
+            ++state_.serial;
+        });
+        break;
+    }
     case Setting::download_limit:
     {
         const int limit = command.a.size() == 1 ? command.a[0] - '0' : 0;
@@ -877,6 +1082,115 @@ void Store::run_setting(Command &command)
             state_.system.concurrent_downloads = limit;
             ++state_.serial;
         });
+        break;
+    }
+    case Setting::archive_sign_in:
+    case Setting::archive_sign_out:
+    {
+        api::Result<ArchiveAccount> result = command.setting == Setting::archive_sign_in
+                                                 ? client_.archive_sign_in(command.a, command.b)
+                                                 : client_.archive_sign_out();
+        // The password was needed once.
+        std::fill(command.b.begin(), command.b.end(), '\0');
+        command.b.clear();
+        error = result.status == 404 ? tr("Update the download service to change this here.") : result.error;
+        if (result.ok())
+            inbox_.post(
+                [this, account = std::move(result.value)]() mutable
+                {
+                    state_.archive_account = std::move(account);
+                    ++state_.serial;
+                });
+        break;
+    }
+    case Setting::notifications:
+    {
+        api::Result<bool> result = client_.set_download_notifications(command.flag);
+        error = result.status == 404 ? tr("Update the download service to change this here.") : result.error;
+        if (result.ok())
+            inbox_.post(
+                [this, enabled = result.value]()
+                {
+                    state_.system.download_notifications = enabled;
+                    ++state_.serial;
+                });
+        break;
+    }
+    case Setting::notification_event:
+    {
+        api::Result<std::array<bool, 5>> result = client_.set_notification_event(std::atoi(command.a.c_str()), command.flag);
+        error = result.status == 404 ? tr("Update the download service to change this here.") : result.error;
+        if (result.ok())
+            inbox_.post(
+                [this, events = result.value]()
+                {
+                    state_.system.notification_events = events;
+                    ++state_.serial;
+                });
+        break;
+    }
+    case Setting::ntfy_save:
+    {
+        api::Result<NtfySettings> result = client_.save_ntfy(std::move(command.a));
+        error = result.status == 404 ? tr("Update the download service to change this here.") : result.error;
+        if (result.ok())
+            inbox_.post(
+                [this, ntfy = std::move(result.value)]() mutable
+                {
+                    state_.ntfy = std::move(ntfy);
+                    state_.system.ntfy_enabled = state_.ntfy.enabled;
+                    ++state_.serial;
+                });
+        break;
+    }
+    case Setting::ntfy_test:
+    {
+        api::Result<bool> result = client_.test_ntfy();
+        error = result.status == 404 ? tr("Update the download service to change this here.") : result.error;
+        break;
+    }
+    case Setting::packages:
+    {
+        api::Result<bool> result = client_.set_delete_packages(command.flag);
+        error = result.status == 404 ? tr("Update the download service to change this here.") : result.error;
+        if (result.ok())
+            inbox_.post(
+                [this, enabled = result.value]()
+                {
+                    state_.system.delete_packages = enabled;
+                    ++state_.serial;
+                });
+        break;
+    }
+    case Setting::diagnostics_report:
+    {
+        api::Result<DiagnosticsReport> result = client_.diagnostics();
+        error = result.status == 404 ? std::string(tr("Update the download service to change this here.")) : result.error;
+        if (result.ok())
+            inbox_.post(
+                [this, report = std::move(result.value)]() mutable
+                {
+                    state_.diagnostics = std::move(report);
+                    ++state_.serial;
+                });
+        break;
+    }
+    case Setting::diagnostics:
+    {
+        const std::size_t cut = command.b.find('|');
+        api::Result<std::string> result = client_.save_diagnostics(
+            command.a, command.b.substr(0, cut), cut == std::string::npos ? std::string() : command.b.substr(cut + 1));
+        error = result.status == 404     ? std::string(tr("Update the download service to save a report here."))
+                : !result.ok()            ? result.error
+                : result.value.empty() ? std::string(tr("Could not save the diagnostic report on that drive."))
+                                          : std::string();
+        // Only the last save's file is shown: none after a failed one.
+        inbox_.post(
+            [this, path = error.empty() ? result.value : std::string()]()
+            {
+                state_.diagnostics_path = path;
+                ++state_.serial;
+            });
         break;
     }
     case Setting::archives:
@@ -949,11 +1263,18 @@ void Store::run_setting(Command &command)
         api::Client::UpdateRequest request;
         request.action = command.setting == Setting::service_check     ? "check"
                          : command.setting == Setting::service_install ? "install"
+                         : service_self_restart_                       ? "restart"
                                                                        : "stop";
         request.version = command.a;
         request.checksum = command.b;
         request.confirmed = command.setting == Setting::service_restart;
         api::Result<ServiceUpdate> result = client_.service_action(request);
+        if (request.action == "restart" && result.status == 409)
+        {
+            // No ELF loader answers for Orbit: stop it, and this app starts it as before.
+            request.action = "stop";
+            result = client_.service_action(request);
+        }
         error = result.error;
         if (result.ok() && command.setting == Setting::service_restart)
         {
@@ -963,9 +1284,64 @@ void Store::run_setting(Command &command)
             restart_previous_instance_ = result.value.instance_id.empty()
                 ? observed_instance_ : result.value.instance_id;
             restart_ = Restart::stopping;
+            restart_self_ = request.action == "restart";
             restart_since_ = now_seconds();
             post_restart(Restart::stopping, {});
         }
+        break;
+    }
+    case Setting::update_all:
+    {
+        // Releases found more than about fourteen minutes ago are checked again first;
+        // Orbit installs only what it checked in the last fifteen.
+        api::Result<ServiceUpdate> service = client_.service_update();
+        api::Result<TvAppStatus> tv = client_.tv_app();
+        const auto stale = [](double checked_at) { return unix_seconds() - checked_at > 840.0; };
+        // Waits up to a minute for a check to finish (other requests wake the wait early).
+        const auto settle = [this](auto read)
+        {
+            const double deadline = now_seconds() + 60.0;
+            for (;;)
+            {
+                auto status = read();
+                if (!status.ok() || !status.value.busy || now_seconds() >= deadline)
+                    return status;
+                Lock lock(mutex_);
+                if (stopping_)
+                    return status;
+                signal_.wait(mutex_, 0.5);
+            }
+        };
+        bool service_checked = false, tv_checked = false;
+        if (service.ok() && service.value.needs_install() && stale(service.value.checked_at))
+        {
+            api::Client::UpdateRequest check;
+            check.action = "check";
+            client_.service_action(check);
+            service = settle([this] { return client_.service_update(); });
+            service_checked = true;
+        }
+        if (tv.ok() && tv.value.update_available && stale(tv.value.checked_at))
+        {
+            api::Client::UpdateRequest check;
+            check.action = "check";
+            client_.tv_app_action(check);
+            tv = settle([this] { return client_.tv_app(); });
+            tv_checked = true;
+        }
+        if (!service.ok())
+            error = service.error;
+        else if (!tv.ok() && tv.status != 404)
+            error = tv.error;
+        // A check that failed says why (no network, GitHub's limit) better than the install would.
+        else if (service_checked && service.value.phase == "error" && !service.value.error.empty())
+            error = service.value.error;
+        else if (tv_checked && tv.value.phase == "error" && !tv.value.error.empty())
+            error = tv.value.error;
+        else if (!service.value.needs_install() && !(tv.ok() && tv.value.update_available))
+            error = tr("You\xE2\x80\x99re using the latest version.");
+        else
+            error = client_.update_all(service.value, tv.ok() ? tv.value : TvAppStatus{}).error;
         break;
     }
     case Setting::tv_check:
@@ -999,6 +1375,47 @@ void Store::run_setting(Command &command)
 }
 
 // Favourites and Library commands: each reports to its own ActionState.
+// Files: a folder read, or one action; an accepted action returns the operation.
+void Store::run_files(Command &command)
+{
+    if (command.kind == Command::Kind::files_list)
+    {
+        api::Result<FileListing> result = client_.files_list(command.a, command.b);
+        inbox_.post(
+            [this, storage = command.a, path = command.b, result = std::move(result)]() mutable
+            {
+                if (result.ok())
+                {
+                    state_.files = std::move(result.value);
+                    state_.files.storage_id = storage;
+                    state_.files.path = path;
+                    state_.have_files = true;
+                    state_.files_error.clear();
+                }
+                else
+                {
+                    state_.files_error = result.error;
+                }
+                ++state_.serial;
+            });
+        return;
+    }
+    api::Result<FileOperation> result = client_.files_action(command.file);
+    inbox_.post(
+        [this, result = std::move(result)]() mutable
+        {
+            if (result.ok())
+            {
+                state_.have_file_operation = !result.value.id.empty();
+                state_.file_operation = std::move(result.value);
+                ++state_.serial;
+            }
+            files_.busy = false;
+            files_.error = result.ok() ? std::string() : result.error;
+            ++files_.serial;
+        });
+}
+
 void Store::run_aside(Command &command)
 {
     std::string error;
@@ -1020,6 +1437,26 @@ void Store::run_aside(Command &command)
                 favourite_.busy = false;
                 favourite_.error = error;
                 ++favourite_.serial;
+            });
+        return;
+    }
+    if (command.kind == Command::Kind::saved_filters)
+    {
+        api::Result<std::vector<SavedFilter>> result = client_.change_saved_filters(command.a);
+        if (!result.ok())
+            error = result.error;
+        inbox_.post(
+            [this, error, result = std::move(result)]() mutable
+            {
+                if (result.ok())
+                {
+                    state_.saved_filters = std::move(result.value);
+                    state_.have_saved_filters = true;
+                    ++state_.serial;
+                }
+                saved_filters_.busy = false;
+                saved_filters_.error = error;
+                ++saved_filters_.serial;
             });
         return;
     }
@@ -1061,7 +1498,7 @@ bool Store::run_next_action()
     std::string created;
     std::vector<Job> jobs;
     bool have_jobs = false;
-    if (command.kind == Command::Kind::favourite ||
+    if (command.kind == Command::Kind::favourite || command.kind == Command::Kind::saved_filters ||
         command.kind == Command::Kind::library_refresh ||
         command.kind == Command::Kind::library_action)
     {
@@ -1073,7 +1510,12 @@ bool Store::run_next_action()
         run_setting(command);
         return true;
     }
-    if (command.kind == Command::Kind::browser_start || command.kind == Command::Kind::browser_cancel)
+    if (command.kind == Command::Kind::files_list || command.kind == Command::Kind::file_action)
+    {
+        run_files(command);
+        return true;
+    }
+    if (command.kind == Command::Kind::browser_start || command.kind == Command::Kind::browser_cancel || command.kind == Command::Kind::browser_opened)
     {
         run_browser(command);
         return true;
@@ -1086,6 +1528,19 @@ bool Store::run_next_action()
             created = result.value;
         else
             error = result.error;
+    }
+    else if (command.kind == Command::Kind::clear_history)
+    {
+        api::Result<std::vector<Job>> result = client_.clear_history(command.a);
+        if (result.ok())
+        {
+            jobs = std::move(result.value);
+            have_jobs = true;
+        }
+        else
+        {
+            error = result.error;
+        }
     }
     else
     {

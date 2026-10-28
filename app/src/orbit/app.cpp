@@ -4,6 +4,7 @@
 #include "orbit/mark.hpp"
 #include "orbit/screens.hpp"
 #include "orbit/i18n.hpp"
+#include "orbit/look.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -15,7 +16,7 @@ namespace orbit
 namespace
 {
 
-constexpr const char *kTabs[] = {/* i18n */ "Discover", /* i18n */ "Browse", /* i18n */ "Library", /* i18n */ "Downloads"}; // by tab::
+constexpr const char *kTabs[] = {/* i18n */ "Discover", /* i18n */ "Browse", /* i18n */ "Add-ons", /* i18n */ "Library", /* i18n */ "Downloads"}; // by tab::
 constexpr int kTabCount = tab::count;
 constexpr int kSearchItem = kTabCount;
 constexpr int kSettingsItem = kTabCount + 1;
@@ -73,7 +74,7 @@ int active_jobs(const Snapshot &state)
 } // namespace
 
 App::App(Context &context)
-    : ctx_(context), discover_(context), browse_(context), library_(context), downloads_(context),
+    : ctx_(context), discover_(context), browse_(context), addons_(context, true), library_(context), downloads_(context),
       game_(context), settings_(context)
 {
     top_focus_.resize(kTopItems);
@@ -86,6 +87,8 @@ Screen &App::screen()
     {
     case tab::discover:
         return discover_;
+    case tab::addons:
+        return addons_;
     case tab::library:
         return library_;
     case tab::downloads:
@@ -111,6 +114,7 @@ bool App::content_blocked() const
 
 void App::show_tab(int tab)
 {
+    search_open_ = false;
     tab_ = std::clamp(tab, 0, kTabCount - 1);
     game_open_ = false;
     if (settings_open_)
@@ -123,12 +127,14 @@ void App::show_tab(int tab)
 void App::open_game(const std::string &game_id)
 {
     game_.open(game_id);
+    game_.set_section(section());
     game_open_ = true;
     game_in_.snap(0.0f);
 }
 
 void App::open_settings(SettingsScreen::Section section, bool content)
 {
+    area_ = Area::content;
     settings_open_ = true;
     game_open_ = false;
     settings_.open(section, content);
@@ -149,6 +155,7 @@ void App::show_toast(std::string text, float seconds, bool update)
     toast_time_ = seconds;
     toast_length_ = seconds;
     toast_update_ = update;
+    toast_favourite_ = false;
 }
 
 void App::handle_intent(const Intent &intent, Feedback &feedback)
@@ -163,12 +170,20 @@ void App::handle_intent(const Intent &intent, Feedback &feedback)
         provider_seen_ = ctx_.store.state().browser.id;
         break;
     case Intent::Kind::top_bar:
+        if (!look::is(look::Interface::store) && !look::is(look::Interface::cinema))
+            break;
         area_ = Area::top;
         top_index_ = tab_;
         feedback.play(hui::audio::Cue::focus);
         break;
+    case Intent::Kind::open_addons:
+        addons_.for_base(intent.id);
+        show_tab(tab::addons);
+        break;
     case Intent::Kind::open_game:
         open_game(intent.id);
+        if (intent.detail == "about")
+            game_.show_about();
         feedback.play(hui::audio::Cue::open, 1.0f, 0.0f, 0.7f);
         break;
     case Intent::Kind::close:
@@ -176,6 +191,8 @@ void App::handle_intent(const Intent &intent, Feedback &feedback)
         {
             settings_open_ = false;
             settings_.close();
+            if (!look::is(look::Interface::store))
+                show_section(section::discover);
             break;
         }
         game_open_ = false;
@@ -183,6 +200,7 @@ void App::handle_intent(const Intent &intent, Feedback &feedback)
             discover_.return_to(game_.game_id());
         else if (tab_ == tab::browse)
             browse_.return_to(game_.game_id());
+        else if (tab_ == tab::addons) addons_.return_to(game_.game_id());
         break;
     case Intent::Kind::show_job:
         game_open_ = false;
@@ -210,10 +228,168 @@ void App::handle_intent(const Intent &intent, Feedback &feedback)
     }
 }
 
+int App::section() const
+{
+    if (settings_open_)
+        return section::settings;
+    if (search_open_)
+        return section::search;
+    return tab_ + 1;
+}
+
+void App::show_section(int next)
+{
+    // Cinema keeps search in Browse's filters, without a duplicate chapter.
+    if (look::is(look::Interface::cinema) && next == section::search)
+        next = section::browse;
+    game_open_ = false;
+    search_open_ = false;
+    if (next == section::settings)
+    {
+        open_settings(SettingsScreen::Section::sources);
+        return;
+    }
+    if (settings_open_)
+        settings_.close();
+    settings_open_ = false;
+    area_ = Area::content;
+    if (next == section::search)
+    {
+        search_open_ = true;
+        tab_ = tab::browse;
+        browse_.focus();
+        browse_.open_search_section();
+        return;
+    }
+    tab_ = std::clamp(next - 1, 0, kTabCount - 1);
+    screen().focus();
+}
+
+int App::adjacent_section(int step) const
+{
+    const int first = look::is(look::Interface::cinema) ? section::discover : section::search;
+    const int count = section::count - first;
+    return first + (section() - first + step + count) % count;
+}
+
+bool App::update_section_nav(const InputFrame &input, float dt, Feedback &feedback)
+{
+    if (settings_open_ ? settings_.modal() : screen().modal())
+        return false;
+    const bool horizontal = input.nav == Direction::left || input.nav == Direction::right;
+    if (look::is(look::Interface::crossbar) && horizontal)
+    {
+        show_section(adjacent_section(input.nav == Direction::right ? 1 : -1));
+        feedback.play(hui::audio::Cue::tab);
+        return true;
+    }
+    if (!look::is(look::Interface::cinema) || area_ != Area::top)
+        return false;
+    if (horizontal || input.is_pressed(Action::page_prev) || input.is_pressed(Action::page_next))
+    {
+        const int step = input.nav == Direction::right || input.is_pressed(Action::page_next) ? 1 : -1;
+        show_section(adjacent_section(step));
+        area_ = Area::top;
+        feedback.play(hui::audio::Cue::tab);
+    }
+    else if (input.nav == Direction::down || input.is_pressed(Action::confirm) || input.is_pressed(Action::back))
+    {
+        area_ = Area::content;
+        feedback.play(hui::audio::Cue::focus);
+    }
+    else if (input.nav == Direction::up)
+        refuse(feedback, input);
+    // Keep animation running, without delivering navbar input to a collection.
+    const InputFrame idle{};
+    if (settings_open_)
+        settings_.update(idle, dt, feedback, false);
+    else
+        screen().update(idle, dt, feedback, false);
+    return true;
+}
+
+bool App::update_sections(const InputFrame &input, Feedback &feedback)
+{
+    if (!input.is_pressed(Action::page_prev) && !input.is_pressed(Action::page_next))
+        return false;
+    // A dialog, keyboard or list keeps L1/R1 for itself.
+    if (settings_open_ ? settings_.modal() : screen().modal())
+        return false;
+    const int step = input.is_pressed(Action::page_next) ? 1 : -1;
+    // Panorama's Settings go through their pivots first.
+    if (look::is(look::Interface::panorama) && settings_open_ && settings_.page(step))
+    {
+        feedback.play(hui::audio::Cue::tab);
+        return true;
+    }
+    // Cinema steps through a chapter's collections, Panorama through a page's
+    // groups (Downloads), before the next section.
+    if ((look::is(look::Interface::cinema) || look::is(look::Interface::panorama)) && !settings_open_ && !game_open_ &&
+        screen().page(step))
+    {
+        feedback.play(hui::audio::Cue::tab);
+        return true;
+    }
+    show_section(adjacent_section(step));
+    feedback.play(hui::audio::Cue::tab);
+    return true;
+}
+
+bool App::update_keep(const InputFrame &input, Feedback &feedback)
+{
+    if (!look::pending())
+    {
+        keep_button_ = 0;
+        return false;
+    }
+    if (input.nav == Direction::left || input.nav == Direction::right)
+    {
+        const int next = input.nav == Direction::right ? 1 : 0;
+        if (next != keep_button_)
+        {
+            keep_button_ = next;
+            feedback.play(hui::audio::Cue::focus);
+        }
+        else
+            refuse(feedback, input);
+    }
+    else if (input.nav != Direction::none)
+        refuse(feedback, input);
+    if (input.is_pressed(Action::confirm))
+    {
+        if (keep_button_ == 0)
+            look::keep();
+        else
+            look::revert();
+        feedback.play(hui::audio::Cue::select);
+    }
+    else if (input.is_pressed(Action::back))
+    {
+        look::revert();
+        feedback.play(hui::audio::Cue::modal_close);
+    }
+    return true;
+}
+
 void App::update(const InputFrame &input, float dt, Feedback &feedback)
 {
     ctx_.clock += dt;
+    look::tick(ctx_.clock);
+    keep_in_.target = look::pending() ? 1.0f : 0.0f;
+    keep_in_.update(dt, 14.0f);
+    if (look::is(look::Interface::store))
+        controls_open_ = false;
+    controls_in_.target = controls_open_ ? 1.0f : 0.0f;
+    controls_in_.update(dt, 16.0f);
+    notice_time_ = std::max(0.0f, notice_time_ - dt);
     ctx_.store.tick();
+    if (language_ != i18n::revision())
+    {
+        language_ = i18n::revision();
+        for (Screen *screen : std::initializer_list<Screen *>{&discover_, &browse_, &addons_, &library_, &downloads_,
+                                                              &game_, &settings_})
+            screen->retranslate();
+    }
     const Snapshot &state = ctx_.store.state();
     ctx_.art.set_token(state.token);
     ctx_.art.tick();
@@ -250,6 +426,24 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
                    4.5f);
         ctx_.store.dismiss_restart();
     }
+    // Every look confirms a favourite (Store too, as the browser and Zero
+    // do); the count before the request and after it says whether it was
+    // added or removed. The count is held while the request is out, so a
+    // refresh that brings the new list first doesn't hide the notice.
+    if (ctx_.store.favourite_action().busy)
+        favourite_waiting_ = true;
+    if (ctx_.store.favourite_action().serial != favourite_serial_)
+    {
+        favourite_serial_ = ctx_.store.favourite_action().serial;
+        if (ctx_.store.favourite_action().error.empty() && state.favourites.size() != favourite_count_)
+        {
+            show_toast(state.favourites.size() > favourite_count_ ? tr("Added to favourites") : tr("Removed from favourites"));
+            toast_favourite_ = true;
+        }
+        favourite_waiting_ = false;
+    }
+    if (!favourite_waiting_)
+        favourite_count_ = state.favourites.size();
     // An update for either part shows once, then waits under App settings.
     if (!update_told_ && update_badge() && !settings_open_)
     {
@@ -259,7 +453,7 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
 
     // Recover active verification after reopening the native app. Historical
     // terminal results never reopen themselves or undo a dismissal.
-    if (state.have_browser && state.browser.active && state.browser.id != provider_seen_)
+    if (state.have_browser && state.browser.active && !state.browser.account_page && state.browser.id != provider_seen_)
     {
         provider_seen_ = state.browser.id;
         // A locally requested start may return after the user closed this
@@ -272,7 +466,72 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
     }
     if (provider_start_pending_ && !ctx_.store.browser_action().busy)
         provider_start_pending_ = false;
-    if (provider_open_)
+    // Store says once where the other interfaces are.
+    if (look::is(look::Interface::store) && !look::prefs().notice_seen && !settings_open_ &&
+        !game_open_ && !provider_open_ && !content_blocked() && status_age_ > 2.0f)
+    {
+        look::Prefs prefs = look::prefs();
+        prefs.notice_seen = true;
+        look::set(prefs);
+        notice_time_ = 8.0f;
+    }
+    const InputFrame none{};
+    if (update_keep(input, feedback))
+    {
+        // The keep check takes every button; the page behind still animates.
+        if (settings_open_)
+            settings_.update(none, dt, feedback, false);
+        else if (game_open_)
+            game_.update(none, dt, feedback, false);
+        else
+            screen().update(none, dt, feedback, false);
+    }
+    else if (notice_time_ > 0.0f && input.is_pressed(Action::menu))
+    {
+        notice_time_ = 0.0f;
+        open_settings(SettingsScreen::Section::appearance, true);
+        feedback.play(hui::audio::Cue::modal_open);
+    }
+    else if (controls_open_)
+    {
+        // Controls: Cross, Circle or Options closes them; the page behind still animates.
+        if (input.is_pressed(Action::confirm) || input.is_pressed(Action::back) || input.is_pressed(Action::menu))
+        {
+            controls_open_ = false;
+            feedback.play(hui::audio::Cue::modal_close);
+        }
+        if (settings_open_)
+            settings_.update(none, dt, feedback, false);
+        else if (game_open_)
+            game_.update(none, dt, feedback, false);
+        else
+            screen().update(none, dt, feedback, false);
+    }
+    else if (!look::is(look::Interface::store) && !provider_open_ && input.is_pressed(Action::menu) &&
+             !(settings_open_ ? settings_.modal() : game_open_ ? game_.modal() : screen().modal()) &&
+             !(settings_open_ || game_open_ || content_blocked() ? false : screen().options_used()) &&
+             [&]
+             {
+                 // Options with nothing using it here: every button, once.
+                 for (const hui::ui::Hint &hint : current_hints())
+                     if (hint.button == hui::ui::Button::options || hint.second == hui::ui::Button::options)
+                         return false;
+                 return true;
+             }())
+    {
+        controls_open_ = true;
+        feedback.play(hui::audio::Cue::modal_open);
+    }
+    else if (!game_open_ && !provider_open_ && update_section_nav(input, dt, feedback))
+    {
+        // Cinema's navbar and Crossbar's category axis own their directions.
+    }
+    else if (!look::is(look::Interface::store) && !game_open_ && !provider_open_ &&
+             update_sections(input, feedback))
+    {
+        // A new section shows; it gets the controller from the next frame.
+    }
+    else if (provider_open_)
     {
         ctx_.store.set_fast(true);
         update_provider(input, feedback);
@@ -285,6 +544,28 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
     {
         game_in_.target = 1.0f;
         handle_intent(game_.update(input, dt, feedback, true), feedback);
+    }
+    else if (!look::is(look::Interface::store))
+    {
+        if (content_blocked())
+        {
+            if (input.nav == Direction::up && look::is(look::Interface::cinema))
+            {
+                Intent intent;
+                intent.kind = Intent::Kind::top_bar;
+                handle_intent(intent, feedback);
+            }
+            else if (input.is_pressed(Action::confirm))
+            {
+                open_settings(SettingsScreen::Section::sources, true);
+                feedback.play(hui::audio::Cue::modal_open);
+            }
+            screen().update(idle, dt, feedback, false);
+        }
+        else
+        {
+            handle_intent(screen().update(input, dt, feedback, true), feedback);
+        }
     }
     else
     {
@@ -394,9 +675,11 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
     }
 
     // ---- animation ----
-    const std::string wanted = game_open_          ? game_.game_id()
-                               : content_blocked() ? std::string()
-                                                   : screen().backdrop_game();
+    // Panorama's Settings have no art behind them.
+    const std::string wanted = game_open_                                                   ? game_.game_id()
+                               : content_blocked()                                          ? std::string()
+                               : settings_open_ && look::is(look::Interface::panorama)       ? std::string()
+                                                                                            : screen().backdrop_game();
     // On Discover the art waits for the focus to rest for 300 ms, so holding
     // the D-pad doesn't fetch a banner for every cover it passes (main 0.5.1).
     // A game page shows its art at once.
@@ -409,7 +692,7 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
     {
         settled_for_ += dt;
     }
-    const bool wait = !game_open_ && tab_ == tab::discover && !backdrop_.empty();
+    const bool wait = !game_open_ && (tab_ == tab::discover || look::is(look::Interface::panorama)) && !backdrop_.empty();
     if (wanted != backdrop_ && (!wait || settled_for_ >= 0.3f))
     {
         previous_backdrop_ = backdrop_;
@@ -527,6 +810,95 @@ void App::draw_status(Frame &frame) const
     const ui::Type &type = ctx_.type;
     const Snapshot &state = ctx_.store.state();
     const bool offline = status_offline(state);
+    if (look::is(look::Interface::panorama))
+    {
+        // The wordmark in light type on black, running dots while it works.
+        if (!offline)
+        {
+            const bool spin = starting_now(state);
+            pano::draw_splash(ctx_, list, spin ? tr("Starting Orbit\xE2\x80\xA6") : tr("Opening Orbit Store\xE2\x80\xA6"),
+                              spin ? tr("Orbit keeps running in the background after you close this app.") : "", {}, {}, true);
+            return;
+        }
+        std::vector<pano::Button> buttons;
+        if (ctx_.store.can_start())
+            buttons.push_back(pano::button(tr("Try again"), true));
+        const bool waiting = state.starting != Starting::failed && state.starting != Starting::no_loader;
+        pano::draw_splash(ctx_, list, state.starting == Starting::failed ? tr("Orbit didn\xE2\x80\x99t start") : tr("Orbit isn\xE2\x80\x99t running"),
+                          state.starting == Starting::no_loader
+                              ? tr("Start Orbit from your payload manager, or run your jailbreak again so this app "
+                                   "can start it.")
+                          : state.starting == Starting::failed ? tr("Check that Orbit is set up in your payload manager, then try again.")
+                                                               : tr("Start Orbit from your payload manager. This screen reconnects by itself."),
+                          !state.start_detail.empty()
+                              ? state.start_detail
+                              : tr("Waiting for Orbit on this console ({detail})",
+                                   {{"detail", state.link_error.empty() ? std::string(tr("no answer")) : state.link_error}}),
+                          buttons, waiting && buttons.empty());
+        return;
+    }
+    if (look::is(look::Interface::cinema))
+    {
+        // The same words, as a title card on black.
+        if (!offline)
+        {
+            const bool spin = starting_now(state);
+            cn::draw_status(ctx_, list, spin ? tr("Starting Orbit\xE2\x80\xA6") : tr("Opening Orbit Store\xE2\x80\xA6"),
+                            spin ? tr("Orbit keeps running in the background after you close this app.") : "", {}, {}, spin);
+            return;
+        }
+        std::vector<cn::Button> buttons;
+        if (ctx_.store.can_start())
+        {
+            cn::Button retry;
+            retry.label = tr("Try again");
+            retry.primary = true;
+            retry.focus = true;
+            buttons.push_back(retry);
+        }
+        cn::draw_status(ctx_, list, state.starting == Starting::failed ? tr("Orbit didn\xE2\x80\x99t start") : tr("Orbit isn\xE2\x80\x99t running"),
+                        state.starting == Starting::no_loader
+                            ? tr("Start Orbit from your payload manager, or run your jailbreak again so this app "
+                                 "can start it.")
+                        : state.starting == Starting::failed ? tr("Check that Orbit is set up in your payload manager, then try again.")
+                                                             : tr("Start Orbit from your payload manager. This screen reconnects by itself."),
+                        !state.start_detail.empty()
+                            ? state.start_detail
+                            : tr("Waiting for Orbit on this console ({detail})",
+                                 {{"detail", state.link_error.empty() ? std::string(tr("no answer")) : state.link_error}}),
+                        buttons, false);
+        return;
+    }
+    if (look::is(look::Interface::crossbar))
+    {
+        // The same words, in Crossbar's column over the ribbons.
+        xb::Status status;
+        if (!offline)
+        {
+            status.spin = starting_now(state);
+            status.title = status.spin ? tr("Starting Orbit\xE2\x80\xA6") : tr("Opening Orbit Store\xE2\x80\xA6");
+            if (status.spin)
+                status.body = tr("Orbit keeps running in the background after you close this app.");
+        }
+        else
+        {
+            status.title = state.starting == Starting::failed ? tr("Orbit didn\xE2\x80\x99t start") : tr("Orbit isn\xE2\x80\x99t running");
+            status.body = state.starting == Starting::no_loader
+                              ? tr("Start Orbit from your payload manager, or run your jailbreak again so this app "
+                                   "can start it.")
+                          : state.starting == Starting::failed
+                              ? tr("Check that Orbit is set up in your payload manager, then try again.")
+                              : tr("Start Orbit from your payload manager. This screen reconnects by itself.");
+            status.small = !state.start_detail.empty()
+                               ? state.start_detail
+                               : tr("Waiting for Orbit on this console ({detail})",
+                                    {{"detail", state.link_error.empty() ? std::string(tr("no answer")) : state.link_error}});
+            if (ctx_.store.can_start())
+                status.button = tr("Try again");
+        }
+        xb::draw_status(ctx_, list, status);
+        return;
+    }
     const float size = 220.0f;
     const float x = 960.0f - size * 0.5f;
     const float y = 330.0f - size * 0.5f;
@@ -600,6 +972,48 @@ void App::draw_blocked(hui::gfx::DrawList &list) const
                                "notice. It takes a moment, and you can change it anytime.")
                              : tr("Choose another source in App settings. This screen updates by "
                                "itself.");
+    if (look::is(look::Interface::panorama))
+    {
+        // Panorama asks with a message band over the section's title.
+        pano::draw_header(ctx_, list, pano::lower(tr(section_title(section()))), 0.0f);
+        pano::Band band;
+        band.kicker = setup ? tr("Welcome to Orbit") : std::string();
+        band.title = title;
+        band.body = body;
+        band.buttons = {pano::button(tr("Choose sources"))};
+        band.focus = area_ == Area::content ? 0 : -1;
+        pano::draw_band(ctx_, list, band, 1.0f);
+        return;
+    }
+    if (look::is(look::Interface::cinema))
+    {
+        // Cinema asks with a title card.
+        cn::backdrop(ctx_, list, nullptr, cn::Veil::dark);
+        cn::Title card;
+        card.kicker = setup ? tr("Welcome to Orbit") : std::string();
+        card.title = title;
+        card.body = body;
+        cn::Button choose;
+        choose.label = tr("Choose sources");
+        choose.primary = true;
+        choose.focus = area_ == Area::content;
+        card.buttons = {choose};
+        cn::draw_title(ctx_, list, card, 1.0f);
+        return;
+    }
+    if (look::is(look::Interface::crossbar))
+    {
+        // Crossbar asks over the bar, in a band.
+        xb::draw_bar(ctx_, list, xb::sections(ctx_, update_badge()), section());
+        xb::Band band;
+        band.kicker = setup ? tr("Welcome to Orbit") : std::string();
+        band.title = title;
+        band.body = body;
+        band.buttons = {tr("Choose sources")};
+        band.focus = area_ == Area::content ? 0 : -1;
+        xb::draw_band(ctx_, list, band, 1.0f);
+        return;
+    }
     ui::text(list, type.light, title, ui::kGutter, 380.0f, 60.0f, ui::color::text);
     ui::paragraph(list, type.regular, body, ui::kGutter, 446.0f, 27.0f, 980.0f, 40.0f,
                   ui::color::text2, 3);
@@ -626,8 +1040,260 @@ void App::draw_game_header(hui::gfx::DrawList &list) const
              ui::Align::center);
 }
 
+void App::draw_backdrop_look(Frame &frame) const
+{
+    const Snapshot &state = ctx_.store.state();
+    hui::gfx::DrawList &scene = frame.scene;
+    const Game *now = backdrop_.empty() ? nullptr : state.game(backdrop_);
+    const Game *before = previous_backdrop_.empty() ? nullptr : state.game(previous_backdrop_);
+    frame.backdrop.mode = hui::gfx::BackdropMode::gradient;
+    frame.backdrop.params[2] = 0.0f;
+    frame.backdrop.time = ctx_.clock;
+    switch (look::current())
+    {
+    case look::Interface::panorama:
+        frame.backdrop.colors[0] = pano::kPage;
+        frame.backdrop.colors[1] = pano::kPage;
+        // A game page shows its art a little stronger than the sections do.
+        scene.rounded_rect({0, 0, 1920, 1080}, 0.0f, pano::kPage);
+        if (look::prefs().art_behind)
+        {
+            // The design's strengths: a game .3, Browse .16, Library .18, the rest .2.
+            const float strength = game_open_                     ? 0.3f
+                                   : section() == section::browse  ? 0.16f
+                                   : section() == section::library ? 0.18f
+                                                                   : 0.2f;
+            if (before != nullptr && backdrop_in_.value < 1.0f)
+                pano::draw_backdrop(ctx_, scene, before, strength * (1.0f - backdrop_in_.value));
+            if (now != nullptr)
+                pano::draw_backdrop(ctx_, scene, now, strength * backdrop_in_.value);
+            scene.gradient_rect({0, 0, 1920, 1080}, 0.0f, pano::kPage.with_alpha(0.2f),
+                                pano::kPage.with_alpha(0.9f));
+        }
+        break;
+    case look::Interface::crossbar:
+    {
+        // The ribbons over the focused game's colours on Search, Discover,
+        // Browse and a game's page, as the browser version and Zero; the
+        // time of day's elsewhere.
+        const int at = section();
+        const bool tinted = game_open_ || (!settings_open_ && (at == section::search || at == section::discover || at == section::browse));
+        xb::backdrop(ctx_, frame.backdrop, tinted ? now : nullptr, tinted ? before : nullptr, backdrop_in_.value);
+        if (tinted)
+            xb::art_wash(ctx_, scene, now, before, backdrop_in_.value);
+        break;
+    }
+    case look::Interface::cinema:
+        // Black; each screen lays its game's art over it.
+        frame.backdrop.colors[0] = ui::Color::rgb(0x000000);
+        frame.backdrop.colors[1] = ui::Color::rgb(0x000000);
+        break;
+    default:
+        frame.backdrop.colors[0] = ui::color::night1;
+        frame.backdrop.colors[1] = ui::color::night0;
+        break;
+    }
+}
+
+void App::draw_notice(hui::gfx::DrawList &list) const
+{
+    const ui::Type &type = ctx_.type;
+    const char *label = tr("New: choose how Orbit looks in App settings \xE2\x86\x92 Appearance");
+    const float alpha = std::clamp(notice_time_ / 0.3f, 0.0f, 1.0f) *
+                        std::clamp((8.0f - notice_time_) / 0.3f, 0.0f, 1.0f);
+    const float width = type.regular.measure(label, 23.0f) + 104.0f;
+    const ui::Rect pill{960.0f - width * 0.5f, 1080.0f - 110.0f - 72.0f, width, 72.0f};
+    list.push_opacity(alpha);
+    list.shadow({pill.x, pill.y + 14.0f, pill.w, pill.h}, 36.0f, 40.0f, ui::Color::rgb(0x000000, 0.5f));
+    list.bordered_rect(pill, 36.0f, ui::Color::rgb(0x141414, 0.88f), 1.0f,
+                       ui::Color::rgb(0xffffff, 0.12f));
+    // A palette: a white disc with four dots of paint.
+    const float cx = pill.x + 38.0f;
+    list.circle(cx, pill.cy(), 20.0f, ui::Color::rgb(0xffffff));
+    const float dots[4][2] = {{-7.0f, -5.0f}, {0.0f, -9.0f}, {7.0f, -5.0f}, {-6.0f, 4.0f}};
+    for (const auto &d : dots)
+        list.circle(cx + d[0], pill.cy() + d[1], 2.6f, ui::Color::rgb(0x000000));
+    ui::text(list, type.regular, label, pill.x + 74.0f, pill.cy() + 8.0f, 23.0f, ui::color::text);
+    list.pop_opacity();
+}
+
+std::vector<hui::ui::Hint> App::current_hints() const
+{
+    std::vector<hui::ui::Hint> items;
+    if (look::pending())
+        items = {{hui::ui::Button::cross, tr("Select")}, {hui::ui::Button::circle, tr("Switch back")}};
+    else if (provider_open_)
+        items = {{hui::ui::Button::cross, tr("Select")}, {hui::ui::Button::circle, tr("Back")}};
+    else if (area_ == Area::top && look::is(look::Interface::cinema) && !game_open_)
+        items = {{hui::ui::Button::cross, tr("Select")}, {hui::ui::Button::circle, tr("Back")},
+                 {hui::ui::Button::l1, tr("Tabs"), hui::ui::Button::r1}};
+    else if (settings_open_)
+        items = settings_.hints();
+    else if (game_open_)
+        items = game_.hints();
+    else if (area_ == Area::top)
+        items = {{hui::ui::Button::cross, tr("Select")},
+                 {hui::ui::Button::l1, tr("Tabs"), hui::ui::Button::r1}};
+    else if (content_blocked() && !look::is(look::Interface::store))
+        items = {{hui::ui::Button::cross, tr("Choose sources")}};
+    else if (content_blocked())
+        items = {{hui::ui::Button::cross, tr("Choose sources")},
+                 {hui::ui::Button::l1, tr("Tabs"), hui::ui::Button::r1}};
+    else
+        items = screen().hints();
+    if (notice_time_ > 0.0f && !look::pending())
+        items.push_back({hui::ui::Button::options, tr("Open App settings")});
+    return items;
+}
+
+void App::draw_controls(Frame &frame) const
+{
+    // Every button, once, in the interface's own words: Crossbar's band,
+    // Cinema's title card, Panorama's message band.
+    hui::gfx::DrawList &list = frame.overlay;
+    const float in = controls_in_.value;
+    using hui::ui::Button;
+    if (look::is(look::Interface::crossbar))
+    {
+        xb::Band band;
+        band.title = tr("Controls");
+        band.controls = {{Button::l1, tr("Switch category"), Button::r1}, {Button::cross, tr("Open or choose")},
+                         {Button::circle, tr("Back")},                     {Button::options, tr("Actions for the selection")},
+                         {Button::triangle, tr("Favourite")},              {Button::square, tr("Search")},
+                         {Button::l2, tr("Page up and down"), Button::r2}};
+        band.buttons = {tr("Close")};
+        band.focus = 0;
+        xb::draw_band(ctx_, list, band, in);
+    }
+    else if (look::is(look::Interface::cinema))
+    {
+        cn::Title card;
+        card.kicker = tr("Controls");
+        card.title = tr("Every button, once");
+        card.controls = {{Button::l1, tr("Change chapter or collection"), Button::r1}, {Button::cross, tr("The main action")},
+                         {Button::circle, tr("Back, one level at a time")},           {Button::square, tr("Details, filters or delete")},
+                         {Button::triangle, tr("Favourite")},                         {Button::options, tr("Every action for this item")},
+                         {Button::l2, tr("Jump a letter or a page"), Button::r2}};
+        cn::Button close;
+        close.label = tr("Close");
+        close.primary = true;
+        close.focus = true;
+        card.buttons = {close};
+        cn::draw_title(ctx_, list, card, in);
+    }
+    else
+    {
+        pano::Band band;
+        band.kicker = tr("Controls");
+        band.title = tr("Every button, once");
+        band.controls = {{Button::l1, tr("Next or previous section"), Button::r1}, {Button::cross, tr("Open or choose")},
+                         {Button::circle, tr("Back, one level at a time")},       {Button::square, tr("Details, filters or delete")},
+                         {Button::triangle, tr("Favourite")},                     {Button::options, tr("Every action for this tile")},
+                         {Button::l2, tr("Jump a letter or a group"), Button::r2}};
+        band.buttons = {pano::button(tr("Close"))};
+        band.focus = 0;
+        pano::draw_band(ctx_, list, band, in);
+    }
+}
+
+void App::draw_keep(Frame &frame) const
+{
+    hui::gfx::DrawList &list = frame.overlay;
+    const ui::Type &type = ctx_.type;
+    const float in = keep_in_.value;
+    const look::Interface now = look::current();
+    const std::string name = tr(look::title(now));
+    const std::string previous = tr(look::title(look::previous()));
+    const int seconds = static_cast<int>(std::ceil(look::seconds_left(ctx_.clock)));
+    const std::string title = tr("Keep this interface?");
+    const std::string body = tr("Orbit switches back to {name} in {seconds} s if you don\xE2\x80\x99t answer.",
+                                {{"name", previous}, {"seconds", std::to_string(seconds)}});
+    const std::string keep = tr("Keep {name}", {{"name", name}});
+    const std::string back = tr("Switch back");
+    list.push_opacity(in);
+    switch (now)
+    {
+    case look::Interface::panorama:
+    {
+        // Panorama's message band, as every decision there is asked.
+        list.pop_opacity();
+        pano::Band question;
+        question.title = title;
+        question.body = body;
+        question.buttons = {pano::button(keep), pano::button(back)};
+        question.focus = keep_button_;
+        pano::draw_band(ctx_, list, question, in);
+        list.push_opacity(in);
+        break;
+    }
+    case look::Interface::crossbar:
+    {
+        // Crossbar's band, as every question there is asked.
+        list.pop_opacity();
+        xb::Band question;
+        question.title = title;
+        question.body = body;
+        question.buttons = {keep, back};
+        question.focus = keep_button_;
+        xb::draw_band(ctx_, list, question, in);
+        list.push_opacity(in);
+        break;
+    }
+    case look::Interface::cinema:
+    {
+        // Cinema's title card, as every decision there is asked.
+        list.pop_opacity();
+        cn::Title question;
+        question.title = title;
+        question.body = body;
+        cn::Button keep_button;
+        keep_button.label = keep;
+        keep_button.primary = true;
+        keep_button.focus = keep_button_ == 0;
+        cn::Button back_button;
+        back_button.label = back;
+        back_button.focus = keep_button_ == 1;
+        question.buttons = {keep_button, back_button};
+        cn::draw_title(ctx_, list, question, in);
+        list.push_opacity(in);
+        break;
+    }
+    default:
+    {
+        list.rounded_rect({0, 0, 1920, 1080}, 0.0f, ui::Color::rgb(0x000000, 0.45f));
+        const float width = 900.0f;
+        const std::vector<std::string> lines = type.regular.font->wrap(body, 22.0f, width - 88.0f);
+        const float height = 40.0f + 46.0f + 14.0f + 33.0f * static_cast<float>(lines.size()) + 30.0f + 62.0f + 40.0f;
+        const ui::Rect panel{960.0f - width * 0.5f, 540.0f - height * 0.5f, width, height};
+        list.shadow({panel.x, panel.y + 30.0f, panel.w, panel.h}, 28.0f, 80.0f, ui::Color::rgb(0x000000, 0.6f));
+        list.bordered_rect(panel, 28.0f, ui::Color::rgb(0x141414, 0.94f), 1.0f, ui::Color::rgb(0xffffff, 0.1f));
+        ui::text(list, type.medium, title, panel.x + 44.0f, panel.y + 40.0f + 38.0f, 38.0f, ui::color::text);
+        float y = panel.y + 40.0f + 46.0f + 14.0f + 22.0f;
+        for (const std::string &line : lines)
+        {
+            ui::text(list, type.regular, line, panel.x + 44.0f, y, 22.0f, ui::color::text2);
+            y += 33.0f;
+        }
+        float x = panel.x + 44.0f;
+        for (int i = 0; i < 2; ++i)
+        {
+            const std::string &label = i == 0 ? keep : back;
+            const float w = ui::button_width(type, label);
+            ui::button(list, type, {x, y + 8.0f, w, ui::kButtonHeight}, label,
+                       i == 0 ? ui::ButtonKind::light : ui::ButtonKind::secondary,
+                       keep_button_ == i ? 1.0f : 0.0f);
+            x += w + 16.0f;
+        }
+        break;
+    }
+    }
+    list.pop_opacity();
+}
+
 void App::draw(Frame &frame) const
 {
+    // Cinema draws Store's Library, Files and Downloads in its own palette.
+    ui::color::use_cinema(look::is(look::Interface::cinema));
     const Snapshot &state = ctx_.store.state();
     // The browser's body: navy to near-black, lit from the top left towards
     // #133070 (the shader adds its highlight, so it gets the difference).
@@ -645,10 +1311,46 @@ void App::draw(Frame &frame) const
                        (state.have_catalog || state.setup_needed());
     if (!ready)
     {
+        if (look::is(look::Interface::crossbar))
+            xb::backdrop(ctx_, frame.backdrop);
         draw_status(frame);
+        // The other interfaces name Cross's button, as their designs do.
+        if (!look::is(look::Interface::store) && status_offline(state) && ctx_.store.can_start())
+        {
+            ui::HintStyle style;
+            if (look::is(look::Interface::crossbar))
+                style = {1024.0f, 19.0f, 32.0f, 12.0f};
+            else
+                style = look::is(look::Interface::cinema) ? cn::hint_style() : pano::hint_style();
+            ui::hints(frame.overlay, ctx_.type, {{hui::ui::Button::cross, tr("Try again")}}, style);
+        }
         return;
     }
 
+    if (!look::is(look::Interface::store))
+    {
+        draw_backdrop_look(frame);
+        if (settings_open_)
+            settings_.draw(frame, !provider_open_);
+        else if (game_open_)
+            game_.draw(frame, !provider_open_);
+        else if (content_blocked())
+            draw_blocked(scene);
+        else
+            screen().draw(frame, !provider_open_);
+        // Panorama's tray: on every page but Discover and Downloads (which show
+        // downloads themselves) and the keyboard.
+        if (look::is(look::Interface::panorama) &&
+            (game_open_ || (section() != section::discover && section() != section::downloads && !screen().hints_high())))
+            pano::draw_tray(ctx_, scene, !game_open_ && section() == section::settings && update_badge());
+        if (look::is(look::Interface::crossbar))
+            xb::draw_header(ctx_, scene, tab_ == tab::addons);
+        if (look::is(look::Interface::cinema))
+            cn::chapters(ctx_, scene, section(), update_badge(), settings_open_ || game_open_ || !screen().hints_high(),
+                         area_ == Area::top && !game_open_ && !provider_open_ && !look::pending() && !controls_open_);
+    }
+    else
+    {
     // ---- art behind everything, crossfading between games ----
     const bool discover_art = !game_open_ && tab_ == tab::discover;
     const float art_height = discover_art ? 800.0f : 1080.0f;
@@ -685,6 +1387,7 @@ void App::draw(Frame &frame) const
             screen().draw(frame, area_ == Area::content && !settings_open_ && !provider_open_);
         draw_top_bar(scene);
     }
+    }
 
     hui::gfx::DrawList &overlay = frame.overlay;
 
@@ -700,7 +1403,97 @@ void App::draw(Frame &frame) const
     else if (!state.system.state_healthy)
         banner = tr("Orbit cannot save its queue. Check free space on the console\xE2\x80\x99s "
                  "internal storage.");
-    if (banner != nullptr)
+    if (look::is(look::Interface::panorama))
+    {
+        // Solid strips across the top: amber for problems (a lost connection
+        // runs its dots), blue for news, green for done, magenta for favourites.
+        float top = 0.0f;
+        if (banner != nullptr)
+        {
+            const bool lost = state.link == Link::offline && !restarting;
+            const float h = pano::draw_notice(ctx_, overlay, top, restarting ? icons::Icon::info : lost ? icons::Icon::wifi : icons::Icon::warn,
+                                              restarting ? look::accent_color() : pano::kAmber, banner);
+            if (lost)
+                pano::draw_dots(ctx_, overlay, 148.0f + type.semibold.measure(banner, 23.0f) + 14.0f, top + h * 0.5f, 7.0f,
+                                ui::Color::rgb(0x000000));
+            top += h + 3.0f;
+        }
+        if (toast_time_ > 0.0f && !toast_.empty())
+        {
+            const float alpha = std::min(1.0f, toast_time_ / 0.3f) * std::min(1.0f, (toast_length_ - toast_time_) / 0.2f);
+            const bool failed = toast_ == tr("The browser could not be opened.");
+            overlay.push_opacity(std::clamp(alpha, 0.0f, 1.0f));
+            pano::draw_notice(ctx_, overlay, top,
+                              toast_update_      ? icons::Icon::update
+                              : toast_favourite_ ? icons::Icon::heart_fill
+                              : failed           ? icons::Icon::warn
+                                                 : icons::Icon::check,
+                              toast_update_      ? look::accent_color()
+                              : toast_favourite_ ? pano::kMagenta
+                              : failed           ? pano::kAmber
+                                                 : pano::kGreen,
+                              toast_);
+            overlay.pop_opacity();
+        }
+    }
+    else if (look::is(look::Interface::cinema))
+    {
+        // Cinema's notices grow out of the capsule; a lost connection is a
+        // capsule of its own across the top.
+        float top = 120.0f;
+        if (banner != nullptr && state.link == Link::offline && !restarting)
+        {
+            const float w = 26.0f + 24.0f + 14.0f + type.regular.measure(banner, 22.0f) + 26.0f;
+            const ui::Rect pill{960.0f - w * 0.5f, 120.0f, w, 56.0f};
+            overlay.bordered_rect(pill, 28.0f, ui::Color::rgb(0x000000, 0.5f), 1.0f, ui::Color::rgb(0xffffff, 0.14f));
+            cn::spinner(ctx_, overlay, pill.x + 26.0f + 12.0f, pill.cy(), 24.0f, 3.0f);
+            ui::text(overlay, type.regular, banner, pill.x + 26.0f + 24.0f + 14.0f, pill.cy() + 22.0f * 0.35f, 22.0f, cn::kInk);
+            top += 56.0f + 18.0f;
+        }
+        else if (banner != nullptr)
+            top += cn::draw_notice(ctx_, overlay, top, restarting ? icons::Icon::info : icons::Icon::warn, restarting ? cn::kInk : cn::kWarn,
+                                   banner) +
+                   18.0f;
+        if (toast_time_ > 0.0f && !toast_.empty())
+        {
+            const float alpha = std::min(1.0f, toast_time_ / 0.3f) * std::min(1.0f, (toast_length_ - toast_time_) / 0.2f);
+            const bool failed = toast_ == tr("The browser could not be opened.");
+            overlay.push_opacity(std::clamp(alpha, 0.0f, 1.0f));
+            cn::draw_notice(ctx_, overlay, top,
+                            toast_update_      ? icons::Icon::update
+                            : toast_favourite_ ? icons::Icon::heart_fill
+                            : failed           ? icons::Icon::warn
+                                               : icons::Icon::check,
+                            toast_update_ || toast_favourite_ ? cn::kInk : failed ? cn::kWarn : cn::kOk, toast_);
+            overlay.pop_opacity();
+        }
+    }
+    else if (look::is(look::Interface::crossbar))
+    {
+        // Crossbar's notes, stacked at the top right.
+        float top = 108.0f;
+        if (banner != nullptr)
+            top += xb::draw_toast(ctx_, overlay, top, restarting ? icons::Icon::info : icons::Icon::warn,
+                                  restarting ? ui::Color::rgb(0xffffff) : ui::Color::rgb(0xffd27a), banner) +
+                   18.0f;
+        if (toast_time_ > 0.0f && !toast_.empty())
+        {
+            const float alpha = std::min(1.0f, toast_time_ / 0.3f) * std::min(1.0f, (toast_length_ - toast_time_) / 0.2f);
+            const bool failed = toast_ == tr("The browser could not be opened.");
+            overlay.push_opacity(std::clamp(alpha, 0.0f, 1.0f));
+            xb::draw_toast(ctx_, overlay, top,
+                           toast_update_      ? icons::Icon::update
+                           : toast_favourite_ ? icons::Icon::heart_fill
+                           : failed           ? icons::Icon::warn
+                                              : icons::Icon::check,
+                           toast_update_ || toast_favourite_ ? ui::Color::rgb(0xffffff)
+                           : failed                          ? ui::Color::rgb(0xffd27a)
+                                                             : ui::Color::rgb(0x8fe8c4),
+                           toast_);
+            overlay.pop_opacity();
+        }
+    }
+    else if (banner != nullptr)
     {
         const float width = type.medium.measure(banner, 21.0f) + 64.0f;
         const ui::Rect pill{960.0f - width * 0.5f, 150.0f, width, 52.0f};
@@ -710,7 +1503,7 @@ void App::draw(Frame &frame) const
         ui::text(overlay, type.medium, banner, pill.cx(), pill.cy() + 7.0f, 21.0f,
                  restarting ? ui::color::text : ui::color::bad, ui::Align::center);
     }
-    if (toast_time_ > 0.0f && !toast_.empty())
+    if (toast_time_ > 0.0f && !toast_.empty() && look::is(look::Interface::store))
     {
         const float alpha = std::min(1.0f, toast_time_ / 0.3f) *
                             std::min(1.0f, (toast_length_ - toast_time_) / 0.2f);
@@ -725,6 +1518,12 @@ void App::draw(Frame &frame) const
             overlay.circle(pill.x + 40.0f, pill.cy(), 16.0f, ui::color::action);
             ui::icon_download(overlay, pill.x + 40.0f, pill.cy(), 18.0f, ui::color::text);
         }
+        else if (toast_favourite_)
+        {
+            // A favourite added or removed: a heart, as every look shows it.
+            overlay.circle(pill.x + 40.0f, pill.cy(), 16.0f, ui::color::action);
+            icons::draw(overlay, icons::Icon::heart_fill, pill.x + 40.0f, pill.cy(), 18.0f, ui::color::night1, 2.0f);
+        }
         else
         {
             overlay.circle(pill.x + 40.0f, pill.cy(), 16.0f, ui::color::ok);
@@ -736,32 +1535,36 @@ void App::draw(Frame &frame) const
     }
 
     if (provider_open_) draw_provider(frame);
+    if (notice_time_ > 0.0f)
+        draw_notice(overlay);
+    if (keep_in_.value > 0.01f)
+        draw_keep(frame);
+
+    if (controls_in_.value > 0.01f)
+        draw_controls(frame);
 
     // ---- controller hints, over a fade that lets content scroll beneath ----
-    std::vector<hui::ui::Hint> items;
-    if (provider_open_)
-        items = {{hui::ui::Button::cross, tr("Select")}, {hui::ui::Button::circle, tr("Back")}};
-    else if (settings_open_)
-        items = settings_.hints();
-    else if (game_open_)
-        items = game_.hints();
-    else if (area_ == Area::top)
-        items = {{hui::ui::Button::cross, tr("Select")},
-                 {hui::ui::Button::l1, tr("Tabs"), hui::ui::Button::r1}};
-    else if (content_blocked())
-        items = {{hui::ui::Button::cross, tr("Choose sources")},
-                 {hui::ui::Button::l1, tr("Tabs"), hui::ui::Button::r1}};
-    else
-        items = screen().hints();
+    const std::vector<hui::ui::Hint> items = controls_open_ ? std::vector<hui::ui::Hint>{} : current_hints();
     if (items.empty())
         return;
-    const float hints_left =
-        !game_open_ && (tab_ == tab::discover || tab_ == tab::library) ? 1250.0f : 0.0f;
-    overlay.gradient_rect({hints_left, 960.0f, 1920.0f - hints_left, 50.0f}, 0.0f,
-                          ui::color::night0.with_alpha(0.0f), ui::color::night0.with_alpha(0.95f));
-    overlay.rounded_rect({hints_left, 1010.0f, 1920.0f - hints_left, 70.0f}, 0.0f,
-                         ui::color::night0.with_alpha(0.95f));
-    ui::hints(overlay, type, items);
+    // The other interfaces float their hints over the page, as their designs do.
+    if (look::is(look::Interface::store))
+    {
+        const float hints_left =
+            !game_open_ && (tab_ == tab::discover || tab_ == tab::library) ? 1250.0f : 0.0f;
+        overlay.gradient_rect({hints_left, 960.0f, 1920.0f - hints_left, 50.0f}, 0.0f,
+                              ui::color::night0.with_alpha(0.0f), ui::color::night0.with_alpha(0.95f));
+        overlay.rounded_rect({hints_left, 1010.0f, 1920.0f - hints_left, 70.0f}, 0.0f,
+                             ui::color::night0.with_alpha(0.95f));
+    }
+    ui::HintStyle style;
+    if (look::is(look::Interface::crossbar))
+        style = {1024.0f, 19.0f, 32.0f, 12.0f};
+    else if (look::is(look::Interface::cinema))
+        style = cn::hint_style(!settings_open_ && !game_open_ && screen().hints_high() ? 450.0f : 34.0f);
+    else if (look::is(look::Interface::panorama))
+        style = pano::hint_style(!settings_open_ && !game_open_ && screen().hints_high() ? 450.0f : 30.0f);
+    ui::hints(overlay, type, items, style);
 }
 
 } // namespace orbit

@@ -1,4 +1,4 @@
-"""Import reviewed, uncompressed PS4 candidates without changing PS5 editions.
+"""Import reviewed PS4 packages and single archives without changing PS5 editions.
 
 Consumes the separate research JSON offline. Incomplete candidates remain in that
 file with a reported reason; no network requests, public-feed writes or publishing.
@@ -10,7 +10,7 @@ import json
 import re
 from datetime import date
 from pathlib import Path
-from catalog import ROOT, check_region, compile_catalog, content_id, https, now, read, region_of, save, title_platform, STORE_PRODUCT
+from catalog import ROOT, check_region, compile_catalog, content_id, download_suffix, https, now, read, region_of, save, title_platform, STORE_PRODUCT
 
 
 def full_metadata(record):
@@ -73,8 +73,14 @@ def stage(research, games, releases, snapshot_hash):
             tid, rid = record['titleId'], record['id']
             if title_platform(tid) != 'ps4' or record.get('platform') != 'ps4' or rid in ids:
                 raise ValueError('Expected a unique PS4 package identity')
-            if record.get('format') not in ('FPKG', 'PKG'):
-                raise ValueError('Only single raw packages are included')
+            if record.get('format') not in ('FPKG', 'PKG', 'Unknown'):
+                raise ValueError('Expected a raw PS4 package or declared single archive')
+            # Unknown is reserved for compressed files whose contents have not
+            # been inspected. Reuse the compiler's archive/password/size rules,
+            # and retain those declarations in the staged release below.
+            suffix = download_suffix(record)
+            if not record.get('filename', '').lower().endswith(suffix):
+                raise ValueError('Package/archive filename does not match its declared format')
             evidence, art = record.get('importEvidence', {}), record.get('artworkEvidence', {})
             if not evidence.get('identityEvidence') or not https(evidence.get('identitySourceUrl', '')):
                 raise ValueError('Missing title identity evidence')
@@ -122,6 +128,8 @@ def stage(research, games, releases, snapshot_hash):
                 importEvidence={**evidence, 'researchSha256': snapshot_hash, 'sourceRegion': record.get('region')})
             for key in ('browserUrl', 'notes'):
                 if record.get(key): release[key] = record[key]
+            for key in ('compression', 'archiveContents', 'archivePassword', 'extractedBytes'):
+                if key in record: release[key] = copy.deepcopy(record[key])
             # Region claims in filenames stay in provenance until a matching
             # official content ID supports the region shown in the filter.
             page = record.get('metadataUrl', '')

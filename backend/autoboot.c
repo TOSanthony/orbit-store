@@ -145,6 +145,9 @@ static int saved_image(unsigned char **data, size_t *length) {
     }
     return 0;
 }
+int autoboot_saved_image(unsigned char **data, size_t *length) {
+    return saved_image(data, length);
+}
 static int lock_settings(void) {
     Path p;
     at(p, ORBIT_DIR);

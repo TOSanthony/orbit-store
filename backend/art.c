@@ -76,7 +76,8 @@ static size_t urls_for(const char *game_id, bool hero, char out[2][2048]) {
     size_t count = 0;
     pthread_mutex_lock(&orbit.mutex);
     const cJSON *entry;
-    cJSON_ArrayForEach(entry, orbit.catalog) {
+    for (unsigned group = 0; group < 2 && !count; group++)
+    cJSON_ArrayForEach(entry, (group ? orbit.addons : orbit.catalog)) {
         if (strcmp(json_text(entry, "gameId"), game_id) ||
             !source_enabled_locked(release_find(json_text(entry, "id"))))
             continue;

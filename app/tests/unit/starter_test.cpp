@@ -260,13 +260,31 @@ struct Console
     std::string failure = "connection refused";
     std::string version = "0.6.0", instance, saved;
     bool stopping = false;
+    bool self_restart = false; // the service restarts itself through the ELF loader
+    std::string update_phase;  // an update the browser started: "restarting" near its end
     Console()
     {
         transport.reply = [this](const http::Request &request)
         {
             if (online && request.method == "POST" && request.path == "/api/v1/updates")
-                return test::json_reply(202, "{\"phase\":\"stopping\",\"instanceId\":\"" + instance +
+                return test::json_reply(202, "{\"phase\":\"" + std::string(self_restart ? "restarting" : "stopping") +
+                    "\",\"instanceId\":\"" + instance +
                     "\",\"runningVersion\":\"" + version + "\",\"savedVersion\":\"" + saved + "\"}");
+            if (online && request.method == "GET" && request.path == "/api/v1/updates" &&
+                (self_restart || !update_phase.empty()))
+            {
+                auto response = fixture.send(request);
+                response.body.insert(response.body.find('{') + 1,
+                    std::string("\"selfRestart\":") + (self_restart ? "true," : "false,") +
+                    (update_phase.empty() ? "" : "\"updateAll\":true,\"instanceId\":\"" + instance + "\",") );
+                if (!update_phase.empty())
+                {
+                    const auto at = response.body.find("\"phase\":\"");
+                    const auto end = response.body.find('"', at + 9);
+                    response.body.replace(at + 9, end - at - 9, update_phase);
+                }
+                return response;
+            }
             if (online && request.path == "/api/v1/system")
             {
                 // Preserve the fixture's session and catalogue fields.
@@ -439,6 +457,106 @@ TEST(StoreRestart, StopsOrbitThenStartsTheSavedCopyAndReportsItsVersion)
     EXPECT_EQ(store.state().restart, Restart::idle);
     store.poll_once();
     EXPECT_EQ(starter.calls, 1);
+}
+
+TEST(StoreRestart, OrbitRestartingItselfComesBackWithoutTheAppSendingACopy)
+{
+    Console console;
+    console.online = true;
+    console.self_restart = true;
+    console.instance = "old";
+    CountingStarter starter;
+    Store store(console.transport, &starter);
+    store.set_restart_grace(0.0);
+    store.poll_once();
+    store.tick();
+    store.restart_service();
+    store.run_next_action();
+    store.tick();
+    EXPECT_EQ(store.state().restart, Restart::stopping);
+    int restarts = 0;
+    for (const http::Request &request : console.transport.seen)
+        restarts += request.body == R"({"action":"restart","confirmed":true})" ? 1 : 0;
+    EXPECT_EQ(restarts, 1);
+    console.online = false;
+    store.poll_once(); // stopped
+    store.poll_once(); // Orbit is starting itself: nothing is sent
+    store.tick();
+    EXPECT_EQ(store.state().restart, Restart::starting);
+    EXPECT_EQ(starter.calls, 0);
+    console.instance = "new";
+    console.online = true;
+    store.poll_once();
+    store.tick();
+    EXPECT_EQ(store.state().restart, Restart::done);
+    EXPECT_EQ(starter.calls, 0);
+}
+
+TEST(StoreRestart, WithoutALoaderARestartStopsOrbitForThisAppToStart)
+{
+    Console console;
+    console.online = true;
+    console.self_restart = true; // it could restart itself when the status was read
+    console.instance = "old";
+    const auto service = console.transport.reply;
+    console.transport.reply = [&service](const http::Request &request)
+    {
+        if (request.method == "POST" && request.path == "/api/v1/updates" &&
+            request.body.find("\"restart\"") != std::string::npos)
+            return test::json_reply(409, R"({"error":"Orbit can't restart itself because no ELF loader answers on port 9021."})");
+        return service(request);
+    };
+    CountingStarter starter;
+    Store store(console.transport, &starter);
+    store.set_restart_grace(0.0);
+    store.poll_once();
+    store.tick();
+    console.self_restart = false;
+    store.restart_service();
+    store.run_next_action();
+    store.tick();
+    EXPECT_EQ(store.state().restart, Restart::stopping);
+    EXPECT_TRUE(store.setting_result().error.empty());
+    int stops = 0;
+    for (const http::Request &request : console.transport.seen)
+        stops += request.body == R"({"action":"stop","confirmed":true})" ? 1 : 0;
+    EXPECT_EQ(stops, 1);
+    console.online = false;
+    store.poll_once(); // stopped
+    store.poll_once(); // this app starts it
+    EXPECT_EQ(starter.calls, 1);
+}
+
+TEST(StoreRestart, AnUpdateThatDoesNotComeBackIsStartedFromTheSavedCopy)
+{
+    Console console;
+    console.online = true;
+    console.instance = "old";
+    console.update_phase = "downloading"; // "Update Orbit" from the browser
+    CountingStarter starter;
+    Store store(console.transport, &starter);
+    store.set_restart_grace(0.0);
+    store.set_self_restart_wait(0.0);
+    store.poll_once();
+    store.tick();
+    EXPECT_EQ(store.state().restart, Restart::idle);
+    console.update_phase = "restarting"; // at its end
+    console.stopping = true;             // as /system says from then on
+    store.poll_once();
+    store.tick();
+    EXPECT_EQ(store.state().restart, Restart::stopping);
+    console.online = false;
+    store.poll_once(); // stopped
+    store.poll_once(); // it didn't come back in time: send the saved copy
+    store.tick();
+    EXPECT_EQ(starter.calls, 1);
+    console.update_phase.clear();
+    console.stopping = false;
+    console.instance = "new";
+    console.online = true;
+    store.poll_once();
+    store.tick();
+    EXPECT_EQ(store.state().restart, Restart::done);
 }
 
 TEST(StoreRestart, WithoutALoaderItAsksForAPayloadManagerAndWaits)

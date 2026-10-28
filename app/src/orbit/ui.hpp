@@ -28,42 +28,60 @@ using hui::gfx::Rect;
 
 namespace color
 {
-inline const Color night0 = Color::rgb(0x000000);
-inline const Color night1 = Color::rgb(0x080808);
-inline const Color night2 = Color::rgb(0x151515);
-inline const Color night3 = Color::rgb(0x242424);
-inline const Color glow = Color::rgb(0x181818);
-inline const Color text = Color::rgb(0xffffff);
-inline const Color text2 = Color::rgb(0xd0d0d0);
-inline const Color text3 = Color::rgb(0xa1a1a1);
-inline const Color action = Color::rgb(0xffffff);
-inline const Color action_hi = Color::rgb(0xe0e0e0);
-inline const Color ok = Color::rgb(0xffffff);
-inline const Color bad = Color::rgb(0xffffff);
-inline const Color line = Color::rgb(0xffffff, 0.16f);
+// Store's palette. Cinema draws Store's Library, Files and Downloads in its own
+// warm one (use_cinema), as the browser's Cinema restyles Store's pages.
+inline Color night0 = Color::rgb(0x000000);
+inline Color night1 = Color::rgb(0x080808);
+inline Color night2 = Color::rgb(0x151515);
+inline Color night3 = Color::rgb(0x242424);
+inline Color glow = Color::rgb(0x181818);
+inline Color text = Color::rgb(0xffffff);
+inline Color text2 = Color::rgb(0xd0d0d0);
+inline Color text3 = Color::rgb(0xa1a1a1);
+inline Color action = Color::rgb(0xffffff);
+inline Color action_hi = Color::rgb(0xe0e0e0);
+inline Color ok = Color::rgb(0xffffff);
+inline Color bad = Color::rgb(0xffffff);
+inline Color line = Color::rgb(0xffffff, 0.16f);
 // Fields are tonal surfaces, not outlines (the browser's --field tokens).
-inline const Color field = Color::rgb(0xffffff, 0.075f);
-inline const Color field_open = Color::rgb(0xffffff, 0.145f);
-inline const Color field_edge = Color::rgb(0xffffff, 0.06f);
+inline Color field = Color::rgb(0xffffff, 0.075f);
+inline Color field_open = Color::rgb(0xffffff, 0.145f);
+inline Color field_edge = Color::rgb(0xffffff, 0.06f);
 // Over game art they are dark glass, so text stays readable on bright covers.
-inline const Color glass = Color::rgb(0x080808, 0.62f);
-inline const Color glass_on = Color::rgb(0x202020, 0.82f);
+inline Color glass = Color::rgb(0x080808, 0.62f);
+inline Color glass_on = Color::rgb(0x202020, 0.82f);
 // An open list: a frosted panel over the screen.
-inline const Color popover = Color::rgb(0x141414, 0.9f);
+inline Color popover = Color::rgb(0x141414, 0.9f);
+// Small labels and progress bars: white in Store, gold in Cinema.
+inline Color accent = Color::rgb(0xffffff);
+// The palette for the interface about to be drawn.
+void use_cinema(bool cinema);
 } // namespace color
 
 constexpr float kGutter = 100.0f;     // left and right page margin
 constexpr float kArtRadius = 14.0f;   // covers and art
 constexpr float kPanelRadius = 22.0f; // dialogs
 
-// The four faces the app draws with (all Inter, SIL Open Font License).
+// The faces the app draws with (SIL Open Font License). Store uses the four
+// Inter faces; the other interfaces add their own, and fall back to Inter
+// when a face is missing or lacks a letter (Sora is Latin only).
 struct Type
 {
     hui::ui::FontRef light;    // Inter Display Light: large titles
     hui::ui::FontRef regular;  // body
     hui::ui::FontRef medium;   // tabs, buttons
     hui::ui::FontRef semibold; // headings, labels
+    hui::ui::FontRef xlight;   // Inter Tight ExtraLight: Panorama's section titles
+    hui::ui::FontRef tight_light;  // Inter Tight Light: Panorama's lists, bands and group titles
+    hui::ui::FontRef tight_medium; // Inter Tight Medium: Panorama's tiles and buttons
+    hui::ui::FontRef sora;     // Sora Regular: Crossbar
+    hui::ui::FontRef sora_semibold;
+    hui::ui::FontRef cinema;   // Inter Tight SemiBold: Cinema's titles
 };
+
+// face when it can draw every letter of value, else fallback.
+const hui::ui::FontRef &face(const hui::ui::FontRef &face, const hui::ui::FontRef &fallback,
+                             std::string_view value);
 
 // One line of text; x is the left edge, centre or right edge. Returns its width.
 float text(DrawList &list, const hui::ui::FontRef &font, std::string_view value, float x,
@@ -139,9 +157,10 @@ void select_field(DrawList &list, const Type &type, const Rect &r, std::string_v
 // .select-menu under (or, near the bottom, over) its trigger: the chosen
 // option has a check, the controller's option is lit white. in fades it.
 // With the frame's glass texture (set frame.glass) the panel is frosted.
+// checked, when given, ticks several options instead of the selected one.
 void select_menu(DrawList &list, const Type &type, const Rect &trigger,
                  const std::vector<std::string> &options, int selected, int active, float in,
-                 std::uint32_t glass_texture = 0);
+                 std::uint32_t glass_texture = 0, const std::vector<bool> *checked = nullptr);
 
 // Line-art icons drawn from shapes.
 void icon_search(DrawList &list, float cx, float cy, float size, Color ink);
@@ -153,8 +172,23 @@ void icon_back(DrawList &list, float cx, float cy, float size, Color ink);
 void icon_heart(DrawList &list, float cx, float cy, float size, Color ink);
 void icon_layers(DrawList &list, float cx, float cy, float size, Color ink);
 
-// A hint row in the bottom-right corner, drawn as the browser's footer.
-void hints(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &items);
+// A hint row in the bottom-right corner, drawn as the browser's footer, or
+// where and as large as an interface's design puts it (y is the row's middle).
+struct HintStyle
+{
+    float y = 1038.0f;
+    float label = 17.0f;
+    float glyph = 30.0f;
+    float gap = 10.0f; // between a glyph and its label
+    Color ink = color::text;
+};
+void hints(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &items, const HintStyle &style = {});
+// One hint from its left edge x (style.y its middle); returns its width.
+float hint_at(DrawList &list, const Type &type, const hui::ui::Hint &item, float x, const HintStyle &style);
+// Every button, once: hints in two columns from (x, y) across width, a row
+// every `step` px. Returns the height.
+float controls_grid(DrawList *list, const Type &type, const std::vector<hui::ui::Hint> &items, float x, float y, float width,
+                    float step, HintStyle style);
 
 // A value that eases toward a target (focus fades, scrolling, crossfades).
 struct Ease

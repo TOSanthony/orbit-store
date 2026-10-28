@@ -23,7 +23,7 @@ TEST(Archive, ApiSendsPasswordInBodyOnlyForPasswordRetry)
     EXPECT_EQ(transport.seen.back().body.find("unused"), std::string::npos);
 }
 
-TEST(Debrid, AvailabilityRequiresTheSelectedHostAndItsFileLimit)
+TEST(Debrid, AvailabilityRequiresTheSelectedHostWithoutEnforcingSizeMetadata)
 {
     json::Value value;
     ASSERT_TRUE(json::parse(connected, &value));
@@ -32,8 +32,8 @@ TEST(Debrid, AvailabilityRequiresTheSelectedHostAndItsFileLimit)
     release.source_id = "archive";
     release.size_bytes = 107374182400.0;
     EXPECT_TRUE(status.supports(release));
-    release.size_bytes += 1;
-    EXPECT_FALSE(status.supports(release));
+    release.size_bytes *= 2;
+    EXPECT_TRUE(status.supports(release));
     release.size_bytes = 1000;
     release.source_id = "vikingfile";
     EXPECT_FALSE(status.supports(release));
@@ -58,7 +58,7 @@ TEST(Debrid, ApiSubmitsDeliveryOnlyAfterAnExplicitChoice)
               R"({"releaseId":"release","storageId":"usb0","delivery":"torbox"})");
 }
 
-TEST(Debrid, UsesHigherWebDownloadLimitsReportedByTorBox)
+TEST(Debrid, SizeMetadataDoesNotBlockTheSelectedFile)
 {
     json::Value value;
     ASSERT_TRUE(json::parse(R"({"provider":"torbox","available":true,"connected":true,"hosts":[{"sourceId":"archive","available":true,"maxFileSize":214748364800}]})", &value));
@@ -68,10 +68,10 @@ TEST(Debrid, UsesHigherWebDownloadLimitsReportedByTorBox)
     release.size_bytes = 150.0 * 1024 * 1024 * 1024;
     EXPECT_TRUE(status.supports(release));
     release.size_bytes = 214748364801.0;
-    EXPECT_FALSE(status.supports(release));
+    EXPECT_TRUE(status.supports(release));
 }
 
-TEST(Debrid, DataNodesUsesItsOwnAvailabilityAndLimits)
+TEST(Debrid, DataNodesUsesItsOwnAvailability)
 {
     json::Value value;
     ASSERT_TRUE(json::parse(R"({"provider":"torbox","available":true,"connected":true,"hosts":[{"sourceId":"archive","available":true,"maxFileSize":0},{"sourceId":"datanodes","available":true,"maxFileSize":107374182400}]})", &value));
@@ -82,8 +82,8 @@ TEST(Debrid, DataNodesUsesItsOwnAvailabilityAndLimits)
     release.direct_available = false;
     release.size_bytes = 107374182400.0;
     EXPECT_TRUE(status.supports(release));
-    release.size_bytes += 1;
-    EXPECT_FALSE(status.supports(release));
+    release.size_bytes *= 2;
+    EXPECT_TRUE(status.supports(release));
     release.size_bytes = 1000;
     status.hosts.back().available = false;
     EXPECT_FALSE(status.supports(release));
@@ -103,21 +103,21 @@ struct DebridHarness
     GamePage page{context};
     Feedback feedback;
     bool linked = true;
-    explicit DebridHarness(bool datanodes = false)
+    explicit DebridHarness(std::string browser_source = {})
     {
-        transport.reply = [this, datanodes](const http::Request &request)
+        transport.reply = [this, browser_source](const http::Request &request)
         {
             if (request.path == "/api/v1/debrid")
                 return test::json_reply(
-                    200, linked ? datanodes
-                                    ? R"({"provider":"torbox","available":true,"connected":true,"busy":false,"hosts":[{"sourceId":"datanodes","available":true,"maxFileSize":107374182400}]})"
+                    200, linked ? !browser_source.empty()
+                                    ? R"({"provider":"torbox","available":true,"connected":true,"busy":false,"hosts":[{"sourceId":")" + browser_source + R"(","available":true,"maxFileSize":107374182400}]})"
                                     : connected
                                 : R"({"provider":"torbox","available":true,"connected":false})");
             auto response = backend.send(request);
-            if (datanodes && request.path == "/api/v1/catalog")
+            if (!browser_source.empty() && request.path == "/api/v1/catalog")
             {
                 const std::string original = "\"sourceId\":\"archive\"";
-                const std::string replacement = "\"sourceId\":\"datanodes\",\"browserAvailable\":true,\"directAvailable\":false";
+                const std::string replacement = "\"sourceId\":\"" + browser_source + "\",\"browserAvailable\":true,\"directAvailable\":false";
                 for (size_t at = 0; (at = response.body.find(original, at)) != std::string::npos; at += replacement.size())
                     response.body.replace(at, original.size(), replacement);
             }
@@ -178,9 +178,11 @@ TEST(Debrid, ControllerChoosesTorboxAndQueuesOnTheSelectedDrive)
     EXPECT_TRUE(submitted);
 }
 
-TEST(Debrid, DataNodesTorBoxQueuesWithoutOpeningTheProviderBrowser)
+class BrowserSourceTorBox : public ::testing::TestWithParam<std::string> {};
+
+TEST_P(BrowserSourceTorBox, QueuesWithoutOpeningTheProviderBrowser)
 {
-    DebridHarness h(true);
+    DebridHarness h(GetParam());
     h.context.open_download = [](const BrowserSelection &) {
         ADD_FAILURE() << "TorBox delivery must not open provider verification";
         return false;
@@ -206,6 +208,9 @@ TEST(Debrid, DataNodesTorBoxQueuesWithoutOpeningTheProviderBrowser)
     }
     EXPECT_EQ(submissions, 1);
 }
+
+INSTANTIATE_TEST_SUITE_P(Debrid, BrowserSourceTorBox,
+                        ::testing::Values("datanodes", "1fichier"));
 
 TEST(Debrid, SetupOpensTheBrowserWithTheSelectionWithoutQueuing)
 {

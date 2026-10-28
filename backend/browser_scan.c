@@ -18,7 +18,8 @@ ProbeResult probe_scan_region(ProbeReader *reader, uint64_t start, uint64_t end,
     if (!length || length == PROBE_MARKER_MAX) return PROBE_INVALID;
     unsigned char wide[PROBE_MARKER_MAX * 2] = {0};
     for (size_t i = 0; i < length; i++) wide[i * 2] = (unsigned char)marker[i];
-    const size_t overlap = reader->match ? PROBE_MATCH_MAX * 2 - 1 : length * 2 - 1;
+    /* A bounded URL may use two-byte JSON slash escapes in UTF-16. */
+    const size_t overlap = reader->match ? PROBE_MATCH_MAX * 4 - 1 : length * 2 - 1;
     unsigned char *buffer = malloc(PROBE_CHUNK + overlap);
     if (!buffer) return PROBE_INVALID;
     size_t carried = 0;

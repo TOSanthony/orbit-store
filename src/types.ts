@@ -1,5 +1,21 @@
+import type { Installation } from "./Installation";
 import { formatNumber } from "./i18n";
-export interface Release {
+export interface AddonRequirements {
+  titleIds: string[];
+  edition?: string | null;
+  minimumVersion?: string | null;
+  notes?: string | null;
+}
+export interface AddonIdentity {
+  addonId?: string;
+  baseGameId?: string;
+  baseGameTitle?: string;
+  addonType?: "expansion" | "content-pack" | "activation" | "bundle";
+  contentId?: string;
+  requirements?: AddonRequirements;
+  contents?: string[];
+}
+export interface Release extends AddonIdentity {
   platform?: "ps4" | "ps5";
   id: string;
   gameId: string;
@@ -30,11 +46,16 @@ export interface Release {
   releaseDate: string | null;
   addedAt?: string | null;
   newOnOrbitRank?: number | null;
+  tags?: string[]; // Browse tags, as browse.ts TAGS names them
   consoleVerified: boolean;
   browserAvailable?: boolean;
   directAvailable?: boolean;
+  /* The firmware an option needs, from the console's service; see src/firmware.ts. */
+  requiredFirmware?: string;
+  maxFirmware?: string;
+  firmwareIssue?: "ps5-package" | "newer-firmware";
 }
-export interface Game {
+export interface Game extends AddonIdentity {
   platform?: "ps4" | "ps5";
   id: string;
   title: string;
@@ -52,7 +73,7 @@ export interface Game {
   newOnOrbitRank?: number | null;
   releases: Release[];
 }
-export type SourceId = "vikingfile" | "archive" | "akirabox" | "datanodes";
+export type SourceId = "vikingfile" | "archive" | "akirabox" | "datanodes" | "1fichier";
 export interface SourceSettings {
   enabled: SourceId[];
   acknowledged: boolean;
@@ -74,7 +95,8 @@ export interface Storage {
   projectedFreeBytes: number;
   external: boolean;
 }
-export interface Job {
+export interface Job extends AddonIdentity {
+  installation?: Installation | null;
   delivery?: "direct" | "torbox";
   deliveryPhase?: string;
   titleId: string;
@@ -132,6 +154,8 @@ export interface LibraryGame {
   sizeStatus: "ready" | "unknown" | "unavailable";
   cover?: string;
   coverFallback?: string | null;
+  /** Listed by Orbit because the running ShadowMount doesn't list installed PKGs. */
+  foundByOrbit?: boolean;
 }
 export interface LibraryAction {
   id: string;
@@ -172,6 +196,9 @@ export interface LibrarySnapshot {
   storageJob: StorageJob | null;
   storageError: string;
   storageBusy: boolean;
+  // Automatic work: a scan ShadowMount is running, game sizes being measured.
+  scanning?: boolean;
+  measuring?: boolean;
 }
 export interface LibraryDrive {
   id: string;
@@ -183,6 +210,42 @@ export interface LibraryDrive {
   totalBytes: number;
   freeBytes: number;
   usedBytes: number;
+}
+// Files: what is on the PS5's drives, by drive and path relative to its top.
+export type FileType = "folder" | "game" | "archive" | "package" | "image" | "file";
+export interface FileEntry {
+  name: string;
+  folder: boolean;
+  type: FileType;
+  // Files only; a folder's size is measured on request.
+  sizeBytes: number | null;
+  modifiedAt: number;
+  // Why it can't be changed: "", or drive, orbit, download, game, install or busy.
+  locked: string;
+}
+export interface FileListing {
+  storageId: string;
+  path: string;
+  entries: FileEntry[];
+  // More entries than Orbit lists in one folder.
+  truncated: boolean;
+}
+export interface FileOperation {
+  id: string;
+  action: "copy" | "move" | "delete" | "unpack" | "install" | "measure";
+  // password: an archive needs one that Orbit doesn't have.
+  state: "measuring" | "running" | "paused" | "password" | "complete" | "failed" | "cancelled";
+  name: string;
+  storageId: string;
+  path: string;
+  toStorageId: string;
+  toPath: string;
+  processedBytes: number;
+  totalBytes: number;
+  speed: number;
+  error: string;
+  // Measure: the folder's size.
+  sizeBytes: number | null;
 }
 export interface LibraryStorage {
   drives: LibraryDrive[];
@@ -207,9 +270,21 @@ export interface System {
   stateHealthy: boolean;
   preferredStorage: string;
   deleteArchives?: boolean;
+  downloadNotifications?: boolean;
+  notificationEvents?: Record<NotificationEvent, boolean>;
+  deletePackages?: boolean;
+  ntfyEnabled?: boolean;
   concurrentDownloads?: number;
+  downloadConnections?: number;
+  downloadRetries?: number;
+  downloadRetryDelay?: number;
+  downloadStallTimeout?: number;
+  downloadMinSpeed?: number;
+
   consoleValidated: boolean;
   targetFirmware: string;
+  firmware?: string;
+  ps5PackageFirmware?: string;
   localSessionAvailable: boolean;
   pairNotificationAvailable: boolean;
   httpPort: number;
@@ -257,6 +332,10 @@ export const bytes = (n: number) => {
 };
 
 export interface BrowserSession {
+  accountPage?: boolean;
+  vikingAccountAvailable?: boolean;
+  vikingBrowserState?: "signed-in" | "signed-out" | "unknown";
+  vikingNativeState?: "signed-in" | "signed-out" | "unknown";
   available: boolean;
   active: boolean;
   id: string;
@@ -273,3 +352,5 @@ export interface BrowserSession {
   message: string;
   jobId: string;
 }
+// What Orbit can notify about, on the PS5 and through ntfy (/settings/notifications).
+export type NotificationEvent = "downloadFinished" | "downloadFailed" | "installFinished" | "installFailed" | "updateAvailable";

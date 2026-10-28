@@ -1,8 +1,10 @@
 # Orbit Store source and licence bundle
 
-This bundle supplies the application source for both `orbit_store.elf` and `PPSA99177.ffpkg`, plus the corresponding sources and notices for their copyleft components and other linked libraries. `SOURCES.json` records the exact application commit and every upstream archive's URL and SHA-256. `SOURCE-SHA256SUMS` covers every source-bundle input.
+The native **1.9.1** hotfix is supplied in `orbit-native-1.9.1-source.tar.gz`. The original `orbit-store-1.5.0-source.tar.gz` is retained for the unchanged published **1.5.0 ELF**. For the hotfix, build the native app from the former and bundle the published ELF (or rebuild it from the latter). `SOURCES.json` records the two source snapshots separately.
 
-Catalogue snapshots are included as `catalog/games.enc`, `catalog/releases.enc` and `catalog/catalog.enc`. All readers, required decoding material and build tools are included, so the source can build and modify the application and catalogue. See [BUILDING.md](BUILDING.md) for compiler and OpenSSL prerequisites.
+This bundle supplies the application source for both `orbit_store.elf` and `PPSA99177.ffpkg`, plus the corresponding sources and notices for their copyleft components and other linked libraries. `SOURCES.json` records the exact application source tree and its parent or release commit and every upstream archive's URL and SHA-256. `SOURCE-SHA256SUMS` covers every source-bundle input.
+
+Catalogue snapshots are included as `catalog/games.enc`, `catalog/releases.enc`, `catalog/addons.enc` and `catalog/catalog.enc`. All readers, required decoding material and build tools are included, so the source can build and modify the application and catalogue. See [BUILDING.md](BUILDING.md) for compiler and OpenSSL prerequisites.
 
 ## Contents
 
@@ -10,6 +12,7 @@ Catalogue snapshots are included as `catalog/games.enc`, `catalog/releases.enc` 
 - `ps5-payload-sdk-d9c9519.tar.gz`: SDK v0.43 used by the payload.
 - `ps5-payload-sdk-4eb7012.tar.gz`: SDK v0.42 used by the TV app.
 - `libmicrohttpd-1.0.1.tar.gz`, `curl-8.18.0.tar.xz`, `openssl-3.5.2.tar.gz`: the payload's linked HTTP and TLS libraries.
+- `sqlite-amalgamation-3540100.zip`: public-domain SQLite used to read the active PS5 user’s Vikingfile browser session. Put the archive in `.deps/`; `tools/build-sqlite.py` verifies it before building.
 - `7z2603-src.7z`: 7-Zip 26.03, including its full LGPL/BSD/public-domain sources and RAR decoder restrictions; see `THIRD-PARTY-NOTICES.md`.
 - `libarchive-3.8.1.tar.xz`, `xz-5.8.1.tar.gz`, `bzip2-1.0.8.tar.gz`, `zlib-1.3.2.tar.gz`: the payload's linked archive extraction libraries.
 - `ps5-opengl-sdk-1.0.0.tar.gz`: the complete upstream graphics SDK release, including its `sources/` archives, dependency revisions, patches, build tools, notices and licence texts. Includes ps5-opengl, Mesa 26.2.0, OpenGNM, PSBC, SPIR-V and Vulkan headers. Upstream sample sources are preserved too; their presence does not mean Orbit links those samples.

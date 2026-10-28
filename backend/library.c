@@ -1,6 +1,8 @@
 #include "orbit.h"
+#include "packages.h"
 #include <ctype.h>
 #include <curl/curl.h>
+#include <dirent.h>
 #include <math.h>
 #include <openssl/sha.h>
 #include <stdio.h>
@@ -16,7 +18,7 @@
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t changed = PTHREAD_COND_INITIALIZER;
 static pthread_t worker;
-static bool started, stopping, pending, busy;
+static bool started, stopping, pending, busy, completion_scan_busy;
 static cJSON *games;
 static time_t attempted, checked, updated;
 static time_t refreshed;
@@ -25,6 +27,28 @@ static cJSON *capabilities, *storage, *storage_job, *command, *last_request, *ac
 static bool storage_pending, storage_busy, storage_stale = true, monitor_job;
 static time_t storage_attempted, storage_updated, job_poll_at;
 static char storage_error[256];
+/* Automatic work, so nobody has to press Refresh, Scan or Measure: a scan when
+ * Orbit adds a game outside a download (Files) or a drive is connected, at most
+ * once a minute, with re-reads while ShadowMount registers what it found; and
+ * game sizes measured once, then again when games without a size appear, at
+ * most once a minute. Times are monotonic seconds. */
+#define AUTO_SCAN_GAP 60
+#define AUTO_MEASURE_GAP 60
+#define DRIVE_CHECK_GAP 10
+static bool auto_scan_wanted, auto_scanning, auto_measuring;
+static time_t auto_scan_after, auto_measure_after, follow_until, follow_next, drives_checked;
+static cJSON *measured; /* sourceKeys the last automatic measure saw */
+static time_t measure_seen; /* the inventory read last checked for games without a size */
+static time_t auto_gap(time_t normal) {
+#ifdef ORBIT_TEST
+    const char *test = getenv("ORBIT_TEST_LIBRARY_AUTO_GAP");
+    if (test) return atoi(test);
+#endif
+    return normal;
+}
+static char drives_seen[ORBIT_MAX_STORAGE][24];
+static size_t drives_seen_count;
+static bool drives_known;
 
 static bool success(const cJSON *o);
 static void read_storage(int port);
@@ -48,7 +72,7 @@ static int progress(void *context, curl_off_t total, curl_off_t received,
                     curl_off_t upload_total, curl_off_t uploaded) {
     (void)context; (void)total; (void)received;
     (void)upload_total; (void)uploaded;
-    return is_stopping();
+    return is_stopping() || orbit_is_stopping();
 }
 static size_t receive(void *data, size_t size, size_t count, void *context) {
     Buffer *b = context;
@@ -82,7 +106,7 @@ static cJSON *read_api(int port, const char *route, const char *body,
     curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT_MS, 750L);
     /* app.db and drive availability checks can take several seconds on a console.
      * This is a cancellable background read, not an HTTP request-thread wait. */
-    bool mutation = !strcmp(route, "scan") || !strcmp(route, "games/mount") ||
+    bool mutation = !strcmp(route, "scan") || !strcmp(route, "manual/add") || !strcmp(route, "games/mount") ||
         !strcmp(route, "games/unmount") || !strcmp(route, "games/move") || !strcmp(route, "games/copy");
     curl_easy_setopt(c, CURLOPT_TIMEOUT_MS, mutation || !strcmp(route, "games/info") ||
         (!strcmp(route, "games") && strstr(body, "true")) ? 60000L :
@@ -98,7 +122,7 @@ static cJSON *read_api(int port, const char *route, const char *body,
         ? cJSON_ParseWithLengthOpts(buffer.data, buffer.length + 1, NULL, true) : NULL;
     if (!result && error) {
         if (rc == CURLE_OPERATION_TIMEDOUT)
-            copy_text(error, cap, "ShadowMount took too long to return its inventory. Refresh to try again.");
+            copy_text(error, cap, "ShadowMount took too long to return its inventory. Try again in a moment.");
         else if (rc != CURLE_OK)
             snprintf(error, cap, "Could not read ShadowMount inventory: %s.", curl_easy_strerror(rc));
         else if (code != 200 && code != 202) {
@@ -214,6 +238,22 @@ static void location(const char *path, char *out, size_t cap) {
         copy_text(out, cap, "ShadowMount");
     else copy_text(out, cap, "Other location");
 }
+/* Catalogue artwork is optional enrichment, independent of source selection.
+ * Never trust/forward ShadowMount's supplied icon URL to a browser. An empty
+ * title, when given, takes the catalogue's name. */
+static void add_artwork(cJSON *item, const char *id, char *title, size_t cap) {
+    pthread_mutex_lock(&orbit.mutex);
+    cJSON *release;
+    cJSON_ArrayForEach(release, orbit.catalog)
+        if (!strcmp(json_text(release, "titleId"), id)) {
+            cJSON_AddStringToObject(item, "cover", json_text(release, "cover"));
+            const char *fallback = json_text(release, "coverFallback");
+            if (*fallback) cJSON_AddStringToObject(item, "coverFallback", fallback);
+            if (title && !*title) copy_text(title, cap, json_text(release, "title"));
+            break;
+        }
+    pthread_mutex_unlock(&orbit.mutex);
+}
 static cJSON *normalize(const cJSON *response, char *error, size_t cap) {
     const cJSON *list = cJSON_GetObjectItemCaseSensitive(response, "games");
     const cJSON *count = cJSON_GetObjectItemCaseSensitive(response, "count");
@@ -279,18 +319,7 @@ static cJSON *normalize(const cJSON *response, char *error, size_t cap) {
         if (cJSON_IsNumber(size) && size->valuedouble > 0 && size->valuedouble <= 9007199254740991.0)
             cJSON_AddNumberToObject(item, "installedSizeBytes", size->valuedouble);
         else cJSON_AddNullToObject(item, "installedSizeBytes");
-        /* Catalogue artwork is optional enrichment, independent of source selection.
-         * Never trust/forward ShadowMount's supplied icon URL to a browser. */
-        pthread_mutex_lock(&orbit.mutex);
-        cJSON *release;
-        cJSON_ArrayForEach(release, orbit.catalog)
-            if (!strcmp(json_text(release, "titleId"), id)) {
-                cJSON_AddStringToObject(item, "cover", json_text(release, "cover"));
-                const char *fallback = json_text(release, "coverFallback");
-                if (*fallback) cJSON_AddStringToObject(item, "coverFallback", fallback);
-                break;
-            }
-        pthread_mutex_unlock(&orbit.mutex);
+        add_artwork(item, id, NULL, 0);
         cJSON_AddItemToArray(out, item);
     }
     return out;
@@ -299,6 +328,146 @@ invalid:
              cJSON_GetArraySize(out) + 1, field);
     cJSON_Delete(out);
     return NULL;
+}
+/* ShadowMount lists games installed from PKG files only from 1.7beta4 on. With an
+ * older build, Orbit finds them where ShadowMount would: an app.pkg in an app folder. */
+static const char *const app_roots[] = {"/user/app", "/mnt/ext0/user/app", "/mnt/ext0/ps5/user/app",
+                                        "/mnt/ext1/user/app", "/mnt/ext1/ps5/user/app"};
+/* Prepended to every path Orbit reads here. Tests point it at a fixture folder. */
+static const char *app_prefix(void) {
+#ifdef ORBIT_TEST
+    return getenv("ORBIT_TEST_APP_ROOT");
+#else
+    return orbit.desktop ? NULL : "";
+#endif
+}
+static unsigned le16(const unsigned char *p) { return p[0] | (unsigned)p[1] << 8; }
+static uint32_t le32(const unsigned char *p) {
+    return p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+/* TITLE from a PS4 param.sfo. */
+static bool sfo_title(const unsigned char *d, size_t n, char *out, size_t cap) {
+    if (n < 20 || memcmp(d, "\0PSF", 4)) return false;
+    size_t keys = le32(d + 8), data = le32(d + 12), count = le32(d + 16);
+    if (keys > n || data > n || count > (n - 20) / 16) return false;
+    for (size_t i = 0; i < count; i++) {
+        const unsigned char *e = d + 20 + i * 16;
+        size_t key = keys + le16(e), length = le32(e + 4), at = data + (size_t)le32(e + 12);
+        if (le16(e + 2) != 0x0204 || key >= n || !memchr(d + key, 0, n - key) ||
+            strcmp((const char *)d + key, "TITLE") || at > n || length > n - at) continue;
+        size_t used = strnlen((const char *)d + at, length);
+        if (used >= cap) used = cap - 1;
+        memcpy(out, d + at, used);
+        out[used] = 0;
+        return true;
+    }
+    return false;
+}
+/* The default language's titleName from a PS5 param.json. */
+static bool json_title(const unsigned char *d, size_t n, char *out, size_t cap) {
+    cJSON *param = cJSON_ParseWithLength((const char *)d, n);
+    const cJSON *names = cJSON_GetObjectItemCaseSensitive(param, "localizedParameters");
+    const cJSON *names_for = cJSON_GetObjectItemCaseSensitive(names, json_text(names, "defaultLanguage"));
+    if (!cJSON_IsObject(names_for)) names_for = cJSON_GetObjectItemCaseSensitive(names, "en-US");
+    copy_text(out, cap, json_text(names_for, "titleName"));
+    cJSON_Delete(param);
+    return *out;
+}
+/* Keeps a console-supplied name printable and within the Library's 512-byte limit. */
+static void clean_title(char *s) {
+    for (char *p = s; *p; p++)
+        if ((unsigned char)*p < 32 || *p == 127) *p = ' ';
+    size_t n = strlen(s);
+    if (n > 512) {
+        n = 512;
+        while (n && ((unsigned char)s[n] & 0xC0) == 0x80) n--;
+    }
+    while (n && s[n - 1] == ' ') n--;
+    s[n] = 0;
+    char *start = s;
+    while (*start == ' ') start++;
+    memmove(s, start, strlen(start) + 1);
+}
+/* The game's name and platform from its param file, wherever the console keeps one. */
+static void read_param(const char *prefix, const char *root, const char *id,
+                       char *title, size_t cap, const char **platform) {
+    char drive[64], folders[4][160];
+    size_t drive_length = strlen(root) - strlen("/user/app");
+    snprintf(drive, sizeof drive, "%.*s", (int)drive_length, root);
+    snprintf(folders[0], sizeof folders[0], "%s/user/appmeta/%s", drive, id);
+    snprintf(folders[1], sizeof folders[1], "/user/appmeta/%s", id);
+    snprintf(folders[2], sizeof folders[2], "/user/appmeta/external/%s", id);
+    snprintf(folders[3], sizeof folders[3], "%s/%s/sce_sys", root, id);
+    for (size_t i = 0; i < 4; i++)
+        for (int ps5 = 1; ps5 >= 0; ps5--) {
+            char path[4096];
+            unsigned char *data = NULL;
+            size_t length = 0;
+            snprintf(path, sizeof path, "%s%s/%s", prefix, folders[i], ps5 ? "param.json" : "param.sfo");
+            if (read_regular_file(path, 1024 * 1024, &data, &length)) continue;
+            *title = 0;
+            bool found = ps5 ? json_title(data, length, title, cap) : sfo_title(data, length, title, cap);
+            free(data);
+            clean_title(title);
+            if (found && *title) {
+                if (!strcmp(*platform, "unknown")) *platform = ps5 ? "ps5" : "ps4";
+                return;
+            }
+        }
+    *title = 0;
+}
+static void add_installed_packages(cJSON *rows, const cJSON *caps) {
+    const char *prefix = app_prefix();
+    if (!prefix || has(caps, "installed_pkg_games")) return;
+    for (size_t r = 0; r < sizeof app_roots / sizeof *app_roots; r++) {
+        char folder[4096];
+        snprintf(folder, sizeof folder, "%s%s", prefix, app_roots[r]);
+        DIR *dir = opendir(folder);
+        if (!dir) continue;
+        struct dirent *entry;
+        while ((entry = readdir(dir)) && cJSON_GetArraySize(rows) < LIBRARY_GAMES) {
+            const char *id = entry->d_name;
+            if (!title_id(id)) continue;
+            bool listed = false;
+            const cJSON *row;
+            cJSON_ArrayForEach(row, rows)
+                if (!strcmp(json_text(row, "titleId"), id)) { listed = true; break; }
+            char path[4096], file[4096];
+            struct stat st;
+            snprintf(path, sizeof path, "%s/%s/app.pkg", app_roots[r], id);
+            snprintf(file, sizeof file, "%s%s", prefix, path);
+            if (listed || stat(file, &st) || !S_ISREG(st.st_mode)) continue;
+            const char *platform = !strncmp(id, "CUSA", 4) ? "ps4" : !strncmp(id, "PPSA", 4) ? "ps5" : "unknown";
+            char title[1024], key[65], where[64];
+            read_param(prefix, app_roots[r], id, title, sizeof title, &platform);
+            cJSON *item = cJSON_CreateObject();
+            cJSON_AddStringToObject(item, "titleId", id);
+            cJSON_AddStringToObject(item, "title", title);
+            cJSON_AddStringToObject(item, "platform", platform);
+            cJSON_AddStringToObject(item, "format", "PKG");
+            cJSON_AddStringToObject(item, "path", path);
+            cJSON_AddStringToObject(item, "runtimePath", "");
+            identity(id, path, "PKG", key);
+            cJSON_AddStringToObject(item, "sourceKey", key);
+            cJSON_AddBoolToObject(item, "managed", false);
+            cJSON_AddBoolToObject(item, "canManageSource", false);
+            /* As ShadowMount measures an installed PKG without app.db: the package's size. */
+            cJSON_AddNumberToObject(item, "sizeBytes", (double)st.st_size);
+            cJSON_AddStringToObject(item, "sizeStatus", "ready");
+            location(path, where, sizeof where);
+            cJSON_AddStringToObject(item, "location", where);
+            cJSON_AddBoolToObject(item, "installed", true);
+            cJSON_AddBoolToObject(item, "mounted", false);
+            cJSON_AddBoolToObject(item, "onDrive", true);
+            cJSON_AddNullToObject(item, "installedSizeBytes");
+            cJSON_AddBoolToObject(item, "foundByOrbit", true);
+            add_artwork(item, id, title, sizeof title);
+            /* No param file: the catalogue's name, else the title ID, as for ShadowMount's entries. */
+            cJSON_ReplaceItemInObjectCaseSensitive(item, "title", cJSON_CreateString(*title ? title : id));
+            cJSON_AddItemToArray(rows, item);
+        }
+        closedir(dir);
+    }
 }
 /* Only normalized, provider-reported locations can become copy/move targets. */
 static bool safe_path(const char *p) {
@@ -439,7 +608,7 @@ static const char *capability(const char *action) {
 static bool moving_downloads(void) {
     bool active = false;
     pthread_mutex_lock(&orbit.mutex);
-    active = orbit.receiver_active;
+    active = orbit.receiver_active || orbit.files_storage_busy;
     for (size_t i = 0; i < orbit.job_count; i++) {
         const char *s = orbit.jobs[i].status;
         if (job_active(&orbit.jobs[i]) || !strcmp(s, "queued") || !strcmp(s, "retrying")) active = true;
@@ -471,6 +640,16 @@ static void preserve_sizes(cJSON *next) {
         }
     }
 }
+/* ShadowMount registers what a scan finds over the next minute or so: read the
+ * inventory again every ten seconds meanwhile. */
+static void follow_scan(void) {
+    pthread_mutex_lock(&lock);
+    time_t now = monotonic_seconds();
+    follow_until = now + 90;
+    follow_next = now + 5;
+    pthread_cond_signal(&changed);
+    pthread_mutex_unlock(&lock);
+}
 static void execute_command(cJSON *input) {
     const char *action = json_text(input, "action"), *id = json_text(input, "titleId");
     bool transfer = !strcmp(action, "copy") || !strcmp(action, "move"), gate = false;
@@ -488,6 +667,7 @@ static void execute_command(cJSON *input) {
         response = read_api(port, "games", "{\"include_size\":true}", error, sizeof error);
         rows = response ? normalize(response, error, sizeof error) : NULL;
         if (!rows) goto done;
+        add_installed_packages(rows, cJSON_GetObjectItemCaseSensitive(v, "capabilities"));
         pthread_mutex_lock(&lock);
         cJSON_Delete(games); games = rows; rows = NULL;
         updated = checked = time(NULL); refreshed = monotonic_seconds();
@@ -503,7 +683,7 @@ static void execute_command(cJSON *input) {
         response = read_api(port, "games/storage/status", "{}", error, sizeof error);
         cJSON *job = response ? normalize_job(response) : NULL;
         cJSON_Delete(response); response = NULL;
-        if (!job) { copy_text(error, sizeof error, "Cannot confirm the current storage job. Refresh storage before trying again."); goto done; }
+        if (!job) { copy_text(error, sizeof error, "Cannot confirm the current storage job. Try again in a moment."); goto done; }
         bool active = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(job, "active"));
         bool can_cancel = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(job, "cancellable"));
         double job_id = (double)json_int(job, "id");
@@ -527,12 +707,15 @@ static void execute_command(cJSON *input) {
         cJSON_ArrayForEach(candidate, rows)
             if (!strcmp(json_text(candidate, "titleId"), id)) { g = candidate; break; }
         if (!g || strcmp(json_text(g, "sourceKey"), json_text(input, "sourceKey"))) {
-            copy_text(error, sizeof error, "This game's source changed. Refresh Library and select it again."); goto done;
+            copy_text(error, sizeof error, "This game's source changed. Select it again."); goto done;
         }
         if (!cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(g, "managed")) ||
             !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(g, "onDrive")) ||
             (transfer && !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(g, "canManageSource")))) {
             copy_text(error, sizeof error, "This source is missing or does not support that action."); goto done;
+        }
+        if (transfer && packages_path_busy(json_text(g, "path"))) {
+            copy_text(error, sizeof error, "Wait for package installation to finish before moving or copying its source."); goto done;
         }
         bool mounted = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(g, "mounted"));
         if ((!strcmp(action, "mount") && mounted) || (!strcmp(action, "unmount") && !mounted)) {
@@ -551,7 +734,7 @@ static void execute_command(cJSON *input) {
             cJSON_ArrayForEach(candidate, cJSON_GetObjectItemCaseSensitive(drives, "destinations"))
                 if (!strcmp(json_text(candidate, "id"), json_text(input, "destinationId"))) { destination = candidate; break; }
             if (!destination || cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(destination, "readOnly"))) {
-                copy_text(error, sizeof error, "The selected destination changed or is no longer writable. Refresh storage."); goto done;
+                copy_text(error, sizeof error, "The selected destination changed or is no longer writable. Choose it again."); goto done;
             }
             const char *target = json_text(destination, "path"), *path = json_text(g, "path");
             const char *base = strrchr(path, '/');
@@ -565,7 +748,7 @@ static void execute_command(cJSON *input) {
             free(encoded);
             if (!success(response) || strcmp(json_text(response, "path"), path) ||
                 !number(response, "size_status") || json_int(response, "size_status") || !number(response, "size_bytes")) {
-                copy_text(error, sizeof error, "Could not verify this game's source size. Refresh Library before trying again."); goto done;
+                copy_text(error, sizeof error, "Could not verify this game's source size. Try again in a moment."); goto done;
             }
             int64_t size = json_int(response, "size_bytes"), free_bytes = json_int(destination, "freeBytes");
             /* Reserve space for unfinished Orbit downloads on the destination filesystem. */
@@ -599,7 +782,7 @@ static void execute_command(cJSON *input) {
     response = read_api(port, route, encoded, error, sizeof error);
     free(encoded);
     if (!success(response)) {
-        if (!*error) copy_text(error, sizeof error, *json_text(response, "error") ? json_text(response, "error") : "The action could not be confirmed. Refresh before trying again.");
+        if (!*error) copy_text(error, sizeof error, *json_text(response, "error") ? json_text(response, "error") : "The action could not be confirmed. Try again in a moment.");
         if (transfer) {
             /* A timed-out POST may have started a job. Hold the gate until status is known. */
             pthread_mutex_lock(&lock); monitor_job = true; job_poll_at = 0; pthread_mutex_unlock(&lock);
@@ -617,12 +800,13 @@ static void execute_command(cJSON *input) {
         accept_job(job); gate = false;
         copy_text(ok, sizeof ok, !strcmp(action, "cancel") ? "Cancellation requested. Waiting for the storage job to stop." : "Storage operation started. Progress is available in Library and Storage.");
     } else if (!strcmp(action, "scan")) {
-        copy_text(ok, sizeof ok, "Scan requested. ShadowMount may register or mount detected games. Refresh Library after it finishes.");
+        follow_scan();
+        copy_text(ok, sizeof ok, "Scan requested. Games ShadowMount finds appear here in a minute or so.");
     } else {
         if (strcmp(json_text(response, "title_id"), id) ||
             !cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(response, "mounted")) ||
             cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(response, "mounted")) != !strcmp(action, "mount")) {
-            copy_text(error, sizeof error, "The mount result could not be confirmed. Refresh Library before retrying."); goto done;
+            copy_text(error, sizeof error, "The mount result could not be confirmed. Try again in a moment."); goto done;
         }
         copy_text(ok, sizeof ok, !strcmp(action, "mount") ? "Game mounted." : "Game unmounted.");
     }
@@ -631,23 +815,149 @@ succeeded:
     pthread_mutex_lock(&lock); pending = true; storage_pending = true; pthread_mutex_unlock(&lock);
     goto cleanup;
 done:
-    result_message("error", *error ? error : "Could not complete the Library action. Refresh and try again.");
+    result_message("error", *error ? error : "Could not complete the Library action. Try again in a moment.");
     pthread_mutex_lock(&lock); pending = true; pthread_mutex_unlock(&lock);
 cleanup:
     if (gate) set_gate(false);
     cJSON_Delete(v); cJSON_Delete(response); cJSON_Delete(rows); cJSON_Delete(body); cJSON_Delete(drives);
 }
 
+/* Nothing else in hand: no command, no storage job, no completion scan. Locked. */
+static bool idle_locked(void) {
+    return !command && !monitor_job && !completion_scan_busy && !busy && !storage_busy &&
+        strcmp(json_text(action_result, "state"), "queued") && strcmp(json_text(action_result, "state"), "running");
+}
+/* A game on a drive without a size that no automatic measure has seen yet. */
+static bool unmeasured_locked(void) {
+    cJSON *g;
+    cJSON_ArrayForEach(g, games)
+        if (!strcmp(json_text(g, "sizeStatus"), "unknown") && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(g, "onDrive")) &&
+            !has(measured, json_text(g, "sourceKey")))
+            return true;
+    return false;
+}
+/* Which automatic task is due now, if any: 's' scan, 'm' measure, 'd' a look at
+ * the drives. Each inventory read is checked for games without a size once.
+ * Locked; the worker asks once per wake. */
+static char auto_due_locked(time_t now) {
+    if (!started || stopping) return 0;
+    bool ready = !strcmp(status, "ready");
+    if (auto_scan_wanted && now >= auto_scan_after && ready && has(capabilities, "rescan") && idle_locked()) return 's';
+    if (ready && now >= auto_measure_after && refreshed != measure_seen && has(capabilities, "list_games") && idle_locked()) {
+        measure_seen = refreshed;
+        if (unmeasured_locked()) return 'm';
+    }
+    if (now - drives_checked >= DRIVE_CHECK_GAP) return 'd';
+    return 0;
+}
+/* A drive that wasn't connected before asks for a scan; any change re-reads games
+ * and drives. The first look only learns them. */
+static void check_drives(void) {
+    Storage now[ORBIT_MAX_STORAGE];
+    size_t n = storage_list(now);
+    pthread_mutex_lock(&lock);
+    bool appeared = false;
+    for (size_t i = 0; i < n; i++) {
+        bool known = false;
+        for (size_t k = 0; k < drives_seen_count; k++)
+            if (!strcmp(drives_seen[k], now[i].id)) known = true;
+        if (!known && drives_known) appeared = true;
+    }
+    bool changed_set = drives_known && (appeared || n != drives_seen_count);
+    drives_seen_count = n;
+    for (size_t i = 0; i < n; i++) copy_text(drives_seen[i], sizeof drives_seen[i], now[i].id);
+    drives_known = true;
+    if (appeared) auto_scan_wanted = true;
+    if (changed_set && !strcmp(status, "ready")) pending = storage_pending = true;
+    pthread_mutex_unlock(&lock);
+}
+static void auto_scan(void) {
+    int port = api_port();
+    cJSON *response = port ? read_api(port, "scan", "{\"reset_attempts\":false}", NULL, 0) : NULL;
+    bool ok = success(response);
+    cJSON_Delete(response);
+    if (ok) follow_scan();
+    pthread_mutex_lock(&lock);
+    auto_scanning = false;
+    pthread_mutex_unlock(&lock);
+}
+static void auto_measure(void) {
+    int port = api_port();
+    char error[256] = {0};
+    cJSON *v = port ? read_api(port, "version", "{}", NULL, 0) : NULL;
+    cJSON *response = success(v) ? read_api(port, "games", "{\"include_size\":true}", error, sizeof error) : NULL;
+    cJSON *rows = response ? normalize(response, error, sizeof error) : NULL;
+    if (rows) add_installed_packages(rows, cJSON_GetObjectItemCaseSensitive(v, "capabilities"));
+    cJSON_Delete(response);
+    cJSON_Delete(v);
+    pthread_mutex_lock(&lock);
+    if (rows) {
+        cJSON_Delete(games);
+        games = rows;
+        updated = checked = time(NULL);
+        refreshed = monotonic_seconds();
+        /* Games ShadowMount couldn't measure wait for the next new game, not a loop. */
+        cJSON *keys = cJSON_CreateArray(), *g;
+        cJSON_ArrayForEach(g, games) cJSON_AddItemToArray(keys, cJSON_CreateString(json_text(g, "sourceKey")));
+        cJSON_Delete(measured);
+        measured = keys;
+    } else {
+        auto_measure_after = monotonic_seconds() + 300;
+    }
+    auto_measuring = false;
+    pthread_mutex_unlock(&lock);
+}
+void library_auto_scan(void) {
+    pthread_mutex_lock(&lock);
+    auto_scan_wanted = true;
+    pthread_cond_signal(&changed);
+    pthread_mutex_unlock(&lock);
+}
 static void *run(void *unused) {
     (void)unused;
     pthread_mutex_lock(&lock);
     while (!stopping) {
+        char task = 0;
         while (!pending && !storage_pending && !command && !stopping &&
-               !(monitor_job && monotonic_seconds() >= job_poll_at)) {
+               !(monitor_job && monotonic_seconds() >= job_poll_at) &&
+               !(follow_until && monotonic_seconds() >= follow_next) && !(task = auto_due_locked(monotonic_seconds()))) {
             struct timespec deadline = {.tv_sec = time(NULL) + 1, .tv_nsec = 0};
             pthread_cond_timedwait(&changed, &lock, &deadline);
         }
         if (stopping) break;
+        time_t now = monotonic_seconds();
+        if (follow_until && now >= follow_next && !pending) {
+            /* While ShadowMount registers a scan's games: read the inventory again. */
+            pending = true;
+            follow_next = now + 10;
+            if (now >= follow_until) follow_until = 0;
+        }
+        /* Asked-for work first; a skipped measure is checked again after the next read. */
+        if (command || pending || storage_pending || (monitor_job && now >= job_poll_at)) task = 0;
+        if (task == 's') {
+            auto_scan_wanted = false;
+            auto_scanning = true;
+            auto_scan_after = now + auto_gap(AUTO_SCAN_GAP);
+            pthread_mutex_unlock(&lock);
+            auto_scan();
+            pthread_mutex_lock(&lock);
+            continue;
+        }
+        if (task == 'm') {
+            auto_measuring = true;
+            auto_measure_after = now + auto_gap(AUTO_MEASURE_GAP);
+            pthread_mutex_unlock(&lock);
+            auto_measure();
+            pthread_mutex_lock(&lock);
+            continue;
+        }
+        if (task == 'd') {
+            drives_checked = now;
+            pthread_mutex_unlock(&lock);
+            check_drives();
+            pthread_mutex_lock(&lock);
+            continue;
+        }
         if (command) {
             cJSON *input = command; command = NULL;
             pthread_mutex_unlock(&lock);
@@ -696,9 +1006,10 @@ static void *run(void *unused) {
                 copy_text(next_version, sizeof next_version, json_text(v, "shadowmount_version"));
                 cJSON *response = read_api(port, "games", "{\"include_size\":false}", detail, sizeof detail);
                 next = response ? normalize(response, detail, sizeof detail) : NULL;
+                if (next) add_installed_packages(next, next_capabilities);
                 cJSON_Delete(response);
                 next_status = next ? "ready" : "error";
-                error = next ? "" : *detail ? detail : "ShadowMount did not return a complete, supported inventory. Refresh to try again.";
+                error = next ? "" : *detail ? detail : "ShadowMount did not return a complete, supported inventory. Try again in a moment.";
             } else {
                 next_status = "unsupported";
                 error = "This ShadowMount API version is not supported. Library needs the v1 games API with installed-game status.";
@@ -753,8 +1064,8 @@ void library_stop(void) {
     cJSON_Delete(games);
     games = NULL;
     cJSON_Delete(capabilities); cJSON_Delete(storage); cJSON_Delete(storage_job);
-    cJSON_Delete(command); cJSON_Delete(last_request); cJSON_Delete(action_result);
-    capabilities = storage = storage_job = command = last_request = action_result = NULL;
+    cJSON_Delete(command); cJSON_Delete(last_request); cJSON_Delete(action_result); cJSON_Delete(measured);
+    capabilities = storage = storage_job = command = last_request = action_result = measured = NULL;
     pthread_mutex_unlock(&lock);
 }
 cJSON *library_snapshot(bool refresh) {
@@ -782,6 +1093,9 @@ cJSON *library_snapshot(bool refresh) {
     cJSON_AddItemToObject(out, "storageJob", storage_job ? cJSON_Duplicate(storage_job, true) : cJSON_CreateNull());
     cJSON_AddStringToObject(out, "storageError", storage_error);
     cJSON_AddBoolToObject(out, "storageBusy", monitor_job);
+    /* Automatic work under way: the interfaces show it instead of buttons. */
+    cJSON_AddBoolToObject(out, "scanning", auto_scanning || (follow_until && now < follow_until));
+    cJSON_AddBoolToObject(out, "measuring", auto_measuring);
     pthread_mutex_unlock(&lock);
     return out;
 }
@@ -824,11 +1138,11 @@ int library_action(const cJSON *input, char *error, size_t cap) {
     if (!started || stopping) { code = 503; copy_text(error, cap, "Library is unavailable."); }
     else if (!strcmp(request, json_text(last_request, "requestId"))) {
         if (!cJSON_Compare(input, last_request, true)) { code = 409; copy_text(error, cap, "This request ID was already used for another action."); }
-    } else if (command || !strcmp(json_text(action_result, "state"), "running") ||
+    } else if (completion_scan_busy || command || !strcmp(json_text(action_result, "state"), "running") ||
                !strcmp(json_text(action_result, "state"), "queued") || (monitor_job && strcmp(action, "cancel"))) {
         code = 409; copy_text(error, cap, "Another Library operation is in progress. Wait for it to finish.");
     } else if (strcmp(status, "ready") || !has(capabilities, capability(action))) {
-        code = 409; copy_text(error, cap, "Refresh Library with a compatible ShadowMount version before using this action.");
+        code = 409; copy_text(error, cap, "This action needs a compatible ShadowMount version.");
     } else {
         command = cJSON_Duplicate(input, true);
         cJSON_Delete(last_request); last_request = cJSON_Duplicate(input, true);
@@ -842,4 +1156,67 @@ int library_action(const cJSON *input, char *error, size_t cap) {
     }
     pthread_mutex_unlock(&lock);
     return code;
+}
+
+/* Completion scans are requested by Orbit's download/receiver worker. A scan
+ * can register/mount games, so wait while Library is moving files. The response
+ * acknowledges a request; only a matching installed inventory row confirms it. */
+bool library_package_waiting(void) {
+    pthread_mutex_lock(&lock);
+    bool wait = command || monitor_job || completion_scan_busy ||
+        !strcmp(json_text(action_result, "state"), "queued") || !strcmp(json_text(action_result, "state"), "running");
+    pthread_mutex_unlock(&lock); return wait;
+}
+static int scan_finished(int result) {
+    pthread_mutex_lock(&lock); completion_scan_busy = false; pthread_cond_signal(&changed); pthread_mutex_unlock(&lock);
+    return result;
+}
+/* manual: the game is outside a homebrew folder. ShadowMount 1.7beta5+ adds it by
+ * path (add_manual_source); otherwise a scan finds it only under homebrew. */
+int library_scan_completed(const char *path, bool request, bool manual, char *message, size_t cap) {
+    pthread_mutex_lock(&lock);
+    bool unavailable = !started || stopping;
+    bool occupied = completion_scan_busy || command || monitor_job || storage_busy ||
+        !strcmp(json_text(action_result, "state"), "queued") || !strcmp(json_text(action_result, "state"), "running");
+    if (!unavailable && !occupied) completion_scan_busy = true;
+    pthread_mutex_unlock(&lock);
+    if (unavailable) { copy_text(message, cap, "Start ShadowMount with its local API enabled, then select Scan with ShadowMount."); return -1; }
+    if (occupied) { copy_text(message, cap, "Waiting for the current Library action before scanning with ShadowMount."); return 2; }
+    int port = api_port();
+    cJSON *v = port ? read_api(port, "version", "{}", NULL, 0) : NULL;
+    const cJSON *caps = cJSON_GetObjectItemCaseSensitive(v, "capabilities");
+    bool by_path = manual && has(caps, "add_manual_source");
+    bool compatible = success(v) && json_int(v, "api_version") == 1 && has(caps, "list_games") &&
+        (by_path || has(caps, "rescan"));
+    bool reachable = !manual || by_path || strstr(path, "/homebrew/");
+    cJSON_Delete(v);
+    if (!compatible) { copy_text(message, cap, "ShadowMount is unavailable. Start it with its local API enabled, then select Scan with ShadowMount."); return scan_finished(-1); }
+    if (!reachable) { copy_text(message, cap, "This ShadowMount version adds games only from a homebrew folder. Update ShadowMount, or move the game into homebrew."); return scan_finished(-1); }
+    if (request) {
+        cJSON *body = cJSON_CreateObject();
+        cJSON_AddStringToObject(body, "path", path);
+        char *add = by_path ? cJSON_PrintUnformatted(body) : NULL;
+        cJSON_Delete(body);
+        cJSON *response = by_path ? (add ? read_api(port, "manual/add", add, message, cap) : NULL)
+                                  : read_api(port, "scan", "{\"reset_attempts\":false}", message, cap);
+        free(add);
+        bool ok = success(response); cJSON_Delete(response);
+        if (!ok) { copy_text(message, cap, by_path ? "ShadowMount could not add this game. Check Library before trying again."
+                                                   : "Could not confirm the ShadowMount scan. Check Library before trying again."); return scan_finished(-1); }
+        follow_scan();
+    }
+    cJSON *response = read_api(port, "games", "{\"include_size\":false}", NULL, 0);
+    bool registered = false;
+    if (success(response)) {
+        cJSON *g;
+        cJSON_ArrayForEach(g, cJSON_GetObjectItemCaseSensitive(response, "games")) {
+            const char *found = json_text(g, "path"); size_t n = strlen(path);
+            if ((!strcmp(found, path) || (!strncmp(found, path, n) && found[n] == '/')) &&
+                cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(g, "installed"))) registered = true;
+        }
+    }
+    cJSON_Delete(response);
+    pthread_mutex_lock(&lock); pending = true; pthread_cond_signal(&changed); pthread_mutex_unlock(&lock);
+    copy_text(message, cap, registered ? "Registered by ShadowMount. Check your PS5 home screen." : "Scan requested. Waiting for ShadowMount to register the game…");
+    return scan_finished(registered ? 0 : 1);
 }

@@ -14,9 +14,14 @@ type Props = {
   label: string;
   value: string;
   options: Option[];
+  // With values, several options can be ticked: choosing one toggles it and
+  // keeps the list open, and the "" option (All …) clears them.
+  values?: string[];
   onChange: (value: string) => void;
   disabled?: boolean;
   valueContent?: ReactNode;
+  // Show the label inside the trigger, before the value (the other interfaces' filter chips).
+  inlineLabel?: boolean;
 };
 
 /* A select-only combobox: focus stays on the trigger, and navigating the list
@@ -25,9 +30,11 @@ export function Select({
   label,
   value,
   options,
+  values,
   onChange,
   disabled,
   valueContent,
+  inlineLabel,
 }: Props) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -42,7 +49,13 @@ export function Select({
     maxHeight: 300,
   });
   const enabled = options.filter((option) => !option.disabled);
+  const multiple = !!values;
+  const ticked = (option: Option) =>
+    values ? (option.value ? values.includes(option.value) : !values.length) : option.value === value;
   const selected = options.find((option) => option.value === value);
+  const summary = values?.length
+    ? options.filter((option) => option.value && values.includes(option.value)).map((option) => option.label).join(", ")
+    : undefined;
   const highlighted =
     enabled.find((option) => option.value === active) ||
     enabled.find((option) => option.value === value) ||
@@ -60,6 +73,11 @@ export function Select({
     setOpen(true);
   }
   function choose(option = highlighted) {
+    if (multiple) {
+      // Ticks or unticks it, and the list stays open for the next one.
+      if (option && !option.disabled && (option.value || values!.length)) onChange(option.value);
+      return;
+    }
     if (option && !option.disabled && option.value !== value)
       onChange(option.value);
     setOpen(false);
@@ -69,7 +87,8 @@ export function Select({
     document.documentElement.classList.remove("pointer");
     const k = event.key;
     if (k === "Tab") {
-      if (expanded) choose();
+      if (expanded && !multiple) choose();
+      setOpen(false);
       return;
     }
     if (k === "Escape" || k === "BrowserBack") {
@@ -98,7 +117,9 @@ export function Select({
       event.stopPropagation();
       if (!enabled.length) return;
       if (event.altKey && k === "ArrowUp" && expanded) {
-        choose();
+        // Alt+Up closes the list; in a multiple-choice one it never ticks.
+        if (multiple) setOpen(false);
+        else choose();
         return;
       }
       if (!expanded) show();
@@ -242,7 +263,13 @@ export function Select({
         onClick={() => (expanded ? setOpen(false) : show())}
       >
         <span>
-          {valueContent ?? (selected?.label || t("Select an option"))}
+          {inlineLabel && (
+            <span className="select-inline-label" aria-hidden="true">
+              {label}
+            </span>
+          )}
+          {valueContent ??
+            (summary || (multiple ? options.find((option) => !option.value)?.label : selected?.label) || t("Select an option"))}
         </span>
         <svg
           viewBox="0 0 24 24"
@@ -264,6 +291,7 @@ export function Select({
             className="select-menu"
             role="listbox"
             aria-labelledby={`${id}-label`}
+            aria-multiselectable={multiple || undefined}
             style={position}
           >
             {options.map((option, index) =>
@@ -273,7 +301,7 @@ export function Select({
                   key={option.value}
                   id={`${id}-option-${index}`}
                   role="option"
-                  aria-selected={option.value === value}
+                  aria-selected={ticked(option)}
                   aria-disabled={option.disabled || undefined}
                   className="select-option"
                   data-active={option === highlighted}
@@ -289,7 +317,7 @@ export function Select({
                   }}
                 >
                   <span>{option.label}</span>
-                  {option.value === value && (
+                  {ticked(option) && (
                     <svg
                       viewBox="0 0 24 24"
                       fill="none"

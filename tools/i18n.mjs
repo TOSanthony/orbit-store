@@ -106,7 +106,7 @@ function cRuns(text) {
 }
 
 const quiet =
-  /\b(printf|fprintf|puts|fputs|perror|notify_console|_Static_assert|strstr|curl_slist_append|diagnostics_stage|DLOG)\b/;
+  /\b(printf|fprintf|puts|fputs|perror|notify_console|_Static_assert|strstr|strcasecmp|curl_slist_append|diagnostics_stage|DLOG)\b/;
 // Orbit's service: fixed sentences in its responses and job states.
 function fromService(file, add) {
   const text = readFileSync(file, "utf8");

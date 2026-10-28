@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
-import { bytes, type Release } from "./types";
+import { type Release } from "./types";
 import { t } from "./i18n";
 import { rich } from "./Rich";
 export interface DebridStatus {
@@ -20,8 +20,7 @@ export function torboxAvailable(status: DebridStatus | null, release: Release) {
     !!status?.connected &&
     !!status.available &&
     !status.busy &&
-    !!host?.available &&
-    (!host.maxFileSize || release.sizeBytes <= host.maxFileSize)
+    !!host?.available
   );
 }
 export function useDebrid(enabled = true) {
@@ -135,12 +134,10 @@ export function Debrid() {
       {status?.connected && (
         <>
           <ul>
-            {status.hosts.map((host) => (
+            {status.hosts.filter((host) => host.sourceId !== "1fichier").map((host) => (
               <li key={host.sourceId}>
                 {host.sourceId === "archive" ? "Archive.org" : host.sourceId === "vikingfile" ? "Vikingfile" : host.sourceId === "datanodes" ? "DataNodes" : host.sourceId}:{" "}
                 {host.available ? t("Available") : t("Unavailable")}
-                {host.maxFileSize > 0 &&
-                  ` · ${t("up to {size} currently", { size: bytes(host.maxFileSize) })}`}
               </li>
             ))}
           </ul>

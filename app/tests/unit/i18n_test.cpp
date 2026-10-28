@@ -51,6 +51,29 @@ TEST_F(I18nTest, EnglishIsTheKeyAndTheFallback)
     EXPECT_EQ(trn(1200, "{count} game", "{count} games"), "1,200 games");
 }
 
+TEST_F(I18nTest, ChoosingFollowsTheConsoleAndKeepsEarlierTextReadable)
+{
+    use("de", R"({"Language":"Sprache"})");
+    std::ofstream(dir_ + "/fr.json", std::ios::binary) << R"({"Language":"Langue"})";
+    const char *german = tr("Language");
+    const std::uint64_t before = i18n::revision();
+    i18n::set_system("fr");
+    ASSERT_TRUE(i18n::choose("")); // Automatic: the console's language
+    EXPECT_EQ(i18n::language(), "fr");
+    EXPECT_STREQ(tr("Language"), "Langue");
+    EXPECT_GT(i18n::revision(), before);
+    EXPECT_STREQ(german, "Sprache"); // still readable until the screen redraws
+    ASSERT_TRUE(i18n::choose("en"));
+    EXPECT_STREQ(tr("Language"), "Language");
+    const std::uint64_t english = i18n::revision();
+    ASSERT_TRUE(i18n::choose("en")); // unchanged: nothing reloads
+    EXPECT_EQ(i18n::revision(), english);
+    i18n::set_system("ja"); // not shipped: Automatic is English
+    EXPECT_EQ(i18n::system(), "en");
+    EXPECT_EQ(i18n::languages().size(), 11u);
+    EXPECT_EQ(i18n::languages()[8].name, "Portugu\xC3\xAAs (Brasil)");
+}
+
 TEST_F(I18nTest, UnknownOrMissingLanguagesStayInEnglish)
 {
     EXPECT_FALSE(i18n::load(dir_, "ja"));

@@ -23,5 +23,11 @@ Inter-Regular.ttf inter-regular 56 8 2048 european
 Inter-Medium.ttf inter-medium 56 8 2048 european
 Inter-SemiBold.ttf inter-semibold 56 8 2048 european
 InterDisplay-Light.ttf inter-display-light 56 8 2048 european
+InterTight-ExtraLight.ttf inter-tight-extralight 56 8 2048 european
+InterTight-Light.ttf inter-tight-light 56 8 2048 european
+InterTight-Medium.ttf inter-tight-medium 56 8 2048 european
+InterTight-SemiBold.ttf inter-tight-semibold 56 8 2048 european
+Sora-Regular.ttf sora-regular 56 8 2048 european
+Sora-SemiBold.ttf sora-semibold 56 8 2048 european
 FONTS
 cp "$root"/third_party/fonts/*-LICENSE.txt "$root/assets/fonts/"

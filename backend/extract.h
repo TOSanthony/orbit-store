@@ -1,5 +1,6 @@
 #ifndef ORBIT_EXTRACT_H
 #define ORBIT_EXTRACT_H
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -24,6 +25,8 @@ typedef struct {
  * bytes; report a recognised layout or Unknown without restricting contents. */
 int inspect_archive(Extraction *x, int64_t *bytes, char format[12], char *error, size_t cap);
 int extract_archive(Extraction *x, char *error, size_t cap);
+/* One extraction at a time on the console: downloads and Files share it. */
+extern pthread_mutex_t extraction_mutex;
 /* Remove a leftover staging folder from an interrupted extraction. */
 int extract_discard(int dir, const char *path, const char *job_id);
 /* Rename a regular file without ever replacing an existing name. */

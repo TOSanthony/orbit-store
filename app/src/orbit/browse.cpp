@@ -7,6 +7,8 @@
 
 #include "orbit/screens.hpp"
 #include "orbit/i18n.hpp"
+#include "orbit/json.hpp"
+#include "orbit/look.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -24,7 +26,7 @@ constexpr float kColumnStep = (1920.0f - 2.0f * ui::kGutter - kTile) / (kColumns
 constexpr float kRowStep = 338.0f;
 constexpr float kTitleBaseline = 176.0f; // semibold page title
 constexpr float kFieldY = 122.0f;
-constexpr float kFieldWidth = 660.0f; // search beside the heading
+constexpr float kFieldWidth = 514.0f; // search beside the heading, after Saved filters and Reset filters
 constexpr float kFieldHeight = 66.0f;
 constexpr float kChipsY = 218.0f; // collection tabs share the filter row
 constexpr float kChipHeight = 58.0f;
@@ -32,6 +34,8 @@ constexpr float kFiltersY = 216.0f; // .browse-selects
 constexpr float kResetWidth = 152.0f;
 constexpr float kFilterGap = 14.0f;
 constexpr float kFilterWidth = (1920.0f - ui::kGutter - 554.0f - 5.0f * kFilterGap) / 6.0f;
+constexpr float kInstalledWidth = 200.0f; // Tags and Hide installed, left of Reset filters
+constexpr int kReset = 99;                 // filter_rect()'s Reset filters
 constexpr float kGridTop = 308.0f;
 constexpr float kKeyboardTop = 560.0f;
 constexpr const char *kRegions[] = {"", "EUR", "USA", "JPN", "ASIA", "unknown"};
@@ -58,13 +62,18 @@ float chip_width(const ui::Type &type, int chip)
 
 } // namespace
 
-BrowseScreen::BrowseScreen(Context &context) : Screen(context)
+BrowseScreen::BrowseScreen(Context &context, bool addons) : Screen(context), addons_(addons)
 {
-    keyboard_.style.theme = keyboard_theme();
+    xb::keyboard_look(keyboard_.style, false);
     keyboard_.style.bindings = hui::ui::KeyboardBindings::standard();
     keyboard_.style.max_length = 40;
     keyboard_.style.done_label = tr("Done");
     keyboard_.set_bounds({ui::kGutter + 220.0f, kKeyboardTop + 40.0f, 1280.0f, 400.0f});
+}
+
+void BrowseScreen::retranslate()
+{
+    keyboard_.style.done_label = tr("Done");
 }
 
 void BrowseScreen::refilter()
@@ -72,8 +81,16 @@ void BrowseScreen::refilter()
     const Snapshot &state = ctx_.store.state();
     catalog_serial_ = state.catalog_serial;
     favourites_serial_ = state.serial;
-    results_ = browse(state.games, filters_, state.favourites);
-    tile_focus_.assign(results_.size(), 0.0f);
+    std::vector<int> results = browse(catalogue_games(), filters_, state.favourites, state.library_games());
+    if (addons_ && filters_.sort == Sort::release) std::stable_sort(results.begin(), results.end(), [this](int a, int b) {
+        const auto &x=catalogue_games()[a].releases.front(), &y=catalogue_games()[b].releases.front();
+        return x.added_at > y.added_at;
+    });
+    // Favourites and Hide installed refilter on every store change: the same
+    // results keep their focus rings rather than fading them out and in.
+    if (results != results_ || tile_focus_.size() != results.size())
+        tile_focus_.assign(results.size(), 0.0f);
+    results_ = std::move(results);
     index_ = std::clamp(index_, 0, std::max(0, static_cast<int>(results_.size()) - 1));
 }
 
@@ -82,32 +99,177 @@ ui::Rect BrowseScreen::tile_rect(int index) const
     const int row = index / kColumns;
     const int column = index % kColumns;
     return {ui::kGutter + static_cast<float>(column) * kColumnStep,
-            kGridTop + static_cast<float>(row) * kRowStep, kTile, kTile};
+            kGridTop + static_cast<float>(row) * (addons_ ? kRowStep + 56 : kRowStep), kTile, kTile};
 }
 
+void BrowseScreen::keep_filters_in_range()
+{
+    const std::vector<int> order = filter_order();
+    const int filters = static_cast<int>(order.size());
+    const auto at = std::find(order.begin(), order.end(), open_filter_);
+    if (open_filter_ == kSavedFilters)
+    {
+        // Saved filters: the row after Reset filters.
+        xb_filter_ = filters + 1;
+        if (cn_values_)
+            cn_row_ = filters + 1;
+        if (pn_picker_ == 2)
+            pn_row_ = filters + 1;
+    }
+    else if (at == order.end())
+    {
+        xb_values_.open = false;
+        cn_values_ = false;
+        if (pn_picker_ == 2)
+            pn_picker_ = 1;
+        open_filter_ = -1;
+    }
+    else
+    {
+        const int row = static_cast<int>(at - order.begin());
+        xb_filter_ = row;
+        if (cn_values_)
+            cn_row_ = row;
+        if (pn_picker_ == 2)
+            pn_row_ = row;
+    }
+    cn_row_ = std::clamp(cn_row_, 0, filters + 2); // the filters, Reset filters, Saved filters, Search
+    pn_row_ = std::clamp(pn_row_, 0, filters + 1); // the filters, Reset filters, Saved filters
+}
+
+std::vector<int> BrowseScreen::store_header() const
+{
+    if (addons_)
+        return {};
+    std::vector<int> out;
+    if (!catalogue_tags(catalogue_games()).empty())
+        out.push_back(7);
+    out.push_back(6);
+    return out;
+}
+
+int BrowseScreen::filter_columns() const
+{
+    return 6 + static_cast<int>(store_header().size());
+}
+
+int BrowseScreen::column_filter(int column) const
+{
+    if (column < 6)
+        return column;
+    const std::vector<int> header = store_header();
+    if (column - 6 < static_cast<int>(header.size()))
+        return header[static_cast<std::size_t>(column - 6)];
+    return resettable() && column == filter_columns() ? -1 : kSavedFilters;
+}
+
+int BrowseScreen::store_columns() const
+{
+    return filter_columns() + (resettable() ? 1 : 0) + 1;
+}
+
+// By filter: the six dropdowns, the header's Tags and Hide installed, Saved
+// filters, or kReset after it.
 ui::Rect BrowseScreen::filter_rect(int index) const
 {
-    if (index >= kFilterControls - 1)
+    if (index == kSavedFilters)
         return {970.0f, 134.0f, kResetWidth, 44.0f};
+    if (index == kReset)
+        return {970.0f + kResetWidth + 16.0f, 134.0f, kResetWidth, 44.0f};
+    if (index >= 6)
+    {
+        const std::vector<int> header = store_header();
+        const auto at = std::find(header.begin(), header.end(), index);
+        const float slots = static_cast<float>(header.end() - at);
+        return {970.0f - slots * (kInstalledWidth + 16.0f), 134.0f, kInstalledWidth, 44.0f};
+    }
     return {554.0f + static_cast<float>(index) * (kFilterWidth + kFilterGap), kFiltersY,
             kFilterWidth, ui::kFieldHeight};
 }
 
-std::vector<std::string> BrowseScreen::filter_options(int filter, int *selected) const
+std::vector<int> BrowseScreen::filter_order() const
 {
-    const std::vector<Game> &games = ctx_.store.state().games;
+    if (addons_)
+        return {5, 0, 1, 2, 3, 4};
+    if (!catalogue_tags(catalogue_games()).empty())
+        return {5, 0, 1, 7, 6, 2, 3, 4};
+    return {5, 0, 1, 6, 2, 3, 4};
+}
+
+std::vector<const SavedFilter *> BrowseScreen::saved_here() const
+{
+    std::vector<const SavedFilter *> out;
+    for (const SavedFilter &saved : ctx_.store.state().saved_filters)
+        if (saved.addons == addons_)
+            out.push_back(&saved);
+    std::sort(out.begin(), out.end(), [](const SavedFilter *a, const SavedFilter *b) { return a->name < b->name; });
+    return out;
+}
+
+void BrowseScreen::apply_saved(const SavedFilter &saved)
+{
+    const std::string base = filters_.addon_base;
+    filters_ = saved.filters;
+    filters_.addon_base = base;
+    index_ = 0;
+    refilter();
+}
+
+void BrowseScreen::start_naming()
+{
+    naming_ = true;
+    saved_name_.clear();
+    keyboard_open_ = true;
+    keyboard_.enter();
+    keyboard_.set_length(0);
+}
+
+bool BrowseScreen::delete_saved(int option, Feedback &feedback)
+{
+    const std::vector<const SavedFilter *> saved = saved_here();
+    if (option < 1 || option > static_cast<int>(saved.size()) || ctx_.store.saved_filters_action().busy)
+        return false;
+    ctx_.store.change_saved_filters("{\"action\":\"delete\",\"id\":" + json::quote(saved[static_cast<std::size_t>(option - 1)]->id) + "}");
+    feedback.play(hui::audio::Cue::erase);
+    return true;
+}
+
+std::vector<std::string> BrowseScreen::filter_options(int filter, int *selected, std::vector<bool> *checked) const
+{
+    const std::vector<Game> &games = catalogue_games();
     std::vector<std::string> options;
     *selected = 0;
+    if (checked != nullptr)
+        checked->clear();
+    if (filter == kSavedFilters)
+    {
+        *selected = -1; // actions, not a choice that is current
+        options.push_back(tr("Save these filters"));
+        for (const SavedFilter *saved : saved_here())
+            options.push_back(saved->name);
+        return options;
+    }
+    if (addons_ && filter == 1) {
+        const std::vector<std::string> ids{"", "expansion", "content-pack", "activation", "bundle"};
+        options.push_back(tr("All types"));
+        for (int i=1; i<5; ++i) { options.push_back(addon_type_label(ids[i])); if (ids[i]==filters_.addon_type) *selected=i; }
+        return options;
+    }
     switch (filter)
     {
     case 0:
     {
         options.push_back(tr("All sources"));
+        if (checked != nullptr)
+            checked->push_back(filters_.sources.empty());
         const auto sources = source_choices(games);
         for (std::size_t i = 0; i < sources.size(); ++i)
         {
             options.push_back(sources[i].second);
-            if (sources[i].first == filters_.source)
+            const bool on = std::find(filters_.sources.begin(), filters_.sources.end(), sources[i].first) != filters_.sources.end();
+            if (checked != nullptr)
+                checked->push_back(on);
+            if (on && *selected == 0)
                 *selected = static_cast<int>(i) + 1;
         }
         break;
@@ -115,11 +277,16 @@ std::vector<std::string> BrowseScreen::filter_options(int filter, int *selected)
     case 1:
     {
         options.push_back(tr("All formats"));
+        if (checked != nullptr)
+            checked->push_back(filters_.formats.empty());
         const auto formats = format_choices(games);
         for (std::size_t i = 0; i < formats.size(); ++i)
         {
             options.push_back(formats[i]);
-            if (formats[i] == filters_.format)
+            const bool on = std::find(filters_.formats.begin(), filters_.formats.end(), formats[i]) != filters_.formats.end();
+            if (checked != nullptr)
+                checked->push_back(on);
+            if (on && *selected == 0)
                 *selected = static_cast<int>(i) + 1;
         }
         break;
@@ -139,9 +306,30 @@ std::vector<std::string> BrowseScreen::filter_options(int filter, int *selected)
         options = {tr("All platforms"), "PS5", "PS4"};
         *selected = filters_.platform == "ps4" ? 2 : filters_.platform == "ps5" ? 1 : 0;
         break;
+    case 6:
+        options = {tr("Show installed"), tr("Hide installed")};
+        *selected = filters_.hide_installed ? 1 : 0;
+        break;
+    case 7:
+    {
+        options.push_back(tr("All tags"));
+        if (checked != nullptr)
+            checked->push_back(filters_.tags.empty());
+        const std::vector<std::string> tags = catalogue_tags(games);
+        for (std::size_t i = 0; i < tags.size(); ++i)
+        {
+            options.push_back(tr(tag_label(tags[i])));
+            const bool on = std::find(filters_.tags.begin(), filters_.tags.end(), tags[i]) != filters_.tags.end();
+            if (checked != nullptr)
+                checked->push_back(on);
+            if (on && *selected == 0)
+                *selected = static_cast<int>(i) + 1;
+        }
+        break;
+    }
     default:
         for (int i = 0; i < static_cast<int>(Sort::count); ++i)
-            options.push_back(sort_label(static_cast<Sort>(i)));
+            options.push_back(addons_ && i == static_cast<int>(Sort::release) ? tr("Recently added") : sort_label(static_cast<Sort>(i)));
         *selected = static_cast<int>(filters_.sort);
         break;
     }
@@ -150,8 +338,27 @@ std::vector<std::string> BrowseScreen::filter_options(int filter, int *selected)
 
 std::string BrowseScreen::filter_value(int filter) const
 {
+    if (filter == kSavedFilters)
+    {
+        const long count = static_cast<long>(saved_here().size());
+        return count ? trn(count, "{count} saved", "{count} saved") : std::string(tr("None yet"));
+    }
     int selected = 0;
-    const std::vector<std::string> options = filter_options(filter, &selected);
+    std::vector<bool> checked;
+    const std::vector<std::string> options = filter_options(filter, &selected, &checked);
+    if (multiple(filter) && !checked.empty() && !checked[0])
+    {
+        // The ticked ones, as the browser's Select lists them; a saved filter's
+        // values this catalogue doesn't offer, as they were saved.
+        std::string out;
+        for (std::size_t i = 1; i < options.size() && i < checked.size(); ++i)
+            if (checked[i])
+                out += (out.empty() ? "" : ", ") + options[i];
+        if (out.empty())
+            for (const std::string &value : filter == 0 ? filters_.sources : filter == 1 ? filters_.formats : filters_.tags)
+                out += (out.empty() ? "" : ", ") + value;
+        return out;
+    }
     return selected >= 0 && selected < static_cast<int>(options.size())
                ? options[static_cast<std::size_t>(selected)]
                : std::string();
@@ -159,23 +366,45 @@ std::string BrowseScreen::filter_value(int filter) const
 
 void BrowseScreen::choose(int filter, int option)
 {
-    const std::vector<Game> &games = ctx_.store.state().games;
+    if (filter == kSavedFilters)
+    {
+        const std::vector<const SavedFilter *> saved = saved_here();
+        if (option == 0)
+            start_naming();
+        else if (option <= static_cast<int>(saved.size()))
+            apply_saved(*saved[static_cast<std::size_t>(option - 1)]);
+        return;
+    }
+    const std::vector<Game> &games = catalogue_games();
+    if (addons_ && filter == 1) {
+        const std::vector<std::string> ids{"", "expansion", "content-pack", "activation", "bundle"};
+        filters_.addon_type = ids[std::clamp(option,0,4)]; refilter(); return;
+    }
     switch (filter)
     {
     case 0:
-    {
-        const auto sources = source_choices(games);
-        filters_.source = option > 0 && option <= static_cast<int>(sources.size())
-                              ? sources[static_cast<std::size_t>(option - 1)].first
-                              : std::string();
-        break;
-    }
     case 1:
+    case 7:
     {
-        const auto formats = format_choices(games);
-        filters_.format = option > 0 && option <= static_cast<int>(formats.size())
-                              ? formats[static_cast<std::size_t>(option - 1)]
-                              : std::string();
+        // Ticks or unticks one; the first choice (All …) clears them.
+        std::vector<std::string> ids;
+        if (filter == 0)
+            for (const auto &source : source_choices(games))
+                ids.push_back(source.first);
+        else
+            ids = filter == 1 ? format_choices(games) : catalogue_tags(games);
+        std::vector<std::string> &list = filter == 0 ? filters_.sources : filter == 1 ? filters_.formats : filters_.tags;
+        if (option <= 0 || option > static_cast<int>(ids.size()))
+            list.clear();
+        else
+        {
+            const std::string &id = ids[static_cast<std::size_t>(option - 1)];
+            const auto at = std::find(list.begin(), list.end(), id);
+            if (at == list.end())
+                list.push_back(id);
+            else
+                list.erase(at);
+        }
         break;
     }
     case 2:
@@ -188,6 +417,9 @@ void BrowseScreen::choose(int filter, int option)
     case 5:
         filters_.platform = option == 2 ? "ps4" : option == 1 ? "ps5" : "";
         break;
+    case 6:
+        filters_.hide_installed = option == 1;
+        break;
     default:
         filters_.sort = static_cast<Sort>(std::clamp(option, 0, static_cast<int>(Sort::count) - 1));
         break;
@@ -198,8 +430,15 @@ void BrowseScreen::choose(int filter, int option)
 
 void BrowseScreen::focus()
 {
+    search_mode_ = false;
     if (catalog_serial_ != ctx_.store.state().catalog_serial)
         refilter();
+}
+
+void BrowseScreen::open_search_section()
+{
+    search_mode_ = true;
+    start_search();
 }
 
 void BrowseScreen::start_search()
@@ -218,9 +457,53 @@ void BrowseScreen::set_query(const std::string &query)
     keyboard_.set_length(static_cast<int>(filters_.query.size()));
 }
 
+void BrowseScreen::show_saved_filters()
+{
+    const int filters = static_cast<int>(filter_order().size());
+    open_filter_ = kSavedFilters;
+    picking_ = kSavedFilters;
+    if (look::is(look::Interface::crossbar))
+    {
+        xb_filters_ = true;
+        xb_filter_ = filters + 1;
+        xb_menu_.show(filters + 1);
+        xb_values_.show(0);
+    }
+    else if (look::is(look::Interface::cinema))
+    {
+        cn_sheet_ = true;
+        cn_row_ = filters + 1;
+        cn_values_ = true;
+        cn_value_ = 0;
+    }
+    else if (look::is(look::Interface::panorama))
+    {
+        pn_row_ = filters + 1;
+        pn_picker_ = 2;
+        pn_value_ = 0;
+    }
+    else
+    {
+        area_ = Area::filters;
+        column_ = store_columns() - 1;
+        picker_.show(0);
+    }
+}
+
 void BrowseScreen::return_to(const std::string &game_id)
 {
-    const std::vector<Game> &games = ctx_.store.state().games;
+    if (look::is(look::Interface::panorama))
+    {
+        // Back on the tile the game was opened from.
+        const pano::Page page = panorama_page();
+        const std::string here = pano_.focused_key(page);
+        if (here.size() > 2 && here.compare(2, std::string::npos, game_id) == 0)
+            return;
+        if (!pano_.focus_key(page, "r:" + game_id))
+            pano_.focus_key(page, "f:" + game_id);
+        return;
+    }
+    const std::vector<Game> &games = catalogue_games();
     for (int i = 0; i < static_cast<int>(results_.size()); ++i)
     {
         if (games[static_cast<std::size_t>(results_[static_cast<std::size_t>(i)])].id == game_id)
@@ -232,49 +515,98 @@ void BrowseScreen::return_to(const std::string &game_id)
     }
 }
 
+void BrowseScreen::update_keyboard(const InputFrame &input, Feedback &feedback)
+{
+    const hui::ui::Event event = keyboard_.handle(input, feedback);
+    if (naming_)
+    {
+        // Naming the filters: Done saves them under the name; Close doesn't.
+        for (int i = 0; i < keyboard_.erased(); ++i)
+            pop_character(saved_name_);
+        saved_name_ += keyboard_.typed();
+        if (event == hui::ui::Event::activated || event == hui::ui::Event::cancelled)
+        {
+            const std::size_t first = saved_name_.find_first_not_of(' ');
+            const std::string name = first == std::string::npos ? std::string()
+                                     : saved_name_.substr(first, saved_name_.find_last_not_of(' ') - first + 1);
+            if (event == hui::ui::Event::activated && !name.empty())
+                ctx_.store.change_saved_filters(saved_filter_body(name, addons_, filters_));
+            keyboard_open_ = false;
+            naming_ = false;
+            feedback.play(event == hui::ui::Event::activated && !name.empty() ? hui::audio::Cue::select
+                                                                              : hui::audio::Cue::modal_close);
+        }
+        return;
+    }
+    bool changed = false;
+    for (int i = 0; i < keyboard_.erased(); ++i)
+    {
+        pop_character(filters_.query);
+        changed = true;
+    }
+    if (!keyboard_.typed().empty())
+    {
+        filters_.query += keyboard_.typed();
+        changed = true;
+    }
+    if (changed)
+    {
+        index_ = 0;
+        refilter();
+    }
+    if (event == hui::ui::Event::activated || event == hui::ui::Event::cancelled)
+    {
+        keyboard_open_ = false;
+        // Done goes to the results; back returns to the field.
+        area_ = event == hui::ui::Event::activated && !results_.empty() ? Area::grid : Area::field;
+        feedback.play(hui::audio::Cue::modal_close);
+    }
+}
+
 Intent BrowseScreen::update(const InputFrame &input, float dt, Feedback &feedback, bool focused)
 {
     Intent intent;
+    bool cut = false; // an L2 / R2 jump moves the page without sliding
     const Snapshot &state = ctx_.store.state();
     if (catalog_serial_ != state.catalog_serial ||
-        (filters_.favourites && favourites_serial_ != state.serial))
+        ((filters_.favourites || filters_.hide_installed) && favourites_serial_ != state.serial))
         refilter();
 
+    xb::keyboard_look(keyboard_.style, look::is(look::Interface::crossbar));
+    keep_filters_in_range();
+    if (look::is(look::Interface::crossbar))
+        return update_crossbar(input, dt, feedback, focused);
+    if (look::is(look::Interface::cinema))
+        return update_cinema(input, dt, feedback, focused);
+    if (look::is(look::Interface::panorama))
+        return update_panorama(input, dt, feedback, focused);
     if (focused && keyboard_open_)
+        update_keyboard(input, feedback);
+    else if (focused && picker_.open && picking_ == kSavedFilters && input.is_pressed(Action::west))
     {
-        const hui::ui::Event event = keyboard_.handle(input, feedback);
-        bool changed = false;
-        for (int i = 0; i < keyboard_.erased(); ++i)
-        {
-            pop_character(filters_.query);
-            changed = true;
-        }
-        if (!keyboard_.typed().empty())
-        {
-            filters_.query += keyboard_.typed();
-            changed = true;
-        }
-        if (changed)
-        {
-            index_ = 0;
-            refilter();
-        }
-        if (event == hui::ui::Event::activated || event == hui::ui::Event::cancelled)
-        {
-            keyboard_open_ = false;
-            // Done goes to the results; back returns to the field.
-            area_ =
-                event == hui::ui::Event::activated && !results_.empty() ? Area::grid : Area::field;
-            feedback.play(hui::audio::Cue::modal_close);
-        }
+        if (delete_saved(picker_.active, feedback))
+            picker_.active = std::max(0, std::min(picker_.active, static_cast<int>(saved_here().size()) - 1));
+        else
+            refuse(feedback, input);
     }
+    else if (focused && picker_.open && picking_ == kSavedFilters && picker_.active == 0 &&
+             input.is_pressed(Action::confirm) && !resettable())
+        refuse(feedback, input); // nothing set to save
     else if (focused && picker_.open)
     {
         int selected = 0;
         const int count = static_cast<int>(filter_options(picking_, &selected).size());
         const int chosen = picker_.update(input, count, feedback);
         if (chosen >= 0)
+        {
             choose(picking_, chosen);
+            // Reset filters may appear before Saved filters: the focus stays on it.
+            if (picking_ == kSavedFilters)
+                column_ = store_columns() - 1;
+            // Source and Format stay open for the next tick; Circle closes them.
+            if (multiple(picking_))
+                picker_.show(chosen);
+        }
     }
     else if (focused)
     {
@@ -311,11 +643,7 @@ Intent BrowseScreen::update(const InputFrame &input, float dt, Feedback &feedbac
         case Area::collection:
         case Area::filters:
         {
-            const int count =
-                area_ == Area::collection
-                    ? 2
-                    : (filters_.narrowed() || filters_.favourites || !filters_.query.empty() ? kFilterControls
-                                                                                             : kFilterControls - 1);
+            const int count = area_ == Area::collection ? (addons_ ? 1 : 2) : store_columns();
             if (input.nav == Direction::up)
                 move_to(Area::field, 0);
             else if (input.nav == Direction::down)
@@ -334,10 +662,10 @@ Intent BrowseScreen::update(const InputFrame &input, float dt, Feedback &feedbac
                 const int next = column_ + (input.nav == Direction::right ? 1 : -1);
                 if (next >= 0 && next < count)
                     move_to(area_, next);
-                else if (area_ == Area::collection && next == 2)
+                else if (area_ == Area::collection && next == count)
                     move_to(Area::filters, 0);
                 else if (area_ == Area::filters && next < 0)
-                    move_to(Area::collection, 1);
+                    move_to(Area::collection, addons_ ? 0 : 1);
                 else
                     refuse(feedback, input);
             }
@@ -345,7 +673,8 @@ Intent BrowseScreen::update(const InputFrame &input, float dt, Feedback &feedbac
             {
                 if (area_ == Area::collection)
                 {
-                    const bool favourites = column_ == 1;
+                    const bool favourites = !addons_ && column_ == 1;
+                    if (addons_) filters_.addon_base.clear();
                     if (favourites && !state.paired)
                     {
                         refuse(feedback, input);
@@ -358,18 +687,28 @@ Intent BrowseScreen::update(const InputFrame &input, float dt, Feedback &feedbac
                         feedback.play(hui::audio::Cue::toggle);
                     }
                 }
-                else if (column_ >= kFilterControls - 1)
+                else if (column_filter(column_) == 6)
+                {
+                    // A button rather than a dropdown: there is no room for a seventh.
+                    filters_.hide_installed = !filters_.hide_installed;
+                    index_ = 0;
+                    refilter();
+                    feedback.play(hui::audio::Cue::toggle);
+                }
+                else if (column_filter(column_) < 0)
                 {
                     filters_ = BrowseFilters{};
                     index_ = 0;
                     refilter();
                     feedback.play(hui::audio::Cue::toggle);
                 }
+                else if (column_filter(column_) == kSavedFilters && !state.paired)
+                    refuse(feedback, input);
                 else
                 {
                     int selected = 0;
-                    filter_options(column_, &selected);
-                    picking_ = column_;
+                    picking_ = column_filter(column_);
+                    filter_options(picking_, &selected);
                     picker_.show(selected);
                     feedback.play(hui::audio::Cue::modal_open);
                 }
@@ -383,6 +722,19 @@ Intent BrowseScreen::update(const InputFrame &input, float dt, Feedback &feedbac
             {
                 area_ = Area::filters;
                 break;
+            }
+            if (input.is_pressed(Action::jump_prev) || input.is_pressed(Action::jump_next))
+            {
+                const int jump = grid_jump(index_, count, kColumns,
+                                           input.is_pressed(Action::jump_next) ? kGridJumpRows : -kGridJumpRows);
+                if (jump != index_)
+                {
+                    index_ = jump;
+                    cut = true;
+                    feedback.play(hui::audio::Cue::focus);
+                }
+                else
+                    refuse(feedback, input);
             }
             int next = index_;
             if (input.nav == Direction::left)
@@ -414,9 +766,9 @@ Intent BrowseScreen::update(const InputFrame &input, float dt, Feedback &feedbac
             }
             if (area_ == Area::grid && input.is_pressed(Action::west))
             {
-                const Game &game = state.games[static_cast<std::size_t>(
+                const Game &game = catalogue_games()[static_cast<std::size_t>(
                     results_[static_cast<std::size_t>(index_)])];
-                if (state.paired && state.link == Link::online &&
+                if (!addons_ && state.paired && state.link == Link::online &&
                     !ctx_.store.favourite_action().busy)
                 {
                     ctx_.store.set_favourite(game.id, !state.favourite(game.id));
@@ -429,10 +781,8 @@ Intent BrowseScreen::update(const InputFrame &input, float dt, Feedback &feedbac
             {
                 feedback.play(hui::audio::Cue::select);
                 intent.kind = Intent::Kind::open_game;
-                intent.id =
-                    state
-                        .games[static_cast<std::size_t>(results_[static_cast<std::size_t>(index_)])]
-                        .id;
+                intent.id = catalogue_games()[static_cast<std::size_t>(
+                    results_[static_cast<std::size_t>(index_)])].id;
                 return intent;
             }
             if (input.is_pressed(Action::north))
@@ -465,11 +815,14 @@ Intent BrowseScreen::update(const InputFrame &input, float dt, Feedback &feedbac
     float target = 0.0f;
     if (area_ == Area::grid)
     {
-        const float top = kGridTop + static_cast<float>(index_ / kColumns) * kRowStep;
-        target = std::max(0.0f, top + kRowStep - 1010.0f);
+        const float step = addons_ ? kRowStep + 56 : kRowStep;
+        const float top = tile_rect(index_).y;
+        target = std::max(0.0f, top + step - 1010.0f);
         target = std::min(target, std::max(0.0f, top - 140.0f));
     }
     scroll_.target = target;
+    if (cut)
+        scroll_.snap(target);
     scroll_.update(dt, 10.0f);
     for (int i = 0; i < static_cast<int>(tile_focus_.size()); ++i)
     {
@@ -482,6 +835,21 @@ Intent BrowseScreen::update(const InputFrame &input, float dt, Feedback &feedbac
 
 void BrowseScreen::draw(Frame &frame, bool focused) const
 {
+    if (look::is(look::Interface::crossbar))
+    {
+        draw_crossbar(frame);
+        return;
+    }
+    if (look::is(look::Interface::cinema))
+    {
+        draw_cinema(frame);
+        return;
+    }
+    if (look::is(look::Interface::panorama))
+    {
+        draw_panorama(frame);
+        return;
+    }
     (void)focused;
     hui::gfx::DrawList &list = frame.scene;
     const Snapshot &state = ctx_.store.state();
@@ -492,10 +860,10 @@ void BrowseScreen::draw(Frame &frame, bool focused) const
     list.push_transform(1.0f, 0.0f, 0.0f, 0.0f, -scroll);
 
     // .page-heading: the title and how many games match.
-    const float title = ui::text(list, type.semibold, tr("Browse"), ui::kGutter, kTitleBaseline, 60.0f,
+    const float title = ui::text(list, type.semibold, tr(addons_ ? "Add-ons" : "Browse"), ui::kGutter, kTitleBaseline, 60.0f,
                                  ui::color::text);
     const std::string count =
-        trn(static_cast<long>(results_.size()), "{count} game", "{count} games");
+        trn(static_cast<long>(results_.size()), addons_ ? "{count} add-on" : "{count} game", addons_ ? "{count} add-ons" : "{count} games");
     ui::text(list, type.regular, count, ui::kGutter + title + 24.0f, kTitleBaseline, 20.0f,
              ui::color::text3);
 
@@ -507,7 +875,7 @@ void BrowseScreen::draw(Frame &frame, bool focused) const
     ui::icon_search(list, field.x + 34.0f, field.cy(), 24.0f, ui::color::text2);
     if (filters_.query.empty())
     {
-        ui::text(list, type.regular, tr("Search games or title ID"), field.x + 60.0f, field.cy() + 7.0f,
+        ui::text(list, type.regular, tr(addons_ ? "Search add-ons or base games" : "Search games or title ID"), field.x + 60.0f, field.cy() + 7.0f,
                  20.0f, ui::color::text3);
     }
     else
@@ -520,12 +888,12 @@ void BrowseScreen::draw(Frame &frame, bool focused) const
     }
 
     // .collection-tabs: All games and Favourites, one tonal track with the chosen side lit.
-    ui::surface(list, {ui::kGutter, kChipsY, 370.0f, kChipHeight}, kChipHeight * .5f,
+    ui::surface(list, {ui::kGutter, kChipsY, addons_ ? 185.0f : 370.0f, kChipHeight}, kChipHeight * .5f,
                 ui::color::field);
     list.line(512.0f, kChipsY + 8.0f, 512.0f, kChipsY + kChipHeight - 8.0f, 1.0f,
               ui::Color::rgb(0xffffff, 0.1f));
     float x = ui::kGutter;
-    for (int c = 0; c < 2; ++c)
+    for (int c = 0; c < (addons_ ? 1 : 2); ++c)
     {
         const ui::Rect chip{x, kChipsY, chip_width(type, c), kChipHeight};
         const ui::Rect lit = chip.inset(5.0f);
@@ -534,24 +902,37 @@ void BrowseScreen::draw(Frame &frame, bool focused) const
         if (on)
             list.rounded_rect(lit, lit.h * 0.5f, ui::Color::rgb(0xf4f4f4));
 
-        ui::text(list, type.medium, tr(kChips[c]), chip.cx(), chip.cy() + 7.0f, 20.0f,
+        ui::text(list, type.medium, tr(addons_ ? "All add-ons" : kChips[c]), chip.cx(), chip.cy() + 7.0f, 20.0f,
                  on ? ui::Color::rgb(0x080808) : ui::color::text, ui::Align::center);
         x += chip.w;
     }
 
-    // .browse-selects: six dropdowns and Reset filters.
-    for (int f = 0; f < kFilterControls - 1; ++f)
+    // .browse-selects: six dropdowns; in the header Tags, Hide installed and Reset filters.
+    for (int f = 0; f < 6; ++f)
     {
         const ui::Rect r = filter_rect(f);
         ui::select_field(
             list, type, r,
-            f == 4 && filters_.sort == Sort::release ? tr("Newest first") : filter_value(f),
+            f == 4 && filters_.sort == Sort::release ? tr(addons_ ? "Recently added" : "Newest first") : filter_value(f),
             control_focus_[2 + f], picker_.open && picking_ == f, true, ui::FieldLook::pill);
     }
-    const ui::Rect reset = filter_rect(kFilterControls - 1);
-    if (filters_.narrowed() || filters_.favourites || !filters_.query.empty())
-        ui::button(list, type, reset, tr("Reset filters"), ui::ButtonKind::secondary, control_focus_[2 + kFilterControls - 1],
-                   filters_.narrowed() || filters_.favourites || !filters_.query.empty(), 18.0f);
+    const std::vector<int> header = store_header();
+    for (std::size_t k = 0; k < header.size(); ++k)
+    {
+        const float focus = control_focus_[2 + 6 + k];
+        if (header[k] == 6)
+            ui::button(list, type, filter_rect(6), filters_.hide_installed ? tr("Show installed") : tr("Hide installed"),
+                       ui::ButtonKind::secondary, focus, true, 18.0f);
+        else
+            ui::select_field(list, type, filter_rect(header[k]), filter_value(header[k]), focus,
+                             picker_.open && picking_ == header[k], true, ui::FieldLook::pill);
+    }
+    const ui::Rect reset = filter_rect(kReset);
+    if (resettable())
+        ui::button(list, type, reset, tr("Reset filters"), ui::ButtonKind::secondary, control_focus_[2 + filter_columns()],
+                   true, 18.0f);
+    ui::button(list, type, filter_rect(kSavedFilters), tr("Saved filters"), ui::ButtonKind::secondary,
+               control_focus_[2 + store_columns() - 1], state.paired, 18.0f);
     if (filters_.sort == Sort::size || filters_.sort == Sort::size_desc)
         ui::text(list, type.regular,
                  tr("Sorted by the smallest download option that matches your filters."), ui::kGutter,
@@ -560,7 +941,7 @@ void BrowseScreen::draw(Frame &frame, bool focused) const
     // ---- results ----
     if (results_.empty() && state.have_catalog)
     {
-        ui::text(list, type.light, tr("No games found"), ui::kGutter, kGridTop + 70.0f, 40.0f,
+        ui::text(list, type.light, tr(addons_ ? "No add-ons match these filters." : "No games found"), ui::kGutter, kGridTop + 70.0f, 40.0f,
                  ui::color::text);
         ui::text(list, type.regular,
                  filters_.favourites ? tr("Add favourites from a game\xE2\x80\x99s page.")
@@ -572,22 +953,22 @@ void BrowseScreen::draw(Frame &frame, bool focused) const
         for (int i = 0; i < static_cast<int>(results_.size()); ++i)
         {
             const ui::Rect r = tile_rect(i);
-            if (r.y - scroll > 1080.0f || r.y + kRowStep - scroll < 0.0f)
+            if (r.y - scroll > 1080.0f || r.y + (addons_ ? kRowStep + 56 : kRowStep) - scroll < 0.0f)
                 continue;
             const float amount = tile_focus_[static_cast<std::size_t>(i)];
             const bool on = amount > 0.5f;
             if ((pass == 0) == on)
                 continue; // the focused tile is drawn last, over its neighbours
             const Game &game =
-                state.games[static_cast<std::size_t>(results_[static_cast<std::size_t>(i)])];
+                catalogue_games()[static_cast<std::size_t>(results_[static_cast<std::size_t>(i)])];
             draw_tile(ctx_, list, game, r, amount);
             if (state.favourite(game.id))
             {
-                // .tile-favorite: a gold star in a dark disc, top right.
+                // A filled heart in a dark disc, top right.
                 const float scale = 1.0f;
                 list.push_transform(scale, r.cx(), r.cy(), 0.0f, 0.0f);
                 list.circle(r.x + r.w - 25.0f, r.y + 25.0f, 15.0f, ui::Color::rgb(0x141414, 0.87f));
-                list.star(r.x + r.w - 25.0f, r.y + 25.5f, 8.0f, ui::Color::rgb(0xffffff));
+                icons::draw(list, icons::Icon::heart_fill, r.x + r.w - 25.0f, r.y + 25.0f, 18.0f, ui::Color::rgb(0xffffff));
                 list.pop_transform();
             }
             draw_tile_caption(ctx_, list, game,
@@ -602,12 +983,13 @@ void BrowseScreen::draw(Frame &frame, bool focused) const
     if (picker_.in.value > 0.01f)
     {
         int selected = 0;
-        const std::vector<std::string> options = filter_options(picking_, &selected);
+        std::vector<bool> checked;
+        const std::vector<std::string> options = filter_options(picking_, &selected, &checked);
         ui::Rect trigger = filter_rect(picking_);
         trigger.y -= scroll;
         frame.glass = true;
         ui::select_menu(frame.overlay, type, trigger, options, selected, picker_.active,
-                        picker_.in.value, frame.glass_texture);
+                        picker_.in.value, frame.glass_texture, multiple(picking_) ? &checked : nullptr);
     }
 
     // ---- keyboard ----
@@ -622,6 +1004,19 @@ void BrowseScreen::draw(Frame &frame, bool focused) const
         overlay.glass(frame.glass_texture, panel, 0.0f, ui::Color::rgb(0xffffff));
         overlay.rounded_rect(panel, 0.0f, ui::color::night1.with_alpha(0.78f));
         overlay.rounded_rect({0.0f, kKeyboardTop, 1920.0f, 1.5f}, 0.0f, ui::color::line);
+        if (naming_)
+        {
+            // The name, in a field over the keys (the search field stays as it is).
+            const ui::Rect name{ui::kGutter + 220.0f, kKeyboardTop - 92.0f, 1280.0f, kFieldHeight};
+            overlay.glass(frame.glass_texture, name, name.h * 0.5f, ui::Color::rgb(0xffffff));
+            ui::surface(overlay, name, name.h * 0.5f, ui::color::field_open);
+            const float w = ui::text_fit(overlay, type.regular, saved_name_.empty() ? std::string(tr("Name these filters")) : saved_name_,
+                                         name.x + 34.0f, name.cy() + 7.0f, 20.0f, name.w - 68.0f,
+                                         saved_name_.empty() ? ui::color::text3 : ui::color::text);
+            if (static_cast<int>(ctx_.clock * 2.0f) % 2 == 0)
+                overlay.rounded_rect({name.x + 37.0f + (saved_name_.empty() ? 0.0f : w), name.cy() - 12.0f, 2.0f, 24.0f}, 1.0f,
+                                     ui::color::text);
+        }
         hui::ui::Canvas canvas{overlay, ctx_.fonts, frame.glass_texture, ctx_.clock};
         keyboard_.draw(canvas);
         overlay.pop_transform();
@@ -631,25 +1026,34 @@ void BrowseScreen::draw(Frame &frame, bool focused) const
 
 std::vector<hui::ui::Hint> BrowseScreen::hints() const
 {
+    if (look::is(look::Interface::crossbar))
+        return crossbar_hints();
+    if (look::is(look::Interface::cinema))
+        return cinema_hints();
+    if (look::is(look::Interface::panorama))
+        return panorama_hints();
     if (keyboard_open_)
         return {{hui::ui::Button::square, tr("Delete")},
                 {hui::ui::Button::triangle, tr("Space")},
                 {hui::ui::Button::circle, tr("Close")}};
+    if (picker_.open && picking_ == kSavedFilters && picker_.active > 0)
+        return {{hui::ui::Button::cross, tr("Apply")}, {hui::ui::Button::square, tr("Delete")}, {hui::ui::Button::circle, tr("Close")}};
     if (picker_.open)
         return {{hui::ui::Button::cross, tr("Choose")}, {hui::ui::Button::circle, tr("Close")}};
     if (area_ == Area::grid)
     {
-        std::vector<hui::ui::Hint> hints{{hui::ui::Button::cross, tr("Open game")}};
+        std::vector<hui::ui::Hint> hints{{hui::ui::Button::cross, tr(addons_ ? "Open" : "Open game")}};
         const Snapshot &state = ctx_.store.state();
-        if (state.paired && index_ >= 0 && index_ < static_cast<int>(results_.size()))
+        if (!addons_ && state.paired && index_ >= 0 && index_ < static_cast<int>(results_.size()))
         {
-            const Game &game = state.games[static_cast<std::size_t>(
+            const Game &game = catalogue_games()[static_cast<std::size_t>(
                 results_[static_cast<std::size_t>(index_)])];
             hints.push_back({hui::ui::Button::square,
                              state.favourite(game.id) ? tr("Remove from favourites")
                                                       : tr("Add to favourites")});
         }
         hints.push_back({hui::ui::Button::triangle, tr("Search")});
+        hints.push_back({hui::ui::Button::l2, tr("Jump"), hui::ui::Button::r2});
         hints.push_back({hui::ui::Button::l1, tr("Tabs"), hui::ui::Button::r1});
         return hints;
     }

@@ -1,26 +1,35 @@
 .DEFAULT_GOAL := host
 SOURCES := $(wildcard backend/*.c) .deps/cjson/cJSON.c
 HEADERS := $(wildcard backend/*.h)
-CPPFLAGS := -D_FILE_OFFSET_BITS=64 -Ibackend -Ilauncher -I.deps/cjson -Ibuild/generated
+CPPFLAGS := -D_FILE_OFFSET_BITS=64 -Ibackend -Ilauncher -I.deps/cjson -I.deps/sqlite -Ibuild/generated
 CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wno-misleading-indentation
 HOST_CC ?= clang-19
 PS5_PAYLOAD_SDK ?= /opt/ps5-payload-sdk
 PS5_CC := $(PS5_PAYLOAD_SDK)/bin/prospero-clang
 PS5_LIB := $(PS5_PAYLOAD_SDK)/target/user/homebrew
 PS5_STRIP := $(PS5_PAYLOAD_SDK)/bin/prospero-strip
-GENERATED := build/generated/assets.h build/generated/catalog.h build/generated/ca.h build/generated/network.h build/generated/launcher.h
+GENERATED := build/generated/assets.h build/generated/catalog.h build/generated/ca.h build/generated/network.h build/generated/launcher.h build/generated/messages.h
 PAYLOAD_SOURCES := $(SOURCES) launcher/install.c launcher/platform_ps5.c
 PAYLOAD_CC = $(PS5_CC) $(CPPFLAGS) $(CFLAGS) -DORBIT_INSTALL_LAUNCHER -Wno-unreachable-code-generic-assoc -I$(PS5_LIB)/include
 # The SDK opens DT_NEEDED libraries in order. AppInst uses Ipmi internally;
 # retain and load Ipmi first even though Orbit does not call its API directly.
 PS5_LAUNCHER_LIBS := -Wl,--push-state,--no-as-needed -lSceIpmi -Wl,--pop-state -lSceAppInstUtil
-PS5_ARCHIVE_DEPS := build/sevenzip-ps5.o .deps/7zip-ps5/liborbit7zip.a
-HOST_ARCHIVE_DEPS := build/sevenzip-host.o .deps/7zip-host/liborbit7zip.a
-ARCHIVE_LIBS := -larchive -llzma -lbz2 -lz build/sevenzip-ps5.o -Wl,--whole-archive .deps/7zip-ps5/liborbit7zip.a -Wl,--no-whole-archive -lc++ -lc++abi -lunwind
-HOST_ARCHIVE_LIBS := -L/usr/local/lib -l:libarchive.a -llzma -lbz2 -lz build/sevenzip-host.o -Wl,--whole-archive .deps/7zip-host/liborbit7zip.a -Wl,--no-whole-archive -lstdc++
+PS5_ARCHIVE_DEPS := build/sqlite-ps5.o build/sevenzip-ps5.o .deps/7zip-ps5/liborbit7zip.a
+HOST_ARCHIVE_DEPS := build/sqlite-host.o build/sevenzip-host.o .deps/7zip-host/liborbit7zip.a
+ARCHIVE_LIBS := build/sqlite-ps5.o -larchive -llzma -lbz2 -lz build/sevenzip-ps5.o -Wl,--whole-archive .deps/7zip-ps5/liborbit7zip.a -Wl,--no-whole-archive -lc++ -lc++abi -lunwind
+HOST_ARCHIVE_LIBS := build/sqlite-host.o -L/usr/local/lib -l:libarchive.a -llzma -lbz2 -lz build/sevenzip-host.o -Wl,--whole-archive .deps/7zip-host/liborbit7zip.a -Wl,--no-whole-archive -lstdc++
 PAYLOAD_LIBS := -L$(PS5_LIB)/lib -lcurl -lmicrohttpd -lssl -lcrypto $(ARCHIVE_LIBS) $(PS5_LAUNCHER_LIBS)
-PS5_FS_WRAPS := -Wl,--wrap=openat -Wl,--wrap=mkdirat -Wl,--wrap=fstatat -Wl,--wrap=linkat -Wl,--wrap=renameat -Wl,--wrap=unlinkat
+PS5_FS_WRAPS := -Wl,--wrap=openat -Wl,--wrap=mkdirat -Wl,--wrap=fstatat -Wl,--wrap=linkat -Wl,--wrap=renameat -Wl,--wrap=unlinkat -Wl,--wrap=futimens
 .PHONY: host payload payload-core test-backend test-launcher test-payload-imports test-updates
+SQLITE_FLAGS := -O2 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_OMIT_SHARED_CACHE -DSQLITE_THREADSAFE=1 -DSQLITE_TEMP_STORE=3 -DSQLITE_DEFAULT_MEMSTATUS=0
+.deps/sqlite/sqlite3.c .deps/sqlite/sqlite3.h &: tools/build-sqlite.py
+	python3 tools/build-sqlite.py
+build/sqlite-host.o: .deps/sqlite/sqlite3.c .deps/sqlite/sqlite3.h Makefile
+	@mkdir -p build
+	$(HOST_CC) $(SQLITE_FLAGS) -c $< -o $@
+build/sqlite-ps5.o: .deps/sqlite/sqlite3.c .deps/sqlite/sqlite3.h Makefile
+	@mkdir -p build
+	$(PS5_CC) $(SQLITE_FLAGS) -c $< -o $@
 .deps/7zip-host/liborbit7zip.a: tools/build-7zip.sh tools/7zip-orbit.mak tools/patch-7zip.py
 	bash tools/build-7zip.sh host
 .deps/7zip-ps5/liborbit7zip.a: tools/build-7zip.sh tools/7zip-orbit.mak tools/patch-7zip.py
@@ -31,6 +40,8 @@ build/sevenzip-ps5.o: backend/sevenzip.cpp backend/sevenzip.h .deps/7zip-ps5/lib
 	$(PS5_PAYLOAD_SDK)/bin/prospero-clang++ -std=c++17 -O2 -Wall -Wextra -Werror -I.deps/7zip/CPP -c $< -o $@
 build/orbit-host build/orbit-test build/orbit-api-recovery-test build/orbit-transfer-benchmark-test: $(HOST_ARCHIVE_DEPS)
 build/orbit_runtime.elf build/orbit_store.elf build/orbit_core.elf build/orbit_transfer_benchmark.elf: $(PS5_ARCHIVE_DEPS)
+build/generated/messages.h: tools/embed-messages.py backend/notify.c $(wildcard i18n/*.json)
+	python3 tools/embed-messages.py
 build/generated/network.h build/generated/launcher.h &: tools/embed-launcher.py config/network.json launcher/sce_sys/param.json launcher/sce_sys/icon0.png
 	python3 tools/embed-launcher.py
 host: build/orbit-host
@@ -69,6 +80,14 @@ test-art: build/orbit-test
 test-tv-app: build/orbit-test
 	python3 tests/tvapp_integration.py
 
+.PHONY: test-firmware-notify
+test-firmware-notify: build/orbit-test
+	python3 tests/firmware_notify_integration.py
+
+.PHONY: test-ntfy
+test-ntfy: build/orbit-test
+	python3 tests/ntfy_integration.py
+
 .PHONY: test-diagnostics
 test-diagnostics: build/orbit-test
 	python3 tests/diagnostics_integration.py
@@ -96,8 +115,13 @@ test-debrid: build/orbit-test build/orbit-debrid-network-test
 	./build/orbit-debrid-network-test
 	python3 tests/debrid_integration.py
 
+.PHONY: test-archive-account
+test-archive-account: build/orbit-test
+	python3 tests/archive_account_integration.py
+
 test-ranges: build/orbit-test
 	python3 tests/range_integration.py
+	python3 tests/partial_retry_integration.py
 .PHONY: test-extract
 test-extract: build/orbit-test
 	python3 tests/extract_integration.py
@@ -148,6 +172,10 @@ test-payload-imports: payload payload-core
 test-catalog-refresh: build/orbit-test
 	python3 tests/catalog_refresh.py
 
+.PHONY: test-files
+test-files: build/orbit-test
+	python3 tests/files_integration.py
+
 .PHONY: test-library
 test-library: build/orbit-host build/orbit-test
 	python3 tests/library_integration.py
@@ -168,13 +196,29 @@ build/orbit_browser_probe.elf: $(BROWSER_PROBE)/main.c backend/browser_platform.
 	$(PS5_CC) $(CFLAGS) -DORBIT_BROWSER_PROBE -Ibackend -I$(PS5_LIB)/include $(BROWSER_PROBE)/main.c backend/browser_platform.c backend/browser_services.c backend/browser_scan.c -o $@ -L$(PS5_LIB)/lib -lmicrohttpd
 
 .PHONY: test-browser-capture
+.PHONY: test-viking-session
+build/orbit-viking-session-test: backend/viking_cookies.c backend/viking_session.c backend/viking_session.h backend/browser_services.c backend/browser_match.c backend/providers.c backend/provider_network.c tests/viking_session_driver.c build/sqlite-host.o
+	$(HOST_CC) $(CPPFLAGS) $(CFLAGS) -DORBIT_DESKTOP backend/viking_cookies.c backend/viking_session.c backend/browser_services.c backend/browser_match.c backend/providers.c backend/provider_network.c tests/viking_session_driver.c build/sqlite-host.o -o $@ -lcurl -lcrypto -lpthread -lm
+test-viking-session: build/orbit-viking-session-test
+	python3 tests/viking_session_test.py
+build/orbit-browser-platform-test: backend/browser_platform.c backend/browser_scan.c backend/browser_platform.h backend/browser_scan.h tests/browser_platform_driver.c $(wildcard tests/stubs/browser-platform/*/*.h)
+	$(HOST_CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -Itests/stubs/browser-platform -Ibackend -fsanitize=undefined -fsanitize-trap=all backend/browser_platform.c backend/browser_scan.c tests/browser_platform_driver.c -o $@
+.PHONY: test-browser-platform
+build/orbit-browser-multi-process-test: backend/browser.c $(HEADERS) tests/browser_multi_process_driver.c tests/browser_return_queue_driver.c
+	$(HOST_CC) $(CPPFLAGS) $(CFLAGS) -DORBIT_DESKTOP -D_POSIX_C_SOURCE=200809L backend/browser.c .deps/cjson/cJSON.c tests/browser_multi_process_driver.c -o $@ -lpthread -lm
+test-browser-platform: build/orbit-browser-platform-test build/orbit-browser-multi-process-test
+	./build/orbit-browser-platform-test
+	python3 -c 'import subprocess; [subprocess.run(["./build/orbit-browser-multi-process-test", str(i)], check=True) for i in range(8)]'
 build/orbit-browser-services-test: backend/browser_services.c backend/browser_platform.h tests/browser_services_driver.c
 	$(HOST_CC) $(CFLAGS) -DORBIT_BROWSER_PROBE -Ibackend backend/browser_services.c tests/browser_services_driver.c -Wl,--wrap=dlopen -Wl,--wrap=dlsym -o $@
 .PHONY: test-browser-services
 build/orbit-browser-worker-test: backend/browser.c $(HEADERS) tests/browser_worker_driver.c
 	$(HOST_CC) $(CPPFLAGS) $(CFLAGS) -DORBIT_DESKTOP -DORBIT_TEST backend/browser.c .deps/cjson/cJSON.c tests/browser_worker_driver.c -Wl,--wrap=pthread_attr_setstacksize -Wl,--wrap=pthread_create -Wl,--wrap=pthread_join -o $@ -lpthread -lm
-test-browser-services: build/orbit-browser-services-test build/orbit-browser-worker-test
+build/orbit-browser-return-queue-test: backend/browser.c $(HEADERS) tests/browser_return_queue_driver.c
+	$(HOST_CC) $(CPPFLAGS) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -DORBIT_TEST backend/browser.c .deps/cjson/cJSON.c tests/browser_return_queue_driver.c -o $@ -lpthread -lm
+test-browser-services: build/orbit-browser-services-test build/orbit-browser-worker-test build/orbit-browser-return-queue-test
 	python3 -c 'import subprocess; [subprocess.run(["./build/orbit-browser-services-test", str(i)], check=True) for i in range(9)]'
+	python3 -c 'import subprocess; [subprocess.run(["./build/orbit-browser-return-queue-test", str(i)], check=True) for i in range(12)]'
 	./build/orbit-browser-worker-test idle
 	./build/orbit-browser-worker-test request
 build/orbit-browser-capture-test: backend/browser_match.c backend/browser_match.h backend/browser_scan.c backend/providers.c backend/provider_network.c tests/browser_capture_driver.c

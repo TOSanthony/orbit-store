@@ -30,7 +30,7 @@ export function ArchiveSetting({
       <h2 className="download-storage-heading">{t("Compressed downloads")}</h2>
       <p>
         {t(
-          "ZIP, 7z and RAR downloads are extracted on the drive after they finish. Orbit refuses password-protected archives and anything that isn’t plain files and folders.",
+          "ZIP, 7z and RAR downloads are extracted on the drive after they finish. Orbit tries common archive passwords automatically. If needed, you can enter a password in Downloads.",
         )}
       </p>
       <button

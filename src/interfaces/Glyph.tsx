@@ -1,0 +1,146 @@
+// Line icons for the Crossbar, Cinema and Panorama interfaces (24 px grid).
+export type GlyphName =
+  | "search"
+  | "gear"
+  | "heart"
+  | "heartFill"
+  | "down"
+  | "grid"
+  | "books"
+  | "spark"
+  | "laptop"
+  | "back"
+  | "next"
+  | "more"
+  | "pause"
+  | "play"
+  | "close"
+  | "check"
+  | "drive"
+  | "ps"
+  | "up"
+  | "arrowDown"
+  | "info"
+  | "warn"
+  | "send"
+  | "list"
+  | "chevDown"
+  | "sort"
+  | "filter"
+  | "folder"
+  | "layers"
+  | "link"
+  | "refresh"
+  | "update"
+  | "palette"
+  | "wrench"
+  | "key"
+  | "globe"
+  | "lock"
+  | "clip"
+  | "pencil"
+  | "archive"
+  | "eject"
+  | "copy"
+  | "move"
+  | "scan"
+  | "stop"
+  | "trash"
+  | "history"
+  | "terminal"
+  | "upload"
+  | "cloud"
+  | "wifi"
+  | "star"
+  | "bolt"
+  | "bug"
+  | "tv"
+  | "power"
+  | "eye"
+  | "box"
+  | "clock"
+  | "phone"
+  | "bell";
+
+// The interface designs' line icons (app/tools/icons/icons.json), the same set as the PS5 app.
+const paths: Record<GlyphName, string> = {
+  "search": "<circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"M16 16l4.5 4.5\"/>",
+  "gear": "<circle cx=\"12\" cy=\"12\" r=\"3.2\"/><path d=\"M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7\"/>",
+  "heart": "<path d=\"M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z\"/>",
+  "heartFill": "<path d=\"M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z\" fill=\"currentColor\"/>",
+  "down": "<path d=\"M12 4v12M6.5 11 12 16.5 17.5 11M5 20h14\"/>",
+  "grid": "<rect x=\"4\" y=\"4\" width=\"6.5\" height=\"6.5\" rx=\"1.5\"/><rect x=\"13.5\" y=\"4\" width=\"6.5\" height=\"6.5\" rx=\"1.5\"/><rect x=\"4\" y=\"13.5\" width=\"6.5\" height=\"6.5\" rx=\"1.5\"/><rect x=\"13.5\" y=\"13.5\" width=\"6.5\" height=\"6.5\" rx=\"1.5\"/>",
+  "books": "<path d=\"M5 4h3v16H5zM10 4h3v16h-3zM15.2 4.6l2.9-.8 3.9 15.4-2.9.8z\"/>",
+  "spark": "<path d=\"M12 3c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7z\"/><path d=\"M19 16.5c.2 1.4.9 2.1 2.3 2.3-1.4.2-2.1.9-2.3 2.3-.2-1.4-.9-2.1-2.3-2.3 1.4-.2 2.1-.9 2.3-2.3z\"/>",
+  "laptop": "<rect x=\"4.5\" y=\"5\" width=\"15\" height=\"10.5\" rx=\"1.5\"/><path d=\"M2.5 19h19\"/>",
+  "back": "<path d=\"M14.5 5.5 8 12l6.5 6.5\"/>",
+  "next": "<path d=\"M9.5 5.5 16 12l-6.5 6.5\"/>",
+  "more": "<circle cx=\"6\" cy=\"12\" r=\"1.3\"/><circle cx=\"12\" cy=\"12\" r=\"1.3\"/><circle cx=\"18\" cy=\"12\" r=\"1.3\"/>",
+  "pause": "<path d=\"M8.5 5.5v13M15.5 5.5v13\"/>",
+  "play": "<path d=\"M8 5.5v13l10.5-6.5z\"/>",
+  "close": "<path d=\"M6 6l12 12M18 6 6 18\"/>",
+  "check": "<path d=\"M5 12.5l4.5 4.5L19 7.5\"/>",
+  "drive": "<rect x=\"3.5\" y=\"6.5\" width=\"17\" height=\"11\" rx=\"2.5\"/><path d=\"M7 14h.01M10.5 14h6\"/>",
+  "ps": "<rect x=\"3\" y=\"7\" width=\"18\" height=\"10\" rx=\"3\"/><path d=\"M7 12h3M8.5 10.5v3\"/><circle cx=\"15.5\" cy=\"11\" r=\".7\"/><circle cx=\"17.2\" cy=\"12.8\" r=\".7\"/>",
+  "up": "<path d=\"M12 19V7M6.5 12.5 12 7l5.5 5.5\"/>",
+  "arrowDown": "<path d=\"M12 5v12M6.5 11.5 12 17l5.5-5.5\"/>",
+  "info": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 11v5.5M12 7.8v.01\"/>",
+  "warn": "<path d=\"M12 4 21 19.5H3z\"/><path d=\"M12 10v4.5M12 17v.01\"/>",
+  "send": "<path d=\"M4 12 20 4.5 13.5 20l-2.2-6.3z\"/><path d=\"M11.3 13.7 20 4.5\"/>",
+  "list": "<path d=\"M8 6.5h12M8 12h12M8 17.5h12M4 6.5h.01M4 12h.01M4 17.5h.01\"/>",
+  "chevDown": "<path d=\"M6 9.5l6 6 6-6\"/>",
+  "sort": "<path d=\"M8 5v14M4.5 8.5 8 5l3.5 3.5M16 19V5M12.5 15.5 16 19l3.5-3.5\"/>",
+  "filter": "<path d=\"M4 6h16M7 12h10M10 18h4\"/>",
+  "folder": "<path d=\"M3.5 7a1.5 1.5 0 0 1 1.5-1.5h4.4l2 2H19a1.5 1.5 0 0 1 1.5 1.5v8.5A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z\"/>",
+  "layers": "<path d=\"M12 4 3.5 8.5 12 13l8.5-4.5zM3.5 12.5 12 17l8.5-4.5M3.5 16.5 12 21l8.5-4.5\"/>",
+  "link": "<path d=\"M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1\"/><path d=\"M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1\"/>",
+  "refresh": "<path d=\"M19.5 12a7.5 7.5 0 1 1-2.2-5.3\"/><path d=\"M19.5 4.5v4.5H15\"/>",
+  "update": "<path d=\"M12 3.5v10M7.5 9 12 13.5 16.5 9\"/><path d=\"M4.5 15.5v2a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2\"/>",
+  "palette": "<path d=\"M12 3.5a8.5 8.5 0 1 0 0 17c1.4 0 2-1 1.6-2.2-.5-1.5.4-2.8 2-2.8H18a3 3 0 0 0 3-3c0-5-4-9-9-9z\"/><circle cx=\"7.5\" cy=\"11\" r=\"1\"/><circle cx=\"10\" cy=\"7\" r=\"1\"/><circle cx=\"14.5\" cy=\"7\" r=\"1\"/>",
+  "wrench": "<path d=\"M14.5 5.5a4 4 0 0 0 4.8 4.8L12 17.6 9.4 20.2a2 2 0 0 1-2.8-2.8L9.2 14.8l7.3-7.3\"/><path d=\"M14.5 5.5 17 3\"/>",
+  "key": "<circle cx=\"8\" cy=\"15\" r=\"4\"/><path d=\"M11 12l8.5-8.5M16.5 6.5l2 2M14.5 8.5l1.5 1.5\"/>",
+  "globe": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M3.5 12h17M12 3.5c2.4 2.6 3.5 5.4 3.5 8.5s-1.1 5.9-3.5 8.5c-2.4-2.6-3.5-5.4-3.5-8.5s1.1-5.9 3.5-8.5z\"/>",
+  "lock": "<rect x=\"5\" y=\"10.5\" width=\"14\" height=\"10\" rx=\"2\"/><path d=\"M8 10.5V8a4 4 0 0 1 8 0v2.5\"/>",
+  "pencil": "<path d=\"M4.5 19.5l1-4.2L15.6 5.2a2 2 0 0 1 2.8 0l.4.4a2 2 0 0 1 0 2.8L8.7 18.5z\"/><path d=\"M13.8 7l3.2 3.2\"/>",
+  "clip": "<rect x=\"6\" y=\"5\" width=\"12\" height=\"15.5\" rx=\"2\"/><path d=\"M9.5 5V3.5h5V5\"/><path d=\"M9 11h6M9 14.5h6\"/>",
+  "archive": "<rect x=\"4\" y=\"4\" width=\"16\" height=\"16\" rx=\"2\"/><path d=\"M10 4v2h2v2h-2v2h2v2h-2v2.5\"/>",
+  "eject": "<path d=\"M12 5 19 13H5z\"/><path d=\"M5 17.5h14\"/>",
+  "copy": "<rect x=\"8\" y=\"8\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2\"/>",
+  "move": "<path d=\"M4 12h14M14 7.5l4.5 4.5-4.5 4.5\"/><path d=\"M4 6v12\"/>",
+  "scan": "<path d=\"M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16\"/><path d=\"M4 12h16\"/>",
+  "stop": "<rect x=\"6.5\" y=\"6.5\" width=\"11\" height=\"11\" rx=\"2\"/>",
+  "trash": "<path d=\"M5 7h14M10 7V5h4v2M7 7l1 12.5h8L17 7\"/>",
+  "history": "<path d=\"M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4.5 9\"/><path d=\"M4.5 4.5V9H9M12 8v4.5l3 2\"/>",
+  "terminal": "<rect x=\"3.5\" y=\"5\" width=\"17\" height=\"14\" rx=\"2\"/><path d=\"M7 10l3 2.5L7 15M12.5 15H17\"/>",
+  "upload": "<path d=\"M12 16V4M6.5 9.5 12 4l5.5 5.5M5 20h14\"/>",
+  "cloud": "<path d=\"M7 18.5h10.5a4 4 0 0 0 .6-8 6 6 0 0 0-11.5 1.6A3.3 3.3 0 0 0 7 18.5z\"/>",
+  "wifi": "<path d=\"M3 9.5a13 13 0 0 1 18 0M6 13a8.5 8.5 0 0 1 12 0M9 16.4a4 4 0 0 1 6 0\"/><circle cx=\"12\" cy=\"19.5\" r=\".6\"/>",
+  "star": "<path d=\"M12 4l2.4 5 5.4.6-4 3.7 1.1 5.3L12 16l-4.9 2.6 1.1-5.3-4-3.7 5.4-.6z\"/>",
+  "bolt": "<path d=\"M13 3 5 13.5h6L10.5 21 19 10.5h-6z\"/>",
+  "bug": "<rect x=\"7\" y=\"7\" width=\"10\" height=\"13\" rx=\"5\"/><path d=\"M12 7v13M7 12H3.5M20.5 12H17M7.5 16.5l-3 2M16.5 16.5l3 2M9 7l-1.5-2.5M15 7l1.5-2.5\"/>",
+  "tv": "<rect x=\"3\" y=\"5\" width=\"18\" height=\"12\" rx=\"2\"/><path d=\"M8.5 20.5h7\"/>",
+  "power": "<path d=\"M12 3.5v7.5\"/><path d=\"M7 6.8a7 7 0 1 0 10 0\"/>",
+  "eye": "<path d=\"M2.8 12S6 5.5 12 5.5 21.2 12 21.2 12 18 18.5 12 18.5 2.8 12 2.8 12z\"/><circle cx=\"12\" cy=\"12\" r=\"2.8\"/>",
+  "box": "<path d=\"M12 3.5 20 7.8v8.4L12 20.5 4 16.2V7.8z\"/><path d=\"M4 7.8l8 4.3 8-4.3M12 12.1v8.4\"/>",
+  "clock": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 7.5V12l3 2\"/>",
+  "phone": "<rect x=\"7\" y=\"3\" width=\"10\" height=\"18\" rx=\"2\"/><path d=\"M11 18h2\"/>",
+  "bell": "<path d=\"M18 16v-5a6 6 0 0 0-12 0v5l-1.5 2.5h15z\"/><path d=\"M10 20.5a2 2 0 0 0 4 0\"/>",
+};
+
+export function Glyph({ name, size = 24, stroke = 1.8 }: { name: GlyphName; size?: number; stroke?: number }) {
+  return (
+    <svg
+      className="glyph-icon"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={stroke}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      dangerouslySetInnerHTML={{ __html: paths[name] }}
+    />
+  );
+}

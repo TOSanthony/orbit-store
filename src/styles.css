@@ -689,6 +689,10 @@ html:not(.pointer) .search-field:focus-within {
 html:not(.pointer) .search-field input:focus {
   box-shadow: none;
 }
+/* The field lights as one: its text box doesn't add a lighter box of its own. */
+html.pointer .search-field input:hover {
+  background: none;
+}
 .filters select {
   padding: 0.75rem 1.2rem;
   border-radius: 999px;
@@ -1071,12 +1075,18 @@ html:not(.pointer) .select-option[data-active="true"] svg {
   font-size: 0.95rem;
   font-weight: 500;
 }
-.source-card .choice-check {
+.source-card .choice-check,
+.default-drive-choice .choice-check,
+.notification-setting .choice-check,
+.notification-events .choice-check {
   flex-basis: 1.3rem;
   width: 1.3rem;
   height: 1.3rem;
 }
-.source-card .choice-check svg {
+.source-card .choice-check svg,
+.default-drive-choice .choice-check svg,
+.notification-setting .choice-check svg,
+.notification-events .choice-check svg {
   width: 0.85rem;
   height: 0.85rem;
 }
@@ -1137,6 +1147,38 @@ html.pointer .source-acknowledgement:hover {
 }
 .sources-modal {
   max-width: 46rem;
+}
+/* A default-drive choice: the drive's name over its free space. */
+.default-drive > [role="radiogroup"] {
+  display: grid;
+  gap: 0.5rem;
+}
+.default-drive-choice,
+.notification-setting .source-acknowledgement,
+.notification-events .source-acknowledgement {
+  align-items: center;
+}
+.default-drive-choice > span:last-child {
+  display: grid;
+  gap: 0.15rem;
+}
+.default-drive-choice small {
+  color: var(--text-2);
+  font-size: 0.8rem;
+}
+/* ntfy's state beside its settings button, as the TV app shows it. */
+.notification-ntfy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+.notification-ntfy p {
+  margin: 0;
+}
+.notification-events > .source-acknowledgement {
+  margin-top: 0.5rem;
 }
 
 /* Dialogs */
@@ -1360,7 +1402,8 @@ html.pointer .queue-row:hover,
 .status.error {
   color: var(--bad);
 }
-.queue-info progress {
+.queue-info progress,
+.file-activity progress {
   display: block;
   width: 100%;
   height: 6px;
@@ -1371,14 +1414,17 @@ html.pointer .queue-row:hover,
   background: rgba(255, 255, 255, 0.12);
   appearance: none;
 }
-.queue-info progress::-webkit-progress-bar {
+.queue-info progress::-webkit-progress-bar,
+.file-activity progress::-webkit-progress-bar {
   background: rgba(255, 255, 255, 0.12);
 }
-.queue-info progress::-webkit-progress-value {
+.queue-info progress::-webkit-progress-value,
+.file-activity progress::-webkit-progress-value {
   border-radius: 999px;
   background: var(--action);
 }
-.queue-info progress::-moz-progress-bar {
+.queue-info progress::-moz-progress-bar,
+.file-activity progress::-moz-progress-bar {
   background: var(--action);
 }
 .transfer-meta {
@@ -1592,18 +1638,6 @@ html.pointer .queue-row:hover,
     transform: none;
   }
 }
-.catalog-pages {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1.5rem;
-  margin-top: 2rem;
-}
-.catalog-pages button {
-  padding: 0.65rem 1.1rem;
-  border-radius: 2rem;
-}
-
 .updates-panel {
   margin: 24px 0 32px;
   padding-bottom: 28px;
@@ -1696,6 +1730,7 @@ html.pointer .queue-row:hover,
 .game-tile {
   position: relative;
 }
+.tile-favorite > svg { width: 18px; height: 18px; }
 .tile-favorite {
   position: absolute;
   top: 10px;
@@ -2241,6 +2276,13 @@ html:not(.pointer) .library-card:focus .library-cover {
 .storage-game-list {
   margin-top: 1rem;
 }
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+}
+.file-row .storage-game { flex: 1; min-width: 0; }
+.file-row-more { flex: none; width: 2.75rem; height: 2.75rem; padding: .55rem; }
 .storage-game {
   display: flex;
   align-items: center;
@@ -2405,6 +2447,35 @@ html.pointer .storage-game:hover {
   }
 }
 
+/* A favourite's notice: a pill at the bottom centre, as the PS5 app's Store
+   look shows its notes (the other looks restyle it). */
+.favorite-notice {
+  position: fixed;
+  left: 50%;
+  bottom: 2.4rem;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0.65rem 1.4rem 0.65rem 0.65rem;
+  border-radius: 999px;
+  background: var(--night-3);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+.favorite-notice-icon {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  background: var(--action);
+  color: var(--action-text);
+}
 .update-notice {
   position: relative;
   z-index: 2;
@@ -2537,6 +2608,10 @@ body {
 .header nav button.active {
   box-shadow: none;
   background: #ffffff22;
+}
+/* The current section keeps its focus ring. */
+html:not(.pointer) .header nav button.active:focus {
+  box-shadow: var(--ring);
 }
 .backdrop {
   background: transparent;
@@ -3132,3 +3207,55 @@ html.pointer .debrid-settings input:focus {
 .archive-password-form label { display: grid; gap: .6rem; }
 .archive-password-form input { width: 100%; min-width: 0; }
 .archive-password-form .actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+
+.download-retry-settings { margin-block: 24px; }
+.download-retry-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; align-items: center; margin-block: 16px; }
+.download-retry-field > label { display: block; margin: 0; }
+.download-retry-field input { width: 90px; }
+.download-retry-field .download-limit-options,
+.download-retry-field .download-limit-controls { display: flex; gap: 10px; margin: 0; }
+.download-retry-field button { flex: none; min-width: 80px; }
+.download-retry-field > p { grid-column: 1 / -1; }
+@media (max-width: 600px) {
+  .download-retry-field { grid-template-columns: 1fr; }
+}
+
+.installation-summary { margin: .6rem 0; color: var(--text2); font-size: .9rem; overflow-wrap: anywhere; }
+
+/* Add-ons retain each interface's colours and control focus styling. */
+.addon-requirements { margin-block:1.2rem; padding:1rem; background:rgba(128,128,128,.1); border-radius:.6rem; }
+.addon-requirements dl { display:grid; grid-template-columns:minmax(8rem,auto) 1fr; gap:.35rem 1rem; }
+.addon-requirements dd { margin:0; overflow-wrap:anywhere; }
+.addon-access { margin-block:.8rem; }
+
+/* Add-ons share Browse's controls and tiles, with room for DLC identity. */
+.browse-base-name { align-self: center; padding: 0 12px; color: var(--muted); font-size: 16px; }
+.browse-grid .addon-tile { align-self: stretch; padding-bottom: 14px; border-bottom: 1px solid var(--line); border-radius: 12px 12px 0 0; }
+.tile-addon-info { display: grid; gap: 5px; margin-top: 7px; color: var(--muted); font-size: 15px; line-height: 1.4; }
+.tile-addon-info > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile-addon-info > span:last-child { font-size: 13px; }
+.cn-addon-caption { position: absolute; inset: auto 0 0; display: grid; gap: 4px; padding: 30px 12px 12px; background: linear-gradient(transparent,rgba(0,0,0,.9)); color: #fff; pointer-events: none; text-align: left; }
+.cn-addon-caption strong, .cn-addon-caption > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 500; }
+.cn-addon-caption > span { font-size: 13px; font-weight: 400; opacity: .8; }
+.pn-shell .addon-tile .tile-title { bottom: 58px; }
+.pn-shell .addon-tile .tile-addon-info { position: absolute; bottom: 14px; left: 18px; right: 18px; z-index: 2; color: rgba(255,255,255,.8); }
+.pn-shell .addon-tile .tile-addon-info > span { font-size: 13px; }
+/* Saved filters, after the filters: a cell of their grid, a chip in the other looks. */
+.saved-filters-open {
+  min-height: 44px;
+}
+.saved-filters-heading {
+  margin: 1.6rem 0 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+/* A saved filter: the row applies it; Delete sits beside it. */
+.saved-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.saved-filter .storage-game {
+  flex: 1;
+  min-width: 0;
+}

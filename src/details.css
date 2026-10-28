@@ -93,6 +93,13 @@
   font-size: clamp(2.5rem, 3.5vw, 4rem);
   max-width: 21ch;
 }
+.native-game .addon-base-title {
+  margin: 0 0 0.6rem;
+  font-size: 1.1rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--text);
+}
 .native-game .hub-tagline {
   margin: 0.8rem 0 0;
   font-size: 1.05rem;
@@ -850,4 +857,10 @@ html:not(.pointer) .game-sheet .primary:focus {
 .game-sheet-downloads .provider-browser-option {
   margin-top: 0;
   padding-top: 0.65rem;
+}
+/* An option that won't run on this console's firmware: labelled and listed last, never hidden. */
+.firmware-note.warn,
+.game-sheet .sheet-choice small.firmware-note.warn,
+.sheet-note.warn {
+  color: #f0b46a;
 }

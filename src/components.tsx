@@ -1,3 +1,4 @@
+import { addonTypes } from "./AddonInfo";
 import { memo, useLayoutEffect, useRef, type ReactNode } from "react";
 import type { Game, Storage } from "./types";
 import { bytes } from "./types";
@@ -8,6 +9,7 @@ export function Icon({
 }: {
   name:
     | "search"
+    | "folder"
     | "usb"
     | "close"
     | "download"
@@ -17,6 +19,7 @@ export function Icon({
     | "back"
     | "sources"
     | "heart"
+    | "heartFill"
     | "storage"
     | "scan"
     | "more"
@@ -35,7 +38,10 @@ export function Icon({
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      {name === "more" ? (
+      {name === "folder" ? (
+        // The interface designs' folder (app/tools/icons/icons.json).
+        <path d="M3.5 7a1.5 1.5 0 0 1 1.5-1.5h4.4l2 2H19a1.5 1.5 0 0 1 1.5 1.5v8.5A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z" />
+      ) : name === "more" ? (
         <>
           <circle cx="5" cy="12" r="1" fill="currentColor" />
           <circle cx="12" cy="12" r="1" fill="currentColor" />
@@ -48,8 +54,8 @@ export function Icon({
           <rect x="5" y="3" width="14" height="18" rx="2" />
           <path d="M9 8h6M9 12h6M9 16h4" />
         </>
-      ) : name === "heart" ? (
-        <path d="M20.5 5.7a5 5 0 0 0-8.5.6 5 5 0 0 0-8.5-.6C.6 9.4 4 13.6 12 20c8-6.4 11.4-10.6 8.5-14.3Z" />
+      ) : name === "heart" || name === "heartFill" ? (
+        <path fill={name === "heartFill" ? "currentColor" : undefined} d="M20.5 5.7a5 5 0 0 0-8.5.6 5 5 0 0 0-8.5-.6C.6 9.4 4 13.6 12 20c8-6.4 11.4-10.6 8.5-14.3Z" />
       ) : name === "storage" ? (
         <>
           <ellipse cx="12" cy="5" rx="8" ry="3" />
@@ -193,7 +199,7 @@ export const GameTile = memo(function GameTile({
 }) {
   return (
     <button
-      className="game-tile"
+      className={`game-tile${game.addonId ? " addon-tile" : ""}`}
       data-game={game.id}
       onClick={() => open(game)}
       onFocus={() => onFocus?.(game.id)}
@@ -214,11 +220,12 @@ export const GameTile = memo(function GameTile({
         />
       </span>
       <span className="tile-title">{game.title}</span>
+      {game.addonId && <span className="tile-addon-info"><span>{game.baseGameTitle}</span><span>{t(addonTypes[game.addonType || "content-pack"])}</span></span>}
       {game.platform === "ps4" && <span className="tile-platform">PS4</span>}
       {status && <span className="tile-collection-state">{t(status)}</span>}
       {favorite && (
         <span className="tile-favorite" aria-label={t("Favourite")}>
-          ★
+          <Icon name="heartFill" />
         </span>
       )}
       {showDate && game.releaseDate && (
@@ -276,7 +283,7 @@ export function StorageRows({ drives }: { drives: Storage[] }) {
         <div className="empty compact">
           <Icon name="usb" />
           <h3>{t("No writable storage connected")}</h3>
-          <p>{t("Connect your external drive to the PS5, then refresh.")}</p>
+          <p>{t("Connect your external drive to the PS5.")}</p>
         </div>
       )}
       {!!drives.length && (

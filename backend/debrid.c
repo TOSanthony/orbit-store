@@ -18,8 +18,8 @@
 #define KEY_CAP 513
 #define RESPONSE_MAX (1024 * 1024)
 #define HOST_TTL 600
-#define HOST_COUNT 3
-static const char *const host_sources[HOST_COUNT] = {"archive", "vikingfile", "datanodes"};
+#define HOST_COUNT 4
+static const char *const host_sources[HOST_COUNT] = {"archive", "vikingfile", "datanodes", "1fichier"};
 static int source_host(const char *source) {
     if (source)
         for (int i = 0; i < HOST_COUNT; i++)
@@ -30,12 +30,13 @@ static int domain_host(const char *domain) {
     if (!strcmp(domain, "archive.org")) return 0;
     if (!strcmp(domain, "vikingfile.com") || !strcmp(domain, "vik1ngfile.site")) return 1;
     if (!strcmp(domain, "datanodes.to")) return 2;
+    if (!strcmp(domain, "1fichier.com")) return 3;
     return -1;
 }
 /* Prefer DataNodes' permanent file page over an expiring browser-captured URL.
  * Existing Archive.org/Vikingfile queue identities remain unchanged. */
 static const char *source_url(const Release *release) {
-    return !strcmp(release->source, "datanodes") && provider_browser_supported(release)
+    return (!strcmp(release->source, "datanodes") || !strcmp(release->source, "1fichier")) && provider_browser_supported(release)
         ? release->browser_url : release->url;
 }
 static struct {
@@ -102,11 +103,12 @@ static size_t headers(char *data, size_t a, size_t b, void *ctx) {
 }
 static void message(const cJSON *json, long status, char *err, size_t cap) {
     const char *code = json_text(json, "error");
-    const char *text = status == 401 || status == 403 || !strcmp(code, "BAD_TOKEN") || !strcmp(code, "NO_AUTH")
+    const char *text = !strcmp(code, "BAD_TOKEN") || !strcmp(code, "NO_AUTH")
         ? "TorBox rejected the API key. Reconnect your account."
         : status == 429 ? "TorBox rate limit reached. Wait before retrying."
         : !strcmp(code, "PLAN_RESTRICTED_FEATURE") ? "Your TorBox plan does not include this download feature."
         : !strcmp(code, "DOWNLOAD_TOO_LARGE") ? "This file exceeds your TorBox download limit."
+        : status == 401 || status == 403 ? "TorBox rejected the API key. Reconnect your account."
         : !strcmp(code, "ITEM_NOT_FOUND") ? "This download is no longer in your TorBox account."
         : !strcmp(code, "DUPLICATE_ITEM") ? "This link is already in your TorBox account. Retry to check it."
         : "TorBox could not prepare this file. Check your account and try again.";
@@ -249,12 +251,13 @@ static void check_account(const char *key) {
             int index = domain_host(domain->valuestring);
             if (index < 0) continue;
             int64_t limit = 0, daily = 0, used = 0, links = 0, link_used = 0;
-            bool valid = identifier(host, "per_link_size_limit", &limit);
+            /* Host size metadata is advisory. Let createwebdownload decide for this account. */
+            identifier(host, "per_link_size_limit", &limit);
             bool bandwidth = !identifier(host, "daily_bandwidth_limit", &daily) || !daily ||
                              (identifier(host, "daily_bandwidth_used", &used) && used < daily);
             bool count = !identifier(host, "daily_link_limit", &links) || !links ||
                          (identifier(host, "daily_link_used", &link_used) && link_used < links);
-            available[index] = valid && bandwidth && count && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(host, "status"));
+            available[index] = bandwidth && count && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(host, "status"));
             limits[index] = daily > used && (!limit || daily - used < limit) ? daily - used : limit;
         }
     }
@@ -394,8 +397,8 @@ int debrid_prepare_locked(const Release *r, Job *job, char *err, size_t cap) {
     if (debrid.busy || time(NULL) >= debrid.checked + HOST_TTL) { copy_text(err, cap, "Refresh TorBox in App settings before starting this download."); return 409; }
     if (!r || host < 0 || !strcmp(r->id, "orbit-network-check") ||
         (!provider_supported(r) && !provider_browser_supported(r))) { copy_text(err, cap, "This option is not supported by TorBox."); return 409; }
-    if (!debrid.hosts[host].available || (debrid.hosts[host].limit && r->size > debrid.hosts[host].limit)) {
-        copy_text(err, cap, "TorBox currently cannot download this host or file size. Choose the original source."); return 409;
+    if (!debrid.hosts[host].available) {
+        copy_text(err, cap, "TorBox is unavailable for this option. Choose the original source or check App settings."); return 409;
     }
     copy_text(job->delivery, sizeof job->delivery, "torbox");
     copy_text(job->debrid_account, sizeof job->debrid_account, debrid.account);

@@ -10,12 +10,17 @@ import type { LibraryModel } from "./useLibrary";
 import {
   GameActions,
   LibraryFeedback,
-  StorageOverview,
   StorageProgress,
 } from "./LibraryActions";
 import { Artwork } from "./Artwork";
 import { Select } from "./Select";
+import { useInfiniteList } from "./infiniteList";
 import { formatDate, placeName, t, tn } from "./i18n";
+import { useInterfacePrefs } from "./interfaces/choice";
+import { CrossbarLibrary } from "./interfaces/CrossbarLibrary";
+import { PanoramaLibrary } from "./interfaces/PanoramaLibrary";
+import { Files } from "./Files";
+import { useFiles } from "./useFiles";
 
 const emptyGames: LibraryGame[] = [];
 const views = ["All games", "Installed", "On drive", "Unavailable"] as const;
@@ -46,15 +51,17 @@ export function Library({
   model,
   target,
   drives,
+  consoleBrowser,
 }: {
   paired: boolean;
   pair: () => void;
   model: LibraryModel;
   target: LibraryTarget | null;
   drives: Storage[];
+  consoleBrowser: boolean;
 }) {
   return paired ? (
-    <Inventory model={model} target={target} drives={drives} />
+    <Inventory model={model} target={target} drives={drives} consoleBrowser={consoleBrowser} />
   ) : (
     <section className="page library">
       <h1>{t("Library")}</h1>
@@ -90,17 +97,32 @@ function StatusLabels({ game }: { game: LibraryGame }) {
     </span>
   );
 }
+// Files replaced Storage: Orbit's drives and their folders, only files.
+export type LibrarySection = "games" | "files";
 function Inventory({
   model,
   target,
   drives,
+  consoleBrowser,
 }: {
   model: LibraryModel;
   target: LibraryTarget | null;
   drives: Storage[];
+  consoleBrowser: boolean;
 }) {
   const { snapshot, error, refreshAt } = model;
-  const [section, setSection] = useState<"games" | "storage">("games");
+  const iface = useInterfacePrefs().prefs.name;
+  const [section, setSection] = useState<LibrarySection>("games");
+  const files = useFiles(true, section === "files");
+  useEffect(() => {
+    if (section !== "files") return;
+    const back = (event: Event) => {
+      event.preventDefault();
+      if (!files.up()) setSection("games");
+    };
+    document.addEventListener("orbit-page-back", back);
+    return () => document.removeEventListener("orbit-page-back", back);
+  }, [section, files.up]);
   const [scan, setScan] = useState(false);
   const [scanError, setScanError] = useState("");
   const [lookup, setLookup] = useState<LibraryTarget | null>(null);
@@ -108,7 +130,6 @@ function Inventory({
   const [query, setQuery] = useState("");
   const [view, setView] = useState<View>("All games");
   const [location, setLocation] = useState("");
-  const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const games = snapshot?.games || emptyGames;
   const rows = useMemo(
@@ -129,8 +150,7 @@ function Inventory({
         ),
     [games, view, location, query],
   );
-  const pages = Math.max(1, Math.ceil(rows.length / 48));
-  const currentPage = Math.min(page, pages - 1);
+  const list = useInfiniteList(rows.length, 48, `${view}\n${location}\n${query}`);
   const current = games.find((g) => g.titleId === selected);
   const stale = model.stale;
   const busy = (!snapshot && !error) || (!error && !!snapshot?.busy);
@@ -141,7 +161,6 @@ function Inventory({
     setSection("games");
     setView("All games");
     setLocation("");
-    setPage(0);
     setQuery(target.titleId || "");
     setLookup(target);
     void model.read(true);
@@ -165,46 +184,131 @@ function Inventory({
     // Do not leave a hidden filter active after a drive disappears.
     if (location && !games.some((g) => g.location === location)) {
       setLocation("");
-      setPage(0);
     }
   }, [games, location]);
   function reset() {
     setQuery("");
     setView("All games");
     setLocation("");
-    setPage(0);
   }
-  function changePage(next: number) {
-    setPage(next);
-    requestAnimationFrame(() =>
-      document.querySelector<HTMLElement>(".library-card")?.focus(),
+  // The scan's confirmation, the same in every layout.
+  const scanDialog = (
+    <>
+      {scan && (
+        <Modal
+          title={t("Scan for games")}
+          close={() => !model.actionBusy && setScan(false)}
+        >
+          <h1>{t("Scan your drives?")}</h1>
+          <p>
+            {t(
+              "ShadowMount will search its configured locations for games. It may register games on the console or mount detected sources. If a game is running, the scan may wait until it is safe.",
+            )}
+          </p>
+          <div className="dialog-actions">
+            <button
+              className="primary"
+              disabled={model.working}
+              onClick={() => {
+                void model
+                  .run("scan", { confirmed: true })
+                  .then(() => setScan(false))
+                  .catch((e) => setScanError((e as Error).message));
+              }}
+            >
+              {t("Start scan")}
+            </button>
+            <button disabled={model.actionBusy} onClick={() => setScan(false)}>
+              {t("Back")}
+            </button>
+          </div>
+          {scanError && (
+            <p className="form-error" role="alert">
+              {scanError}
+            </p>
+          )}
+        </Modal>
+      )}
+    </>
+  );
+  if (iface === "crossbar")
+    return (
+      <CrossbarLibrary
+        model={model}
+        games={games}
+        rows={rows}
+        views={views}
+        view={view}
+        setView={(v) => setView(v as View)}
+        section={section}
+        setSection={setSection}
+        ready={ready}
+        busy={busy}
+        error={error || (snapshot?.message ? t(snapshot.message) : "")}
+        openScan={() => {
+          setScan(true);
+          setScanError("");
+        }}
+        dialogs={scanDialog}
+        drives={drives}
+        files={files}
+        consoleBrowser={consoleBrowser}
+      />
     );
-  }
+  if (iface === "panorama")
+    return (
+      <PanoramaLibrary
+        model={model}
+        games={games}
+        rows={rows}
+        views={views}
+        view={view}
+        setView={(v) => setView(v as View)}
+        section={section}
+        setSection={setSection}
+        query={query}
+        setQuery={setQuery}
+        location={location}
+        setLocation={setLocation}
+        selected={selected}
+        setSelected={setSelected}
+        ready={ready}
+        busy={busy}
+        stale={!!stale}
+        error={error || (snapshot?.message ? t(snapshot.message) : "")}
+        lookup={lookup}
+        dismissLookup={() => setLookup(null)}
+        openScan={() => {
+          setScan(true);
+          setScanError("");
+        }}
+        dialogs={scanDialog}
+        drives={drives}
+        files={files}
+        consoleBrowser={consoleBrowser}
+      />
+    );
   return (
     <section className="page library">
       <div className="library-heading">
         <div className="page-heading">
           <h1>{t("Library")}</h1>
-          <span>{tn(rows.length, "{count} game", "{count} games")}</span>
+          <span>{section === "files" ? t("Files") : tn(rows.length, "{count} game", "{count} games")}</span>
         </div>
         <div className="library-heading-actions">
-          <button
-            onClick={() =>
-              setSection(section === "games" ? "storage" : "games")
-            }
-          >
-            <Icon name="storage" />
-            {section === "games" ? t("Storage") : t("Games")}
+          <button onClick={() => setSection(section === "games" ? "files" : "games")}>
+            <Icon name={section === "games" ? "folder" : "sources"} />
+            {section === "games" ? t("Files") : t("Games")}
           </button>
-          {(!ready || stale || section === "storage") && (
+          {section !== "files" && !ready && !busy && (
             <button
               onClick={() => void model.read(true)}
-              disabled={busy || Date.now() < refreshAt}
+              disabled={Date.now() < refreshAt}
             >
-              {busy ? t("Refreshing…") : t("Refresh library")}
+              {t("Try again")}
             </button>
           )}
-          {model.can("rescan") && (
+          {section !== "files" && model.can("rescan") && (
             <button
               disabled={model.working}
               onClick={() => {
@@ -218,6 +322,15 @@ function Inventory({
           )}
         </div>
       </div>
+      {section === "files" ? (
+        <Files files={files} drives={drives} consoleBrowser={consoleBrowser} />
+      ) : (
+      <>
+      {snapshot?.scanning && (
+        <p className="library-sync" role="status">
+          {t("Looking for new games…")}
+        </p>
+      )}
       {stale && (
         <p className="library-sync" role="status">
           {ready
@@ -261,7 +374,7 @@ function Inventory({
                   "Reading installed titles and drive availability from ShadowMount.",
                 )
               : t(
-                  "Library uses ShadowMount’s local games API on your PS5. Start a version with that API enabled, then refresh here.",
+                  "Library uses ShadowMount’s local games API on your PS5. Start a version with that API enabled, then select Try again.",
                 )}
           </p>
           {!busy && (
@@ -274,13 +387,6 @@ function Inventory({
         </div>
       ) : (
         <>
-          {section === "storage" ? (
-            <StorageOverview
-              model={model}
-              openGame={(g) => setSelected(g.titleId)}
-            />
-          ) : (
-            <>
               <StorageProgress model={model} />
               <div className="library-toolbar">
                 <div
@@ -294,7 +400,6 @@ function Inventory({
                       aria-pressed={view === v}
                       onClick={() => {
                         setView(v);
-                        setPage(0);
                       }}
                     >
                       {t(v)}
@@ -309,7 +414,6 @@ function Inventory({
                       value={query}
                       onChange={(e) => {
                         setQuery(e.target.value);
-                        setPage(0);
                       }}
                       placeholder={t("Search your library")}
                     />
@@ -319,7 +423,6 @@ function Inventory({
                     value={location}
                     onChange={(value) => {
                       setLocation(value);
-                      setPage(0);
                     }}
                     options={[
                       { value: "", label: t("All locations") },
@@ -333,7 +436,7 @@ function Inventory({
               {rows.length ? (
                 <div className="library-grid">
                   {rows
-                    .slice(currentPage * 48, (currentPage + 1) * 48)
+                    .slice(0, list.visible)
                     .map((g) => (
                       <button
                         key={g.titleId}
@@ -383,7 +486,7 @@ function Inventory({
                     {games.length
                       ? t("Try a different title, status or location.")
                       : t(
-                          "ShadowMount has not reported any installed or on-drive games. Refresh after its inventory updates.",
+                          "ShadowMount has not reported any installed or on-drive games yet.",
                         )}
                   </p>
                   {games.length > 0 && (
@@ -393,28 +496,7 @@ function Inventory({
                   )}
                 </div>
               )}
-              {pages > 1 && (
-                <nav className="catalog-pages" aria-label={t("Library pages")}>
-                  <button
-                    disabled={currentPage === 0}
-                    onClick={() => changePage(currentPage - 1)}
-                  >
-                    {t("Previous")}
-                  </button>
-                  <span aria-live="polite">
-                    {t("Page {page} of {pages}", {
-                      page: currentPage + 1,
-                      pages,
-                    })}
-                  </span>
-                  <button
-                    disabled={currentPage + 1 === pages}
-                    onClick={() => changePage(currentPage + 1)}
-                  >
-                    {t("Next")}
-                  </button>
-                </nav>
-              )}
+              <div ref={list.end} aria-hidden="true" />
               <div
                 className="library-capacity"
                 aria-label={t("Available storage")}
@@ -429,45 +511,11 @@ function Inventory({
                   </span>
                 ))}
               </div>
-            </>
-          )}
         </>
       )}
-      {scan && (
-        <Modal
-          title={t("Scan for games")}
-          close={() => !model.actionBusy && setScan(false)}
-        >
-          <h1>{t("Scan your drives?")}</h1>
-          <p>
-            {t(
-              "ShadowMount will search its configured locations for games. It may register games on the console or mount detected sources. If a game is running, the scan may wait until it is safe.",
-            )}
-          </p>
-          <div className="dialog-actions">
-            <button
-              className="primary"
-              disabled={model.working}
-              onClick={() => {
-                void model
-                  .run("scan", { confirmed: true })
-                  .then(() => setScan(false))
-                  .catch((e) => setScanError((e as Error).message));
-              }}
-            >
-              {t("Start scan")}
-            </button>
-            <button disabled={model.actionBusy} onClick={() => setScan(false)}>
-              {t("Back")}
-            </button>
-          </div>
-          {scanError && (
-            <p className="form-error" role="alert">
-              {scanError}
-            </p>
-          )}
-        </Modal>
+      </>
       )}
+      {scanDialog}
       {current && (
         <Modal
           title={t("Library game details")}
@@ -482,7 +530,14 @@ function Inventory({
           {stale && (
             <p className="notice">
               {t(
-                "Saved snapshot. Refresh the library before relying on these statuses.",
+                "Saved snapshot. These statuses may have changed.",
+              )}
+            </p>
+          )}
+          {current.foundByOrbit && (
+            <p className="notice">
+              {t(
+                "Orbit found this game itself because your ShadowMount version doesn’t list games installed from PKG files. For the most complete list, update ShadowMount to 1.7beta5 or newer.",
               )}
             </p>
           )}
@@ -535,7 +590,9 @@ function Inventory({
                   ? bytes(current.sizeBytes)
                   : current.sizeStatus === "unavailable"
                     ? t("Unavailable")
-                    : t("Use Measure game sizes in Storage")}
+                    : snapshot?.measuring
+                      ? t("Measuring…")
+                      : t("Not measured")}
               </dd>
             </div>
             <div>

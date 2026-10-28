@@ -1,18 +1,27 @@
-/* Paired-device release checks from the fixed feed. Installation and restart stay explicit. */
+/* Paired-device release checks from the fixed feed. Installation and restart stay explicit:
+ * "update-all" installs the releases the owner was shown, the TV app first, then restarts Orbit
+ * through the jailbreak's ELF loader when the download service changed. */
 #include "ca.h"
 #include "orbit.h"
+#include <arpa/inet.h>
 #include <curl/curl.h>
+#include <netinet/in.h>
 #include <openssl/evp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/socket.h>
+#include <sys/time.h>
 #include <time.h>
+#include <unistd.h>
 
 #define FEED "https://raw.githubusercontent.com/saawant12/orbit-store-ps5/main/payloads.json"
 #define RELEASE_BASE "https://github.com/saawant12/orbit-store-ps5/releases/download/"
 #define AUTO_CHECK_INTERVAL (6 * 60 * 60)
+#define FIRST_CHECK_DELAY (10 * 60) /* Update notifications' first check, after Orbit starts. */
 #define MAX_ELF (64 * 1024 * 1024)
+#define LOADER_PORT 9021 /* The jailbreak's ELF loader, as the TV app uses it. */
 static struct {
     pthread_mutex_t mutex;
     pthread_cond_t changed;
@@ -20,9 +29,12 @@ static struct {
     bool started, stop, busy;
     char action[16], phase[24], error[256];
     char version[64], url[512], checksum[65];
-    time_t checked, retry_at, check_after, automatic_check_after;
+    time_t checked, retry_at, check_after, automatic_check_after, background_after;
     size_t received;
     bool saved;
+    /* update-all: what the owner was shown, and how far it got. */
+    bool all, all_service, tv_updated;
+    char tv_version[40], tv_checksum[65];
 } update = {.mutex = PTHREAD_MUTEX_INITIALIZER, .changed = PTHREAD_COND_INITIALIZER};
 
 typedef struct {
@@ -294,31 +306,241 @@ static int install(char *error, size_t cap) {
     free(buffer.data);
     return rc;
 }
+static int loader_port(void) {
+#ifdef ORBIT_TEST
+    const char *port = getenv("ORBIT_TEST_LOADER_PORT");
+    return port ? atoi(port) : 0;
+#elif defined(ORBIT_DESKTOP)
+    return 0;
+#else
+    return LOADER_PORT;
+#endif
+}
+/* A connection to the loader, made before Orbit stops so a missing loader never leaves it
+ * stopped. The loader runs what it reads once this side closes. */
+static int loader_connect(void) {
+    int port = loader_port();
+    if (port <= 0 || port > 65535)
+        return -1;
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0)
+        return -1;
+    struct sockaddr_in address = {.sin_family = AF_INET, .sin_port = htons((uint16_t)port)};
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    struct timeval wait = {.tv_sec = 10};
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &wait, sizeof wait);
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &wait, sizeof wait);
+    if (connect(fd, (struct sockaddr *)&address, sizeof address)) {
+        close(fd);
+        return -1;
+    }
+    return fd;
+}
+static int send_all(int fd, const unsigned char *data, size_t size) {
+    for (size_t sent = 0; sent < size;) {
+#ifdef MSG_NOSIGNAL
+        ssize_t n = send(fd, data + sent, size - sent, MSG_NOSIGNAL);
+#else
+        ssize_t n = send(fd, data + sent, size - sent, 0);
+#endif
+        if (n <= 0)
+            return -1;
+        sent += (size_t)n;
+    }
+    return 0;
+}
+int updates_restart_send(int loader, const unsigned char *fallback, size_t fallback_size) {
+    unsigned char *saved = NULL;
+    size_t size = 0;
+    const unsigned char *image = fallback;
+    if (!autoboot_saved_image(&saved, &size))
+        image = saved;
+    else
+        size = fallback ? fallback_size : 0;
+    int rc = size ? send_all(loader, image, size) : -1;
+    if (rc && size) {
+        /* The loader may have dropped a connection held through the shutdown. */
+        close(loader);
+        loader = loader_connect();
+        rc = loader < 0 ? -1 : send_all(loader, image, size);
+    }
+    if (!rc) {
+        shutdown(loader, SHUT_WR);
+        char ignored[256];
+        while (recv(loader, ignored, sizeof ignored, 0) > 0) {
+        }
+    }
+    if (loader >= 0)
+        close(loader);
+    free(saved);
+    if (rc)
+        notify_restart_failed();
+    return rc;
+}
+/* Pauses the queue and stops Orbit. With resume, the paused downloads continue after the
+ * restart. Call with update.mutex held. */
+static int stop_locked(bool resume, char *error, size_t cap) {
+    pthread_mutex_lock(&orbit.mutex);
+    char previous[ORBIT_MAX_JOBS][24];
+    bool paused[ORBIT_MAX_JOBS];
+    int code = 202;
+    for (size_t i = 0; i < orbit.job_count; i++) {
+        Job *job = &orbit.jobs[i];
+        copy_text(previous[i], sizeof previous[i], job->status);
+        paused[i] = job->pause;
+        job->resume_after_restart = resume && job->id[0] && !job->pause &&
+            (job_active(job) || !strcmp(job->status, "queued") || !strcmp(job->status, "retrying"));
+        if (!strcmp(job->status, "queued") || !strcmp(job->status, "retrying"))
+            copy_text(job->status, sizeof job->status, "paused");
+    }
+    if (state_save_locked()) {
+        for (size_t i = 0; i < orbit.job_count; i++) {
+            copy_text(orbit.jobs[i].status, sizeof orbit.jobs[i].status, previous[i]);
+            orbit.jobs[i].pause = paused[i];
+            orbit.jobs[i].resume_after_restart = false;
+        }
+        code = 503;
+        copy_text(error, cap, "Could not save the queue. Orbit has not been stopped.");
+    } else {
+        /* Commit before publishing a stop to lock-free transfer callbacks. */
+        for (size_t i = 0; i < orbit.job_count; i++)
+            if (job_active(&orbit.jobs[i])) orbit.jobs[i].pause = true;
+        orbit.stop = true;
+        pthread_cond_signal(&orbit.changed);
+        update.stop = true;
+        copy_text(update.phase, sizeof update.phase, resume ? "restarting" : "stopping");
+        pthread_cond_signal(&update.changed);
+        orbit_request_stop();
+    }
+    pthread_mutex_unlock(&orbit.mutex);
+    return code;
+}
+/* The TV app, then the download service, then a restart when the service changed. */
+static int update_all(char *error, size_t cap) {
+    pthread_mutex_lock(&update.mutex);
+    bool tv = *update.tv_version, service = update.all_service;
+    cJSON *request = cJSON_CreateObject();
+    cJSON_AddStringToObject(request, "action", "install");
+    cJSON_AddStringToObject(request, "version", update.tv_version);
+    cJSON_AddStringToObject(request, "checksum", update.tv_checksum);
+    if (tv)
+        copy_text(update.phase, sizeof update.phase, "tv-app");
+    pthread_mutex_unlock(&update.mutex);
+    int rc = 0;
+    if (tv) {
+        /* An automatic check may be running: let it finish, then install. */
+        char ignored[8];
+        tvapp_wait(ignored, sizeof ignored);
+        int code = tvapp_action(request, error, cap);
+        rc = code != 202 ? -1 : tvapp_wait(error, cap);
+    }
+    cJSON_Delete(request);
+    if (rc || interrupted())
+        return -1;
+    pthread_mutex_lock(&update.mutex);
+    update.tv_updated = tv;
+    if (service)
+        copy_text(update.phase, sizeof update.phase, "downloading");
+    pthread_mutex_unlock(&update.mutex);
+    if (!service)
+        return 0;
+    if (install(error, cap))
+        return -1;
+    int loader = loader_connect();
+    pthread_mutex_lock(&update.mutex);
+    update.saved = true;
+    int code = loader < 0 || update.stop || orbit_is_stopping() ? 409 : stop_locked(true, error, cap);
+    pthread_mutex_unlock(&update.mutex);
+    if (code == 202)
+        orbit_restart_after_stop(loader);
+    else if (loader >= 0)
+        close(loader);
+    /* Without a loader the update stays saved; the owner restarts Orbit themselves. */
+    return code == 202 || code == 409 ? 0 : -1;
+}
+static time_t later(time_t a, time_t b) { return a > b ? a : b; }
+/* Update notifications need checks of their own, as no client may be open: spaced like the
+ * clients' automatic checks, the first a few minutes after Orbit starts. Returns whether one began. */
+static bool background_check_locked(void) {
+    time_t due = later(later(update.background_after, update.automatic_check_after),
+                       later(update.check_after, update.retry_at));
+    pthread_mutex_unlock(&update.mutex);
+    bool wanted = available() && notify_wanted(NOTIFY_UPDATE_AVAILABLE);
+    pthread_mutex_lock(&update.mutex);
+    if (update.action[0] || update.stop)
+        return false;
+    if (!wanted) {
+        pthread_cond_wait(&update.changed, &update.mutex);
+        return false;
+    }
+    if (time(NULL) < due || update.busy) {
+        struct timespec deadline = {.tv_sec = due};
+        pthread_cond_timedwait(&update.changed, &update.mutex, &deadline);
+        return false;
+    }
+    update.busy = true;
+    update.error[0] = 0;
+    update.received = 0;
+    update.checked = 0;
+    update.version[0] = 0;
+    update.checksum[0] = 0;
+    update.all = false;
+    update.check_after = time(NULL) + 60;
+    update.automatic_check_after = time(NULL) + AUTO_CHECK_INTERVAL;
+    copy_text(update.action, sizeof update.action, "check");
+    copy_text(update.phase, sizeof update.phase, "checking");
+    return true;
+}
 static void *worker(void *unused) {
     (void)unused;
     pthread_mutex_lock(&update.mutex);
     while (!update.stop) {
         while (!update.action[0] && !update.stop)
-            pthread_cond_wait(&update.changed, &update.mutex);
+            if (background_check_locked())
+                break;
         if (update.stop)
             break;
-        bool checking = !strcmp(update.action, "check");
+        bool checking = !strcmp(update.action, "check"), all = !strcmp(update.action, "update-all");
         update.action[0] = 0;
         pthread_mutex_unlock(&update.mutex);
         char error[256] = {0};
-        int rc = checking ? check(error, sizeof error) : install(error, sizeof error);
+        int rc = checking ? check(error, sizeof error) : all ? update_all(error, sizeof error) : install(error, sizeof error);
         pthread_mutex_lock(&update.mutex);
         copy_text(update.error, sizeof update.error,
                   rc ? (*error ? error : "Update interrupted. Try again.") : "");
-        copy_text(update.phase, sizeof update.phase, rc ? "error" : checking ? "checked" : "saved");
-        if (!checking && !rc)
+        if (rc || !all || strcmp(update.phase, "restarting"))
+            copy_text(update.phase, sizeof update.phase,
+                      rc ? "error" : checking ? "checked" : all && !update.all_service ? "updated" : "saved");
+        if (!checking && !all && !rc)
             update.saved = true;
         update.busy = false;
+        /* Any check that finds a newer release, the owner's or a background one, announces it once. */
+        char announce[sizeof update.version] = "";
+        if (checking && !rc && compare_version(update.version, ORBIT_VERSION) > 0)
+            copy_text(announce, sizeof announce, update.version);
+        if (*announce) {
+            pthread_mutex_unlock(&update.mutex);
+            notify_update(announce);
+            pthread_mutex_lock(&update.mutex);
+        }
     }
     pthread_mutex_unlock(&update.mutex);
     return NULL;
 }
+void updates_wake(void) {
+    pthread_mutex_lock(&update.mutex);
+    pthread_cond_signal(&update.changed);
+    pthread_mutex_unlock(&update.mutex);
+}
 int updates_start(void) {
+    time_t delay = FIRST_CHECK_DELAY;
+#ifdef ORBIT_TEST
+    const char *seconds = getenv("ORBIT_TEST_UPDATE_DELAY");
+    if (seconds) delay = atoi(seconds);
+#endif
+    pthread_mutex_lock(&update.mutex);
+    update.background_after = time(NULL) + delay;
+    pthread_mutex_unlock(&update.mutex);
     pthread_attr_t attr;
     if (pthread_attr_init(&attr))
         return -1;
@@ -366,13 +588,21 @@ cJSON *updates_status(void) {
     cJSON_AddNumberToObject(o, "retryAt", (double)update.retry_at);
     cJSON_AddNumberToObject(o, "checkedAt", (double)update.checked);
     cJSON_AddNumberToObject(o, "checkAfter", (double)update.check_after);
+    /* Orbit restarts itself through the ELF loader ("restart"), and installs the TV app and
+     * itself in one step ("update-all"). */
+    cJSON_AddBoolToObject(o, "selfRestart", loader_port() > 0);
+    cJSON_AddBoolToObject(o, "updateAll", update.all);
+    cJSON_AddStringToObject(o, "tvAppUpdated", update.tv_updated ? update.tv_version : "");
     pthread_mutex_unlock(&update.mutex);
     return o;
 }
 int updates_action(const cJSON *input, char *error, size_t cap) {
     const char *action = json_text(input, "action");
     bool checking = !strcmp(action, "check"), installing = !strcmp(action, "install"),
-         stopping = !strcmp(action, "stop");
+         stopping = !strcmp(action, "stop"), restarting = !strcmp(action, "restart"),
+         all = !strcmp(action, "update-all");
+    const char *tv_version = json_text(input, "tvAppVersion"), *tv_checksum = json_text(input, "tvAppChecksum"),
+               *service_version = json_text(input, "serviceVersion");
     const cJSON *automatic_input = cJSON_GetObjectItemCaseSensitive(input, "automatic");
     bool automatic = checking && cJSON_IsTrue(automatic_input);
     int code = 202;
@@ -380,9 +610,12 @@ int updates_action(const cJSON *input, char *error, size_t cap) {
     if (automatic_input && (!checking || !cJSON_IsBool(automatic_input))) {
         code = 400;
         copy_text(error, cap, "Automatic mode is only valid for release checks.");
-    } else if (!checking && !installing && !stopping) {
+    } else if (!checking && !installing && !stopping && !restarting && !all) {
         code = 400;
         copy_text(error, cap, "Unknown update action.");
+    } else if (all && !*tv_version && !*service_version) {
+        code = 400;
+        copy_text(error, cap, "Choose the releases to install.");
     } else if (!available() || !update.started) {
         code = 409;
         copy_text(error, cap, "Updates are available from Orbit running on your PS5.");
@@ -394,49 +627,41 @@ int updates_action(const cJSON *input, char *error, size_t cap) {
     } else if (update.busy || update.stop) {
         code = 409;
         copy_text(error, cap, "An Orbit update is in progress. Wait for it to finish.");
-    } else if ((!stopping && update.retry_at > time(NULL)) ||
+    } else if ((!stopping && !restarting && update.retry_at > time(NULL)) ||
                (checking && update.check_after > time(NULL))) {
         code = 429;
         copy_text(error, cap, "Please wait before checking or downloading again.");
-    } else if (stopping && !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(input, "confirmed"))) {
+    } else if ((stopping || restarting) &&
+               !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(input, "confirmed"))) {
         code = 400;
         copy_text(error, cap, "Confirm stopping Orbit and pausing downloads first.");
-    } else if (installing && (!update.checked || time(NULL) - update.checked > 900 ||
-                              strcmp(json_text(input, "version"), update.version) ||
-                              strcmp(json_text(input, "checksum"), update.checksum))) {
+    } else if ((installing || (all && *service_version)) &&
+               (!update.checked || time(NULL) - update.checked > 900 ||
+                strcmp(installing ? json_text(input, "version") : service_version, update.version) ||
+                strcmp(json_text(input, installing ? "checksum" : "serviceChecksum"), update.checksum))) {
         code = 409;
         copy_text(error, cap, "Check for updates again before installing this release.");
+    } else if (all && *tv_version && (strlen(tv_version) >= sizeof update.tv_version ||
+                                      strlen(tv_checksum) != 64)) {
+        code = 400;
+        copy_text(error, cap, "Check for the TV app again before installing it.");
     } else if (stopping) {
         /* Persist the paused queue before acknowledging shutdown. */
-        pthread_mutex_lock(&orbit.mutex);
-        char previous[ORBIT_MAX_JOBS][24];
-        bool paused[ORBIT_MAX_JOBS];
-        for (size_t i = 0; i < orbit.job_count; i++) {
-            Job *job = &orbit.jobs[i];
-            copy_text(previous[i], sizeof previous[i], job->status);
-            paused[i] = job->pause;
-            if (!strcmp(job->status, "queued") || !strcmp(job->status, "retrying"))
-                copy_text(job->status, sizeof job->status, "paused");
-        }
-        if (state_save_locked()) {
-            for (size_t i = 0; i < orbit.job_count; i++) {
-                copy_text(orbit.jobs[i].status, sizeof orbit.jobs[i].status, previous[i]);
-                orbit.jobs[i].pause = paused[i];
-            }
-            code = 503;
-            copy_text(error, cap, "Could not save the queue. Orbit has not been stopped.");
+        code = stop_locked(false, error, cap);
+    } else if (restarting) {
+        int loader = loader_connect();
+        if (loader < 0) {
+            code = 409;
+            copy_text(error, cap,
+                      "Orbit can't restart itself because no ELF loader answers on port 9021. Stop "
+                      "Orbit, then start it from your payload manager.");
         } else {
-            /* Commit before publishing a stop to lock-free transfer callbacks. */
-            for (size_t i = 0; i < orbit.job_count; i++)
-                if (job_active(&orbit.jobs[i])) orbit.jobs[i].pause = true;
-            orbit.stop = true;
-            pthread_cond_signal(&orbit.changed);
-            update.stop = true;
-            copy_text(update.phase, sizeof update.phase, "stopping");
-            pthread_cond_signal(&update.changed);
-            orbit_request_stop();
+            code = stop_locked(true, error, cap);
+            if (code == 202)
+                orbit_restart_after_stop(loader);
+            else
+                close(loader);
         }
-        pthread_mutex_unlock(&orbit.mutex);
     } else {
         update.busy = true;
         update.error[0] = 0;
@@ -451,8 +676,16 @@ int updates_action(const cJSON *input, char *error, size_t cap) {
             update.automatic_check_after = time(NULL) + AUTO_CHECK_INTERVAL;
         } else
             update.retry_at = time(NULL) + 60;
+        update.all = all;
+        if (all) {
+            update.all_service = *service_version;
+            update.tv_updated = false;
+            copy_text(update.tv_version, sizeof update.tv_version, tv_version);
+            copy_text(update.tv_checksum, sizeof update.tv_checksum, tv_checksum);
+        }
         copy_text(update.action, sizeof update.action, action);
-        copy_text(update.phase, sizeof update.phase, checking ? "checking" : "downloading");
+        copy_text(update.phase, sizeof update.phase,
+                  checking ? "checking" : all && *tv_version ? "tv-app" : "downloading");
         pthread_cond_signal(&update.changed);
     }
     pthread_mutex_unlock(&update.mutex);

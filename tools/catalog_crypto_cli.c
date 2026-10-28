@@ -6,7 +6,7 @@
 
 int main(int argc, char **argv) {
     if (argc != 3 || (strcmp(argv[1], "seal") && strcmp(argv[1], "open")) ||
-        strlen(argv[2]) != 1 || argv[2][0] < '1' || argv[2][0] > '3') return 2;
+        strlen(argv[2]) != 1 || argv[2][0] < '1' || argv[2][0] > '4') return 2;
     size_t cap = CATALOG_SEAL_LIMIT + CATALOG_SEAL_OVERHEAD + 1;
     unsigned char *input = malloc(cap), *output = NULL;
     if (!input) return 1;

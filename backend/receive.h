@@ -8,6 +8,7 @@ void receive_stop(void);
 bool receive_available(void);
 /* Caller has authenticated the normal Orbit bearer token. */
 cJSON *receive_status(const char *owner);
+int receive_recover(const cJSON *input, const char *owner, char *error, size_t cap, cJSON **reply);
 int receive_command(const char *action, const cJSON *input, const char *owner, char *error,
                     size_t cap);
 /* Folder transfers: action is "open", "commit", "cancel" or "abandon". */

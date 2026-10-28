@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Icon } from "./components";
 import { Select } from "./Select";
-import { bytes, type LibraryGame } from "./types";
+import { bytes, type LibraryDrive, type LibraryGame, type Storage } from "./types";
 import type { LibraryModel } from "./useLibrary";
+import { Glyph } from "./interfaces/Glyph";
 import { formatNumber, placeName, t, tn } from "./i18n";
 
 // Whole sentences per operation, so each language can phrase them its own way.
@@ -228,7 +229,6 @@ export function StorageProgress({ model }: { model: LibraryModel }) {
           <div>
             <strong>{t("Drive space unavailable")}</strong>
             <p>{t(capacityError)}</p>
-            <p>{t("Refresh drives in Storage to check available space.")}</p>
           </div>
         </div>
       )}
@@ -239,9 +239,19 @@ export function StorageProgress({ model }: { model: LibraryModel }) {
 export function GameActions({
   game,
   model,
+  extra,
+  driveCards = false,
+  tiles,
 }: {
   game: LibraryGame;
   model: LibraryModel;
+  // More buttons for the same row (another interface's Details).
+  extra?: ReactNode;
+  // Show destinations as drive cards instead of a dropdown.
+  driveCards?: boolean;
+  // Panorama: the buttons as tiles, each with its icon; the first also says
+  // where the game is.
+  tiles?: { status: string };
 }) {
   const [mode, setMode] = useState<"copy" | "move" | "unmount" | null>(null);
   const [destination, setDestination] = useState("");
@@ -284,7 +294,7 @@ export function GameActions({
     }
   }
   return (
-    <div className="library-game-actions">
+    <div className={`library-game-actions${tiles ? " pn-game-actions" : ""}`}>
       <LibraryFeedback model={model} titleId={game.titleId} />
       {model.snapshot?.storageJob?.titleId === game.titleId && (
         <StorageProgress model={model} />
@@ -293,41 +303,54 @@ export function GameActions({
         {game.managed &&
           model.can(game.mounted ? "unmount_game" : "mount_game") && (
             <button
-              className="primary"
+              className={tiles ? "primary pn-action wide accent" : "primary"}
               disabled={disabled}
               onClick={() =>
                 game.mounted ? setMode("unmount") : void run("mount")
               }
             >
-              {game.mounted ? t("Unmount game") : t("Mount game")}
+              {tiles && <Glyph name={game.mounted ? "eject" : "play"} size={22} stroke={1.6} />}
+              {tiles ? (
+                <span className="pn-action-label">{game.mounted ? t("Unmount game") : t("Mount game")}</span>
+              ) : game.mounted ? (
+                t("Unmount game")
+              ) : (
+                t("Mount game")
+              )}
+              {tiles && <small>{tiles.status}</small>}
             </button>
           )}
         {transfer &&
           model.can("copy_game_source") &&
           model.can("storage_job_status") && (
             <button
+              className={tiles ? "pn-action" : undefined}
               disabled={disabled || game.mounted}
               onClick={() => {
                 setMode("copy");
                 void model.readStorage(true);
               }}
             >
-              {t("Copy to drive")}
+              {tiles && <Glyph name="copy" size={22} stroke={1.6} />}
+              {tiles ? <span className="pn-action-label">{t("Copy to drive")}</span> : t("Copy to drive")}
             </button>
           )}
         {transfer &&
           model.can("move_game_source") &&
           model.can("storage_job_status") && (
             <button
+              className={tiles ? "pn-action" : undefined}
               disabled={disabled || game.mounted}
               onClick={() => {
                 setMode("move");
                 void model.readStorage(true);
               }}
             >
-              {t("Move to drive")}
+              {tiles && <Glyph name="move" size={22} stroke={1.6} />}
+              {tiles ? <span className="pn-action-label">{t("Move to drive")}</span> : t("Move to drive")}
             </button>
           )}
+        {extra}
       </div>
       {transfer && game.mounted && (
         <p className="fine">
@@ -384,23 +407,42 @@ export function GameActions({
               <p className="library-path">
                 {t("From {path}", { path: game.path })}
               </p>
-              <Select
-                label={t("Destination drive")}
-                value={target?.id || ""}
-                onChange={setDestination}
-                options={[
-                  {
-                    value: "",
-                    label: t("Choose a destination"),
-                    disabled: true,
-                  },
-                  ...targets.map((d) => ({
-                    value: d.id,
-                    label: `${placeName(d.label)} · ${d.path} · ${t("{size} free", { size: bytes(d.freeBytes) })}`,
-                  })),
-                ]}
-                disabled={disabled || !storageFresh}
-              />
+              {driveCards ? (
+                <div className="drive-choices" role="radiogroup" aria-label={t("Destination drive")}>
+                  <p className="drive-choices-label">{t("Destination drive")}</p>
+                  {targets.map((d) => (
+                    <button
+                      key={d.id}
+                      role="radio"
+                      aria-checked={target?.id === d.id}
+                      className="drive-choice"
+                      disabled={disabled || !storageFresh}
+                      onClick={() => setDestination(d.id)}
+                    >
+                      <strong>{placeName(d.label)}</strong>
+                      <small>{t("{size} free", { size: bytes(d.freeBytes) })}</small>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <Select
+                  label={t("Destination drive")}
+                  value={target?.id || ""}
+                  onChange={setDestination}
+                  options={[
+                    {
+                      value: "",
+                      label: t("Choose a destination"),
+                      disabled: true,
+                    },
+                    ...targets.map((d) => ({
+                      value: d.id,
+                      label: `${placeName(d.label)} · ${d.path} · ${t("{size} free", { size: bytes(d.freeBytes) })}`,
+                    })),
+                  ]}
+                  disabled={disabled || !storageFresh}
+                />
+              )}
               {target && (
                 <p className="library-path">
                   {t("To {path}", {
@@ -462,20 +504,9 @@ export function GameActions({
   );
 }
 
-export function StorageOverview({
-  model,
-  openGame,
-  feedback = false,
-}: {
-  model: LibraryModel;
-  openGame: (g: LibraryGame) => void;
-  feedback?: boolean;
-}) {
-  const [selected, setSelected] = useState("");
-  const [error, setError] = useState("");
-  const drives = model.storage?.drives || [];
-  const drive = drives.find((d) => d.id === selected) || drives[0];
-  const games = (model.snapshot?.games || [])
+// The Library games whose source is on a drive, largest first (sizes on request).
+export function gamesOnDrive(model: LibraryModel, drive: LibraryDrive | undefined) {
+  return (model.snapshot?.games || [])
     .filter(
       (g) =>
         g.onDrive &&
@@ -489,7 +520,79 @@ export function StorageOverview({
         (b.sizeBytes ?? -1) - (a.sizeBytes ?? -1) ||
         a.title.localeCompare(b.title),
     );
+}
+
+// A drive's top: Orbit reports each drive by its homebrew folder.
+export const driveRoot = (drive: Storage) => drive.path.replace(/\/homebrew$/, "");
+// A drive's games with their measured sizes, as Storage listed them.
+export function DriveGames({
+  model,
+  label,
+  games,
+  openGame,
+}: {
+  model: LibraryModel;
+  label: string;
+  games: LibraryGame[];
+  openGame: (g: LibraryGame) => void;
+}) {
   const sizesKnown = games.filter((g) => g.sizeBytes !== null).length;
+  const measuring = !!model.snapshot?.measuring;
+  return (
+    <>
+      <div className="storage-overview-heading">
+        <div>
+          <h3>{t("Games on {drive}", { drive: placeName(label) })}</h3>
+          <p>
+            {tn(games.length, "{count} game", "{count} games")} ·{" "}
+            {tn(sizesKnown, "{count} size measured", "{count} sizes measured")}
+            {measuring && ` · ${t("Measuring…")}`}
+          </p>
+        </div>
+      </div>
+      <p className="fine">
+        {t("Orbit measures game sizes on its own. Shared source files can appear under multiple titles; drive usage includes other files.")}
+      </p>
+      <div className="storage-game-list">
+        {games.map((g) => (
+          <button className="storage-game" key={g.titleId} onClick={() => openGame(g)}>
+            <span>
+              <strong>{g.title}</strong>
+              <small>
+                {g.format} · {g.mounted ? t("Mounted") : g.installed ? t("Installed") : t("On drive")}
+              </small>
+            </span>
+            <span>
+              {g.sizeBytes !== null
+                ? bytes(g.sizeBytes)
+                : g.sizeStatus === "unavailable"
+                  ? t("Size unavailable")
+                  : measuring
+                    ? t("Measuring…")
+                    : t("Not measured")}
+            </span>
+            <span aria-hidden="true">›</span>
+          </button>
+        ))}
+      </div>
+      {!games.length && <p className="notice">{t("No Library games currently match this drive.")}</p>}
+    </>
+  );
+}
+
+export function StorageOverview({
+  model,
+  openGame,
+  feedback = false,
+}: {
+  model: LibraryModel;
+  openGame: (g: LibraryGame) => void;
+  feedback?: boolean;
+}) {
+  const [selected, setSelected] = useState("");
+  const drives = model.storage?.drives || [];
+  const drive = drives.find((d) => d.id === selected) || drives[0];
+  const games = gamesOnDrive(model, drive);
   return (
     <section className="storage-overview" aria-label={t("Game storage")}>
       <div className="storage-overview-heading">
@@ -497,12 +600,6 @@ export function StorageOverview({
           <h2>{t("Your drives")}</h2>
           <p>{t("See available space and manage where your games live.")}</p>
         </div>
-        <button
-          disabled={!!model.storage?.busy}
-          onClick={() => void model.readStorage(true)}
-        >
-          {model.storage?.busy ? t("Refreshing…") : t("Refresh drives")}
-        </button>
       </div>
       {(model.storageError || model.storage?.error) && (
         <p className="notice" role="status">
@@ -512,7 +609,7 @@ export function StorageOverview({
       {model.storage?.stale && !!model.storage.updatedAt && (
         <p className="notice">
           {t(
-            "Saved drive information. Reconnect and refresh before managing files.",
+            "Saved drive information. Reconnect the drive before managing files.",
           )}
         </p>
       )}
@@ -567,81 +664,8 @@ export function StorageOverview({
               </button>
             ))}
           </div>
-          <div className="storage-overview-heading">
-            <div>
-              <h3>
-                {t("Games on {drive}", {
-                  drive: placeName(drive?.label || ""),
-                })}
-              </h3>
-              <p>
-                {tn(games.length, "{count} game", "{count} games")} ·{" "}
-                {tn(
-                  sizesKnown,
-                  "{count} size measured",
-                  "{count} sizes measured",
-                )}
-              </p>
-            </div>
-            <button
-              disabled={model.working || !model.can("list_games")}
-              onClick={() => {
-                setError("");
-                void model
-                  .run("measure")
-                  .catch((e) => setError((e as Error).message));
-              }}
-            >
-              {model.snapshot?.action?.action === "measure" && model.actionBusy
-                ? t("Measuring…")
-                : t("Measure game sizes")}
-            </button>
-          </div>
-          <p className="fine">
-            {t(
-              "Sizes are measured on request. Shared source files can appear under multiple titles; drive usage includes other files.",
-            )}
-          </p>
-          <div className="storage-game-list">
-            {games.map((g) => (
-              <button
-                className="storage-game"
-                key={g.titleId}
-                onClick={() => openGame(g)}
-              >
-                <span>
-                  <strong>{g.title}</strong>
-                  <small>
-                    {g.format} ·{" "}
-                    {g.mounted
-                      ? t("Mounted")
-                      : g.installed
-                        ? t("Installed")
-                        : t("On drive")}
-                  </small>
-                </span>
-                <span>
-                  {g.sizeBytes !== null
-                    ? bytes(g.sizeBytes)
-                    : g.sizeStatus === "unavailable"
-                      ? t("Size unavailable")
-                      : t("Not measured")}
-                </span>
-                <span aria-hidden="true">›</span>
-              </button>
-            ))}
-          </div>
-          {!games.length && (
-            <p className="notice">
-              {t("No Library games currently match this drive.")}
-            </p>
-          )}
+          <DriveGames model={model} label={drive?.label || ""} games={games} openGame={openGame} />
         </>
-      )}
-      {error && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
       )}
       {feedback && <LibraryFeedback model={model} />}
       <StorageProgress model={model} />

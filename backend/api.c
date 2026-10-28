@@ -1,9 +1,14 @@
 #include "assets.h"
 #include "orbit.h"
+#include "packages.h"
+#include "archive_account.h"
+#include "ntfy.h"
 #include "debrid.h"
 #include "receive.h"
 #include "zero_probe.h"
 #include "zero_companion.h"
+#include "firmware.h"
+#include "files.h"
 #include <openssl/evp.h>
 #include <openssl/crypto.h>
 #include <arpa/inet.h>
@@ -30,6 +35,7 @@ static pthread_t api_thread;
 static atomic_bool api_stopping;
 static bool api_thread_started;
 static unsigned large_requests;
+static atomic_int listener_receive_buffer;
 typedef struct {
     unsigned char *body;
     size_t length, limit;
@@ -177,6 +183,107 @@ static cJSON *storage_json(void) {
     pthread_mutex_unlock(&orbit.mutex);
     return a;
 }
+/* Files' download links: the ticket is the authority (a browser's download can't
+ * send the pairing token). One file, whole or one byte range, never cached. */
+typedef struct { int fd; uint64_t start, length; } FileResponse;
+static ssize_t file_response_read(void *cls, uint64_t pos, char *buffer, size_t max) {
+    FileResponse *file = cls;
+    if (pos >= file->length) return MHD_CONTENT_READER_END_OF_STREAM;
+    if (max > file->length - pos) max = (size_t)(file->length - pos);
+    ssize_t count;
+    do count = pread(file->fd, buffer, max, (off_t)(file->start + pos));
+    while (count < 0 && errno == EINTR);
+    return count > 0 ? count : MHD_CONTENT_READER_END_WITH_ERROR;
+}
+static void file_response_close(void *cls) {
+    FileResponse *file = cls;
+    close(file->fd);
+    free(file);
+}
+static enum MHD_Result file_download(struct MHD_Connection *c, const char *rest) {
+    const char *slash = strchr(rest, '/');
+    size_t n = slash ? (size_t)(slash - rest) : strlen(rest);
+    char ticket[33] = {0}, name[256], e[256] = {0};
+    if (n != 32 || strspn(rest, "0123456789abcdef") < 32)
+        return error(c, 404, "This link has expired. Save the file again from Files.");
+    memcpy(ticket, rest, 32);
+    int fd = -1;
+    int64_t size = 0;
+    int code = files_download_open(ticket, &fd, &size, name, sizeof name, e, sizeof e);
+    if (code != 200) return error(c, (unsigned)code, e);
+    int64_t start = 0, end = size - 1;
+    const char *range = MHD_lookup_connection_value(c, MHD_HEADER_KIND, "Range");
+    bool partial = range != NULL;
+    if (partial) {
+        char *after = NULL;
+        bool ok = !strncmp(range, "bytes=", 6) && !strchr(range, ',');
+        if (ok && range[6] == '-') {
+            long long last = strtoll(range + 7, &after, 10);
+            ok = after != range + 7 && !*after && last > 0;
+            start = ok ? (last >= size ? 0 : size - last) : 0;
+        } else if (ok) {
+            start = strtoll(range + 6, &after, 10);
+            ok = after != range + 6 && *after == '-';
+            if (ok && after[1]) {
+                char *tail = NULL;
+                long long last = strtoll(after + 1, &tail, 10);
+                ok = !*tail && last >= start;
+                if (last < end) end = last;
+            }
+        }
+        if (!ok || start < 0 || start >= size) {
+            close(fd);
+            struct MHD_Response *r = MHD_create_response_from_buffer(0, (void *)"", MHD_RESPMEM_PERSISTENT);
+            if (!r) return MHD_NO;
+            char unsatisfied[64];
+            snprintf(unsatisfied, sizeof unsatisfied, "bytes */%lld", (long long)size);
+            MHD_add_response_header(r, "Content-Range", unsatisfied);
+            enum MHD_Result rc = MHD_queue_response(c, 416, r);
+            MHD_destroy_response(r);
+            return rc;
+        }
+    }
+    FileResponse *file = malloc(sizeof *file);
+    if (!file) {
+        close(fd);
+        return MHD_NO;
+    }
+    *file = (FileResponse){fd, (uint64_t)start, (uint64_t)(end - start + 1)};
+    /* MHD's sendfile fast path truncates responses on the PS5 SDK. Use bounded
+     * reads and MHD's normal socket writer, including ranged downloads. */
+    struct MHD_Response *r = MHD_create_response_from_callback(file->length, 64 * 1024,
+        file_response_read, file, file_response_close);
+    if (!r) {
+        file_response_close(file);
+        return MHD_NO;
+    }
+    /* filename= keeps to safe ASCII; filename*= carries the real name. */
+    char plain[256], encoded[800], disposition[1200];
+    size_t p = 0, q = 0;
+    for (const unsigned char *s = (const unsigned char *)name; *s && p < sizeof plain - 1; s++)
+        plain[p++] = *s >= 0x20 && *s < 0x7f && *s != '"' && *s != '\\' && *s != '%' ? (char)*s : '_';
+    plain[p] = 0;
+    for (const unsigned char *s = (const unsigned char *)name; *s && q < sizeof encoded - 4; s++)
+        q += (size_t)(strchr("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~", *s)
+                          ? snprintf(encoded + q, sizeof encoded - q, "%c", *s)
+                          : snprintf(encoded + q, sizeof encoded - q, "%%%02X", *s));
+    snprintf(disposition, sizeof disposition, "attachment; filename=\"%s\"; filename*=UTF-8''%s", plain, encoded);
+    MHD_add_response_header(r, "Content-Type", "application/octet-stream");
+    MHD_add_response_header(r, "Content-Disposition", disposition);
+    MHD_add_response_header(r, "Accept-Ranges", "bytes");
+    MHD_add_response_header(r, "X-Content-Type-Options", "nosniff");
+    MHD_add_response_header(r, "Referrer-Policy", "no-referrer");
+    MHD_add_response_header(r, "Cache-Control", "no-store");
+    MHD_add_response_header(r, "Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+    if (partial) {
+        char span[96];
+        snprintf(span, sizeof span, "bytes %lld-%lld/%lld", (long long)start, (long long)end, (long long)size);
+        MHD_add_response_header(r, "Content-Range", span);
+    }
+    enum MHD_Result rc = MHD_queue_response(c, partial ? 206 : 200, r);
+    MHD_destroy_response(r);
+    return rc;
+}
 typedef struct { unsigned host, origin, site; } AuthorityHeaders;
 static enum MHD_Result authority_header(void *cls, enum MHD_ValueKind kind,
                                       const char *key, const char *value) {
@@ -218,6 +325,8 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
         (!strncmp(url, "/api/", 5) && strcmp(url, "/api/v1/system") &&
          strcmp(url, "/api/v1/updates"))))
         return error(c, 503, "Orbit is stopping. Wait for shutdown before starting the saved payload.");
+    if (get && !strncmp(url, "/api/v1/files/download/", 23))
+        return file_download(c, url + 23);
     if (!strcmp(url, "/api/v1/zero/companion")) {
         if (!authorized(c)) return error(c,401,"Pair this device first.");
         if (get) return json_response(c,200,zero_companion_status(local_peer(c)));
@@ -239,14 +348,28 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
     if (!strncmp(url, "/api/v1/receive", 15) && (!url[15] || url[15] == '/')) {
         if (!authorized(c)) return error(c, 401, "Pair this device first.");
         const char *auth = MHD_lookup_connection_value(c, MHD_HEADER_KIND, "Authorization");
+        /* A freshly paired client may retain its former receiver identity by
+         * proving possession of the former secret too. The old secret alone
+         * never authorizes a request; normal bearer authorization above is
+         * mandatory. Receiver ownership and all file checks remain unchanged. */
+        const char *previous = MHD_lookup_connection_value(c, MHD_HEADER_KIND, "X-Orbit-Previous-Pairing");
+        if (previous && (strlen(previous) != 64 || strspn(previous, "0123456789abcdef") != 64))
+            return error(c, 400, "Invalid previous pairing proof.");
         unsigned char hash[32]; unsigned length = 0; char owner[65];
-        if (!EVP_Digest(auth + 7, 64, hash, &length, EVP_sha256(), NULL) || length != 32)
+        if (!EVP_Digest(previous ? previous : auth + 7, 64, hash, &length, EVP_sha256(), NULL) || length != 32)
             return error(c, 503, "Could not identify the paired client.");
         for (int i = 0; i < 32; i++) snprintf(owner + i * 2, 3, "%02x", hash[i]);
         if (get && !strcmp(url, "/api/v1/receive")) return json_response(c, 200, receive_status(owner));
         if (!post) return error(c, 405, "Method not supported.");
         char message[256] = {0}; int code;
-        if (!strcmp(url, "/api/v1/receive/bundle")) {
+        if (!strcmp(url, "/api/v1/receive/recover")) {
+            cJSON *input = cJSON_Parse((const char *)req->body);
+            if (!cJSON_IsObject(input)) { cJSON_Delete(input); return error(c, 400, "Invalid receiver request."); }
+            cJSON *recovery = NULL;
+            code = receive_recover(input, owner, message, sizeof message, &recovery);
+            cJSON_Delete(input);
+            if (recovery) return json_response(c, code, recovery);
+        } else if (!strcmp(url, "/api/v1/receive/bundle")) {
             cJSON *input = cJSON_Parse((const char *)req->body);
             if (!cJSON_IsObject(input)) { cJSON_Delete(input); return error(c, 400, "Invalid receiver request."); }
             code = receive_bundle(json_text(input, "action"), input, owner, message, sizeof message);
@@ -275,8 +398,12 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
         cJSON_AddStringToObject(o, "instanceId", orbit.instance_id);
         cJSON_AddBoolToObject(o, "stopping", orbit_is_stopping());
         cJSON_AddNumberToObject(o, "receiveProtocol", 1);
+        cJSON_AddNumberToObject(o, "packageInstallProtocol", 1);
+        cJSON_AddNumberToObject(o, "packageStreamProtocol", 1);
         /* Folder transfers are an addition; protocol 1 clients are unaffected. */
         cJSON_AddNumberToObject(o, "receiveFolders", 1);
+        cJSON_AddNumberToObject(o, "receivePairingRecovery", 1);
+        cJSON_AddNumberToObject(o, "receiveSocketBuffer", atomic_load(&listener_receive_buffer));
         cJSON_AddBoolToObject(o, "receiveAvailable", receive_available());
         cJSON_AddStringToObject(o, "platform", ORBIT_PLATFORM);
         cJSON_AddBoolToObject(o, "paired", authorized(c));
@@ -288,12 +415,24 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
 #endif
         cJSON_AddBoolToObject(o, "consoleValidated", false);
         cJSON_AddStringToObject(o, "targetFirmware", "12.60 / Relapse");
+        char firmware[16];
+        firmware_text(orbit.firmware, firmware, sizeof firmware);
+        if (*firmware) cJSON_AddStringToObject(o, "firmware", firmware);
+        cJSON_AddStringToObject(o, "ps5PackageFirmware", firmware_package_limit());
         pthread_mutex_lock(&orbit.mutex);
         cJSON_AddBoolToObject(o, "stateHealthy", !orbit.state_failed);
         cJSON_AddNumberToObject(o, "catalogueRevision", orbit.catalog_revision);
         cJSON_AddStringToObject(o, "preferredStorage", orbit.preferred_storage);
         cJSON_AddBoolToObject(o, "deleteArchives", orbit.delete_archives);
+        cJSON_AddBoolToObject(o, "downloadNotifications", orbit.download_notifications);
+        cJSON *events = cJSON_AddObjectToObject(o, "notificationEvents");
+        for (unsigned i = 0; notify_event_name(i); i++)
+            cJSON_AddBoolToObject(events, notify_event_name(i), orbit.notify_events & (1u << i));
+        cJSON_AddBoolToObject(o, "deletePackages", orbit.delete_packages);
+        cJSON_AddBoolToObject(o, "ntfyEnabled", ntfy_enabled());
         cJSON_AddNumberToObject(o, "concurrentDownloads", orbit.concurrent_downloads);
+        cJSON_AddNumberToObject(o, "downloadConnections", orbit.download_connections);
+        download_policy_json(o, &orbit.download_policy);
         cJSON_AddNumberToObject(o, "httpPort", orbit.port);
         cJSON_AddStringToObject(o, "launcherStatus", orbit.launcher_status);
         cJSON_AddStringToObject(o, "launcherError", orbit.launcher_error);
@@ -304,10 +443,10 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
     }
     if (get && !strcmp(url, "/api/v1/catalog/updates"))
         return json_response(c, 200, catalog_status());
-    if (get && !strcmp(url, "/api/v1/catalog")) {
+    if (get && (!strcmp(url, "/api/v1/catalog") || !strcmp(url, "/api/v1/addons"))) {
         cJSON *a = cJSON_CreateArray(), *x;
         pthread_mutex_lock(&orbit.mutex);
-        cJSON_ArrayForEach(x, orbit.catalog) {
+        cJSON_ArrayForEach(x, (!strcmp(url, "/api/v1/addons") ? orbit.addons : orbit.catalog)) {
             if (!source_enabled_locked(release_find(json_text(x, "id"))))
                 continue;
             cJSON *entry = cJSON_Duplicate(x, true);
@@ -317,6 +456,7 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
                 provider_browser_supported(release_find(json_text(x, "id"))));
             cJSON_AddBoolToObject(entry, "directAvailable",
                 provider_url_supported(release_find(json_text(x, "id"))));
+            firmware_describe(entry, orbit.firmware);
             cJSON_AddItemToArray(a, entry);
         }
         pthread_mutex_unlock(&orbit.mutex);
@@ -426,23 +566,143 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
             cJSON_Delete(input);
             return error(c, 401, "Pair this device with your PS5 to continue.");
         }
+        if (post && !strcmp(url, "/api/v1/installations/stream")) {
+            const union MHD_ConnectionInfo *info = MHD_get_connection_info(c, MHD_CONNECTION_INFO_CLIENT_ADDRESS);
+            char peer[INET_ADDRSTRLEN] = "", e[256] = "";
+            if (info && info->client_addr && info->client_addr->sa_family == AF_INET)
+                inet_ntop(AF_INET, &((const struct sockaddr_in *)info->client_addr)->sin_addr, peer, sizeof peer);
+            int code = packages_stream(input, peer, e, sizeof e); cJSON_Delete(input);
+            return code == 202 ? json_response(c, 202, packages_status()) : error(c, (unsigned)code, e);
+        }
+        if ((get || post) && !strcmp(url, "/api/v1/installations")) {
+            char e[256] = {0};
+            int code = post ? packages_action(input, e, sizeof e) : 200;
+            cJSON_Delete(input);
+            return code == 200 || code == 202 ? json_response(c, (unsigned)code, packages_status()) : error(c, (unsigned)code, e);
+        }
         if (get && !strcmp(url, "/api/v1/storage"))
             return json_response(c, 200, storage_json());
+        if (post && !strcmp(url, "/api/v1/files/list")) {
+            char e[256] = {0};
+            int code = 200;
+            cJSON *o = files_list(input, &code, e, sizeof e);
+            cJSON_Delete(input);
+            return o ? json_response(c, 200, o) : error(c, (unsigned)code, e);
+        }
+        if (get && !strcmp(url, "/api/v1/files/status")) {
+            cJSON_Delete(input);
+            return json_response(c, 200, files_status());
+        }
+        if (post && !strcmp(url, "/api/v1/files/action")) {
+            char e[256] = {0};
+            int code = files_action(input, e, sizeof e);
+            cJSON_Delete(input);
+            return code < 300 ? json_response(c, (unsigned)code, files_status()) : error(c, (unsigned)code, e);
+        }
+        if (post && !strcmp(url, "/api/v1/files/link")) {
+            char e[256] = {0};
+            cJSON *o = NULL;
+            int code = files_link(input, &o, e, sizeof e);
+            cJSON_Delete(input);
+            return o ? json_response(c, 200, o) : error(c, (unsigned)code, e);
+        }
         if ((get || post) && !strcmp(url, "/api/v1/settings/downloads")) {
             const cJSON *limit = cJSON_GetObjectItemCaseSensitive(input, "concurrentDownloads");
-            if (post && (!cJSON_IsNumber(limit) || limit->valuedouble < 1 ||
+            if (post && limit && (!cJSON_IsNumber(limit) || limit->valuedouble < 1 ||
                 limit->valuedouble > ORBIT_MAX_DOWNLOADS || limit->valuedouble != limit->valueint)) {
                 cJSON_Delete(input);
                 return error(c, 400, "Choose a whole number from 1 to 8.");
             }
+            const cJSON *connections = cJSON_GetObjectItemCaseSensitive(input, "downloadConnections");
+            if (post && connections && (!cJSON_IsNumber(connections) || connections->valuedouble < 1 ||
+                connections->valuedouble > ORBIT_MAX_RANGES || connections->valuedouble != connections->valueint)) {
+                cJSON_Delete(input);
+                return error(c, 400, "Choose 1 to 64 connections per download.");
+            }
             pthread_mutex_lock(&orbit.mutex);
-            unsigned previous = orbit.concurrent_downloads;
-            if (post) orbit.concurrent_downloads = (unsigned)limit->valueint;
+            unsigned previous = orbit.concurrent_downloads, previous_connections = orbit.download_connections;
+            DownloadPolicy previous_policy = orbit.download_policy;
+            if (post && (!cJSON_IsObject(input) || !input->child ||
+                         !download_policy_patch(input, &orbit.download_policy))) {
+                pthread_mutex_unlock(&orbit.mutex);
+                cJSON_Delete(input);
+                return error(c, 400, "Use retries 0–10, delay 1–300 seconds, timeout 15–600 seconds and minimum speed 1–1024 KiB/s.");
+            }
+            if (post && limit) orbit.concurrent_downloads = (unsigned)limit->valueint;
+            if (post && connections) orbit.download_connections = (unsigned)connections->valueint;
             int rc = post ? state_save_locked() : 0;
-            if (rc) orbit.concurrent_downloads = previous;
+            if (rc) { orbit.concurrent_downloads = previous; orbit.download_connections = previous_connections; orbit.download_policy = previous_policy; }
             else if (post) pthread_cond_broadcast(&orbit.changed);
             cJSON *o = cJSON_CreateObject();
             cJSON_AddNumberToObject(o, "concurrentDownloads", orbit.concurrent_downloads);
+            cJSON_AddNumberToObject(o, "downloadConnections", orbit.download_connections);
+            download_policy_json(o, &orbit.download_policy);
+            pthread_mutex_unlock(&orbit.mutex);
+            cJSON_Delete(input);
+            if (rc) {
+                cJSON_Delete(o);
+                return error(c, 503, "Could not save the setting.");
+            }
+            return json_response(c, 200, o);
+        }
+        if ((get || post) && !strcmp(url, "/api/v1/settings/notifications")) {
+            /* console (or 1.5.0's downloadNotifications): notifications on this PS5. events:
+             * {downloadFinished…: bool}, any of them, chosen for the PS5 and ntfy alike. */
+            const cJSON *value = cJSON_GetObjectItemCaseSensitive(input, "console");
+            if (!value) value = cJSON_GetObjectItemCaseSensitive(input, "downloadNotifications");
+            const cJSON *events = cJSON_GetObjectItemCaseSensitive(input, "events"), *event;
+            bool valid = (!value || cJSON_IsBool(value)) && (!events || cJSON_IsObject(events)) && (value || events);
+            unsigned chosen = 0, cleared = 0;
+            const cJSON *event_map = cJSON_IsObject(events) ? events : NULL;
+            cJSON_ArrayForEach(event, event_map) {
+                unsigned i = 0;
+                while (notify_event_name(i) && strcmp(event->string, notify_event_name(i))) i++;
+                if (!notify_event_name(i) || !cJSON_IsBool(event)) valid = false;
+                else if (cJSON_IsTrue(event)) chosen |= 1u << i;
+                else cleared |= 1u << i;
+            }
+            if (post && !valid) {
+                cJSON_Delete(input);
+                return error(c, 400, "Expected console or events.");
+            }
+            pthread_mutex_lock(&orbit.mutex);
+            bool previous = orbit.download_notifications;
+            unsigned previous_events = orbit.notify_events;
+            if (post && value) orbit.download_notifications = cJSON_IsTrue(value);
+            if (post) orbit.notify_events = (orbit.notify_events | chosen) & ~cleared;
+            int rc = post ? state_save_locked() : 0;
+            if (rc) {
+                orbit.download_notifications = previous;
+                orbit.notify_events = previous_events;
+            }
+            cJSON *o = cJSON_CreateObject();
+            cJSON_AddBoolToObject(o, "console", orbit.download_notifications);
+            cJSON_AddBoolToObject(o, "downloadNotifications", orbit.download_notifications);
+            cJSON *list = cJSON_AddObjectToObject(o, "events");
+            for (unsigned i = 0; notify_event_name(i); i++)
+                cJSON_AddBoolToObject(list, notify_event_name(i), orbit.notify_events & (1u << i));
+            pthread_mutex_unlock(&orbit.mutex);
+            cJSON_Delete(input);
+            if (rc) {
+                cJSON_Delete(o);
+                return error(c, 503, "Could not save the setting.");
+            }
+            if (post) updates_wake();
+            return json_response(c, 200, o);
+        }
+        if ((get || post) && !strcmp(url, "/api/v1/settings/installation")) {
+            const cJSON *value = cJSON_GetObjectItemCaseSensitive(input, "deletePackages");
+            if (post && !cJSON_IsBool(value)) {
+                cJSON_Delete(input);
+                return error(c, 400, "Expected deletePackages.");
+            }
+            pthread_mutex_lock(&orbit.mutex);
+            bool previous = orbit.delete_packages;
+            if (post) orbit.delete_packages = cJSON_IsTrue(value);
+            int rc = post ? state_save_locked() : 0;
+            if (rc) orbit.delete_packages = previous;
+            cJSON *o = cJSON_CreateObject();
+            cJSON_AddBoolToObject(o, "deletePackages", orbit.delete_packages);
             pthread_mutex_unlock(&orbit.mutex);
             cJSON_Delete(input);
             if (rc) {
@@ -521,6 +781,43 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
             cJSON_Delete(input);
             return code == 202 ? json_response(c, 202, debrid_status()) : error(c, (unsigned)code, e);
         }
+        if (get && !strcmp(url, "/api/v1/archive-account")) {
+            cJSON_Delete(input);
+            return json_response(c, 200, archive_account_status());
+        }
+        if (post && !strcmp(url, "/api/v1/archive-account")) {
+            char e[256] = {0};
+            int code = archive_account_action(input, e, sizeof e);
+            const char *secrets[] = {"email", "password"};
+            for (size_t i = 0; i < 2; i++) {
+                cJSON *v = cJSON_GetObjectItemCaseSensitive(input, secrets[i]);
+                if (cJSON_IsString(v)) OPENSSL_cleanse(v->valuestring, strlen(v->valuestring));
+            }
+            cJSON_Delete(input);
+            return code == 200 ? json_response(c, 200, archive_account_status()) : error(c, (unsigned)code, e);
+        }
+        if (get && !strcmp(url, "/api/v1/settings/ntfy")) {
+            cJSON_Delete(input);
+            return json_response(c, 200, ntfy_status());
+        }
+        if (post && !strcmp(url, "/api/v1/settings/ntfy")) {
+            char e[256] = {0};
+            int code = ntfy_configure(input, e, sizeof e);
+            cJSON *password = cJSON_GetObjectItemCaseSensitive(input, "password");
+            if (cJSON_IsString(password)) OPENSSL_cleanse(password->valuestring, strlen(password->valuestring));
+            cJSON_Delete(input);
+            if (code == 200) updates_wake();
+            return code == 200 ? json_response(c, 200, ntfy_status()) : error(c, (unsigned)code, e);
+        }
+        if (post && !strcmp(url, "/api/v1/settings/ntfy/test")) {
+            char e[256] = {0};
+            cJSON_Delete(input);
+            int code = ntfy_test(notify_ntfy_test(), e, sizeof e);
+            if (code != 200) return error(c, (unsigned)code, e);
+            cJSON *o = cJSON_CreateObject();
+            cJSON_AddBoolToObject(o, "sent", true);
+            return json_response(c, 200, o);
+        }
         if (get && !strcmp(url, "/api/v1/browser"))
             return json_response(c, 200, browser_status());
         if (post && !strcmp(url, "/api/v1/browser")) {
@@ -531,6 +828,13 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
         }
         if (get && !strcmp(url, "/api/v1/diagnostics"))
             return json_response(c, 200, diagnostics_snapshot());
+        if (post && !strcmp(url, "/api/v1/diagnostics/export")) {
+            char e[256] = {0};
+            cJSON *saved = NULL;
+            int code = diagnostics_export(input, &saved, e, sizeof e);
+            cJSON_Delete(input);
+            return code ? error(c, (unsigned)code, e) : json_response(c, 200, saved);
+        }
         if ((get || post) && !strcmp(url, "/api/v1/library")) {
             cJSON_Delete(input);
             return json_response(c, 200, library_snapshot(post));
@@ -551,6 +855,15 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
             pthread_mutex_lock(&orbit.mutex);
             int code = post ? favorite_set_locked(input, e, sizeof e) : 200;
             cJSON *o = code == 200 ? favorites_json_locked() : NULL;
+            pthread_mutex_unlock(&orbit.mutex);
+            cJSON_Delete(input);
+            return o ? json_response(c, 200, o) : error(c, (unsigned)code, e);
+        }
+        if ((get || post) && !strcmp(url, "/api/v1/filters")) {
+            char e[256] = {0};
+            pthread_mutex_lock(&orbit.mutex);
+            int code = post ? saved_filters_change_locked(input, e, sizeof e) : 200;
+            cJSON *o = code == 200 ? saved_filters_json_locked() : NULL;
             pthread_mutex_unlock(&orbit.mutex);
             cJSON_Delete(input);
             return o ? json_response(c, 200, o) : error(c, (unsigned)code, e);
@@ -647,6 +960,20 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
                 return error(c, 404, "Unknown download action.");
             }
             char e[256] = {0};
+            if (!strncmp(action, "install-", 8) || !strncmp(action, "check-", 6) ||
+                !strcmp(action, "scan-library") || !strcmp(action, "check-packages")) {
+                cJSON_Delete(input);
+                pthread_mutex_lock(&orbit.mutex);
+                Job *job = job_find(id);
+                bool complete = job && !strcmp(job->status, "complete");
+                if (complete) packages_completed(job, id, job->output[0] ? job->output : job->filename, false);
+                pthread_mutex_unlock(&orbit.mutex);
+                if (!complete) return error(c, 409, "Finish downloading before installing or scanning the game.");
+                int code = packages_download_action(id, action, e, sizeof e);
+                if (code != 202) return error(c, (unsigned)code, e);
+                pthread_mutex_lock(&orbit.mutex); cJSON *jobs = jobs_json_locked(); pthread_mutex_unlock(&orbit.mutex);
+                return json_response(c, 200, jobs);
+            }
             if (!strcmp(action, "refresh-link")) {
                 cJSON_Delete(input);
                 input = cJSON_CreateObject();
@@ -728,6 +1055,26 @@ static void completed(void *cls, struct MHD_Connection *c, void **con_cls,
     free(r);
     *con_cls = NULL;
 }
+/* Accepted connections inherit the listener's receive buffer, which bounds
+ * the TCP window a computer can fill before waiting for an acknowledgement.
+ * The console's 64 KiB default limits Orbit Zero uploads to 64 KiB per round
+ * trip. Ask for more and let the OS decide the cap: the console grants a
+ * 1 MiB request as 512 KiB. A refused size falls back; nothing is reduced.
+ * Desktop builds keep the host's automatic tuning. */
+static void listener_tune(struct MHD_Daemon *d) {
+    const union MHD_DaemonInfo *info = MHD_get_daemon_info(d, MHD_DAEMON_INFO_LISTEN_FD);
+    if (!info || info->listen_fd == MHD_INVALID_SOCKET) return;
+    int fd = info->listen_fd, original = 0, actual = 0;
+    socklen_t length = sizeof original;
+    if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &original, &length)) return;
+#if !defined(ORBIT_DESKTOP) || defined(ORBIT_TEST)
+    for (int size = 2 * 1024 * 1024; size >= 256 * 1024 && size > original; size /= 2)
+        if (!setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof size)) break;
+#endif
+    length = sizeof actual;
+    atomic_store(&listener_receive_buffer,
+                 getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &actual, &length) ? original : actual);
+}
 /* One owner drives and rebuilds the HTTP daemon. An internal MHD thread can
  * survive a lost listener without reopening it; stopping that thread also
  * depends on its old wake socket. External polling gives us a bounded wait
@@ -738,11 +1085,13 @@ static struct MHD_Daemon *listen_start(void) {
     bind_address.sin_port = htons((uint16_t)orbit.port);
     bind_address.sin_addr.s_addr =
         htonl(orbit.desktop && !orbit.listen_all ? INADDR_LOOPBACK : INADDR_ANY);
-    return MHD_start_daemon(
+    struct MHD_Daemon *d = MHD_start_daemon(
         MHD_NO_FLAG, (uint16_t)orbit.port, NULL, NULL, handle, NULL,
         MHD_OPTION_SOCK_ADDR, &bind_address, MHD_OPTION_CONNECTION_LIMIT, 32U,
         MHD_OPTION_CONNECTION_TIMEOUT, 15U, MHD_OPTION_CONNECTION_MEMORY_LIMIT, (size_t)32768,
         MHD_OPTION_NOTIFY_COMPLETED, completed, NULL, MHD_OPTION_END);
+    if (d) listener_tune(d);
+    return d;
 }
 static bool listener_address(int fd) {
     struct sockaddr_in address = {0};

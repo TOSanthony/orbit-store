@@ -22,12 +22,14 @@ constexpr std::size_t kMaxQueued = 48;
 
 std::string make_key(const std::string &game_id, api::ArtKind kind)
 {
-    return game_id + (kind == api::ArtKind::hero ? "#hero" : "#cover");
+    return game_id + (kind == api::ArtKind::hero ? "#hero" : kind == api::ArtKind::thumbnail ? "#thumbnail" : "#cover");
 }
 
-bool is_hero(const std::string &key)
+api::ArtKind key_kind(const std::string &key)
 {
-    return key.size() > 5 && key.compare(key.size() - 5, 5, "#hero") == 0;
+    if (key.ends_with("#hero"))
+        return api::ArtKind::hero;
+    return key.ends_with("#thumbnail") ? api::ArtKind::thumbnail : api::ArtKind::cover;
 }
 
 } // namespace
@@ -133,6 +135,20 @@ void ArtCache::tick()
         entry.art.width = decoded.pixels.width;
         entry.art.height = decoded.pixels.height;
         entry.art.ambient = decoded.ambient.empty() ? 0 : sink_.create(decoded.ambient);
+        if (!decoded.ambient.empty())
+        {
+            // The cover's main colour, for Crossbar's background.
+            std::uint64_t sum[3] = {};
+            const std::vector<std::uint8_t> &px = decoded.ambient.rgba;
+            const std::size_t count = px.size() / 4;
+            for (std::size_t i = 0; i < count; ++i)
+                for (int c = 0; c < 3; ++c)
+                    sum[c] += px[i * 4 + static_cast<std::size_t>(c)];
+            if (count > 0)
+                entry.art.ambient_rgb = static_cast<std::uint32_t>(sum[0] / count) << 16 |
+                                        static_cast<std::uint32_t>(sum[1] / count) << 8 |
+                                        static_cast<std::uint32_t>(sum[2] / count);
+        }
         entry.art.ready_at = now;
         entry.state = entry.art.texture != 0 ? State::ready : State::failed;
         if (entry.state == State::failed)
@@ -140,6 +156,7 @@ void ArtCache::tick()
     }
     evict(api::ArtKind::cover, limits_.max_covers);
     evict(api::ArtKind::hero, limits_.max_heroes);
+    evict(api::ArtKind::thumbnail, limits_.max_thumbnails);
 }
 
 void ArtCache::evict(api::ArtKind kind, int keep)
@@ -147,7 +164,7 @@ void ArtCache::evict(api::ArtKind kind, int keep)
     std::vector<std::pair<double, std::string>> ready;
     for (const auto &[key, entry] : entries_)
     {
-        if (entry.state == State::ready && is_hero(key) == (kind == api::ArtKind::hero))
+        if (entry.state == State::ready && key_kind(key) == kind)
             ready.emplace_back(entry.last_used, key);
     }
     if (static_cast<int>(ready.size()) <= keep)
@@ -217,15 +234,27 @@ bool ArtCache::work_once()
 
     api::Client client(transport_);
     client.set_token(token);
-    api::Result<api::Art> art = client.art(request.game_id, request.kind);
+    api::Result<api::Art> art = client.art(request.game_id, request.cover_fallback ? api::ArtKind::cover : request.kind);
     Decoded decoded;
     decoded.key = request.key;
+    const bool thumbnail = request.kind == api::ArtKind::thumbnail;
+    const bool hero = request.kind == api::ArtKind::hero;
+    const int width = thumbnail ? limits_.thumbnail_width : hero ? limits_.hero_width : limits_.cover_size;
+    const int height = thumbnail ? limits_.thumbnail_height : hero ? limits_.hero_height : limits_.cover_size;
+    const auto pending = [&] { return (art.ok() && art.value.pending) || art.status == 401 || art.status == 503; };
+    if (art.ok() && !art.value.pending)
+        decoded.ok = image::decode(art.value.bytes, width, height, &decoded.pixels);
+    if (thumbnail && !request.cover_fallback && !decoded.ok && !pending())
+    {
+        request.cover_fallback = true;
+        art = client.art(request.game_id, api::ArtKind::cover);
+        decoded.ok = art.ok() && !art.value.pending && image::decode(art.value.bytes, width, height, &decoded.pixels);
+    }
     // Still being fetched by the backend, the session is not open yet (a
     // restarted backend), or the artwork workers are busy or still starting
     // (503, as when the app has just started Orbit): ask again shortly
     // rather than giving up.
-    const bool again =
-        (art.ok() && art.value.pending) || art.status == 401 || art.status == 503;
+    const bool again = pending();
     if (again && request.attempts < kPendingAttempts)
     {
         Lock lock(mutex_);
@@ -235,15 +264,8 @@ bool ArtCache::work_once()
         --in_flight_;
         return true;
     }
-    if (art.ok() && !art.value.pending)
-    {
-        const bool hero = request.kind == api::ArtKind::hero;
-        const int width = hero ? limits_.hero_width : limits_.cover_size;
-        const int height = hero ? limits_.hero_height : limits_.cover_size;
-        decoded.ok = image::decode(art.value.bytes, width, height, &decoded.pixels);
-        if (decoded.ok && !hero)
-            decoded.ambient = image::ambient(decoded.pixels);
-    }
+    if (decoded.ok && request.kind == api::ArtKind::cover)
+        decoded.ambient = image::ambient(decoded.pixels);
     inbox_.post([this, decoded = std::move(decoded)]() mutable
                 { uploads_.push_back(std::move(decoded)); });
     {

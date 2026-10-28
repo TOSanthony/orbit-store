@@ -1,3 +1,4 @@
+#include "orbit/download_settings.hpp"
 // Orbit Store TV app - App settings: sources, storage, pairing, the catalogue and updates.
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
@@ -8,8 +9,10 @@
 
 #include "orbit/screens.hpp"
 #include "orbit/i18n.hpp"
+#include "orbit/look.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -32,8 +35,10 @@ constexpr float kViewTop = 230.0f;    // content scrolls under the title
 constexpr float kViewBottom = 990.0f; // and stops above the hints
 constexpr float kCardRadius = 14.0f;
 constexpr int kSectionCount = static_cast<int>(SettingsScreen::Section::count);
-constexpr const char *kSections[] = {/* i18n */ "Download sources", /* i18n */ "Storage", /* i18n */ "Pair a device",
-                                     /* i18n */ "Game catalogue",   /* i18n */ "Updates", "Orbit Zero", /* i18n */ "More settings"};
+constexpr const char *kSections[] = {/* i18n */ "Download sources", /* i18n */ "Storage", /* i18n */ "Notifications",
+                                     /* i18n */ "Pair a device",
+                                     /* i18n */ "Game catalogue",   /* i18n */ "Updates", "Orbit Zero", /* i18n */ "Appearance",
+                                     /* i18n */ "More settings"};
 constexpr const char *kSavedElf = "/data/orbit-store/orbit_store.elf";
 constexpr const char *kNotice =
     /* i18n */ "You are responsible for checking that your downloads are lawful. Third-party downloads are "
@@ -227,7 +232,8 @@ struct SettingsScreen::Pane
 
 // ---- the screen ----
 
-SettingsScreen::SettingsScreen(Context &context) : Screen(context)
+SettingsScreen::SettingsScreen(Context &context)
+    : Screen(context), archive_sign_in_(context), ntfy_form_(context), diagnostics_view_(context)
 {
 }
 
@@ -246,6 +252,16 @@ void SettingsScreen::open(Section section, bool content)
     ctx_.store.want_settings(true);
     if (section == Section::pairing)
         ctx_.store.refresh_session();
+    // Crossbar opens on the list of sections, or inside one when asked to;
+    // Cinema on the contents and Panorama on the pivots, or in the section's rows.
+    xb_open_ = content;
+    cn_rows_ = content;
+    cn_row_ = 0;
+    pn_rows_ = content && section != Section::pairing;
+    pn_row_ = 0;
+    xb_menu_.open = false;
+    xb_.index = content ? 0 : static_cast<int>(section);
+    xb_.snap();
     if (content)
     {
         const std::vector<Control> all = controls();
@@ -280,6 +296,51 @@ bool SettingsScreen::update_available() const
     return tv || (state.have_service_update && state.service.update_available);
 }
 
+SettingsScreen::UpdateOrbit SettingsScreen::update_orbit() const
+{
+    const Snapshot &state = ctx_.store.state();
+    const SettingResult &result = ctx_.store.setting_result();
+    const ServiceUpdate &service = state.service;
+    const TvAppStatus &tv = state.tv_app;
+    const bool tv_update = state.have_tv_app && tv.available && tv.update_available;
+    // A release that's already saved only needs a restart (the service card offers it).
+    const bool service_update = state.have_service_update && service.available && service.needs_install();
+    const bool running = service.update_all && (service.busy || service.phase == "restarting");
+    const bool tv_done = service.update_all && service.phase == "updated" && !service.tv_app_updated.empty();
+    UpdateOrbit one;
+    one.show = tv_update || service_update || running || tv_done;
+    one.offer = (tv_update || service_update) && !running;
+    const bool sending = result.busy && result.setting == Setting::update_all;
+    // After a failed install, Orbit asks for a pause before the next one.
+    const int wait = std::max(service_update ? seconds_until(service.retry_at) : 0,
+                              tv_update ? seconds_until(tv.retry_at) : 0);
+    one.enabled = !sending && !service.busy && !tv.busy && wait == 0 &&
+                  (state.restart == Restart::idle || state.restart == Restart::done);
+    if (tv_update && service_update)
+        one.summary = tr("TV app {tv} and download service {service} are available.",
+                         {{"tv", tv.latest_version}, {"service", service.latest_version}});
+    else if (service_update)
+        one.summary = tr("Download service {version} is available.", {{"version", service.latest_version}});
+    else if (tv_update)
+        one.summary = tr("TV app {version} is available.", {{"version", tv.latest_version}});
+    else if (tv_done)
+        one.summary = tr("TV app {version} is installed", {{"version", service.tv_app_updated}});
+    if (sending)
+        one.status = tr("Checking\xE2\x80\xA6");
+    else if (service.update_all && service.phase == "tv-app" && tv.busy)
+        one.status = tr("Downloading the TV app: {received} of {size}",
+                        {{"received", format_bytes(tv.received)}, {"size", format_bytes(tv.size)}});
+    else if (service.update_all && service.phase == "downloading")
+        one.status = tr("Downloading Orbit: {size}", {{"size", format_bytes(service.received)}});
+    else if (service.update_all && service.phase == "saving")
+        one.status = tr("Saving the verified release\xE2\x80\xA6");
+    else if (service.phase == "restarting")
+        one.status = tr("Restarting Orbit\xE2\x80\xA6");
+    else if (one.offer && wait > 0)
+        one.status = tr("Please wait {seconds} s before another request.", {{"seconds", std::to_string(wait)}});
+    return one;
+}
+
 std::vector<SettingsScreen::Control> SettingsScreen::controls(float *height) const
 {
     Pane pane(*this, nullptr);
@@ -299,6 +360,9 @@ void SettingsScreen::build(Pane &pane) const
     case Section::storage:
         build_storage(pane);
         break;
+    case Section::notifications:
+        build_notifications(pane);
+        break;
     case Section::pairing:
         build_pairing(pane);
         break;
@@ -310,6 +374,9 @@ void SettingsScreen::build(Pane &pane) const
         break;
     case Section::zero:
         build_zero(pane);
+        break;
+    case Section::appearance:
+        build_appearance(pane);
         break;
     default:
         build_more(pane);
@@ -331,14 +398,15 @@ void SettingsScreen::build_sources(Pane &pane) const
 
     // .source-card: a check and the source's name.
     float cx = pane.x;
-    const float cy = pane.y;
+    float cy = pane.y;
     bool browser_only_source = false;
     for (int i = 0; i < static_cast<int>(state.sources.options.size()); ++i)
     {
         const SourceOption &option = state.sources.options[static_cast<std::size_t>(i)];
         const bool on = contains(draft_, option.id);
-        browser_only_source = browser_only_source || option.id == "vikingfile" || option.id == "akirabox" || option.id == "datanodes";
+        browser_only_source = browser_only_source || option.id == "vikingfile" || option.id == "akirabox" || option.id == "datanodes" || option.id == "1fichier";
         const float w = type.medium.measure(option.label, 21.0f) + 104.0f;
+        if (cx > pane.x && cx + w > pane.x + pane.width) { cx = pane.x; cy += 74.0f; ++pane.row; }
         const ui::Rect r{cx, cy, w, 60.0f};
         if (pane.list != nullptr)
         {
@@ -369,8 +437,7 @@ void SettingsScreen::build_sources(Pane &pane) const
     if (browser_only_source)
     {
         if (contains(draft_, "vikingfile"))
-            pane.fine(tr("On {provider}, complete any verification and select the site’s {button} button.",
-                         {{"provider", "Vikingfile"}, {"button", tr("Download")}}));
+            pane.fine(tr("Complete verification if shown, then wait. Orbit will check the generated download link automatically."));
         if (contains(draft_, "akirabox"))
             pane.fine(tr("Complete verification on AkiraBox, then wait for Orbit to check the download link."));
         if (contains(draft_, "datanodes"))
@@ -419,6 +486,51 @@ void SettingsScreen::build_sources(Pane &pane) const
     pane.buttons({{Kind::save_sources, saving ? tr("Saving\xE2\x80\xA6") : tr("Save sources"),
                    ui::ButtonKind::primary, can_save}});
     pane.fine(tr("Saved for this console and its paired devices."));
+
+    if (state.browser.viking_account_available) {
+        pane.gap(12.0f);
+        pane.rule();
+        pane.heading("Vikingfile");
+        pane.body(tr("Sign in on Vikingfile, then return to Orbit."));
+        pane.fine(tr("Orbit uses your Vikingfile sign-in when requesting download links. If verification is needed, its page opens."));
+        pane.fine(tr("Enter your Vikingfile account code (hash), complete verification if asked, then select Login. Return to Orbit when finished. Manage or sign out on the same account page."));
+        pane.body(state.browser.viking_state == "signed-in" ? tr("Signed in") :
+            state.browser.viking_state == "signed-out" ? tr("Not signed in") : tr("Sign-in could not be confirmed"));
+        pane.buttons({{Kind::viking_account, tr("Open Vikingfile account"), ui::ButtonKind::secondary,
+            !ctx_.store.browser_action().busy && !state.browser.active},
+            {Kind::viking_check, tr("Check sign-in"), ui::ButtonKind::secondary,
+            !ctx_.store.browser_action().busy && !state.browser.active}});
+        if (state.browser.account_page) pane.error(ctx_.store.browser_action().error);
+    }
+
+    // .archive-account-settings: signing in for login-only Archive.org games.
+    const ArchiveAccount &account = state.archive_account;
+    if (!account.known)
+        return;
+    const bool signing = result.busy && (result.setting == Setting::archive_sign_in ||
+                                         result.setting == Setting::archive_sign_out);
+    pane.gap(12.0f);
+    pane.rule();
+    pane.heading("Archive.org");
+    pane.body(tr("Some Archive.org games only download for signed-in accounts. Sign in with your Archive.org "
+                 "account to download them."));
+    pane.body(!account.signed_in   ? std::string(tr("Not signed in"))
+              : account.name.empty() ? std::string(tr("Signed in"))
+                                     : tr("Signed in as {name}", {{"name", account.name}}),
+              19.0f);
+    if (!account.signed_in)
+        pane.buttons({{Kind::archive_sign_in, tr("Sign in"), ui::ButtonKind::secondary, !signing}});
+    else if (archive_sign_out_)
+    {
+        pane.notice({}, tr("Sign out of Archive.org? Games that need an account won't download until you sign in "
+                           "again."));
+        pane.buttons({{Kind::archive_sign_out_confirm, tr("Sign out"), ui::ButtonKind::secondary, !signing},
+                      {Kind::archive_sign_out_cancel, tr("Stay signed in"), ui::ButtonKind::secondary, true}});
+    }
+    else
+        pane.buttons({{Kind::archive_sign_out, tr("Sign out"), ui::ButtonKind::secondary, !signing}});
+    if (error_setting_ == Setting::archive_sign_out)
+        pane.error(error_);
 }
 
 // ---- Storage: the default drive ----
@@ -510,6 +622,35 @@ void SettingsScreen::build_storage(Pane &pane) const
                   {Kind::download_limit_more, tr("Increase download limit"), ui::ButtonKind::secondary,
                    !result.busy && state.system.concurrent_downloads < 8}});
     if (result.setting == Setting::download_limit) pane.error(result.error);
+    if (state.system.has_download_connections)
+    {
+        // Connections per download: the browser's number, by the steps a controller wants.
+        const auto choices = connection_choices(state.system.download_connections);
+        const int current = state.system.download_connections;
+        pane.gap(12.0f);
+        pane.heading(tr("Connections per download"));
+        pane.body(tr(connections_help));
+        pane.version_row(tr("Connections per download"), std::to_string(current));
+        pane.buttons({{Kind::connections_less, tr("Decrease connections"), ui::ButtonKind::secondary,
+                       !result.busy && current > choices.front()},
+                      {Kind::connections_more, tr("Increase connections"), ui::ButtonKind::secondary,
+                       !result.busy && current < choices.back()}});
+        if (result.setting == Setting::download_connections) pane.error(result.error);
+    }
+    pane.rule();
+    pane.heading(tr("Download recovery"));
+    pane.body(tr(download_recovery_help));
+    pane.body(tr(download_speed_help));
+    for (int i = 0; i < 4; ++i) {
+        const auto &setting = download_settings[i];
+        int value = state.system.download_recovery[i];
+        pane.version_row(tr(setting.label), std::to_string(value));
+        pane.buttons({{Kind::download_recovery_less, tr("Decrease"), ui::ButtonKind::secondary,
+                       !result.busy && value > setting.min, i},
+                      {Kind::download_recovery_more, tr("Increase"), ui::ButtonKind::secondary,
+                       !result.busy && value < setting.max, i}});
+    }
+    if (result.setting == Setting::download_recovery) pane.error(result.error);
     pane.gap(12.0f);
     pane.rule();
     pane.heading(tr("Compressed downloads"));
@@ -523,6 +664,96 @@ void SettingsScreen::build_storage(Pane &pane) const
                    ui::ButtonKind::secondary, !archives_saving}});
     if (result.setting == Setting::archives && !result.error.empty())
         pane.error(result.error);
+    if (state.system.has_delete_packages)
+    {
+        pane.gap(12.0f);
+        pane.rule();
+        pane.heading(tr("Installed packages"));
+        pane.body(tr("Orbit can delete a PKG or FPKG once it has installed on your PS5, to free up space. If installation fails, the package is kept so you can try again."));
+        const bool packages_saving = result.busy && result.setting == Setting::packages;
+        pane.buttons({{Kind::packages_toggle,
+                       state.system.delete_packages ? tr("Keep packages after installing")
+                                                    : tr("Delete packages after installing"),
+                       ui::ButtonKind::secondary, !packages_saving}});
+        if (result.setting == Setting::packages && !result.error.empty())
+            pane.error(result.error);
+    }
+}
+
+// ---- Notifications (src/NotificationSetting.tsx) ----
+
+void SettingsScreen::build_notifications(Pane &pane) const
+{
+    const Snapshot &state = ctx_.store.state();
+    const ui::Type &type = ctx_.type;
+    const SettingResult &result = ctx_.store.setting_result();
+    // .source-card checks, as Download sources lists its choices.
+    const auto checks = [&](Kind kind, const std::vector<std::pair<std::string, bool>> &items, bool enabled)
+    {
+        float cx = pane.x;
+        float cy = pane.y;
+        for (int i = 0; i < static_cast<int>(items.size()); ++i)
+        {
+            const auto &[label, on] = items[static_cast<std::size_t>(i)];
+            const float w = type.medium.measure(label, 21.0f) + 104.0f;
+            if (cx > pane.x && cx + w > pane.x + pane.width) { cx = pane.x; cy += 74.0f; ++pane.row; }
+            const ui::Rect r{cx, cy, w, 60.0f};
+            if (pane.list != nullptr)
+            {
+                ui::focus_ring(*pane.list, r, 30.0f, pane.amount());
+                pane.list->rounded_rect(r, 30.0f, on ? ui::Color::rgb(0xffffff, 0.26f) : ui::Color::rgb(0xffffff, 0.08f));
+                const float mx = r.x + 22.0f + 13.0f;
+                if (on)
+                {
+                    pane.list->circle(mx, r.cy(), 13.0f, ui::color::action);
+                    ui::icon_check(*pane.list, mx, r.cy(), 15.0f, ui::color::night1, 2.4f);
+                }
+                else
+                {
+                    pane.list->ring(mx, r.cy(), 12.0f, 2.0f, ui::Color::rgb(0xffffff, 0.55f));
+                }
+                ui::text(*pane.list, type.medium, label, mx + 13.0f + 18.0f, r.cy() + 7.5f, 21.0f, ui::color::text);
+            }
+            pane.add(kind, i, r, enabled);
+            cx += w + 14.0f;
+        }
+        ++pane.row;
+        pane.y = cy + 60.0f + 18.0f;
+    };
+    pane.heading(tr("Where to notify"));
+    pane.body(tr("Orbit tells you about the events you choose on your PS5, even while you play, and on your phone or "
+                 "computer through ntfy."));
+    if (state.system.has_download_notifications)
+    {
+        checks(Kind::notifications_toggle, {{tr("On this PS5"), state.system.download_notifications}},
+               !(result.busy && result.setting == Setting::notifications));
+        if (result.setting == Setting::notifications && !result.error.empty())
+            pane.error(result.error);
+    }
+    if (state.ntfy.known)
+    {
+        pane.gap(6.0f);
+        pane.subheading(tr("ntfy notifications"));
+        pane.body(tr("Get a push notification on your phone or computer for the events you choose. "
+                     "Subscribe to the same topic in the ntfy app."));
+        pane.body(state.ntfy.enabled ? std::string(tr("On")) + " \xC2\xB7 " + ntfy_address(state.ntfy) : std::string(tr("Off")),
+                  19.0f);
+        pane.buttons({{Kind::ntfy_open, state.ntfy.server.empty() ? tr("Set up ntfy") : tr("Change ntfy settings"),
+                       ui::ButtonKind::secondary, true}});
+    }
+    if (!state.system.has_notification_events)
+        return;
+    pane.rule();
+    pane.heading(tr("What to notify about"));
+    pane.body(tr("Your choices apply to this PS5 and to ntfy."));
+    std::vector<std::pair<std::string, bool>> events;
+    for (std::size_t i = 0; i < state.system.notification_events.size(); ++i)
+        events.emplace_back(tr(kNotificationEvents[i].label), state.system.notification_events[i]);
+    checks(Kind::notification_event, events, !(result.busy && result.setting == Setting::notification_event));
+    if (result.setting == Setting::notification_event && !result.error.empty())
+        pane.error(result.error);
+    if (state.system.notification_events[4])
+        pane.fine(tr("To tell you about updates, Orbit checks for a new release every six hours."));
 }
 
 // ---- Pair a device (src/Pairing.tsx, on the console) ----
@@ -637,9 +868,24 @@ void SettingsScreen::build_updates(Pane &pane) const
     const SettingResult &result = ctx_.store.setting_result();
     const double now = unix_seconds();
     pane.heading(tr("Updates"));
-    pane.body(tr("Orbit has two parts, updated separately: this TV app, and the download service "
-              "that keeps running after you close it."));
+    pane.body(tr("Orbit has two parts: this TV app, and the download service that keeps running "
+              "after you close it. Update both at once, or each one below."));
     pane.gap(10.0f);
+
+    // ---- both parts in one press ----
+    const UpdateOrbit one = update_orbit();
+    if (one.show)
+    {
+        pane.begin_card(tr("Update Orbit"), one.summary);
+        pane.fine(tr("The TV app and the download service update together. Downloads pause while Orbit restarts, then continue."));
+        if (one.offer)
+            pane.buttons({{Kind::update_all, tr("Update Orbit"), ui::ButtonKind::primary, one.enabled}});
+        if (!one.status.empty())
+            pane.fine(one.status);
+        if (error_setting_ == Setting::update_all)
+            pane.error(error_);
+        pane.end_card();
+    }
 
     // ---- the TV app ----
     const TvAppStatus &tv = state.tv_app;
@@ -828,9 +1074,10 @@ void SettingsScreen::build_updates(Pane &pane) const
                  !disabled});
         pane.buttons(row);
         std::string status;
-        if (service.phase == "downloading")
+        // During Update Orbit, its own card shows the progress.
+        if (service.phase == "downloading" && !service.update_all)
             status = tr("Downloading Orbit: {size}", {{"size", format_bytes(service.received)}});
-        else if (service.phase == "saving")
+        else if (service.phase == "saving" && !service.update_all)
             status = tr("Saving the verified release\xE2\x80\xA6");
         else if (wait > 0 && !service.busy)
             status = tr("Please wait {seconds} s before another request.",
@@ -854,8 +1101,10 @@ void SettingsScreen::build_updates(Pane &pane) const
         if (confirm_restart_)
         {
             pane.notice(tr("Restart the download service?"),
-                        tr("Active downloads pause. This app stops Orbit and starts it again, then "
-                        "you can resume your downloads from Downloads."));
+                        service.self_restart
+                            ? std::string(tr("Active downloads pause and continue once Orbit is back."))
+                            : std::string(tr("Active downloads pause. This app stops Orbit and starts it again, then "
+                                             "you can resume your downloads from Downloads.")));
             pane.buttons(
                 {{Kind::restart_confirm, tr("Restart now"), ui::ButtonKind::primary, !disabled},
                  {Kind::restart_cancel, tr("Not now")}});
@@ -876,26 +1125,156 @@ void SettingsScreen::build_zero(Pane &pane) const
 {
     const auto &system=ctx_.store.state().system;
     pane.heading("Orbit Zero");
-    pane.body("Use your computer to download games and transfer them to this PS5 over Wi-Fi or Ethernet.");
-    pane.fine("Open Orbit Zero on your computer, connect to this console and enter the PS5 pairing code. Then enable it here.");
+    pane.body(tr("Use your computer to download games and transfer them to this PS5 over Wi-Fi or Ethernet."));
+    pane.fine(tr("Open Orbit Zero on your computer, connect to this console and enter the PS5 pairing code. Then enable it here."));
     if(system.zero_configured) {
-        pane.version_row("Computer",system.zero_address);
-        pane.version_row("Orbit Zero",system.zero_enabled ? "Enabled" : "Off");
+        pane.version_row(tr("Computer"),system.zero_address);
+        pane.version_row("Orbit Zero",system.zero_enabled ? tr("Enabled") : tr("Off"));
         if(system.zero_enabled) pane.body(system.zero_preference=="prefer-ps5" ?
-            "Your preference uses the PS5 when the selected source is reachable, otherwise your computer. Running downloads keep their route." :
-            "Downloads run on your computer and transfer to your selected PS5 drive. Keep Orbit Zero open.");
+            tr("Your preference uses the PS5 when the selected source is reachable, otherwise your computer. Running downloads keep their route.") :
+            tr("Downloads run on your computer and transfer to your selected PS5 drive. Keep Orbit Zero open."));
         pane.error(system.zero_error);
-        pane.buttons({{Kind::zero_toggle,system.zero_enabled?"Turn off Orbit Zero":"Enable Orbit Zero",ui::ButtonKind::primary,!ctx_.store.setting_result().busy}});
+        pane.buttons({{Kind::zero_toggle,system.zero_enabled?tr("Turn off Orbit Zero"):tr("Enable Orbit Zero"),ui::ButtonKind::primary,!ctx_.store.setting_result().busy}});
         if(ctx_.store.setting_result().setting==Setting::zero) pane.error(ctx_.store.setting_result().error);
-    } else pane.body("No computer paired. Use Console setup in the desktop app to connect.");
+    } else pane.body(tr("No computer paired. Use Console setup in the desktop app to connect."));
+}
+
+// ---- Appearance: kept on this console, never sent to Orbit ----
+
+void SettingsScreen::build_appearance(Pane &pane) const
+{
+    const look::Prefs &prefs = look::prefs();
+    const ui::Type &type = ctx_.type;
+    pane.width = 1220.0f; // four cards side by side
+    pane.heading(tr("Interface"));
+    pane.body(tr("Choose how Orbit looks and moves on this device. Your queue, favourites and "
+                 "settings stay the same."));
+    pane.gap(12.0f);
+    constexpr int kCards = static_cast<int>(look::Interface::count);
+    constexpr float kCardGap = 18.0f;
+    const float w = (pane.width - kCardGap * (kCards - 1)) / kCards;
+    const float thumb = 160.0f;
+    const float h = 12.0f + thumb + 60.0f;
+    for (int i = 0; i < kCards; ++i)
+    {
+        const auto interface = static_cast<look::Interface>(i);
+        const ui::Rect r{pane.x + static_cast<float>(i) * (w + kCardGap), pane.y, w, h};
+        if (pane.list != nullptr)
+        {
+            hui::gfx::DrawList &list = *pane.list;
+            const float focus = pane.amount();
+            ui::focus_ring(list, r, 20.0f, focus);
+            // Opaque underneath, so the ring's glow stays outside the card.
+            list.rounded_rect(r, 20.0f, ui::Color::rgb(0x101010, 0.96f));
+            list.rounded_rect(r, 20.0f, ui::Color::rgb(0xffffff, 0.06f + 0.08f * focus));
+            draw_interface_thumb(ctx_, list, i, {r.x + 12.0f, r.y + 12.0f, r.w - 24.0f, thumb});
+            const float name_y = r.y + 12.0f + thumb + 40.0f;
+            ui::text(list, type.medium, tr(look::title(interface)), r.x + 16.0f, name_y, 22.0f,
+                     ui::color::text);
+            if (interface == prefs.interface)
+            {
+                const char *label = tr("In use");
+                const float pill = type.semibold.measure(label, 14.0f) + 20.0f;
+                const ui::Rect tag{r.x + r.w - 16.0f - pill, name_y - 20.0f, pill, 26.0f};
+                list.rounded_rect(tag, 13.0f, ui::Color::rgb(0xffffff));
+                ui::text(list, type.semibold, label, tag.cx(), tag.cy() + 5.0f, 14.0f,
+                         ui::Color::rgb(0x000000), ui::Align::center);
+            }
+        }
+        pane.add(Kind::interface_card, i, r, true);
+    }
+    ++pane.row;
+    pane.y += h + 22.0f;
+    pane.gap(10.0f);
+
+    // Choices as pills, the chosen one lit; with a label above them.
+    const auto pills = [&](Kind kind, const std::vector<std::string> &options, int selected)
+    {
+        std::vector<Pane::Button> buttons;
+        for (int i = 0; i < static_cast<int>(options.size()); ++i)
+            buttons.push_back({kind, options[static_cast<std::size_t>(i)],
+                               i == selected ? ui::ButtonKind::light : ui::ButtonKind::secondary,
+                               true, i});
+        pane.buttons(buttons);
+    };
+    const auto choices = [&](const char *label, Kind kind, const std::vector<std::string> &options,
+                             int selected)
+    {
+        pane.subheading(label);
+        pills(kind, options, selected);
+    };
+    choices(tr("Motion"), Kind::motion, {tr("Full"), tr("Reduced")}, prefs.reduced_motion ? 1 : 0);
+    switch (prefs.interface)
+    {
+    case look::Interface::crossbar:
+    {
+        std::vector<std::string> options;
+        for (int i = 0; i < static_cast<int>(look::Ribbons::count); ++i)
+            options.push_back(tr(look::ribbons_title(static_cast<look::Ribbons>(i))));
+        choices(tr("Ribbons"), Kind::ribbons, options, static_cast<int>(prefs.ribbons));
+        break;
+    }
+    case look::Interface::cinema:
+        choices(tr("Art behind menus"), Kind::art_behind, {tr("Blurred game art"), tr("Plain black")},
+                prefs.art_behind ? 0 : 1);
+        break;
+    case look::Interface::panorama:
+    {
+        std::vector<std::string> options;
+        for (int i = 0; i < static_cast<int>(look::Accent::count); ++i)
+            options.push_back(tr(look::accent_title(static_cast<look::Accent>(i))));
+        choices(tr("Accent colour"), Kind::accent, options, static_cast<int>(prefs.accent));
+        choices(tr("Art behind pages"), Kind::art_behind, {tr("Faint game art"), tr("Plain black")},
+                prefs.art_behind ? 0 : 1);
+        break;
+    }
+    default:
+        break;
+    }
+    // The language, as the browser's Language setting: Automatic follows the console.
+    pane.gap(10.0f);
+    pane.subheading(tr("Language"));
+    pane.body(tr("Choose the language Orbit uses on this device."));
+    pills(Kind::language, language_options(), language_index());
+}
+
+std::vector<std::string> SettingsScreen::language_options() const
+{
+    std::string automatic = "English";
+    for (const i18n::Language &l : i18n::languages())
+        if (l.code == i18n::system())
+            automatic = std::string(l.name);
+    std::vector<std::string> out{tr("Automatic ({language})", {{"language", automatic}})};
+    for (const i18n::Language &l : i18n::languages())
+        out.emplace_back(l.name);
+    return out;
+}
+
+int SettingsScreen::language_index() const
+{
+    const std::span<const i18n::Language> all = i18n::languages();
+    for (int i = 0; i < static_cast<int>(all.size()); ++i)
+        if (all[static_cast<std::size_t>(i)].code == look::prefs().language)
+            return i + 1;
+    return 0;
+}
+
+void SettingsScreen::choose_language(int index) const
+{
+    const std::span<const i18n::Language> all = i18n::languages();
+    if (index < 0 || index > static_cast<int>(all.size()))
+        return;
+    look::Prefs prefs = look::prefs();
+    prefs.language = index == 0 ? std::string() : std::string(all[static_cast<std::size_t>(index - 1)].code);
+    look::set(prefs);
+    (void)i18n::choose(prefs.language);
 }
 
 void SettingsScreen::build_more(Pane &pane) const
 {
     const Snapshot &state = ctx_.store.state();
     pane.heading(tr("More settings"));
-    pane.body(tr("Auto-start, payload managers and diagnostics are in the browser version of "
-              "Orbit."));
+    pane.body(tr("Auto-start and payload managers are in the browser version of Orbit."));
     pane.fine(tr("On this PS5, the browser version is the Orbit Store icon in your Media area. On a "
               "phone or computer, pair it under Pair a device."));
     if (ctx_.open_browser)
@@ -906,6 +1285,32 @@ void SettingsScreen::build_more(Pane &pane) const
     pane.version_row(tr("TV app"), running.empty() ? tr("Unknown") : running);
     pane.version_row(tr("Download service"),
                      state.system.version.empty() ? tr("Unknown") : state.system.version);
+    // ---- a report for a bug report ----
+    const SettingResult &result = ctx_.store.setting_result();
+    const bool saving = result.busy && result.setting == Setting::diagnostics;
+    pane.gap(12.0f);
+    pane.rule();
+    pane.heading(tr("Diagnostic report"));
+    pane.body(tr("Save a report of Orbit\xE2\x80\x99s recent activity to a drive, then attach it to your bug "
+                 "report on GitHub. It has no game titles, download links, passwords or tokens."));
+    // In the browser's order (src/Diagnostics.tsx).
+    pane.buttons({{Kind::view_diagnostics, tr("View diagnostics"), ui::ButtonKind::secondary, true},
+                  {Kind::save_diagnostics, saving ? tr("Saving\xE2\x80\xA6") : tr("Save diagnostic report"),
+                   ui::ButtonKind::secondary, !saving}});
+    if (!state.diagnostics_path.empty())
+        pane.fine(tr("Saved to {path}", {{"path", state.diagnostics_path}}));
+    if (result.setting == Setting::diagnostics && !result.error.empty())
+        pane.error(result.error);
+}
+
+// What the diagnostic report says about this app.
+void SettingsScreen::save_diagnostics() const
+{
+    std::string interface = look::title(look::current());
+    for (char &c : interface)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    ctx_.store.save_diagnostics(app_release_version(ctx_.app_version),
+                                std::string(i18n::language()) + "|" + interface);
 }
 
 // ---- input ----
@@ -914,10 +1319,79 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
 {
     const Snapshot &state = ctx_.store.state();
     feedback.play(hui::audio::Cue::select);
+    look::Prefs prefs = look::prefs();
     switch (control.kind)
     {
+    case Kind::viking_check:
+        ctx_.store.start_browser({}, {}, true, true);
+        break;
+    case Kind::viking_account:
+        ctx_.store.start_browser({}, {}, true);
+        break;
+    case Kind::archive_sign_in:
+        archive_sign_out_ = false;
+        archive_sign_in_.open();
+        break;
+    case Kind::archive_sign_out:
+        archive_sign_out_ = true; // asks first
+        break;
+    case Kind::archive_sign_out_confirm:
+        archive_sign_out_ = false;
+        ctx_.store.sign_out_archive();
+        break;
+    case Kind::archive_sign_out_cancel:
+        archive_sign_out_ = false;
+        break;
+    case Kind::interface_card:
+        // The keep check (App) follows; it reverts by itself after 15 seconds.
+        if (control.index != static_cast<int>(prefs.interface))
+            look::choose(static_cast<look::Interface>(control.index), ctx_.clock);
+        break;
+    case Kind::motion:
+        prefs.reduced_motion = control.index == 1;
+        look::set(prefs);
+        break;
+    case Kind::accent:
+        prefs.accent = static_cast<look::Accent>(control.index);
+        look::set(prefs);
+        break;
+    case Kind::ribbons:
+        prefs.ribbons = static_cast<look::Ribbons>(control.index);
+        look::set(prefs);
+        break;
+    case Kind::art_behind:
+        prefs.art_behind = control.index == 0;
+        look::set(prefs);
+        break;
+    case Kind::language:
+        choose_language(control.index);
+        break;
     case Kind::zero_toggle:
         error_.clear();ctx_.store.set_zero(!state.system.zero_enabled);break;
+    case Kind::download_recovery_less:
+    case Kind::download_recovery_more:
+        if (!ctx_.store.setting_result().busy && control.index >= 0 && control.index < 4) {
+            int i = control.index, current = state.system.download_recovery[i];
+            const auto choices = download_choices(i, current);
+            auto at = std::find(choices.begin(), choices.end(), current);
+            if (control.kind == Kind::download_recovery_more && at + 1 != choices.end())
+                ctx_.store.set_download_recovery(i, *(at + 1));
+            else if (control.kind == Kind::download_recovery_less && at != choices.begin())
+                ctx_.store.set_download_recovery(i, *(at - 1));
+        }
+        break;
+    case Kind::connections_less:
+    case Kind::connections_more:
+        if (!ctx_.store.setting_result().busy) {
+            const int current = state.system.download_connections;
+            const auto choices = connection_choices(current);
+            auto at = std::find(choices.begin(), choices.end(), current);
+            if (control.kind == Kind::connections_more && at + 1 != choices.end())
+                ctx_.store.set_download_connections(*(at + 1));
+            else if (control.kind == Kind::connections_less && at != choices.begin())
+                ctx_.store.set_download_connections(*(at - 1));
+        }
+        break;
     case Kind::download_limit_less:
     case Kind::download_limit_more:
         if (!ctx_.store.setting_result().busy) {
@@ -925,9 +1399,39 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
             if (limit >= 1 && limit <= 8) ctx_.store.set_download_limit(limit);
         }
         break;
+    case Kind::view_diagnostics:
+        error_.clear();
+        diagnostics_view_.open();
+        break;
+    case Kind::save_diagnostics:
+        error_.clear();
+        save_diagnostics();
+        break;
     case Kind::archives_toggle:
         error_.clear();
         ctx_.store.set_delete_archives(!state.system.delete_archives);
+        break;
+    case Kind::notifications_toggle:
+        error_.clear();
+        ctx_.store.set_download_notifications(!state.system.download_notifications);
+        break;
+    case Kind::notification_event:
+        error_.clear();
+        if (control.index >= 0 && control.index < static_cast<int>(state.system.notification_events.size()))
+            ctx_.store.set_notification_event(
+                control.index, !state.system.notification_events[static_cast<std::size_t>(control.index)]);
+        break;
+    case Kind::packages_toggle:
+        error_.clear();
+        ctx_.store.set_delete_packages(!state.system.delete_packages);
+        break;
+    case Kind::ntfy_open:
+        error_.clear();
+        ntfy_form_.open();
+        break;
+    case Kind::update_all:
+        error_.clear();
+        ctx_.store.update_orbit();
         break;
     case Kind::source:
     {
@@ -1053,6 +1557,12 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
             case Setting::storage:
                 intent.toast = tr("Default drive saved");
                 break;
+            case Setting::archive_sign_in:
+                intent.toast = tr("Signed in to Archive.org");
+                break;
+            case Setting::archive_sign_out:
+                intent.toast = tr("Signed out of Archive.org");
+                break;
             case Setting::service_restart:
                 confirm_restart_ = false;
                 break;
@@ -1063,6 +1573,39 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
                 break;
             }
         }
+    }
+    if (archive_sign_in_.active())
+    {
+        // The sign-in form takes all input until it closes.
+        if (focused)
+            archive_sign_in_.update(input, dt, feedback);
+        return intent;
+    }
+    if (ntfy_form_.active())
+    {
+        if (focused)
+            ntfy_form_.update(input, dt, feedback);
+        return intent;
+    }
+    if (diagnostics_view_.active())
+    {
+        if (focused)
+            diagnostics_view_.update(input, dt, feedback);
+        return intent;
+    }
+    if (!look::is(look::Interface::store))
+    {
+        // A saved setting's toast (above) and what the rows ask for both count.
+        keep_row_focus(false);
+        const Intent more = look::is(look::Interface::cinema)     ? update_cinema(input, dt, feedback, focused)
+                            : look::is(look::Interface::panorama) ? update_panorama(input, dt, feedback, focused)
+                                                                  : update_crossbar(input, dt, feedback, focused);
+        keep_row_focus(true);
+        if (intent.kind == Intent::Kind::none && intent.toast.empty())
+            return more;
+        if (!more.toast.empty())
+            intent.toast = more.toast;
+        return intent;
     }
 
     float height = 0.0f;
@@ -1271,7 +1814,30 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
 
 void SettingsScreen::draw(Frame &frame, bool focused) const
 {
+    draw_look(frame, focused);
+    archive_sign_in_.draw(frame);
+    ntfy_form_.draw(frame);
+    diagnostics_view_.draw(frame);
+}
+
+void SettingsScreen::draw_look(Frame &frame, bool focused) const
+{
     (void)focused;
+    if (look::is(look::Interface::crossbar))
+    {
+        draw_crossbar(frame);
+        return;
+    }
+    if (look::is(look::Interface::cinema))
+    {
+        draw_cinema(frame);
+        return;
+    }
+    if (look::is(look::Interface::panorama))
+    {
+        draw_panorama(frame);
+        return;
+    }
     hui::gfx::DrawList &list = frame.scene;
     const ui::Type &type = ctx_.type;
     const float in = std::clamp(age_ / 0.3f, 0.0f, 1.0f);
@@ -1293,6 +1859,16 @@ void SettingsScreen::draw(Frame &frame, bool focused) const
                  current || focus > 0.5f ? ui::color::text : ui::color::text2);
         if (static_cast<Section>(i) == Section::updates && update_available())
             list.circle(r.x + r.w - 32.0f, r.cy(), 7.0f, ui::color::action_hi);
+        if (static_cast<Section>(i) == Section::appearance)
+        {
+            // New in this version, as the browser's NEW label.
+            const float after = r.x + 30.0f + type.medium.measure(tr(kSections[i]), 21.0f) + 12.0f;
+            const char *label = tr("NEW");
+            const ui::Rect chip{after, r.cy() - 11.0f, type.semibold.measure(label, 13.0f) + 16.0f, 22.0f};
+            list.rounded_rect(chip, 6.0f, ui::Color::rgb(0xffffff));
+            ui::text(list, type.semibold, label, chip.cx(), chip.cy() + 4.6f, 13.0f,
+                     ui::Color::rgb(0x000000), ui::Align::center);
+        }
     }
 
     // The section: laid out once to size its cards, then drawn.
@@ -1311,6 +1887,18 @@ void SettingsScreen::draw(Frame &frame, bool focused) const
 
 std::vector<hui::ui::Hint> SettingsScreen::hints() const
 {
+    if (archive_sign_in_.active())
+        return archive_sign_in_.hints();
+    if (ntfy_form_.active())
+        return ntfy_form_.hints();
+    if (diagnostics_view_.active())
+        return diagnostics_view_.hints();
+    if (look::is(look::Interface::crossbar))
+        return crossbar_hints();
+    if (look::is(look::Interface::cinema))
+        return cinema_hints();
+    if (look::is(look::Interface::panorama))
+        return panorama_hints();
     if (in_content_)
         return {{hui::ui::Button::cross, tr("Select")}, {hui::ui::Button::circle, tr("Back")}};
     return {{hui::ui::Button::dpad, tr("Sections")},

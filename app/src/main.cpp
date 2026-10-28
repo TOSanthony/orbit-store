@@ -16,6 +16,7 @@
 #include "orbit/gl_textures.hpp"
 #include "orbit/http.hpp"
 #include "orbit/i18n.hpp"
+#include "orbit/look.hpp"
 #include "orbit/mark.hpp"
 #include "orbit/screens.hpp"
 #include "orbit/starter.hpp"
@@ -24,6 +25,7 @@
 #include "platform/ps5/audio_out.hpp"
 #include "platform/ps5/display_egl.hpp"
 #include "platform/ps5/pad.hpp"
+#include "platform/ps5/provider_dialog.hpp"
 #include "platform/ps5/system.hpp"
 #include "ui/fonts.hpp"
 
@@ -112,6 +114,25 @@ int main()
         sys::log("[ORBIT] fatal: renderer init failed");
         sys::park();
     }
+    // The other interfaces' faces. Without one, that interface draws in Inter.
+    gfx::Font xlight;
+    gfx::Font tight_light;
+    gfx::Font tight_medium;
+    gfx::Font sora;
+    gfx::Font sora_semibold;
+    gfx::Font tight_semibold;
+    if (!load_font(renderer, "inter-tight-extralight.huifont", &xlight, &type.xlight))
+        type.xlight = type.light;
+    if (!load_font(renderer, "inter-tight-light.huifont", &tight_light, &type.tight_light))
+        type.tight_light = type.light;
+    if (!load_font(renderer, "inter-tight-medium.huifont", &tight_medium, &type.tight_medium))
+        type.tight_medium = type.medium;
+    if (!load_font(renderer, "sora-regular.huifont", &sora, &type.sora))
+        type.sora = type.regular;
+    if (!load_font(renderer, "sora-semibold.huifont", &sora_semibold, &type.sora_semibold))
+        type.sora_semibold = type.semibold;
+    if (!load_font(renderer, "inter-tight-semibold.huifont", &tight_semibold, &type.cinema))
+        type.cinema = type.semibold;
     // The kit's six slots, for controller glyphs and the on-screen keyboard.
     ui::Fonts fonts;
     fonts.regular = type.regular;
@@ -144,21 +165,37 @@ int main()
     orbit::starter::LoaderStarter starter({}, orbit::starter::LoaderStarter::kLoaderPort,
                                           [](const std::string &line)
                                           { sys::log("[ORBIT] %s", line.c_str()); });
-    // The console's own language, before anything shows or reports text.
-    // SCE_SYSTEM_SERVICE_PARAM_ID_LANG is 1; English when Orbit has no catalogue.
+    // The interface and language chosen in App settings → Appearance, kept on this console.
+    orbit::look::load(orbit::look::kPrefsPath);
+    sys::log("[ORBIT] appearance=%s path=%s", orbit::look::title(orbit::look::current()), orbit::look::kPrefsPath);
+    // The language, before anything shows or reports text: the one chosen, else the
+    // console's own. SCE_SYSTEM_SERVICE_PARAM_ID_LANG is 1; English when Orbit has no catalogue.
     int system_language = 1;
     if (sceSystemServiceParamGetInt(1, &system_language) != 0)
         system_language = 1;
-    const std::string language(orbit::i18n::from_system(system_language));
+    orbit::i18n::set_system(orbit::i18n::from_system(system_language));
+    const std::string language(orbit::look::prefs().language.empty() ? orbit::i18n::system()
+                                                                      : orbit::look::prefs().language);
     if (!orbit::i18n::load(std::string(kAssets) + "/i18n", language))
         hui::sys::log("[ORBIT] language %s unavailable; using English", language.c_str());
     hui::sys::log("[ORBIT] language=%s system=%d", orbit::i18n::language().data(), system_language);
 
+    ps5::ProviderDialog provider_dialog;
     orbit::Store store(transport, &starter);
+    if (provider_dialog.initialize()) store.set_provider_window(&provider_dialog);
     orbit::ArtCache art(art_transport, textures);
     store.start();
     art.start();
 
+    // SCE_SYSTEM_SERVICE_PARAM_ID_TIME_ZONE (4, minutes) and _SUMMERTIME (5), for
+    // Crossbar's ribbons that follow the time of day.
+    int zone = 0;
+    int summer = 0;
+    if (sceSystemServiceParamGetInt(4, &zone) != 0)
+        zone = 0;
+    if (sceSystemServiceParamGetInt(5, &summer) != 0)
+        summer = 0;
+    orbit::look::set_utc_offset(zone + (summer != 0 ? 60 : 0));
     orbit::Context context(type, fonts, store, art);
     context.mark = mark;
     context.loader_mark = loader_mark;
@@ -191,7 +228,11 @@ int main()
         const InputFrame input = tracker.update(std::span<const PadSample>(samples, count),
                                                 static_cast<std::uint64_t>(now));
         feedback.clear();
-        app.update(input, dt, feedback);
+        // A provider dialog owns the controller until FINISHED, including the
+        // frame it closes. Keep draining service updates while it is visible.
+        const bool provider_visible = store.provider_dialog_visible();
+        store.tick();
+        app.update(provider_visible || store.provider_dialog_visible() ? InputFrame{} : input, dt, feedback);
         for (const audio::CueEvent &event : feedback.cues)
             sounds.play(mixer, audio::SoundSet::glass, event);
         if (feedback.rumble_strength > 0.0f)

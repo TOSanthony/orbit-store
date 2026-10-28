@@ -38,6 +38,7 @@ struct Artwork
     int width = 0;
     int height = 0;
     std::uint32_t ambient = 0; // covers only: the blurred colour wash
+    std::uint32_t ambient_rgb = 0; // covers only: the wash's average colour, 0xRRGGBB
     double ready_at = 0.0;     // when it became drawable, for a fade-in
 };
 
@@ -48,6 +49,9 @@ struct ArtLimits
     int hero_height = 1080; // ... and this
     int max_covers = 64;    // textures kept before the least recent go
     int max_heroes = 4;
+    int thumbnail_width = 640; // also used by Crossbar's 630px preview
+    int thumbnail_height = 360;
+    int max_thumbnails = 64; // independent of full-screen background eviction
     int uploads_per_frame = 2;
     double retry_failed = 60.0; // seconds before a failed image is asked again
 };
@@ -98,6 +102,7 @@ class ArtCache
         api::ArtKind kind = api::ArtKind::cover;
         double not_before = 0.0;
         int attempts = 0;
+        bool cover_fallback = false; // retain a tile's chosen fallback while it loads
     };
     struct Decoded
     {

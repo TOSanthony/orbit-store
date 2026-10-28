@@ -55,4 +55,10 @@ int __wrap_renameat(int from, const char *source, int to, const char *target) {
 int __wrap_unlinkat(int dir, const char *path, int flags) {
     return (int)filesystem_call(503, dir, (intptr_t)path, flags, 0, 0);
 }
+
+/* The SDK emits FreeBSD's 546; PS5 moved futimens to 691. Keep timestamps
+ * through the opened descriptor, without resolving the destination again. */
+int __wrap_futimens(int fd, const struct timespec times[2]) {
+    return (int)filesystem_call(691, fd, (intptr_t)times, 0, 0, 0);
+}
 #endif
