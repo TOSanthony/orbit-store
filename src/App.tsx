@@ -275,12 +275,14 @@ export default function App() {
     for (const addon of ordered) {
       const base = addon.baseGameId || addon.id;
       if (!groupCounts.has(base)) {
-        groups.push({ ...addon, id: base, title: addon.baseGameTitle || addon.title, addonId: undefined, addonType: undefined });
+        const owner = orbit.games.find((g) => g.id === base); // the game's own art when the catalogue lists it
+        groups.push({ ...addon, id: base, title: addon.baseGameTitle || addon.title, addonId: undefined, addonType: undefined,
+          cover: owner?.cover ?? addon.cover, coverFallback: owner?.coverFallback ?? addon.coverFallback });
       }
       groupCounts.set(base, (groupCounts.get(base) || 0) + 1);
     }
     return groups;
-  }, [catalogueGames, addonsPage, addonBase, filters, favorites, installedGames, groupCounts]);
+  }, [catalogueGames, addonsPage, addonBase, filters, favorites, installedGames, groupCounts, orbit.games]);
   const browseReset = useMemo(() => ({filters, addonBase, tab}), [filters, addonBase, tab]);
   const browseList = useInfiniteList(filtered.length, CATALOG_STEP, browseReset);
   const visibleGames = filtered.slice(0, browseList.visible);

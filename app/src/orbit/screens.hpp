@@ -391,9 +391,10 @@ class BrowseScreen final : public Screen
     bool grouped() const { return addons_ && filters_.addon_base.empty(); }
     bool open_group(const std::string &id)
     {
-        if (!grouped() || std::none_of(groups_.begin(), groups_.end(), [&](const Game &g) { return g.id == id; }))
+        const auto at = std::find_if(groups_.begin(), groups_.end(), [&](const Game &g) { return g.id == id; });
+        if (!grouped() || at == groups_.end())
             return false;
-        for_base(id);
+        for_base(at->base_game_id);
         return true;
     }
     const std::vector<Game> &catalogue_games() const

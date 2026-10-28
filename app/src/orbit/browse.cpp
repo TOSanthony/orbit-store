@@ -93,14 +93,16 @@ void BrowseScreen::refilter()
             if (addon.releases.empty() || addon.base_game_id.empty() ||
                 (!filters_.addon_type.empty() && addon.addon_type != filters_.addon_type))
                 continue;
-            auto at = std::find_if(groups_.begin(), groups_.end(), [&](const Game &g) { return g.id == addon.base_game_id; });
+            auto at = std::find_if(groups_.begin(), groups_.end(), [&](const Game &g) { return g.base_game_id == addon.base_game_id; });
             if (at == groups_.end())
             {
                 Game group = addon;
-                group.id = addon.base_game_id;
+                // The tile shows the game's own art when the catalogue has the game, else its first add-on's.
+                const bool known = std::any_of(state.games.begin(), state.games.end(),
+                                               [&](const Game &g) { return g.id == addon.base_game_id; });
+                group.id = known ? addon.base_game_id : addon.id;
                 group.title = addon.base_title.empty() ? addon.title : addon.base_title;
                 group.addon_type.clear();
-                group.base_game_id.clear();
                 groups_.push_back(std::move(group));
                 counts.push_back(0);
                 at = groups_.end() - 1;

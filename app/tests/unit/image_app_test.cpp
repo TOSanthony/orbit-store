@@ -321,10 +321,9 @@ TEST(App, AddonsListTheirGamesFirstAndAGamesTileOpensItsAddons)
     EXPECT_TRUE(screen.grouped());
     EXPECT_EQ(screen.result_count(), static_cast<int>(bases.size()));
     EXPECT_LT(screen.result_count(), static_cast<int>(h.store.state().addons.size()));
-    ASSERT_TRUE(screen.open_group(bases.front()));
+    // A tile takes the game's own art when the catalogue lists the game, else its first add-on's.
+    ASSERT_TRUE(screen.open_group(screen.catalogue_games().front().id));
     EXPECT_FALSE(screen.grouped());
-    for (const Game &addon : h.store.state().addons)
-        EXPECT_NE(addon.id, bases.front()); // a group is not an add-on
     int expected = 0;
     for (const Game &addon : h.store.state().addons)
         expected += addon.base_game_id == bases.front();
