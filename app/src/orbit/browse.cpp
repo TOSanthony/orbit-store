@@ -92,14 +92,15 @@ void BrowseScreen::refilter()
                       results.end());
     }
     // Add-ons are grouped by their game, in the game's alphabetical order, newest first within a game.
-    if (addons_ && filters_.sort == Sort::release) std::stable_sort(results.begin(), results.end(), [this](int a, int b) {
+    if (addons_) std::stable_sort(results.begin(), results.end(), [this](int a, int b) {
         const auto &x=catalogue_games()[a].releases.front(), &y=catalogue_games()[b].releases.front();
         std::string gx = x.base_title, gy = y.base_title;
         for (char &c : gx) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         for (char &c : gy) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         if (gx != gy)
             return gx < gy;
-        return x.added_at > y.added_at;
+        // Within a game: newest first, unless another order was chosen (it already ordered them).
+        return filters_.sort == Sort::release && x.added_at > y.added_at;
     });
     // Favourites and Hide installed refilter on every store change: the same
     // results keep their focus rings rather than fading them out and in.

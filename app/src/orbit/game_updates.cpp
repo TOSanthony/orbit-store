@@ -97,6 +97,12 @@ std::vector<DlcRow> dlc_rows(const std::vector<DlcGroup> &groups, const std::vec
 }
 } // namespace
 
+// Crossbar and Panorama have no button row: the first row of the list refreshes the updates.
+static int lead_rows()
+{
+    return look::is(look::Interface::crossbar) || look::is(look::Interface::panorama) ? 1 : 0;
+}
+
 GameUpdatesScreen::GameUpdatesScreen(Context &context, bool dlc) : Screen(context), dlc_mode_(dlc)
 {
 }
@@ -151,8 +157,10 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float dt, Feedback &fe
             intent.toast = tr(status.pick_message);
         pick_seen_ = status.pick_state;
     }
-    row_ = std::clamp(row_, 0, std::max(0, count - 1));
-    header = dlc_mode_ && count > 0 && item_at(row_) == nullptr ? rows[static_cast<std::size_t>(row_)].group : nullptr;
+    const int lead = lead_rows();
+    row_ = std::clamp(row_, 0, std::max(0, count + lead - 1));
+    const int at = row_ - lead; // the list's own row; -1 on the refresh row
+    header = dlc_mode_ && at >= 0 && count > 0 && item_at(at) == nullptr ? rows[static_cast<std::size_t>(at)].group : nullptr;
     // The three buttons above the list: Check, Update all and (with a queue) Clear queue.
     // The other looks have no button row: Triangle, Square and R2 do the same.
     const int buttons = count > 0 && (look::is(look::Interface::store) || look::is(look::Interface::cinema)) ? (status.queue.empty() ? 2 : 3) : 0;
@@ -213,10 +221,10 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float dt, Feedback &fe
                 do_clear();
         }
     }
-    else if ((input.nav == Direction::left || input.nav == Direction::right) && count > 0)
+    else if ((input.nav == Direction::left || input.nav == Direction::right) && at >= 0)
     {
         // Left/Right move between the row's buttons (Pause/Resume and Cancel; Expand and Install all).
-        const GameUpdateItem *g = item_at(row_);
+        const GameUpdateItem *g = item_at(at);
         const bool mine = g != nullptr && job_of(status).present && job_of(status).title_id == g->title_id;
         const bool two = header != nullptr || (mine && ((job_of(status).active && job_of(status).phase != "installing") ||
                                   job_of(status).phase == "paused"));
@@ -249,7 +257,7 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float dt, Feedback &fe
     }
     else if (input.nav == Direction::down)
     {
-        if (row_ + 1 < count)
+        if (row_ + 1 < count + lead)
         {
             ++row_;
             button_ = 0;
@@ -259,6 +267,10 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float dt, Feedback &fe
         {
             refuse(feedback, input);
         }
+    }
+    else if (input.is_pressed(Action::confirm) && at < 0)
+    {
+        do_check();
     }
     else if (input.is_pressed(Action::confirm) && header != nullptr)
     {
@@ -278,7 +290,7 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float dt, Feedback &fe
     }
     else if (input.is_pressed(Action::confirm) && count > 0)
     {
-        const GameUpdateItem &game = *item_at(row_);
+        const GameUpdateItem &game = *item_at(at);
         const bool this_job = job_of(status).present && job_of(status).title_id == game.title_id;
         const bool installing = this_job && job_of(status).active && job_of(status).phase == "installing";
         const bool paused_here = this_job && !job_of(status).active && job_of(status).phase == "paused";
@@ -333,10 +345,10 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float dt, Feedback &fe
             ctx_.store.game_update_job("download", game.title_id);
         }
     }
-    else if (input.is_pressed(Action::back) && count > 0 && header == nullptr)
+    else if (input.is_pressed(Action::back) && count > 0 && at >= 0 && header == nullptr)
     {
         // Circle: cancel the running or paused update and delete what was downloaded.
-        const GameUpdateItem &game = *item_at(row_);
+        const GameUpdateItem &game = *item_at(at);
         const bool this_job = job_of(status).present && job_of(status).title_id == game.title_id;
         if (this_job && (job_of(status).active || job_of(status).phase == "paused"))
         {
@@ -360,7 +372,8 @@ std::vector<hui::ui::Hint> GameUpdatesScreen::hints() const
     const std::vector<DlcRow> rows = dlc_mode_ ? dlc_rows(groups, pending) : std::vector<DlcRow>();
     const std::vector<GameUpdateItem> listed = dlc_mode_ ? std::vector<GameUpdateItem>() : pending;
     const int shown_rows = dlc_mode_ ? static_cast<int>(rows.size()) : static_cast<int>(listed.size());
-    const DlcRow *dlc_row = dlc_mode_ && shown_rows > 0 ? &rows[static_cast<std::size_t>(std::clamp(row_, 0, shown_rows - 1))] : nullptr;
+    const int hint_at = row_ - lead_rows();
+    const DlcRow *dlc_row = dlc_mode_ && shown_rows > 0 && hint_at >= 0 ? &rows[static_cast<std::size_t>(std::clamp(hint_at, 0, shown_rows - 1))] : nullptr;
     std::vector<hui::ui::Hint> items;
     if (bar_ >= 0)
     {
@@ -379,11 +392,18 @@ std::vector<hui::ui::Hint> GameUpdatesScreen::hints() const
         if (!status.queue.empty())
             items.push_back({hui::ui::Button::r2, tr("Clear queue")});
     }
+    else if (hint_at < 0)
+    {
+        items.push_back({hui::ui::Button::cross, tr("Check for updates")});
+        items.push_back({hui::ui::Button::square, dlc_mode_ ? tr("Install all") : tr("Update all")});
+        if (!status.queue.empty())
+            items.push_back({hui::ui::Button::r2, tr("Clear queue")});
+    }
     else if (dlc_row != nullptr || !listed.empty())
     {
         const GameUpdateItem &game =
             dlc_row != nullptr ? *dlc_row->item
-                               : listed[static_cast<std::size_t>(std::clamp(row_, 0, static_cast<int>(listed.size()) - 1))];
+                               : listed[static_cast<std::size_t>(std::clamp(hint_at, 0, static_cast<int>(listed.size()) - 1))];
         const bool this_job = job_of(status).present && job_of(status).title_id == game.title_id;
         const bool paused = this_job && !job_of(status).active && job_of(status).phase == "paused";
         const bool installing = this_job && job_of(status).active && job_of(status).phase == "installing";
@@ -511,9 +531,22 @@ void GameUpdatesScreen::draw_crossbar(Frame &frame, bool focused) const
     xb::List rows;
     const bool empty = texts.empty();
     // Nothing listed: one row says so and checks again.
-    rows.size = empty ? 1 : static_cast<int>(texts.size());
+    rows.size = empty ? 1 : static_cast<int>(texts.size()) + 1;
     rows.fill = [this, texts, covers, empty, &status](int i, xb::Row &row)
     {
+        if (!empty && i == 0)
+        {
+            // The first row refreshes the list.
+            row.key = "refresh";
+            row.has_icon = true;
+            row.icon = icons::Icon::refresh;
+            row.title = status.checking ? tr("Checking\xE2\x80\xA6") : dlc_mode_ ? tr("Check for DLC") : tr("Check for updates");
+            row.sub = page_note();
+            row.hint = status.checking ? std::string() : std::string(tr("Refresh"));
+            return;
+        }
+        if (!empty)
+            --i;
         if (empty)
         {
             row.key = "empty";
@@ -559,6 +592,13 @@ void GameUpdatesScreen::draw_panorama(Frame &frame, bool focused) const
     }
     pano::draw_caps(ctx_, &list, pano::kLeft, 300.0f, page_note());
     std::vector<pano::Item> items;
+    {
+        pano::Item refresh;
+        refresh.title = status.checking ? tr("Checking\xE2\x80\xA6") : dlc_mode_ ? tr("Check for DLC") : tr("Check for updates");
+        refresh.sub = page_note();
+        refresh.button = status.checking ? std::string() : std::string(tr("Refresh"));
+        items.push_back(std::move(refresh));
+    }
     for (const RowText &t : texts)
     {
         pano::Item item;

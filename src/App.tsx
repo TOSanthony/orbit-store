@@ -260,10 +260,13 @@ export default function App() {
     const games = library.snapshot?.status === "ready" ? library.snapshot.games : [];
     return new Set(games.length ? orbit.games.filter((g) => inLibrary(g, games)).map((g) => g.id) : []);
   }, [orbit.games, library.snapshot?.status, library.snapshot?.games]);
-  const filtered = useMemo(
-    () => browseGames(catalogueGames.filter(g => !addonsPage || !addonBase || g.baseGameId === addonBase), filters, favorites, installedGames),
-    [catalogueGames, addonsPage, addonBase, filters, favorites, installedGames],
-  );
+  const filtered = useMemo(() => {
+    const list = browseGames(catalogueGames.filter(g => !addonsPage || !addonBase || g.baseGameId === addonBase), filters, favorites, installedGames);
+    // Add-ons stay together under their game, in the game's alphabetical order; the chosen sort orders them within it.
+    if (!addonsPage) return list;
+    const key = (g: { baseGameTitle?: string; title: string }) => (g.baseGameTitle || g.title).toLowerCase();
+    return [...list].sort((a, b) => key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0);
+  }, [catalogueGames, addonsPage, addonBase, filters, favorites, installedGames]);
   const browseReset = useMemo(() => ({filters, addonBase, tab}), [filters, addonBase, tab]);
   const browseList = useInfiniteList(filtered.length, CATALOG_STEP, browseReset);
   const visibleGames = filtered.slice(0, browseList.visible);

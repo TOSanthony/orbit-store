@@ -721,6 +721,10 @@ std::vector<Scenario> scenarios()
                     {run(2.0f, [](orbit::App &app) { app.open_game_updates(1); }),
                      pause(1.0f, "pick-list"), move(Direction::down), move(Direction::down), move(Direction::down),
                      pause(1.0f, "pick-blocked-row")}});
+    // The first row of the list in Crossbar and Panorama checks again (set ORBIT_INTERFACE).
+    list.push_back({"look-game-updates", Mode::normal, false,
+                    {run(2.0f, [](orbit::App &app) { app.open_game_updates(1); }),
+                     pause(1.5f, "look-game-updates"), move(Direction::down), pause(0.8f, "look-game-updates-down")}});
     list.push_back({"game-updates",
                     Mode::normal,
                     false,

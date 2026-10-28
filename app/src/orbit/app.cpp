@@ -929,105 +929,18 @@ void App::draw_status(Frame &frame) const
     const ui::Type &type = ctx_.type;
     const Snapshot &state = ctx_.store.state();
     const bool offline = status_offline(state);
-    if (look::is(look::Interface::panorama))
-    {
-        // The wordmark in light type on black, running dots while it works.
-        if (!offline)
-        {
-            const bool spin = starting_now(state);
-            pano::draw_splash(ctx_, list, spin ? tr("Starting Orbit\xE2\x80\xA6") : tr("Opening Orbit Store\xE2\x80\xA6"),
-                              spin ? tr("Orbit keeps running in the background after you close this app.") : "", {}, {}, true);
-            return;
-        }
-        std::vector<pano::Button> buttons;
-        if (ctx_.store.can_start())
-            buttons.push_back(pano::button(tr("Try again"), true));
-        const bool waiting = state.starting != Starting::failed && state.starting != Starting::no_loader;
-        pano::draw_splash(ctx_, list, state.starting == Starting::failed ? tr("Orbit didn\xE2\x80\x99t start") : tr("Orbit isn\xE2\x80\x99t running"),
-                          state.starting == Starting::no_loader
-                              ? tr("Start Orbit from your payload manager, or run your jailbreak again so this app "
-                                   "can start it.")
-                          : state.starting == Starting::failed ? tr("Check that Orbit is set up in your payload manager, then try again.")
-                                                               : tr("Start Orbit from your payload manager. This screen reconnects by itself."),
-                          !state.start_detail.empty()
-                              ? state.start_detail
-                              : tr("Waiting for Orbit on this console ({detail})",
-                                   {{"detail", state.link_error.empty() ? std::string(tr("no answer")) : state.link_error}}),
-                          buttons, waiting && buttons.empty());
-        return;
-    }
-    if (look::is(look::Interface::cinema))
-    {
-        // The same words, as a title card on black.
-        if (!offline)
-        {
-            const bool spin = starting_now(state);
-            cn::draw_status(ctx_, list, spin ? tr("Starting Orbit\xE2\x80\xA6") : tr("Opening Orbit Store\xE2\x80\xA6"),
-                            spin ? tr("Orbit keeps running in the background after you close this app.") : "", {}, {}, spin);
-            return;
-        }
-        std::vector<cn::Button> buttons;
-        if (ctx_.store.can_start())
-        {
-            cn::Button retry;
-            retry.label = tr("Try again");
-            retry.primary = true;
-            retry.focus = true;
-            buttons.push_back(retry);
-        }
-        cn::draw_status(ctx_, list, state.starting == Starting::failed ? tr("Orbit didn\xE2\x80\x99t start") : tr("Orbit isn\xE2\x80\x99t running"),
-                        state.starting == Starting::no_loader
-                            ? tr("Start Orbit from your payload manager, or run your jailbreak again so this app "
-                                 "can start it.")
-                        : state.starting == Starting::failed ? tr("Check that Orbit is set up in your payload manager, then try again.")
-                                                             : tr("Start Orbit from your payload manager. This screen reconnects by itself."),
-                        !state.start_detail.empty()
-                            ? state.start_detail
-                            : tr("Waiting for Orbit on this console ({detail})",
-                                 {{"detail", state.link_error.empty() ? std::string(tr("no answer")) : state.link_error}}),
-                        buttons, false);
-        return;
-    }
-    if (look::is(look::Interface::crossbar))
-    {
-        // The same words, in Crossbar's column over the ribbons.
-        xb::Status status;
-        if (!offline)
-        {
-            status.spin = starting_now(state);
-            status.title = status.spin ? tr("Starting Orbit\xE2\x80\xA6") : tr("Opening Orbit Store\xE2\x80\xA6");
-            if (status.spin)
-                status.body = tr("Orbit keeps running in the background after you close this app.");
-        }
-        else
-        {
-            status.title = state.starting == Starting::failed ? tr("Orbit didn\xE2\x80\x99t start") : tr("Orbit isn\xE2\x80\x99t running");
-            status.body = state.starting == Starting::no_loader
-                              ? tr("Start Orbit from your payload manager, or run your jailbreak again so this app "
-                                   "can start it.")
-                          : state.starting == Starting::failed
-                              ? tr("Check that Orbit is set up in your payload manager, then try again.")
-                              : tr("Start Orbit from your payload manager. This screen reconnects by itself.");
-            status.small = !state.start_detail.empty()
-                               ? state.start_detail
-                               : tr("Waiting for Orbit on this console ({detail})",
-                                    {{"detail", state.link_error.empty() ? std::string(tr("no answer")) : state.link_error}});
-            if (ctx_.store.can_start())
-                status.button = tr("Try again");
-        }
-        xb::draw_status(ctx_, list, status);
-        return;
-    }
-    const float size = 220.0f;
+    // The opening screen is the same in every look: the large mark over the aurora.
+    const float size = 400.0f;
+    constexpr float kMarkY = 340.0f; // the mark's centre; the texts sit below it
     const float x = 960.0f - size * 0.5f;
-    const float y = 330.0f - size * 0.5f;
+    const float y = kMarkY - size * 0.5f;
     // A breathing blue glow behind the mark, and the light running round its ring.
     const float breathe = 0.5f + 0.5f * std::sin(ctx_.clock * 2.6f);
     list.glow({x + 40.0f, y + 40.0f, size - 80.0f, size - 80.0f}, size * 0.5f, 120.0f,
               ui::Color::rgb(0xffffff, (offline ? 0.18f : 0.30f) + 0.16f * breathe));
     const float in = std::clamp(ctx_.clock / 0.7f, 0.0f, 1.0f);
     list.push_opacity(in);
-    list.push_transform(0.88f + 0.12f * in, 960.0f, 330.0f, 0.0f, 0.0f);
+    list.push_transform(0.88f + 0.12f * in, 960.0f, kMarkY, 0.0f, 0.0f);
     if (ctx_.loader_mark != 0)
         list.image(offline ? ctx_.mark : ctx_.loader_mark, {x, y, size, size}, hui::gfx::kFullUv,
                    ui::Color::rgb(0xffffff, offline ? 0.55f : 1.0f));
@@ -1441,19 +1354,11 @@ void App::draw(Frame &frame) const
                        (state.have_catalog || state.setup_needed());
     if (!ready)
     {
-        if (look::is(look::Interface::crossbar))
-            xb::backdrop(ctx_, frame.backdrop);
+        // The opening and offline screens always show the aurora, whatever the look: the chosen
+        // background is only known once the download service has answered.
+        static const std::size_t aurora = appearance::find("aurora");
+        frame.backdrop = appearance::backdrop(aurora, ctx_.clock);
         draw_status(frame);
-        // The other interfaces name Cross's button, as their designs do.
-        if (!look::is(look::Interface::store) && status_offline(state) && ctx_.store.can_start())
-        {
-            ui::HintStyle style;
-            if (look::is(look::Interface::crossbar))
-                style = {1024.0f, 19.0f, 32.0f, 12.0f};
-            else
-                style = look::is(look::Interface::cinema) ? cn::hint_style() : pano::hint_style();
-            ui::hints(frame.overlay, ctx_.type, {{hui::ui::Button::cross, tr("Try again")}}, style);
-        }
         return;
     }
 

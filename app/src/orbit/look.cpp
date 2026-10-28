@@ -86,6 +86,9 @@ void load(const std::string &path)
     State &s = state();
     s.path = path;
     s.prefs = {};
+    // On the console (a saved file exists or can be written) Orbit opens as Crossbar until the player picks another look.
+    if (!path.empty())
+        s.prefs.interface = Interface::crossbar;
     s.pending = false;
     std::string text;
     if (path.empty() || !hui::save::read_file(path, &text, 16u << 10))
@@ -93,7 +96,7 @@ void load(const std::string &path)
     json::Value doc;
     if (!json::parse(text, &doc) || !doc.is_object())
         return;
-    s.prefs.interface = parse(doc.text("interface"), kNames, Interface::store);
+    s.prefs.interface = parse(doc.text("interface"), kNames, Interface::crossbar);
     s.prefs.reduced_motion = doc.text("motion") == "reduced";
     s.prefs.accent = parse(doc.text("accent"), kAccents, Accent::blue);
     s.prefs.ribbons = parse(doc.text("ribbons"), kRibbons, Ribbons::follow_time);
