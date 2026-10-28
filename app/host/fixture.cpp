@@ -670,7 +670,19 @@ http::Response Fixture::send(const http::Request &request)
         bool first = true;
         if (acknowledged_ && !enabled_.empty())
         {
-            for (const FixtureGame &game : games())
+            // The NAS folders apps/ and dlc/: rows whose tagline names their menu.
+            std::vector<FixtureGame> catalogue = games();
+            if (mode_ == FixtureMode::dlc)
+            {
+                catalogue.push_back({"orbit-notes", "Orbit Notes", "Utility", "APPS", "A notebook for the PS5.",
+                                     "Small Hours", "2026-10-01", false, "PPSA90090",
+                                     {{"ffpfsc", "Archive.org", "FFPFSC", "1.0", 0.1}}});
+                catalogue.push_back({"tidewater-expansion", "Tidewater Expansion", "Adventure", "DLC",
+                                     "More tides to chart.", "Tin Sparrow", "2026-10-02", false, "PPSA90001",
+                                     {{"ffpfsc", "Archive.org", "FFPFSC", "1.0", 1.5},
+                                      {"exfat", "Archive.org", "exFAT", "1.0", 1.4}}});
+            }
+            for (const FixtureGame &game : catalogue)
             {
                 for (const Option &option : game.options)
                 {

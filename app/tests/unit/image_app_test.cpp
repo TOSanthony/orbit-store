@@ -582,7 +582,11 @@ TEST(App, CircleLeavesTheGamePageAndTabsSwitchWithL1R1)
     EXPECT_EQ(h.app.current_tab(), orbit::tab::browse);
     h.press(Action::page_next);
     EXPECT_EQ(h.app.current_tab(), orbit::tab::addons);
+    // The fixture has game updates waiting, so their tab sits before Library.
     h.press(Action::page_next);
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::updates);
+    h.press(Action::page_next);
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::library);
     h.press(Action::page_next);
     h.settle();
     EXPECT_EQ(h.app.current_tab(), orbit::tab::downloads);
@@ -1226,6 +1230,46 @@ TEST(App, AppearanceLanguageSwitchesAtOnceAndIsKept)
     h.settle();
     EXPECT_EQ(look::prefs().language, "");
     EXPECT_EQ(i18n::language(), "en");
+}
+
+TEST(App, NasAppsGetTheirOwnTabAndStayOutOfBrowse)
+{
+    // Without NAS apps there is no Apps tab.
+    {
+        AppHarness h;
+        h.store.poll_once();
+        h.settle();
+        const std::vector<int> items = h.app.top_items();
+        EXPECT_EQ(std::count(items.begin(), items.end(), orbit::tab::apps), 0);
+    }
+    AppHarness h(host::FixtureMode::dlc);
+    h.store.poll_once();
+    h.settle();
+    const std::vector<int> items = h.app.top_items();
+    EXPECT_EQ(std::count(items.begin(), items.end(), orbit::tab::apps), 1);
+    int games = 0, apps = 0;
+    for (const orbit::Game &game : h.store.state().games)
+    {
+        games += orbit::game_category(game) == orbit::Category::game;
+        apps += orbit::game_category(game) == orbit::Category::apps;
+    }
+    ASSERT_EQ(apps, 1);
+    h.app.show_tab(orbit::tab::browse);
+    h.settle();
+    EXPECT_EQ(h.app.browse().result_count(), games);
+    h.app.show_tab(orbit::tab::apps);
+    h.settle();
+    EXPECT_EQ(h.app.apps().result_count(), 1);
+    // R1 walks Add-ons, Apps, DLC, Updates, Library.
+    h.app.show_tab(orbit::tab::addons);
+    h.press(Action::page_next);
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::apps);
+    h.press(Action::page_next);
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::dlc);
+    h.press(Action::page_next);
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::updates);
+    h.press(Action::page_next);
+    EXPECT_EQ(h.app.current_tab(), orbit::tab::library);
 }
 
 TEST(App, AppearanceKeepsTheKeyboardLettersAndTheBackground)

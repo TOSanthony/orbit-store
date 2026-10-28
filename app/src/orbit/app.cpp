@@ -17,7 +17,10 @@ namespace orbit
 namespace
 {
 
-constexpr const char *kTabs[] = {/* i18n */ "Discover", /* i18n */ "Browse", /* i18n */ "Add-ons", /* i18n */ "Library", /* i18n */ "Downloads"}; // by tab::
+constexpr const char *kTabs[] = {/* i18n */ "Discover", /* i18n */ "Browse", /* i18n */ "Add-ons", /* i18n */ "Library", /* i18n */ "Downloads",
+                                  /* i18n */ "DLC", /* i18n */ "Updates", /* i18n */ "Apps"}; // by tab::
+// Left to right in the top bar.
+constexpr int kOrder[] = {tab::discover, tab::browse, tab::addons, tab::apps, tab::dlc, tab::updates, tab::library, tab::downloads};
 constexpr int kTabCount = tab::count;
 constexpr int kSearchItem = kTabCount;
 constexpr int kSettingsItem = kTabCount + 1;
@@ -45,15 +48,55 @@ float beta_width(const ui::Type &type)
     return type.semibold.measure(tr("BETA"), 13.0f) + 4.0f + 2.0f * 7.6f;
 }
 
-ui::Rect tab_rect(const ui::Type &type, int index)
+// Updates shows only while an installed game has an update waiting, and DLC only while the NAS has a
+// DLC an installed game lacks; each goes away again once they are all done.
+bool tab_hidden(const Snapshot &state, int index)
+{
+    // Apps come from the NAS folders: no tab until the catalogue has some.
+    if (index == tab::apps)
+        return state.have_catalog && std::none_of(state.games.begin(), state.games.end(),
+                                                  [](const Game &g) { return game_category(g) == Category::apps; });
+    if (index == tab::dlc)
+        return state.game_dlc <= 0;
+    if (index == tab::updates)
+        return state.game_updates <= 0;
+    return false;
+}
+
+// The number badge on a tab: its pill is at least 24 wide and grows with the digits.
+float badge_width(const ui::Type &type, int number)
+{
+    char text[16];
+    std::snprintf(text, sizeof(text), "%d", number);
+    return std::max(24.0f, type.semibold.measure(text, 14.0f) + 18.0f);
+}
+
+// A tab's badge: Updates the installed games with an update waiting, DLC the packs to install.
+float tab_extra(const ui::Type &type, const Snapshot &state, int index)
+{
+    if (index == tab::updates && state.game_updates > 0)
+        return 10.0f + badge_width(type, state.game_updates);
+    if (index == tab::dlc && state.game_dlc > 0)
+        return 10.0f + badge_width(type, state.game_dlc);
+    return 0.0f;
+}
+
+ui::Rect tab_rect(const ui::Type &type, const Snapshot &state, int index)
 {
     // The nav starts 3 rem after the brand button (whose padding ends 0.9 rem
     // after the label).
     float x = beta_x(type) + beta_width(type) + 18.0f + 60.0f;
-    for (int i = 0; i < index; ++i)
-        x += type.regular.measure(tr(kTabs[i]), kTabSize) + 2.0f * kTabPad + kTabGap;
+    for (const int i : kOrder)
+    {
+        if (i == index)
+            break;
+        if (tab_hidden(state, i))
+            continue;
+        x += type.regular.measure(tr(kTabs[i]), kTabSize) + 2.0f * kTabPad + tab_extra(type, state, i) + kTabGap;
+    }
     return {x, kTopY - kTabHeight * 0.5f,
-            type.regular.measure(tr(kTabs[index]), kTabSize) + 2.0f * kTabPad, kTabHeight};
+            type.regular.measure(tr(kTabs[index]), kTabSize) + 2.0f * kTabPad + tab_extra(type, state, index),
+            kTabHeight};
 }
 
 bool starting_now(const Snapshot &state)
@@ -75,7 +118,7 @@ int active_jobs(const Snapshot &state)
 } // namespace
 
 App::App(Context &context)
-    : ctx_(context), discover_(context), browse_(context), addons_(context, true), dlc_(context, true), updates_(context), library_(context), downloads_(context),
+    : ctx_(context), discover_(context), browse_(context), addons_(context, true), apps_(context, false, true), dlc_(context, true), updates_(context), library_(context), downloads_(context),
       game_(context), settings_(context)
 {
     ctx_.appearance = appearance::load();
@@ -85,13 +128,14 @@ App::App(Context &context)
 
 Screen &App::screen()
 {
-    // Game updates and DLC open over the Library, from its buttons.
-    if (updates_view_ == 1)
-        return updates_;
-    if (updates_view_ == 2)
-        return dlc_;
     switch (tab_)
     {
+    case tab::apps:
+        return apps_;
+    case tab::dlc:
+        return dlc_;
+    case tab::updates:
+        return updates_;
     case tab::discover:
         return discover_;
     case tab::addons:
@@ -113,7 +157,7 @@ const Screen &App::screen() const
 bool App::content_blocked() const
 {
     // Library and Downloads don't depend on the download sources or the catalogue.
-    if (tab_ == tab::downloads || tab_ == tab::library)
+    if (tab_ == tab::downloads || tab_ == tab::library || tab_ == tab::dlc || tab_ == tab::updates)
         return false;
     const Snapshot &state = ctx_.store.state();
     return state.setup_needed() || (state.have_catalog && state.games.empty());
@@ -121,9 +165,19 @@ bool App::content_blocked() const
 
 void App::open_game_updates(int view)
 {
-    show_tab(tab::library);
-    updates_view_ = view;
-    screen().focus();
+    show_tab(view == 2 ? tab::dlc : tab::updates);
+}
+
+std::vector<int> App::top_items() const
+{
+    const Snapshot &state = ctx_.store.state();
+    std::vector<int> items;
+    for (const int i : kOrder)
+        if (!tab_hidden(state, i))
+            items.push_back(i);
+    items.push_back(kSearchItem);
+    items.push_back(kSettingsItem);
+    return items;
 }
 
 void App::show_tab(int tab)
@@ -131,7 +185,6 @@ void App::show_tab(int tab)
     search_open_ = false;
     tab_ = std::clamp(tab, 0, kTabCount - 1);
     game_open_ = false;
-    updates_view_ = 0;
     if (settings_open_)
         settings_.close();
     settings_open_ = false;
@@ -175,18 +228,10 @@ void App::show_toast(std::string text, float seconds, bool update)
 
 void App::handle_intent(const Intent &intent, Feedback &feedback)
 {
-    // The game updates list gives the controller back to the Library when it is left upward.
-    if (updates_view_ != 0 && intent.kind == Intent::Kind::top_bar)
-    {
-        updates_view_ = 0;
-        show_tab(tab::library);
-        return;
-    }
     switch (intent.kind)
     {
     case Intent::Kind::open_updates:
-        updates_view_ = intent.tab;
-        screen().focus();
+        show_tab(intent.tab == 2 ? tab::dlc : tab::updates);
         break;
     case Intent::Kind::provider_browser:
         provider_open_ = true;
@@ -227,6 +272,7 @@ void App::handle_intent(const Intent &intent, Feedback &feedback)
         else if (tab_ == tab::browse)
             browse_.return_to(game_.game_id());
         else if (tab_ == tab::addons) addons_.return_to(game_.game_id());
+        else if (tab_ == tab::apps) apps_.return_to(game_.game_id());
         break;
     case Intent::Kind::show_job:
         game_open_ = false;
@@ -260,7 +306,8 @@ int App::section() const
         return section::settings;
     if (search_open_)
         return section::search;
-    return tab_ + 1;
+    // Updates and DLC are beside the Library in the other looks.
+    return tab_ == tab::dlc || tab_ == tab::updates ? section::library : tab_ == tab::apps ? section::browse : tab_ + 1;
 }
 
 void App::show_section(int next)
@@ -287,7 +334,7 @@ void App::show_section(int next)
         browse_.open_search_section();
         return;
     }
-    tab_ = std::clamp(next - 1, 0, kTabCount - 1);
+    tab_ = std::clamp(next - 1, 0, tab::core - 1);
     screen().focus();
 }
 
@@ -432,7 +479,7 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
     if (language_ != i18n::revision())
     {
         language_ = i18n::revision();
-        for (Screen *screen : std::initializer_list<Screen *>{&discover_, &browse_, &addons_, &library_, &downloads_,
+        for (Screen *screen : std::initializer_list<Screen *>{&discover_, &browse_, &addons_, &apps_, &library_, &downloads_,
                                                               &game_, &settings_})
             screen->retranslate();
     }
@@ -619,10 +666,14 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
         if (!screen().modal() &&
             (input.is_pressed(Action::page_prev) || input.is_pressed(Action::page_next)))
         {
-            const int next = tab_ + (input.is_pressed(Action::page_next) ? 1 : -1);
-            if (next >= 0 && next < kTabCount)
+            const std::vector<int> items = top_items();
+            const auto here = std::find(items.begin(), items.end(), tab_);
+            const int at = static_cast<int>(here - items.begin());
+            const int next = at + (input.is_pressed(Action::page_next) ? 1 : -1);
+            // Search and App settings end the row; L1 and R1 stay on the tabs.
+            if (here != items.end() && next >= 0 && items[static_cast<std::size_t>(next)] < kTabCount)
             {
-                tab_ = next;
+                tab_ = items[static_cast<std::size_t>(next)];
                 top_index_ = tab_;
                 screen().focus();
                 feedback.play(hui::audio::Cue::tab);
@@ -637,10 +688,13 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
         {
             if (input.nav == Direction::left || input.nav == Direction::right)
             {
-                const int next = top_index_ + (input.nav == Direction::right ? 1 : -1);
-                if (next >= 0 && next < kTopItems)
+                const std::vector<int> items = top_items();
+                const auto here = std::find(items.begin(), items.end(), top_index_);
+                const int at = static_cast<int>(here - items.begin());
+                const int next = at + (input.nav == Direction::right ? 1 : -1);
+                if (here != items.end() && next >= 0 && next < static_cast<int>(items.size()))
                 {
-                    top_index_ = next;
+                    top_index_ = items[static_cast<std::size_t>(next)];
                     if (top_index_ < kTabCount && top_index_ != tab_)
                     {
                         // Moving along the tabs shows each one, like the console's store.
@@ -713,6 +767,13 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
         }
     }
 
+    // Updates or DLC finished while they were open: back to the Library they belong beside.
+    if ((tab_ == tab::apps ? ctx_.store.state().have_catalog : ctx_.store.state().have_game_updates) &&
+        tab_hidden(ctx_.store.state(), tab_))
+    {
+        show_tab(tab::library);
+        top_index_ = tab_;
+    }
     if (tab_ != last_tab_)
     {
         if (last_tab_ == tab::library)
@@ -772,15 +833,22 @@ void App::draw_top_bar(hui::gfx::DrawList &list) const
 
     // Tabs: text buttons, the current one in a pale pill.
     const int active = active_jobs(state);
-    char count[16];
-    std::snprintf(count, sizeof(count), "%d", active);
-    // .queue-count sits inside the Downloads tab, which widens for it.
-    const float count_width = std::max(24.0f, type.semibold.measure(count, 14.0f) + 18.0f);
-    for (int i = 0; i < kTabCount; ++i)
+    for (const int i : kOrder)
     {
-        ui::Rect r = tab_rect(type, i);
-        const bool counted = i == tab::downloads && active > 0;
-        if (counted)
+        if (tab_hidden(state, i))
+            continue;
+        ui::Rect r = tab_rect(type, state, i);
+        // Downloads counts its running jobs, Updates the installed games with an update waiting, DLC the packs.
+        const int number = i == tab::downloads ? active
+                           : i == tab::updates ? state.game_updates
+                           : i == tab::dlc     ? state.game_dlc
+                                               : 0;
+        const bool counted = number > 0;
+        const float count_width = badge_width(type, number);
+        char count[16];
+        std::snprintf(count, sizeof(count), "%d", number);
+        // .queue-count sits inside the tab, which widens for it (tab_rect already did so for Updates and DLC).
+        if (counted && i == tab::downloads)
             r.w += 10.0f + count_width;
         const bool current = i == tab_;
         const float focus = top_focus_[static_cast<std::size_t>(i)].value;

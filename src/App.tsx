@@ -28,6 +28,7 @@ import { Sources } from "./Sources";
 import { Pairing } from "./Pairing";
 import type { Game, LibraryTarget } from "./types";
 import { browseGames, catalogueTags, newlyAddedGames, defaultFilters, CATALOG_STEP, TAGS, type BrowseFilters } from "./browse";
+import { gameCategory, inDiscover } from "./categories";
 import { SavedFilters } from "./SavedFilters";
 import { useInfiniteList } from "./infiniteList";
 import {
@@ -70,7 +71,7 @@ export default function App() {
     };
   }, [handoffHash, orbit.refresh]);
   const [tab, setTab] = useState<
-      "Discover" | "Browse" | "Add-ons" | "Updates" | "DLC" | "Library" | "Downloads"
+      "Discover" | "Browse" | "Add-ons" | "Apps" | "Updates" | "DLC" | "Library" | "Downloads"
     >("Discover"),
     [gameId, setGameId] = useState<string | null>(() =>
       new URLSearchParams(window.location.search).get("game"),
@@ -171,16 +172,23 @@ export default function App() {
   const [gameFilters, setGameFilters] = useState<BrowseFilters>(defaultFilters);
   const [addonFilters, setAddonFilters] = useState<BrowseFilters>({...defaultFilters, sort: "added"});
   const addonsPage = tab === "Add-ons";
+  const appsPage = tab === "Apps";
+  // Apps, DLC and update packs from the NAS folders never sit among the games. Discover shows games
+  // and apps; DLC and update packs only appear in their own list.
+  const storeGames = useMemo(() => orbit.games.filter((g) => inDiscover(g)), [orbit.games]);
+  const regularGames = useMemo(() => orbit.games.filter((g) => gameCategory(g) === "game"), [orbit.games]);
+  const appGames = useMemo(() => orbit.games.filter((g) => gameCategory(g) === "apps"), [orbit.games]);
   // Updates shows only while an installed game has an update waiting, DLC only while the NAS has a DLC
   // an installed game lacks, each with its number beside its name; both go away once all is done.
   const gameUpdates = orbit.gameUpdates;
   const gameDlc = orbit.gameDlc;
   useEffect(() => {
     if ((tab === "DLC" && gameDlc <= 0) || (tab === "Updates" && gameUpdates <= 0)) setTab("Browse");
-  }, [tab, gameUpdates, gameDlc]);
+    if (tab === "Apps" && orbit.games.length && !appGames.length) setTab("Browse");
+  }, [tab, gameUpdates, gameDlc, appGames.length, orbit.games.length]);
   const filters = addonsPage ? addonFilters : gameFilters;
   const setFilters = addonsPage ? setAddonFilters : setGameFilters;
-  const catalogueGames = addonsPage ? orbit.addons : orbit.games;
+  const catalogueGames = addonsPage ? orbit.addons : appsPage ? appGames : regularGames;
   const gameTags = useMemo(() => catalogueTags(orbit.games), [orbit.games]);
   const sourceNames = useMemo(
     () => new Map(catalogueGames.flatMap((g) => g.releases.map((r) => [r.sourceId, r.provider] as const))),
@@ -262,17 +270,17 @@ export default function App() {
   const discoverGames = useMemo(
     () =>
       browseGames(
-        orbit.games,
+        storeGames,
         { ...defaultFilters, sort: "size-desc" },
         new Set(),
       ),
-    [orbit.games],
+    [storeGames],
   );
   const discoverList = useInfiniteList(discoverGames.length, CATALOG_STEP);
   const discoverVisible = discoverGames.slice(0, discoverList.visible);
   const latestGames = useMemo(
     () =>
-      orbit.games
+      storeGames
         .filter(
           (g) =>
             g.releaseDate &&
@@ -284,9 +292,9 @@ export default function App() {
             a.title.localeCompare(b.title),
         )
         .slice(0, 20),
-    [orbit.games],
+    [storeGames],
   );
-  const newlyAdded = useMemo(() => newlyAddedGames(orbit.games), [orbit.games]);
+  const newlyAdded = useMemo(() => newlyAddedGames(storeGames), [storeGames]);
   const active = orbit.jobs.filter((j) =>
     ["queued", "downloading", "retrying", "verifying", "inspecting", "extracting"].includes(j.status),
   ).length;
@@ -335,7 +343,7 @@ export default function App() {
     setTab(next);
     setDownloadTarget(null);
     setLibraryTarget(null);
-    if (next === "Browse" || next === "Add-ons")
+    if (next === "Browse" || next === "Add-ons" || next === "Apps")
       requestAnimationFrame(() => {
         const first = document.querySelector<HTMLElement>(
           ".browse-grid .game-tile",
@@ -353,7 +361,7 @@ export default function App() {
     setDownloadTarget(id || null);
   }
   function showSearch() {
-    go(addonsPage ? "Add-ons" : "Browse");
+    go(addonsPage ? "Add-ons" : appsPage ? "Apps" : "Browse");
     requestAnimationFrame(() => search.current?.focus());
   }
   function paired(action: () => void) {
@@ -851,14 +859,14 @@ export default function App() {
   ) : null;
   return (
     <div
-      className={`app screen-${game ? "details" : tab.toLowerCase()} ${discover ? "discover" : ""} ${consoleBrowser ? "console-browser" : ""} iface-${iface}`}
+      className={`app screen-${game ? "details" : tab === "Apps" ? "browse" : tab.toLowerCase()} ${discover ? "discover" : ""} ${consoleBrowser ? "console-browser" : ""} iface-${iface}`}
       data-game={game?.id}
     >
       {iface !== "store" ? (
         <InterfaceShell
           iface={iface}
           orbit={orbit}
-          tab={tab === "Updates" || tab === "DLC" ? "Browse" : tab}
+          tab={tab === "Updates" || tab === "DLC" || tab === "Apps" ? "Browse" : tab}
           go={go}
           game={game}
           back={back}
@@ -929,7 +937,8 @@ export default function App() {
         {!game && (
           <>
             <nav className="main-nav" aria-label={t("Main navigation")}>
-              {(["Discover", "Browse", "Add-ons", "Updates", "DLC", "Library", "Downloads"] as const)
+              {(["Discover", "Browse", "Add-ons", "Apps", "Updates", "DLC", "Library", "Downloads"] as const)
+                .filter((name) => name !== "Apps" || appGames.length > 0)
                 .filter((name) => name !== "Updates" || gameUpdates > 0)
                 .filter((name) => name !== "DLC" || gameDlc > 0)
                 .map(
@@ -1104,10 +1113,10 @@ export default function App() {
           ) : (
             discoverEmptyNode
           )
-        ) : tab === "Add-ons" || tab === "Browse" ? (
+        ) : tab === "Add-ons" || tab === "Browse" || tab === "Apps" ? (
           <section className="page browse">
             <div className="page-heading">
-              <h1>{t(addonsPage ? "Add-ons" : "Browse")}</h1>
+              <h1>{t(addonsPage ? "Add-ons" : appsPage ? "Apps" : "Browse")}</h1>
               <span>
                 {catalogueCount(filtered.length)}
               </span>
@@ -1174,7 +1183,7 @@ export default function App() {
             <b>×</b>
             {!game && tab !== "Downloads" && tab !== "Library" ? t("Open game") : t("Select")}
           </span>
-          {!game && (tab === "Browse" || addonsPage) && (
+          {!game && (tab === "Browse" || addonsPage || appsPage) && (
             <button onClick={showSearch}>
               <b>△</b>
               {t("Search")}

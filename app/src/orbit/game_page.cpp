@@ -88,7 +88,7 @@ void GamePage::open(const std::string &game_id)
     pn_scroll_ = 0.0f;
     option_ = focus_ = 0;
     sheet_ = Sheet::none;
-    download_again_ = waiting_ = torbox_ = false;
+    download_again_ = waiting_ = torbox_ = all_ = false;
     error_.clear();
     page_scroll_.snap(0);
     sheet_scroll_.snap(0);
@@ -135,6 +135,11 @@ const Drive *GamePage::drive() const
     if (!drive_id_.empty()) return nullptr;
     const int at = default_drive(state.drives, state.system.preferred_storage);
     return at >= 0 ? &state.drives[static_cast<std::size_t>(at)] : nullptr;
+}
+
+bool GamePage::choosing(const Game &game) const
+{
+    return is_pack(game) && game.releases.size() > 1 && ctx_.store.state().paired;
 }
 
 GamePage::Offer GamePage::offer(const Release &release) const
@@ -387,6 +392,14 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
     else if (sheet == Sheet::source)
     {
         paragraph(game->releases.size()>1 ? tr("Choose a source and format for this game.") : tr("Available from your enabled sources."),116,y,1650);y+=22;
+        const bool pack=is_pack(*game);
+        if (choosing(*game) && now.drive)
+        {
+            double total=0;
+            for (const auto &r:game->releases) total+=r.size_bytes;
+            y+=card(Slot::install_all,0,116,y,1690,tr("Install all ({count})",{{"count",std::to_string(game->releases.size())}}),
+                    format_bytes(total),all_,!waiting_)+18;
+        }
         for (int i=0;i<static_cast<int>(game->releases.size());++i)
         {
             const auto &r=game->releases[static_cast<std::size_t>(i)];
@@ -395,7 +408,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             if (!r.region.empty()) detail += " \xC2\xB7 " + r.region;
             if (presence.label) detail += " \xC2\xB7 " + std::string(presence.label);
             if (!firmware_label(r).empty()) detail += " \xC2\xB7 " + firmware_label(r);
-            y+=card(Slot::choice,i,116,y,1690,r.provider+" \xC2\xB7 "+format_label(r),detail,i==selected,!waiting_)+18;
+            y+=card(Slot::choice,i,116,y,1690,pack && !r.filename.empty() ? r.filename : r.provider+" \xC2\xB7 "+format_label(r),detail,!all_ && i==selected,!waiting_)+18;
         }
     }
     else if (sheet == Sheet::delivery)
@@ -506,7 +519,7 @@ Intent GamePage::activate(const Control &control,const Game &game,const Release 
     case Slot::choice:
         if(sheet_==Sheet::source)
         {
-            if(option_!=control.index){option_=control.index;torbox_=false;download_again_=false;}
+            if(all_||option_!=control.index){option_=control.index;all_=false;torbox_=false;download_again_=false;}
         }
         else if(sheet_==Sheet::storage)drive_id_=state.drives[static_cast<std::size_t>(control.index)].id;
         else if(sheet_==Sheet::delivery)
@@ -521,6 +534,7 @@ Intent GamePage::activate(const Control &control,const Game &game,const Release 
             torbox_=control.index==1;
         }
         error_.clear();back_sheet();break;
+    case Slot::install_all: all_=true;error_.clear();back_sheet();break;
     case Slot::again: download_again_=true;error_.clear();show_sheet(Sheet::downloads);break;
     case Slot::related:
         if(now.collection.library)
@@ -530,6 +544,23 @@ Intent GamePage::activate(const Control &control,const Game &game,const Release 
         if(sheet_==Sheet::none){show_sheet(Sheet::downloads);break;}
         // Opening/reviewing a sheet never executes these actions.
         if(!primary_enabled(release,now))break;
+        if(all_ && choosing(game))
+        {
+            error_.clear();
+            int queued=0;
+            for(const auto &r:game.releases)
+            {
+                bool taken=false;
+                for(const auto &job:state.jobs)
+                    if(job.release_id==r.id && job.storage_id==now.drive->id && job.status!="error" && job.status!="cancelled")taken=true;
+                if(taken)continue;
+                if(!queued){waiting_=true;action_serial_=ctx_.store.action().serial;}
+                ctx_.store.download(r.id,now.drive->id,false);
+                ++queued;
+            }
+            if(!queued)intent.toast=tr("Added to your downloads");
+            break;
+        }
         if(!download_again_ && now.collection.job)
         {intent.kind=Intent::Kind::show_job;intent.id=now.collection.job->id;}
         else if(!download_again_ && now.collection.kind==CollectionState::Kind::library && now.collection.library)

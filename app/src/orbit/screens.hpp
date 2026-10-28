@@ -110,7 +110,13 @@ constexpr int browse = 1;
 constexpr int addons = 2;
 constexpr int library = 3;
 constexpr int downloads = 4;
-constexpr int count = 5;
+// Only in the Store look's top bar, between Add-ons and Library: they show while an installed game
+// has an update waiting, or the NAS has a DLC it lacks. The other looks reach them from the Library.
+constexpr int dlc = 5;
+constexpr int updates = 6;
+constexpr int apps = 7; // the NAS apps; shows while the NAS lists any
+constexpr int core = 5; // the tabs the other looks' sections stand for
+constexpr int count = 8;
 } // namespace tab
 
 struct Intent
@@ -372,10 +378,13 @@ class DiscoverScreen final : public Screen
 class BrowseScreen final : public Screen
 {
   public:
-    explicit BrowseScreen(Context &context, bool addons = false);
+    // apps: the NAS apps (tagline APPS) instead of the games; Browse itself leaves apps, DLC and update packs out.
+    explicit BrowseScreen(Context &context, bool addons = false, bool apps = false);
     void for_base(const std::string &base) { filters_ = BrowseFilters{}; filters_.addon_base = base; index_ = 0; refilter(); }
     const std::vector<Game> &catalogue_games() const { return addons_ ? ctx_.store.state().addons : ctx_.store.state().games; }
+    int result_count() const { return static_cast<int>(results_.size()); }
     bool addons_ = false;
+    bool apps_ = false;
     void focus() override;
     void retranslate() override;
     Intent update(const InputFrame &input, float dt, Feedback &feedback, bool focused) override;
@@ -956,7 +965,7 @@ class GamePage final : public Screen
   private:
     enum class Sheet : std::uint8_t { none, downloads, source, delivery, storage, about };
     enum class Slot : std::uint8_t { primary, favourite, addons, about, source, delivery, drive,
-                                     choice, again, related, reading, back, close };
+                                     choice, again, related, reading, back, close, install_all };
     struct Control
     {
         Slot slot;
@@ -993,6 +1002,9 @@ class GamePage final : public Screen
     int focus_ = 0;
     Sheet sheet_ = Sheet::none;
     std::string drive_id_;
+    // DLC and update packs with several files: the source list offers every file at once.
+    bool choosing(const Game &game) const;
+    bool all_ = false; // every file of the pack is chosen, not just one
     bool download_again_ = false;
     bool waiting_ = false;
     bool torbox_ = false;
@@ -1467,6 +1479,8 @@ class App
     void show_tab(int tab);
     // Preview and tests: the game updates (1) or the DLC (2) over the Library.
     void open_game_updates(int view);
+    // The tabs the top bar shows, in order, then Search and App settings.
+    std::vector<int> top_items() const;
     // Crossbar, Cinema and Panorama: a section (section:: indices) by itself.
     void show_section(int section);
     void open_game(const std::string &game_id);
@@ -1479,6 +1493,10 @@ class App
     BrowseScreen &browse()
     {
         return browse_;
+    }
+    BrowseScreen &apps()
+    {
+        return apps_;
     }
     LibraryScreen &library()
     {
@@ -1530,7 +1548,7 @@ class App
 
     Context &ctx_;
     DiscoverScreen discover_;
-    BrowseScreen browse_, addons_;
+    BrowseScreen browse_, addons_, apps_;
     GameUpdatesScreen dlc_;
     GameUpdatesScreen updates_;
     LibraryScreen library_;
@@ -1538,7 +1556,6 @@ class App
     GamePage game_;
     SettingsScreen settings_;
     int tab_ = tab::discover;
-    int updates_view_ = 0; // 0 none, 1 game updates, 2 DLC: shown over the Library
     int last_tab_ = tab::discover; // to tell the Library when it is left
     Area area_ = Area::content;
     int top_index_ = 0; // the tabs, then search and settings

@@ -62,7 +62,7 @@ float chip_width(const ui::Type &type, int chip)
 
 } // namespace
 
-BrowseScreen::BrowseScreen(Context &context, bool addons) : Screen(context), addons_(addons)
+BrowseScreen::BrowseScreen(Context &context, bool addons, bool apps) : Screen(context), addons_(addons), apps_(apps)
 {
     xb::keyboard_look(keyboard_.style, false);
     keyboard_.style.bindings = hui::ui::KeyboardBindings::standard();
@@ -82,6 +82,14 @@ void BrowseScreen::refilter()
     catalog_serial_ = state.catalog_serial;
     favourites_serial_ = state.serial;
     std::vector<int> results = browse(catalogue_games(), filters_, state.favourites, state.library_games());
+    if (!addons_)
+    {
+        // Apps, DLC and update packs from the NAS folders have their own places, never among the games.
+        const Category wanted = apps_ ? Category::apps : Category::game;
+        results.erase(std::remove_if(results.begin(), results.end(),
+                                     [&](int i) { return game_category(catalogue_games()[static_cast<std::size_t>(i)]) != wanted; }),
+                      results.end());
+    }
     if (addons_ && filters_.sort == Sort::release) std::stable_sort(results.begin(), results.end(), [this](int a, int b) {
         const auto &x=catalogue_games()[a].releases.front(), &y=catalogue_games()[b].releases.front();
         return x.added_at > y.added_at;
@@ -863,10 +871,10 @@ void BrowseScreen::draw(Frame &frame, bool focused) const
     list.push_transform(1.0f, 0.0f, 0.0f, 0.0f, -scroll);
 
     // .page-heading: the title and how many games match.
-    const float title = ui::text(list, type.semibold, tr(addons_ ? "Add-ons" : "Browse"), ui::kGutter, kTitleBaseline, 60.0f,
+    const float title = ui::text(list, type.semibold, tr(addons_ ? "Add-ons" : apps_ ? "Apps" : "Browse"), ui::kGutter, kTitleBaseline, 60.0f,
                                  ui::color::text);
     const std::string count =
-        trn(static_cast<long>(results_.size()), addons_ ? "{count} add-on" : "{count} game", addons_ ? "{count} add-ons" : "{count} games");
+        trn(static_cast<long>(results_.size()), addons_ ? "{count} add-on" : apps_ ? "{count} app" : "{count} game", addons_ ? "{count} add-ons" : apps_ ? "{count} apps" : "{count} games");
     ui::text(list, type.regular, count, ui::kGutter + title + 24.0f, kTitleBaseline, 20.0f,
              ui::color::text3);
 
