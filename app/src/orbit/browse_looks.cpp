@@ -46,7 +46,7 @@ std::string BrowseScreen::crossbar_summary() const
         if (filter != 4 && selected > 0 && selected < static_cast<int>(options.size()))
             out += (filter == 6 ? std::string(tr("Installed games hidden")) : filter_value(filter)) + " \xC2\xB7 ";
     }
-    return out + sort + " \xC2\xB7 " + trn(static_cast<long>(results_.size()), addons_ ? "{count} add-on" : "{count} game", addons_ ? "{count} add-ons" : "{count} games");
+    return out + sort + " \xC2\xB7 " + trn(static_cast<long>(results_.size()), addons_ && !grouped() ? "{count} add-on" : "{count} game", addons_ && !grouped() ? "{count} add-ons" : "{count} games");
 }
 
 xb::List BrowseScreen::crossbar_list() const
@@ -86,7 +86,7 @@ xb::List BrowseScreen::crossbar_list() const
             row.has_icon = true;
             row.icon = icons::Icon::search;
             row.title = filters_.query.empty() ? std::string(tr("Search")) : "\xE2\x80\x9C" + filters_.query + "\xE2\x80\x9D";
-            row.sub = trn(static_cast<long>(results_.size()), addons_ ? "{count} add-on" : "{count} game", addons_ ? "{count} add-ons" : "{count} games");
+            row.sub = trn(static_cast<long>(results_.size()), addons_ && !grouped() ? "{count} add-on" : "{count} game", addons_ && !grouped() ? "{count} add-ons" : "{count} games");
             if (filters_.query.empty())
                 row.sub = tr(addons_ ? "Search add-ons or base games" : "Search games or title ID");
             return;
@@ -99,7 +99,7 @@ xb::List BrowseScreen::crossbar_list() const
             row.title = tr("Filters and sort");
             row.sub = crossbar_summary();
             row.text = std::string(tr(addons_ ? /* i18n */ "Platform, source, type, region, size and sort order." : /* i18n */ "Platform, source, format, region, size and sort order.")) + " " +
-                       (addons_ ? trn(static_cast<long>(results_.size()), "{count} add-on", "{count} add-ons") : trn(static_cast<long>(results_.size()), "{count} game matches.", "{count} games match."));
+                       (addons_ && !grouped() ? trn(static_cast<long>(results_.size()), "{count} add-on", "{count} add-ons") : trn(static_cast<long>(results_.size()), "{count} game matches.", "{count} games match."));
             if (filters_.sort == Sort::size || filters_.sort == Sort::size_desc)
                 row.text += " " + std::string(tr("Sorted by the smallest download option that matches your filters."));
             return;
@@ -137,7 +137,7 @@ xb::List BrowseScreen::crossbar_list() const
         const Game &g = catalogue_games()[static_cast<std::size_t>(game)];
         row.key = "g:" + g.id;
         xb_game_row(now, g, row, false);
-        if (!g.addon_id.empty()) row.sub += " \xC2\xB7 " + addon_type_label(g.addon_type);
+        if (!g.addon_id.empty() && !g.addon_type.empty()) row.sub += " \xC2\xB7 " + addon_type_label(g.addon_type);
     };
     return list;
 }
@@ -219,12 +219,12 @@ std::vector<xb::MenuItem> BrowseScreen::crossbar_values(int filter) const
         if (i > 0 && filter == 5)
         {
             const std::string platform = i == 1 ? "ps5" : "ps4";
-            sub = trn(games_with(games, [&](const Release &r) { return r.platform == platform; }), addons_ ? "{count} add-on" : "{count} game", addons_ ? "{count} add-ons" : "{count} games");
+            sub = trn(games_with(games, [&](const Release &r) { return r.platform == platform; }), addons_ && !grouped() ? "{count} add-on" : "{count} game", addons_ && !grouped() ? "{count} add-ons" : "{count} games");
         }
         else if (i > 0 && filter == 0 && i <= static_cast<int>(sources.size()))
         {
             const std::string &id = sources[static_cast<std::size_t>(i - 1)].first;
-            sub = trn(games_with(games, [&](const Release &r) { return r.source_id == id; }), addons_ ? "{count} add-on" : "{count} game", addons_ ? "{count} add-ons" : "{count} games");
+            sub = trn(games_with(games, [&](const Release &r) { return r.source_id == id; }), addons_ && !grouped() ? "{count} add-on" : "{count} game", addons_ && !grouped() ? "{count} add-ons" : "{count} games");
         }
         // Source and Format tick several: boxes rather than radios.
         items.push_back(xb::choice(options[static_cast<std::size_t>(i)],
@@ -764,7 +764,7 @@ void BrowseScreen::draw_cinema(Frame &frame) const
     const Snapshot &state = ctx_.store.state();
     const ui::Type &type = ctx_.type;
     const int count = static_cast<int>(results_.size());
-    const std::string games = trn(static_cast<long>(count), addons_ ? "{count} add-on" : "{count} game", addons_ ? "{count} add-ons" : "{count} games");
+    const std::string games = trn(static_cast<long>(count), addons_ && !grouped() ? "{count} add-on" : "{count} game", addons_ && !grouped() ? "{count} add-ons" : "{count} games");
     if (naming_ && keyboard_open_)
     {
         // Naming the filters to save: the name written large over the keys.
@@ -963,7 +963,7 @@ pano::Page BrowseScreen::panorama_page() const
             tile.label = game.title;
             if (!game.addon_id.empty())
             {
-                tile.sub = game.base_title + " \xC2\xB7 " + addon_type_label(game.addon_type);
+                tile.sub = game.addon_type.empty() ? game.base_title : game.base_title + " \xC2\xB7 " + addon_type_label(game.addon_type);
                 tile.label_size = 24.0f;
                 return;
             }
@@ -996,7 +996,7 @@ pano::Page BrowseScreen::panorama_page() const
     {
         const std::string title = filters_.query.empty() ? pano::lower(tr(addons_ ? "All add-ons" : "All games"))
                                                          : "\xE2\x80\x9C" + filters_.query + "\xE2\x80\x9D \xC2\xB7 " +
-                                                               trn(static_cast<long>(results_.size()), addons_ ? "{count} add-on" : "{count} game", addons_ ? "{count} add-ons" : "{count} games");
+                                                               trn(static_cast<long>(results_.size()), addons_ && !grouped() ? "{count} add-on" : "{count} game", addons_ && !grouped() ? "{count} add-ons" : "{count} games");
         page.groups.push_back(game_group(title, filters_.query.empty() ? count : std::string(), results_, true, "r:"));
         pano::Group tools;
         tools.title = pano::lower(tr("Search"));
@@ -1256,7 +1256,7 @@ void BrowseScreen::draw_panorama(Frame &frame) const
 {
     hui::gfx::DrawList &list = frame.scene;
     const int count = static_cast<int>(results_.size());
-    const std::string games = trn(static_cast<long>(count), addons_ ? "{count} add-on" : "{count} game", addons_ ? "{count} add-ons" : "{count} games");
+    const std::string games = trn(static_cast<long>(count), addons_ && !grouped() ? "{count} add-on" : "{count} game", addons_ && !grouped() ? "{count} add-ons" : "{count} games");
     if (naming_ && keyboard_open_)
     {
         // Naming the filters to save: the name as the title, the keys below.

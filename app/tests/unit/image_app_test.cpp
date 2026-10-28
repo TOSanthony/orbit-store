@@ -293,6 +293,7 @@ TEST(App, AddonSelectionUsesItsOwnIndexWhenThereAreMoreAddonsThanGames)
     const Game &target = h.store.state().addons.back();
     BrowseScreen screen(h.context, true);
     screen.focus();
+    screen.for_base(target.base_game_id); // one game's add-ons
     screen.set_query(target.title);
     screen.return_to(target.id);
     InputFrame input;
@@ -301,6 +302,40 @@ TEST(App, AddonSelectionUsesItsOwnIndexWhenThereAreMoreAddonsThanGames)
     const Intent opened = screen.update(input, 1.0f / 60.0f, h.feedback, true);
     EXPECT_EQ(opened.kind, Intent::Kind::open_game);
     EXPECT_EQ(opened.id, target.id);
+}
+
+TEST(App, AddonsListTheirGamesFirstAndAGamesTileOpensItsAddons)
+{
+    NativeLook appearance(look::Interface::store);
+    AppHarness h(host::FixtureMode::normal, true, 40);
+    BrowseScreen screen(h.context, true);
+    screen.focus();
+    InputFrame none;
+    none.connected = true;
+    screen.update(none, 1.0f / 60.0f, h.feedback, true);
+    std::vector<std::string> bases;
+    for (const Game &addon : h.store.state().addons)
+        if (!addon.base_game_id.empty() && std::find(bases.begin(), bases.end(), addon.base_game_id) == bases.end())
+            bases.push_back(addon.base_game_id);
+    ASSERT_GT(bases.size(), 0u);
+    EXPECT_TRUE(screen.grouped());
+    EXPECT_EQ(screen.result_count(), static_cast<int>(bases.size()));
+    EXPECT_LT(screen.result_count(), static_cast<int>(h.store.state().addons.size()));
+    ASSERT_TRUE(screen.open_group(bases.front()));
+    EXPECT_FALSE(screen.grouped());
+    for (const Game &addon : h.store.state().addons)
+        EXPECT_NE(addon.id, bases.front()); // a group is not an add-on
+    int expected = 0;
+    for (const Game &addon : h.store.state().addons)
+        expected += addon.base_game_id == bases.front();
+    EXPECT_EQ(screen.result_count(), expected);
+    // Circle returns to the games.
+    InputFrame back;
+    back.connected = true;
+    back.pressed = hui::action_bit(Action::back);
+    screen.update(back, 1.0f / 60.0f, h.feedback, true);
+    EXPECT_TRUE(screen.grouped());
+    EXPECT_EQ(screen.result_count(), static_cast<int>(bases.size()));
 }
 
 TEST(App, CinemaDpadReachesEveryChapterWithoutCyclingCollectionsOrSearch)

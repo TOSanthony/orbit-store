@@ -170,6 +170,11 @@ std::vector<Scenario> scenarios()
 {
     using Mode = orbit::host::FixtureMode;
     std::vector<Scenario> list;
+    // The Add-ons tab: the games that have add-ons, then one game's add-ons.
+    list.push_back({"addons-grouped", Mode::dlc, false,
+        {run(2.0f, [](orbit::App &app) { app.show_tab(orbit::tab::addons); }),
+         pause(1.5f, "addons-grouped-games"), move(Direction::down), move(Direction::down), tap(Action::confirm), pause(1.0f, "addons-grouped-one"),
+         tap(Action::back), pause(0.8f, "addons-grouped-back")}});
     list.push_back({"addons", Mode::normal, true,
         {run(2.0f, [](orbit::App &app) { app.show_tab(orbit::tab::addons); }),
          pause(2.0f, "addons-list"), move(Direction::down), move(Direction::right),

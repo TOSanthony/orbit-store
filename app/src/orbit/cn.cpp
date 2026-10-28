@@ -386,7 +386,8 @@ void draw_still(Context &ctx, hui::gfx::DrawList &out, const Still &f, const ui:
                           Color::rgb(0x000000, 0.1f), Color::rgb(0x000000, 0.95f));
         ui::text_fit(out, type.medium, f.game->title, r.x + 12, r.y + r.h - 48, 17, r.w - 24, kInk);
         ui::text_fit(out, type.regular, f.game->base_title, r.x + 12, r.y + r.h - 29, 14, r.w - 24, kInk);
-        ui::text_fit(out, type.regular, addon_type_label(f.game->addon_type), r.x + 12, r.y + r.h - 11, 13, r.w - 24, kDim);
+        if (!f.game->addon_type.empty())
+            ui::text_fit(out, type.regular, addon_type_label(f.game->addon_type), r.x + 12, r.y + r.h - 11, 13, r.w - 24, kDim);
     }
     else if (!f.badge.empty())
     {

@@ -387,10 +387,23 @@ class BrowseScreen final : public Screen
     // apps: the NAS apps (tagline APPS) instead of the games; Browse itself leaves apps, DLC and update packs out.
     explicit BrowseScreen(Context &context, bool addons = false, bool apps = false);
     void for_base(const std::string &base) { filters_ = BrowseFilters{}; filters_.addon_base = base; index_ = 0; refilter(); }
-    const std::vector<Game> &catalogue_games() const { return addons_ ? ctx_.store.state().addons : ctx_.store.state().games; }
+    // The Add-ons tab first lists the games that have add-ons, one tile each; a game's tile opens its add-ons.
+    bool grouped() const { return addons_ && filters_.addon_base.empty(); }
+    bool open_group(const std::string &id)
+    {
+        if (!grouped() || std::none_of(groups_.begin(), groups_.end(), [&](const Game &g) { return g.id == id; }))
+            return false;
+        for_base(id);
+        return true;
+    }
+    const std::vector<Game> &catalogue_games() const
+    {
+        return addons_ ? (grouped() ? groups_ : ctx_.store.state().addons) : ctx_.store.state().games;
+    }
     int result_count() const { return static_cast<int>(results_.size()); }
     bool addons_ = false;
     bool apps_ = false;
+    std::vector<Game> groups_; // the games that have add-ons (see grouped())
     void focus() override;
     void retranslate() override;
     Intent update(const InputFrame &input, float dt, Feedback &feedback, bool focused) override;
@@ -1516,6 +1529,10 @@ class App
     BrowseScreen &apps()
     {
         return apps_;
+    }
+    BrowseScreen &addons()
+    {
+        return addons_;
     }
     LibraryScreen &library()
     {

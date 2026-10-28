@@ -82,7 +82,39 @@ void BrowseScreen::refilter()
     const Snapshot &state = ctx_.store.state();
     catalog_serial_ = state.catalog_serial;
     favourites_serial_ = state.serial;
-    std::vector<int> results = browse(catalogue_games(), filters_, state.favourites, state.library_games());
+    BrowseFilters used = filters_;
+    if (grouped())
+    {
+        // One tile per base game, made from its add-ons (those of the chosen type when one is set).
+        groups_.clear();
+        std::vector<int> counts;
+        for (const Game &addon : state.addons)
+        {
+            if (addon.releases.empty() || addon.base_game_id.empty() ||
+                (!filters_.addon_type.empty() && addon.addon_type != filters_.addon_type))
+                continue;
+            auto at = std::find_if(groups_.begin(), groups_.end(), [&](const Game &g) { return g.id == addon.base_game_id; });
+            if (at == groups_.end())
+            {
+                Game group = addon;
+                group.id = addon.base_game_id;
+                group.title = addon.base_title.empty() ? addon.title : addon.base_title;
+                group.addon_type.clear();
+                group.base_game_id.clear();
+                groups_.push_back(std::move(group));
+                counts.push_back(0);
+                at = groups_.end() - 1;
+            }
+            ++counts[static_cast<std::size_t>(at - groups_.begin())];
+            // The newest add-on dates the group.
+            if (addon.releases.front().added_at > at->releases.front().added_at)
+                at->releases.front().added_at = addon.releases.front().added_at;
+        }
+        for (std::size_t i = 0; i < groups_.size(); ++i)
+            groups_[i].base_title = trn(counts[i], "{count} add-on", "{count} add-ons");
+        used.addon_type.clear();
+    }
+    std::vector<int> results = browse(catalogue_games(), used, state.favourites, state.library_games());
     if (!addons_)
     {
         // Apps, DLC and update packs from the NAS folders have their own places, never among the games.
@@ -588,6 +620,15 @@ Intent BrowseScreen::update(const InputFrame &input, float dt, Feedback &feedbac
         ((filters_.favourites || filters_.hide_installed) && favourites_serial_ != state.serial))
         refilter();
 
+    // Circle on one game's add-ons returns to the list of games.
+    if (focused && addons_ && !grouped() && input.is_pressed(Action::back) && !modal() && filters_.query.empty())
+    {
+        feedback.play(hui::audio::Cue::modal_close);
+        filters_.addon_base.clear();
+        index_ = 0;
+        refilter();
+        return intent;
+    }
     xb::keyboard_look(keyboard_.style, look::is(look::Interface::crossbar));
     keep_filters_in_range();
     if (look::is(look::Interface::crossbar))
@@ -882,7 +923,7 @@ void BrowseScreen::draw(Frame &frame, bool focused) const
     const float title = ui::text(list, type.semibold, tr(addons_ ? "Add-ons" : apps_ ? "Apps" : "Browse"), ui::kGutter, kTitleBaseline, 60.0f,
                                  ui::color::text);
     const std::string count =
-        trn(static_cast<long>(results_.size()), addons_ ? "{count} add-on" : apps_ ? "{count} app" : "{count} game", addons_ ? "{count} add-ons" : apps_ ? "{count} apps" : "{count} games");
+        trn(static_cast<long>(results_.size()), addons_ && !grouped() ? "{count} add-on" : apps_ ? "{count} app" : "{count} game", addons_ && !grouped() ? "{count} add-ons" : apps_ ? "{count} apps" : "{count} games");
     ui::text(list, type.regular, count, ui::kGutter + title + 24.0f, kTitleBaseline, 20.0f,
              ui::color::text3);
 

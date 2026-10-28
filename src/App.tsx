@@ -196,7 +196,7 @@ export default function App() {
   );
   const savedCount = orbit.savedFilters.filter((s) => s.page === (addonsPage ? "addons" : "games")).length;
   const defaultSort = addonsPage ? "added" : "release";
-  const catalogueCount = (count: number) => addonsPage ? addonCountLabel(count) : tn(count, "{count} game", "{count} games");
+  const catalogueCount = (count: number) => addonsPage && addonBase ? addonCountLabel(count) : tn(count, "{count} game", "{count} games");
   // The other interfaces' designs show the filters open under "Filters and sort".
   const [filtersOpen, setFiltersOpen] = useState(() => readInterfacePrefs().name !== "store");
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -242,7 +242,7 @@ export default function App() {
     else if (zeroOpen) setZeroOpen(false);
     else if (autoOpen || settingsPage) closeSettings();
     else if (game) setGameId(null);
-    else if (tab === "Add-ons" && addonBase) { setGameId(addonBase); setTab("Browse"); setAddonBase(""); }
+    else if (tab === "Add-ons" && addonBase) setAddonBase("");
     else if (tab !== "Discover") {
       setTab("Discover");
       requestAnimationFrame(() => {
@@ -260,13 +260,27 @@ export default function App() {
     const games = library.snapshot?.status === "ready" ? library.snapshot.games : [];
     return new Set(games.length ? orbit.games.filter((g) => inLibrary(g, games)).map((g) => g.id) : []);
   }, [orbit.games, library.snapshot?.status, library.snapshot?.games]);
+  // The Add-ons page first lists the games that have add-ons, one tile each; a game's tile opens its add-ons.
+  const addonGroups = addonsPage && !addonBase;
+  const groupCounts = useMemo(() => new Map<string, number>(), []);
   const filtered = useMemo(() => {
     const list = browseGames(catalogueGames.filter(g => !addonsPage || !addonBase || g.baseGameId === addonBase), filters, favorites, installedGames);
-    // Add-ons stay together under their game, in the game's alphabetical order; the chosen sort orders them within it.
     if (!addonsPage) return list;
     const key = (g: { baseGameTitle?: string; title: string }) => (g.baseGameTitle || g.title).toLowerCase();
-    return [...list].sort((a, b) => key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0);
-  }, [catalogueGames, addonsPage, addonBase, filters, favorites, installedGames]);
+    // Add-ons stay together under their game, in the game's alphabetical order; the chosen sort orders them within it.
+    const ordered = [...list].sort((a, b) => key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0);
+    if (addonBase) return ordered;
+    groupCounts.clear();
+    const groups: Game[] = [];
+    for (const addon of ordered) {
+      const base = addon.baseGameId || addon.id;
+      if (!groupCounts.has(base)) {
+        groups.push({ ...addon, id: base, title: addon.baseGameTitle || addon.title, addonId: undefined, addonType: undefined });
+      }
+      groupCounts.set(base, (groupCounts.get(base) || 0) + 1);
+    }
+    return groups;
+  }, [catalogueGames, addonsPage, addonBase, filters, favorites, installedGames, groupCounts]);
   const browseReset = useMemo(() => ({filters, addonBase, tab}), [filters, addonBase, tab]);
   const browseList = useInfiniteList(filtered.length, CATALOG_STEP, browseReset);
   const visibleGames = filtered.slice(0, browseList.visible);
@@ -1133,10 +1147,10 @@ export default function App() {
                     <GameTile
                       key={g.id}
                       game={g}
-                      status={collectionStates.get(g.id)?.label}
-                      favorite={favorites.has(g.id)}
+                      status={addonGroups ? addonCountLabel(groupCounts.get(g.id) || 0) : collectionStates.get(g.id)?.label}
+                      favorite={!addonGroups && favorites.has(g.id)}
                       priority={index < firstCovers}
-                      open={open}
+                      open={addonGroups ? (group: Game) => setAddonBase(group.id) : open}
                     />
                   ))}
                 </div>

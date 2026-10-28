@@ -662,6 +662,27 @@ http::Response Fixture::send(const http::Request &request)
     if (get && path == "/api/v1/addons")
     {
         response.body = "[]";
+        if (mode_ == FixtureMode::dlc)
+        {
+            // Add-ons of two games, to show them grouped.
+            std::string out = "[";
+            const char *games[2][2] = {{"neon-courier", "Neon Courier"}, {"tidewater", "Tidewater"}};
+            for (int g = 0; g < 2; ++g)
+                for (int i = 0; i < 3 - g; ++i)
+                {
+                    const std::string id = std::string(games[g][0]) + "-pack-" + std::to_string(i);
+                    if (out.size() > 1)
+                        out += ",";
+                    out += "{\"id\":" + json::quote(id) + ",\"gameId\":" + json::quote(id) + ",\"addonId\":" + json::quote(id) +
+                           ",\"title\":" + json::quote(std::string(games[g][1]) + " pack " + std::to_string(i + 1)) +
+                           ",\"titleId\":\"PPSA12345\",\"sizeBytes\":4096,\"provider\":\"Archive.org\",\"sourceId\":\"archive\","
+                           "\"format\":\"PKG\",\"filename\":\"extra.pkg\",\"platform\":\"ps5\",\"baseGameId\":" + json::quote(games[g][0]) +
+                           ",\"baseGameTitle\":" + json::quote(games[g][1]) +
+                           ",\"addonType\":\"content-pack\",\"contents\":[\"Pack\"],\"requirements\":{\"titleIds\":[\"PPSA12345\"],"
+                           "\"minimumVersion\":null,\"edition\":null}}";
+                }
+            response.body = out + "]";
+        }
         return response;
     }
     if (get && path == "/api/v1/catalog")

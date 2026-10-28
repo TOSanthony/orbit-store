@@ -252,6 +252,8 @@ void App::handle_intent(const Intent &intent, Feedback &feedback)
         show_tab(tab::addons);
         break;
     case Intent::Kind::open_game:
+        if (tab_ == tab::addons && addons_.open_group(intent.id))
+            break;
         open_game(intent.id);
         if (intent.detail == "about")
             game_.show_about();

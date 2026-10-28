@@ -73,7 +73,8 @@ float draw_tile_caption(Context &ctx, hui::gfx::DrawList &list, const Game &game
                             27.0f, ink, 1);
     if (!game.addon_id.empty()) {
         ui::text_fit(list, type.regular, game.base_title, x, y + 2, 15, width, ui::color::text2);
-        ui::text_fit(list, type.regular, addon_type_label(game.addon_type), x, y + 21, 14, width, ui::color::text3);
+        if (!game.addon_type.empty())
+            ui::text_fit(list, type.regular, addon_type_label(game.addon_type), x, y + 21, 14, width, ui::color::text3);
         return y + 42;
     }
     if (state != nullptr && state[0] != '\0')
