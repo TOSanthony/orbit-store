@@ -641,6 +641,19 @@ std::vector<Scenario> scenarios()
          move(Direction::down), move(Direction::down), move(Direction::down), move(Direction::down),
          pause(0.8f, "settings-appearance-keyboard"), move(Direction::down), move(Direction::down),
          move(Direction::down), pause(0.8f, "settings-appearance-background")}});
+    // A background picked in a look without a top bar (set ORBIT_INTERFACE).
+    list.push_back({"look-background", Mode::normal, false,
+        {run(1.5f, [](orbit::App &app) { app.open_settings(orbit::SettingsScreen::Section::appearance, true); }),
+         move(Direction::down), move(Direction::down), move(Direction::down),
+         tap(Action::confirm), pause(0.6f, "look-background-menu"), move(Direction::down), move(Direction::down), move(Direction::down),
+         move(Direction::down), move(Direction::down), move(Direction::down), move(Direction::down),
+         move(Direction::down), tap(Action::confirm), pause(1.0f, "look-background-waves")}});
+    list.push_back({"look-background-pn", Mode::normal, false,
+        {run(1.5f, [](orbit::App &app) { app.open_settings(orbit::SettingsScreen::Section::appearance, true); }),
+         move(Direction::down), move(Direction::down), move(Direction::down), move(Direction::down),
+         tap(Action::confirm), pause(0.6f, "look-background-menu"), move(Direction::down), move(Direction::down), move(Direction::down),
+         move(Direction::down), move(Direction::down), move(Direction::down), move(Direction::down),
+         move(Direction::down), tap(Action::confirm), pause(1.0f, "look-background-waves")}});
     list.push_back({"pn-updates", Mode::updates, false,
         {pause(2.5f, "pn-update-badge"),
          run(0.5f, [](orbit::App &app) { app.open_settings(orbit::SettingsScreen::Section::updates, true); }),

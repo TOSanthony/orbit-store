@@ -1176,7 +1176,10 @@ void App::draw_backdrop_look(Frame &frame) const
         frame.backdrop.colors[0] = pano::kPage;
         frame.backdrop.colors[1] = pano::kPage;
         // A game page shows its art a little stronger than the sections do.
-        scene.rounded_rect({0, 0, 1920, 1080}, 0.0f, pano::kPage);
+        if (ctx_.appearance != 0)
+            frame.backdrop = appearance::backdrop(ctx_.appearance, ctx_.clock);
+        else
+            scene.rounded_rect({0, 0, 1920, 1080}, 0.0f, pano::kPage);
         if (look::prefs().art_behind)
         {
             // The design's strengths: a game .3, Browse .16, Library .18, the rest .2.
@@ -1199,6 +1202,12 @@ void App::draw_backdrop_look(Frame &frame) const
         // time of day's elsewhere.
         const int at = section();
         const bool tinted = game_open_ || (!settings_open_ && (at == section::search || at == section::discover || at == section::browse));
+        if (ctx_.appearance != 0)
+        {
+            // A background chosen in Settings replaces the ribbons.
+            frame.backdrop = appearance::backdrop(ctx_.appearance, ctx_.clock);
+            break;
+        }
         xb::backdrop(ctx_, frame.backdrop, tinted ? now : nullptr, tinted ? before : nullptr, backdrop_in_.value);
         if (tinted)
             xb::art_wash(ctx_, scene, now, before, backdrop_in_.value);
@@ -1208,6 +1217,8 @@ void App::draw_backdrop_look(Frame &frame) const
         // Black; each screen lays its game's art over it.
         frame.backdrop.colors[0] = ui::Color::rgb(0x000000);
         frame.backdrop.colors[1] = ui::Color::rgb(0x000000);
+        if (ctx_.appearance != 0)
+            frame.backdrop = appearance::backdrop(ctx_.appearance, ctx_.clock);
         break;
     default:
         // The background chosen in Settings > Appearance (black by default).

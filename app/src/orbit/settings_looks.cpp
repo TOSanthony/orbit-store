@@ -1,3 +1,4 @@
+#include "orbit/appearance.hpp"
 #include "orbit/download_settings.hpp"
 // Orbit Store TV app - App settings in Crossbar: each section is a folder
 // with its value beside it; inside, each setting is a row, and its values
@@ -154,6 +155,7 @@ std::vector<SettingsScreen::XbEntry> SettingsScreen::section_entries() const
         out.push_back({'m', 0});
         if (look::is(look::Interface::cinema) || look::is(look::Interface::panorama))
             out.push_back({'A', 0});
+        out.push_back({'B', 0});
         out.push_back({'L', 0});
         out.push_back({'Y', 0});
         out.push_back({'S', 0});
@@ -748,6 +750,14 @@ xb::List SettingsScreen::rows_of(const std::vector<XbEntry> &entries) const
             row.value = ctx_.keyboard_choice == "qwerty" ? "QWERTY" : ctx_.keyboard_choice == "azerty" ? "AZERTY" : std::string(tr("Automatic"));
             row.text = tr("The on-screen keyboard\xE2\x80\x99s letters. Automatic uses AZERTY when the app is in French.");
             break;
+        case 'B':
+            row.icon = icons::Icon::palette;
+            row.title = tr("Background");
+            row.value = tr(appearance::preset(ctx_.appearance).name);
+            row.text = tr(look::is(look::Interface::crossbar)
+                              ? "The picture behind the menus. Black keeps this look's own ribbons."
+                              : "The picture behind the menus. Black keeps this look's own background.");
+            break;
         case 'S':
             row.icon = icons::Icon::play;
             row.title = tr("Sounds");
@@ -965,6 +975,11 @@ std::vector<xb::MenuItem> SettingsScreen::crossbar_menu(xb::MenuFoot *foot) cons
         note.note = tr("The on-screen keyboard\xE2\x80\x99s letters. Automatic uses AZERTY when the app is in French.");
         break;
     }
+    case 18:
+        for (std::size_t i = 0; i < appearance::count(); ++i)
+            items.push_back(xb::choice(tr(appearance::preset(i).name), i == ctx_.appearance));
+        note.note = tr("The picture behind the menus. Black keeps this look's own background.");
+        break;
     case 17:
         for (int value = 0; value <= 100; value += 10)
             items.push_back(xb::choice(std::to_string(value), value == (ctx_.sound_volume + 5) / 10 * 10));
@@ -1014,6 +1029,8 @@ std::string SettingsScreen::crossbar_menu_title() const
         return tr("Keyboard");
     if (xb_menu_kind_ == 17)
         return tr("Volume");
+    if (xb_menu_kind_ == 18)
+        return tr("Background");
     if (xb_menu_kind_ == 8)
         return look::is(look::Interface::cinema) ? tr("Art behind menus") : tr("Art behind pages");
     if (xb_menu_kind_ == 9)
@@ -1156,6 +1173,9 @@ void SettingsScreen::menu_choose(int chosen, Intent &intent, Feedback &feedback)
         break;
     case 16:
         act(Kind::keyboard, chosen, intent, feedback);
+        break;
+    case 18:
+        act(Kind::appearance, chosen, intent, feedback);
         break;
     case 17:
         if (chosen >= 0 && chosen <= 10 && chosen * 10 != ctx_.sound_volume)
@@ -1311,6 +1331,9 @@ void SettingsScreen::press(const std::string &key, bool off, const InputFrame &i
         break;
     case 'Q':
         menu(17);
+        break;
+    case 'B':
+        menu(18);
         break;
     case 'S':
         act(Kind::sounds_toggle, 0, intent, feedback);
@@ -1520,7 +1543,7 @@ std::vector<hui::ui::Hint> SettingsScreen::crossbar_hints() const
     const char kind = row.key.empty() ? ' ' : row.key[0];
     if (row.toggle >= 0)
         hints.push_back({hui::ui::Button::cross, row.toggle > 0 ? tr("Turn off") : tr("Turn on")});
-    else if (kind == 'd' || kind == 'l' || kind == 'C' || kind == 'i' || kind == 'b' || kind == 'm' || kind == 'L' || kind == 'Y' || kind == 'Q' || kind == 'M')
+    else if (kind == 'd' || kind == 'l' || kind == 'C' || kind == 'i' || kind == 'b' || kind == 'm' || kind == 'L' || kind == 'B' || kind == 'Y' || kind == 'Q' || kind == 'M')
         hints.push_back({hui::ui::Button::cross, tr("Change")});
     else if (kind == 't' || kind == 'r' || kind == 'w' || kind == 'N' || kind == 'V')
         hints.push_back({hui::ui::Button::cross, tr("Open")});
@@ -1846,7 +1869,7 @@ std::vector<hui::ui::Hint> SettingsScreen::cinema_hints() const
     const char kind = row.key.empty() ? ' ' : row.key[0];
     if (row.toggle >= 0)
         hints.push_back({hui::ui::Button::cross, row.toggle > 0 ? tr("Turn off") : tr("Turn on")});
-    else if (kind == 'd' || kind == 'l' || kind == 'C' || kind == 'i' || kind == 'b' || kind == 'm' || kind == 'L' || kind == 'Y' || kind == 'Q' || kind == 'M')
+    else if (kind == 'd' || kind == 'l' || kind == 'C' || kind == 'i' || kind == 'b' || kind == 'm' || kind == 'L' || kind == 'B' || kind == 'Y' || kind == 'Q' || kind == 'M')
         hints.push_back({hui::ui::Button::cross, tr("Change")});
     else if (kind == 't' || kind == 'r' || kind == 'w' || kind == 'N' || kind == 'V')
         hints.push_back({hui::ui::Button::cross, tr("Open")});
@@ -2175,7 +2198,7 @@ std::vector<hui::ui::Hint> SettingsScreen::panorama_hints() const
     if (row.toggle >= 0 && !row.off)
         hints.push_back({hui::ui::Button::cross, row.toggle > 0 ? tr("Turn off") : tr("Turn on")});
     else if (kind == 'd' || kind == 'l' || kind == 'C' || kind == 'i' || kind == 'b' || kind == 'm' || kind == 'g' || kind == 'A' ||
-             kind == 'L' || kind == 'Y' || kind == 'Q' || kind == 'M')
+             kind == 'L' || kind == 'B' || kind == 'Y' || kind == 'Q' || kind == 'M')
         hints.push_back({hui::ui::Button::cross, tr("Change")});
     else if (kind == 't' || kind == 'r' || kind == 'w' || kind == 'N' || kind == 'V')
         hints.push_back({hui::ui::Button::cross, tr("Open")});

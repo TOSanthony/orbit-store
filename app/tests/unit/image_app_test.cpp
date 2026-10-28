@@ -1209,8 +1209,8 @@ TEST(App, AppearanceLanguageSwitchesAtOnceAndIsKept)
     AppHarness h;
     h.app.open_settings(SettingsScreen::Section::appearance, true);
     h.settle();
-    // Interface, Ribbons, Motion, then Language.
-    for (int i = 0; i < 3; ++i)
+    // Interface, Ribbons, Motion, Background, then Language.
+    for (int i = 0; i < 4; ++i)
         h.frame(Direction::down);
     h.press(Action::confirm);
     h.settle(10);
