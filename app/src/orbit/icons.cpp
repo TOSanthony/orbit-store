@@ -587,6 +587,42 @@ void draw(hui::gfx::DrawList &list, Icon icon, float cx, float cy, float size, h
     const int at = static_cast<int>(icon);
     if (at < 0 || at >= static_cast<int>(Icon::count))
         return;
+    if (icon == Icon::cog)
+    {
+        // Eight teeth round a hole, as a closed outline.
+        const float scale = size / 24.0f;
+        const float width = stroke * scale;
+        const auto turn = [&](float radius, float degrees, float &x, float &y)
+        {
+            const float a = degrees * 3.14159265f / 180.0f;
+            x = cx + radius * scale * std::cos(a);
+            y = cy + radius * scale * std::sin(a);
+        };
+        std::vector<float> pts;
+        for (int k = 0; k < 8; ++k)
+        {
+            const float base = static_cast<float>(k) * 45.0f;
+            const float offsets[4] = {-15.0f, -9.0f, 9.0f, 15.0f};
+            const float radii[4] = {8.2f, 10.6f, 10.6f, 8.2f};
+            for (int j = 0; j < 4; ++j)
+            {
+                float x, y;
+                turn(radii[j], base + offsets[j], x, y);
+                pts.push_back(x);
+                pts.push_back(y);
+            }
+        }
+        pts.push_back(pts[0]);
+        pts.push_back(pts[1]);
+        for (std::size_t i = 0; i + 3 < pts.size(); i += 2)
+        {
+            list.line(pts[i], pts[i + 1], pts[i + 2], pts[i + 3], width, ink);
+            if (ink.a >= 0.98f)
+                list.circle(pts[i + 2], pts[i + 3], width * 0.5f, ink);
+        }
+        list.ring(cx, cy, 3.6f * scale, width, ink);
+        return;
+    }
     const Entry &entry = kIcons[at];
     const float scale = size / 24.0f;
     const float x0 = cx - size * 0.5f;

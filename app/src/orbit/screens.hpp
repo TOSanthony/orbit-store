@@ -94,11 +94,11 @@ namespace section
 constexpr int search = 0;
 constexpr int discover = 1;
 constexpr int browse = 2;
-constexpr int addons = 3;
-constexpr int library = 4;
-constexpr int downloads = 5;
-constexpr int updates = 6; // game updates and NAS DLC: sections of the looks without the Store top bar
-constexpr int dlc = 7;
+constexpr int apps = 3; // the NAS applications
+constexpr int addons = 4;
+constexpr int library = 5;
+constexpr int downloads = 6;
+constexpr int updates = 7; // game updates: a section of the looks without the Store top bar
 constexpr int settings = 8;
 constexpr int count = 9;
 } // namespace section
@@ -239,6 +239,8 @@ void refuse(Feedback &feedback, const InputFrame &input);
 hui::ui::Theme keyboard_theme();
 // A My NAS notice from the service, translated (a skipped-entries count is part of the sentence).
 std::string nas_message(const std::string &error);
+// A QR code of `text` on a white square (settings.cpp); returns its side, 0 when it cannot be encoded. A null list measures.
+float draw_qr(hui::gfx::DrawList *list, const std::string &text, float x, float y, float max_side);
 // A small drawing of an interface, for its card in App settings → Appearance.
 void draw_interface_thumb(Context &ctx, hui::gfx::DrawList &list, int interface, const ui::Rect &r);
 

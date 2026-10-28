@@ -35,7 +35,7 @@ std::string BrowseScreen::crossbar_summary() const
 {
     // The Filters and sort row: the platform, source and order, or what is
     // applied and how many games match.
-    const std::string sort = filters_.sort == Sort::release ? std::string(tr(addons_ ? "Recently added" : "Newest first")) : filter_value(4);
+    const std::string sort = filters_.sort == Sort::release ? std::string(tr(addons_ ? "By game" : "Newest first")) : filter_value(4);
     if (!filters_.narrowed())
         return filter_value(5) + " \xC2\xB7 " + filter_value(0) + " \xC2\xB7 " + sort;
     std::string out;
@@ -182,7 +182,7 @@ std::vector<xb::MenuItem> BrowseScreen::crossbar_filters() const
     for (int filter : filter_order())
     {
         xb::MenuItem item = xb::action(kIcons[filter], tr(addons_ && filter == 1 ? "Type" : kLabels[filter]));
-        item.value = filter == 4 && filters_.sort == Sort::release ? std::string(tr(addons_ ? "Recently added" : "Newest first")) : filter_value(filter);
+        item.value = filter == 4 && filters_.sort == Sort::release ? std::string(tr(addons_ ? "By game" : "Newest first")) : filter_value(filter);
         items.push_back(item);
     }
     items.push_back(xb::action(icons::Icon::refresh, tr("Reset filters"),
@@ -423,7 +423,7 @@ void BrowseScreen::draw_crossbar(Frame &frame) const
     hui::gfx::DrawList &list = frame.scene;
     const Snapshot &state = ctx_.store.state();
     std::vector<xb::BarItem> bar = xb::sections(ctx_, false);
-    int current = addons_ ? section::addons : search_mode_ ? section::search : section::browse;
+    int current = addons_ ? section::addons : apps_ ? section::apps : search_mode_ ? section::search : section::browse;
     if (filters_.favourites && !search_mode_)
     {
         xb::BarItem folder;
@@ -856,7 +856,7 @@ void BrowseScreen::draw_cinema(Frame &frame) const
             cn::Row row;
             row.icon = kIcons[filter];
             row.title = tr(addons_ && filter == 1 ? "Type" : kLabels[filter]);
-            row.value = filter == 4 && filters_.sort == Sort::release ? std::string(tr(addons_ ? "Recently added" : "Newest first")) : filter_value(filter);
+            row.value = filter == 4 && filters_.sort == Sort::release ? std::string(tr(addons_ ? "By game" : "Newest first")) : filter_value(filter);
             rows.push_back(std::move(row));
         }
         cn::Row reset;
@@ -1284,7 +1284,7 @@ void BrowseScreen::draw_panorama(Frame &frame) const
         return;
     }
     const pano::Page page = panorama_page();
-    pano::draw_header(ctx_, list, pano::lower(tr(addons_ ? "Add-ons" : search_mode_ ? "Search" : "Browse")), pano_.scroll() * 0.35f);
+    pano::draw_header(ctx_, list, pano::lower(tr(addons_ ? "Add-ons" : apps_ ? "Apps" : search_mode_ ? "Search" : "Browse")), pano_.scroll() * 0.35f);
     if (!search_mode_ && count > 0)
     {
         // What's applied, under the title, with Reset filters beside it.

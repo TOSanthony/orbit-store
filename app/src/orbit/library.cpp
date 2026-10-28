@@ -380,12 +380,6 @@ std::vector<LibraryScreen::Control> LibraryScreen::page_controls() const
         const float w = ui::button_width(type, updates_label(state), 20.0f, ui::ButtonKind::secondary) + 40.0f;
         out.push_back({Kind::updates, 0, row, {right - w, 112.0f, w, 66.0f}});
         right -= w + 16.0f;
-        if (state.game_dlc > 0)
-        {
-            const float dw = ui::button_width(type, dlc_label(state), 20.0f, ui::ButtonKind::secondary) + 40.0f;
-            out.push_back({Kind::dlc, 0, row, {right - dw, 112.0f, dw, 66.0f}});
-            right -= dw + 16.0f;
-        }
     }
     if (section_ == 0 && (!state.have_library || !library.ready()))
     {

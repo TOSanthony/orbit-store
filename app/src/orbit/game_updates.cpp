@@ -497,7 +497,7 @@ std::vector<GameUpdatesScreen::RowText> GameUpdatesScreen::row_texts() const
 void GameUpdatesScreen::draw_crossbar(Frame &frame, bool focused) const
 {
     hui::gfx::DrawList &list = frame.scene;
-    xb::draw_bar(ctx_, list, xb::sections(ctx_, false), dlc_mode_ ? section::dlc : section::updates);
+    xb::draw_bar(ctx_, list, xb::sections(ctx_, false), section::updates);
     const std::vector<RowText> texts = row_texts();
     const GameUpdateStatus &status = ctx_.store.state().game_update_status;
     auto covers = std::make_shared<std::vector<Game>>();

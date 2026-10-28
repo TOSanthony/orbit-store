@@ -11,6 +11,7 @@
 #include "orbit/thread.hpp"
 
 #include <algorithm>
+#include <map>
 
 namespace orbit
 {
@@ -33,13 +34,22 @@ std::string status_of(const LibraryGame &game)
 }
 
 // The catalogue game with this title ID, for its cover.
-const Game *art_of(const Snapshot &state, std::string_view title_id)
+// The picture of an installed game: Orbit gives the console's own icon, else the best catalogue row
+// (GET /api/v1/art/local-<title id>/cover), the same way for every look and client.
+const Game *art_of(const Snapshot &, std::string_view title_id)
 {
-    for (const Game &game : state.games)
-        for (const Release &release : game.releases)
-            if (release.title_id == title_id)
-                return &game;
-    return nullptr;
+    if (title_id.empty())
+        return nullptr;
+    static std::map<std::string, Game> locals; // node addresses stay put
+    auto at = locals.find(std::string(title_id));
+    if (at == locals.end())
+    {
+        Game local;
+        local.id = "local-" + std::string(title_id);
+        local.title = std::string(title_id);
+        at = locals.emplace(std::string(title_id), std::move(local)).first;
+    }
+    return &at->second;
 }
 
 std::string game_key(const LibraryGame &game)
@@ -111,10 +121,8 @@ std::vector<LibraryScreen::XbEntry> LibraryScreen::crossbar_entries() const
         out.push_back({library.games.empty() ? 'n' : 'e', 0});
     if (view_ == 0)
     {
-        // Game updates and DLC, as the Library's buttons are in the Store look.
+        // Game updates, as the Library's button is in the Store look.
         out.push_back({'U', 0});
-        if (state.game_dlc > 0)
-            out.push_back({'P', 0});
         out.push_back({'S', 0});
         if (library.can("rescan"))
             out.push_back({'c', 0});
@@ -1299,8 +1307,6 @@ pano::AppBar LibraryScreen::panorama_bar(const pano::Page &page) const
     add('U', state.game_updates > 0 ? std::string(tr("Updates")) + " (" + std::to_string(state.game_updates) + ")"
                                     : std::string(tr("Check for updates")),
         state.game_update_status.checking);
-    if (state.game_dlc > 0)
-        add('P', std::string(tr("DLC")) + " (" + std::to_string(state.game_dlc) + ")");
     add('S', tr("Search your library"), false, query_.empty() ? std::string() : "\xE2\x80\x9C" + query_ + "\xE2\x80\x9D");
     if (library.can("rescan"))
         add('c', tr("Scan for games"), library.working());

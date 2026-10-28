@@ -937,10 +937,9 @@ export default function App() {
         {!game && (
           <>
             <nav className="main-nav" aria-label={t("Main navigation")}>
-              {(["Discover", "Browse", "Add-ons", "Apps", "Updates", "DLC", "Library", "Downloads"] as const)
+              {(["Discover", "Browse", "Apps", "Add-ons", "Updates", "Library", "Downloads"] as const)
                 .filter((name) => name !== "Apps" || appGames.length > 0)
                 .filter((name) => name !== "Updates" || gameUpdates > 0)
-                .filter((name) => name !== "DLC" || gameDlc > 0)
                 .map(
                 (name) => (
                   <button
@@ -955,9 +954,6 @@ export default function App() {
                     )}
                     {name === "Updates" && gameUpdates > 0 && (
                       <span className="queue-count">{gameUpdates}</span>
-                    )}
-                    {name === "DLC" && gameDlc > 0 && (
-                      <span className="queue-count">{gameDlc}</span>
                     )}
                   </button>
                 ),

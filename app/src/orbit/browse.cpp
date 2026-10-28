@@ -11,6 +11,7 @@
 #include "orbit/look.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 
 namespace orbit
@@ -90,8 +91,14 @@ void BrowseScreen::refilter()
                                      [&](int i) { return game_category(catalogue_games()[static_cast<std::size_t>(i)]) != wanted; }),
                       results.end());
     }
+    // Add-ons are grouped by their game, in the game's alphabetical order, newest first within a game.
     if (addons_ && filters_.sort == Sort::release) std::stable_sort(results.begin(), results.end(), [this](int a, int b) {
         const auto &x=catalogue_games()[a].releases.front(), &y=catalogue_games()[b].releases.front();
+        std::string gx = x.base_title, gy = y.base_title;
+        for (char &c : gx) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        for (char &c : gy) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (gx != gy)
+            return gx < gy;
         return x.added_at > y.added_at;
     });
     // Favourites and Hide installed refilter on every store change: the same
@@ -337,7 +344,7 @@ std::vector<std::string> BrowseScreen::filter_options(int filter, int *selected,
     }
     default:
         for (int i = 0; i < static_cast<int>(Sort::count); ++i)
-            options.push_back(addons_ && i == static_cast<int>(Sort::release) ? tr("Recently added") : sort_label(static_cast<Sort>(i)));
+            options.push_back(addons_ && i == static_cast<int>(Sort::release) ? tr("By game") : sort_label(static_cast<Sort>(i)));
         *selected = static_cast<int>(filters_.sort);
         break;
     }
@@ -924,7 +931,7 @@ void BrowseScreen::draw(Frame &frame, bool focused) const
         const ui::Rect r = filter_rect(f);
         ui::select_field(
             list, type, r,
-            f == 4 && filters_.sort == Sort::release ? tr(addons_ ? "Recently added" : "Newest first") : filter_value(f),
+            f == 4 && filters_.sort == Sort::release ? tr(addons_ ? "By game" : "Newest first") : filter_value(f),
             control_focus_[2 + f], picker_.open && picking_ == f, true, ui::FieldLook::pill);
     }
     const std::vector<int> header = store_header();

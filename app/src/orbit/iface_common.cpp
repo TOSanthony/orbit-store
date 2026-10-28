@@ -15,6 +15,8 @@ const char *section_title(int section)
         return /* i18n */ "Search";
     case section::browse:
         return /* i18n */ "Browse";
+    case section::apps:
+        return /* i18n */ "Apps";
     case section::addons:
         return /* i18n */ "Add-ons";
     case section::library:
@@ -23,8 +25,6 @@ const char *section_title(int section)
         return /* i18n */ "Downloads";
     case section::updates:
         return /* i18n */ "Updates";
-    case section::dlc:
-        return /* i18n */ "DLC";
     case section::settings:
         return /* i18n */ "Settings";
     default:

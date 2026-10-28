@@ -20,7 +20,7 @@ namespace
 constexpr const char *kTabs[] = {/* i18n */ "Discover", /* i18n */ "Browse", /* i18n */ "Add-ons", /* i18n */ "Library", /* i18n */ "Downloads",
                                   /* i18n */ "DLC", /* i18n */ "Updates", /* i18n */ "Apps"}; // by tab::
 // Left to right in the top bar.
-constexpr int kOrder[] = {tab::discover, tab::browse, tab::addons, tab::apps, tab::dlc, tab::updates, tab::library, tab::downloads};
+constexpr int kOrder[] = {tab::discover, tab::browse, tab::apps, tab::addons, tab::updates, tab::library, tab::downloads};
 constexpr int kTabCount = tab::count;
 constexpr int kSearchItem = kTabCount;
 constexpr int kSettingsItem = kTabCount + 1;
@@ -57,7 +57,7 @@ bool tab_hidden(const Snapshot &state, int index)
         return state.have_catalog && std::none_of(state.games.begin(), state.games.end(),
                                                   [](const Game &g) { return game_category(g) == Category::apps; });
     if (index == tab::dlc)
-        return state.game_dlc <= 0;
+        return true; // the NAS DLC are add-ons now: no tab of their own
     if (index == tab::updates)
         return state.game_updates <= 0;
     return false;
@@ -307,7 +307,9 @@ int App::section() const
     if (search_open_)
         return section::search;
     // Updates and DLC are sections of their own in the looks without the Store top bar.
-    return tab_ == tab::dlc ? section::dlc : tab_ == tab::updates ? section::updates : tab_ == tab::apps ? section::browse : tab_ + 1;
+    static const int kOfTab[tab::count] = {section::discover, section::browse, section::addons, section::library,
+                                           section::downloads, section::updates, section::updates, section::apps};
+    return kOfTab[std::clamp(tab_, 0, tab::count - 1)];
 }
 
 void App::show_section(int next)
@@ -334,7 +336,9 @@ void App::show_section(int next)
         browse_.open_search_section();
         return;
     }
-    tab_ = next == section::updates ? tab::updates : next == section::dlc ? tab::dlc : std::clamp(next - 1, 0, tab::core - 1);
+    static const int kTabOf[section::count] = {tab::browse, tab::discover, tab::browse, tab::apps, tab::addons,
+                                               tab::library, tab::downloads, tab::updates, tab::library};
+    tab_ = kTabOf[std::clamp(next, 0, section::count - 1)];
     screen().focus();
 }
 

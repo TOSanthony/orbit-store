@@ -136,6 +136,7 @@ std::vector<SettingsScreen::XbEntry> SettingsScreen::section_entries() const
         out.push_back({'t', 0});
         out.push_back({'r', 0});
         out.push_back({'u', 0});
+        out.push_back({'E', 0});
         break;
     case Section::zero:
         if (state.system.zero_configured)
@@ -164,6 +165,7 @@ std::vector<SettingsScreen::XbEntry> SettingsScreen::section_entries() const
     default:
         if (ctx_.open_browser)
             out.push_back({'w', 0});
+        out.push_back({'F', 0});
         out.push_back({'V', 0});
         out.push_back({'D', 0});
         out.push_back({'x', 0});
@@ -758,6 +760,30 @@ xb::List SettingsScreen::rows_of(const std::vector<XbEntry> &entries) const
                               ? "The picture behind the menus. Black keeps this look's own ribbons."
                               : "The picture behind the menus. Black keeps this look's own background.");
             break;
+        case 'E':
+            row.icon = icons::Icon::globe;
+            row.title = tr("Orbit Store\xE2\x80\x99s DNS");
+            row.toggle = state.system.own_dns ? 1 : 0;
+            row.text = state.system.own_dns
+                           ? tr("Orbit Store\xE2\x80\x99s DNS is on. Sony\xE2\x80\x99s servers are looked up through Orbit\xE2\x80\x99s own "
+                                "encrypted DNS, so a DNS filter on your network cannot block game updates.")
+                           : tr("Orbit Store\xE2\x80\x99s DNS is off. Sony\xE2\x80\x99s servers are looked up through your network\xE2\x80\x99s DNS "
+                                "only, so a DNS filter that blocks them will stop game updates.");
+            row.off = result.busy && result.setting == Setting::own_dns;
+            if (result.setting == Setting::own_dns && !result.error.empty())
+                row.detail = tr(std::string_view(result.error));
+            break;
+        case 'F':
+            row.icon = icons::Icon::grid;
+            row.title = tr("PS4 games");
+            row.toggle = state.system.ps4_hidden ? 0 : 1;
+            row.text = state.system.ps4_hidden
+                           ? tr("PS4 games are hidden. A game that also comes in a PS5 version stays, with its PS5 options.")
+                           : tr("PS4 games are shown next to PS5 games.");
+            row.off = result.busy && result.setting == Setting::ps4;
+            if (result.setting == Setting::ps4 && !result.error.empty())
+                row.detail = tr(std::string_view(result.error));
+            break;
         case 'S':
             row.icon = icons::Icon::play;
             row.title = tr("Sounds");
@@ -1338,6 +1364,12 @@ void SettingsScreen::press(const std::string &key, bool off, const InputFrame &i
     case 'S':
         act(Kind::sounds_toggle, 0, intent, feedback);
         break;
+    case 'E':
+        act(Kind::own_dns_toggle, 0, intent, feedback);
+        break;
+    case 'F':
+        act(Kind::ps4_toggle, 0, intent, feedback);
+        break;
     case 'M':
         act(Kind::nas_url, 0, intent, feedback);
         break;
@@ -1495,6 +1527,14 @@ void SettingsScreen::draw_crossbar(Frame &frame) const
             code.insert(3, " ");
         ui::text(list, ui::face(type.sora_semibold, type.semibold, code), code.empty() ? "\xE2\x80\x94" : code, x + 76.0f,
                  y + 34.0f + 6.0f + 82.0f, 96.0f, ui::Color::rgb(0xffffff));
+        if (!state.address.empty())
+        {
+            // The address as a QR code, under the panel.
+            const float side = draw_qr(&list, "http://" + state.address + ":34177", x, panel.y + panel.h + 16.0f, 170.0f);
+            if (side > 0.0f)
+                ui::paragraph(list, type.regular, tr("Or scan this code with your phone\xE2\x80\x99s camera"), x + side + 24.0f,
+                              panel.y + panel.h + 16.0f + 56.0f, 20.0f, w - side - 24.0f, 28.0f, ui::Color::rgb(0xffffff, 0.75f), 3);
+        }
     }
     if (xb_menu_.in.value > 0.01f && xb_menu_kind_ == 4 && xb_menu_.active != static_cast<int>(look::prefs().interface))
     {
@@ -1762,6 +1802,13 @@ void SettingsScreen::draw_cinema(Frame &frame) const
                  150.0f, cn::kInk);
         ui::text_fit(list, type.regular, tr("The code changes when Orbit restarts. Devices you\xE2\x80\x99ve paired stay paired."), x,
                      top + 40.0f + 24.0f + 165.0f + 6.0f + 18.0f, 18.0f, w, cn::kFaint);
+        if (!state.address.empty())
+        {
+            const float side = draw_qr(&list, "http://" + state.address + ":34177", x + w - 300.0f, panel.y + 120.0f, 300.0f);
+            if (side > 0.0f)
+                ui::text(list, type.regular, tr("Or scan this code with your phone\xE2\x80\x99s camera"), x + w - 300.0f, panel.y + 120.0f + side + 30.0f,
+                         18.0f, cn::kDim);
+        }
         list.pop_clip();
     }
     else
@@ -2092,6 +2139,13 @@ void SettingsScreen::draw_panorama(Frame &frame) const
         top += 170.0f + 8.0f;
         pano::draw_text(ctx_, &list, x, top, w, tr("The code changes when Orbit restarts. Devices you\xE2\x80\x99ve paired stay paired."), 19.0f,
                         pano::kFaint);
+        if (!state.address.empty())
+        {
+            const float side = draw_qr(&list, "http://" + state.address + ":34177", 1450.0f, 376.0f, 330.0f);
+            if (side > 0.0f)
+                pano::draw_text(ctx_, &list, 1450.0f, 376.0f + side + 14.0f, 340.0f, tr("Or scan this code with your phone\xE2\x80\x99s camera"), 19.0f,
+                                pano::kDim);
+        }
     }
     else
     {

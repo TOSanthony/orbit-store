@@ -76,6 +76,7 @@ enum class Icon : std::uint8_t
     phone,
     bell,
     pencil,
+    cog, // drawn in code: a toothed wheel with a hole (Settings in the Crossbar bar)
     count,
 };
 
