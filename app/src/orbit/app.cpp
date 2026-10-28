@@ -241,6 +241,13 @@ void App::handle_intent(const Intent &intent, Feedback &feedback)
         provider_seen_ = ctx_.store.state().browser.id;
         break;
     case Intent::Kind::top_bar:
+        // Crossbar and Panorama have no top bar: Updates and DLC give the controller back to the Library.
+        if ((tab_ == tab::dlc || tab_ == tab::updates) && !look::is(look::Interface::store) &&
+            !look::is(look::Interface::cinema))
+        {
+            show_tab(tab::library);
+            break;
+        }
         if (!look::is(look::Interface::store) && !look::is(look::Interface::cinema))
             break;
         area_ = Area::top;
@@ -1661,15 +1668,12 @@ void App::draw(Frame &frame) const
     const std::vector<hui::ui::Hint> items = controls_open_ ? std::vector<hui::ui::Hint>{} : current_hints();
     if (items.empty())
         return;
-    // The other interfaces float their hints over the page, as their designs do.
     if (look::is(look::Interface::store))
     {
-        const float hints_left =
-            !game_open_ && (tab_ == tab::discover || tab_ == tab::library) ? 1250.0f : 0.0f;
-        overlay.gradient_rect({hints_left, 960.0f, 1920.0f - hints_left, 50.0f}, 0.0f,
-                              ui::color::night0.with_alpha(0.0f), ui::color::night0.with_alpha(0.95f));
-        overlay.rounded_rect({hints_left, 1010.0f, 1920.0f - hints_left, 70.0f}, 0.0f,
-                             ui::color::night0.with_alpha(0.95f));
+        // A pill of the popups' frosted glass behind the controls.
+        frame.glass = true;
+        ui::hints_pill(overlay, type, items, frame.glass_texture);
+        return;
     }
     ui::HintStyle style;
     if (look::is(look::Interface::crossbar))

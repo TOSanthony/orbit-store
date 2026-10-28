@@ -257,8 +257,6 @@ struct SettingsScreen::Pane
 
 // ---- the screen ----
 
-namespace
-{
 // The service words the NAS notices in English; a skipped-entries count is part of the sentence.
 std::string nas_message(const std::string &error)
 {
@@ -270,7 +268,6 @@ std::string nas_message(const std::string &error)
                    "{count} entries were skipped: invalid, duplicated or not on your NAS address.");
     return std::string(tr(std::string_view(error)));
 }
-} // namespace
 
 SettingsScreen::SettingsScreen(Context &context)
     : Screen(context), archive_sign_in_(context), ntfy_form_(context), diagnostics_view_(context)

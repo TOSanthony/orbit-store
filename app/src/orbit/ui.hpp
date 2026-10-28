@@ -216,8 +216,12 @@ struct HintStyle
     float glyph = 30.0f;
     float gap = 10.0f; // between a glyph and its label
     Color ink = color::text;
+    float inset = 0.0f; // from the right gutter, for a row inside a pill
 };
 void hints(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &items, const HintStyle &style = {});
+// The Store look's footer: a pill of the game popups' frosted glass behind the hints, as wide as they
+// are. Draws the hints too. glass_texture 0 draws a plain panel.
+void hints_pill(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &items, std::uint32_t glass_texture);
 // One hint from its left edge x (style.y its middle); returns its width.
 float hint_at(DrawList &list, const Type &type, const hui::ui::Hint &item, float x, const HintStyle &style);
 // Every button, once: hints in two columns from (x, y) across width, a row

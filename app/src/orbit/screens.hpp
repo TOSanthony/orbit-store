@@ -235,6 +235,8 @@ void draw_veils(hui::gfx::DrawList &list, bool discover = false);
 void refuse(Feedback &feedback, const InputFrame &input);
 // The kit theme the on-screen keyboard is drawn in.
 hui::ui::Theme keyboard_theme();
+// A My NAS notice from the service, translated (a skipped-entries count is part of the sentence).
+std::string nas_message(const std::string &error);
 // A small drawing of an interface, for its card in App settings → Appearance.
 void draw_interface_thumb(Context &ctx, hui::gfx::DrawList &list, int interface, const ui::Rect &r);
 

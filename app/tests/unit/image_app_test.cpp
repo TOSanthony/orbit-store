@@ -1232,6 +1232,24 @@ TEST(App, AppearanceLanguageSwitchesAtOnceAndIsKept)
     EXPECT_EQ(i18n::language(), "en");
 }
 
+TEST(App, GameUpdatesLeadBackToTheLibraryInTheLooksWithoutATopBar)
+{
+    for (auto layout : {look::Interface::crossbar, look::Interface::panorama})
+    {
+        NativeLook appearance(layout);
+        AppHarness h(host::FixtureMode::dlc);
+        h.store.poll_once();
+        h.settle();
+        h.app.open_game_updates(2);
+        h.settle();
+        EXPECT_EQ(h.app.current_tab(), orbit::tab::dlc);
+        for (int i = 0; i < 4; ++i)
+            h.frame(Direction::up);
+        h.settle();
+        EXPECT_EQ(h.app.current_tab(), orbit::tab::library);
+    }
+}
+
 TEST(App, NasAppsGetTheirOwnTabAndStayOutOfBrowse)
 {
     // Without NAS apps there is no Apps tab.

@@ -111,6 +111,10 @@ std::vector<LibraryScreen::XbEntry> LibraryScreen::crossbar_entries() const
         out.push_back({library.games.empty() ? 'n' : 'e', 0});
     if (view_ == 0)
     {
+        // Game updates and DLC, as the Library's buttons are in the Store look.
+        out.push_back({'U', 0});
+        if (state.game_dlc > 0)
+            out.push_back({'P', 0});
         out.push_back({'S', 0});
         if (library.can("rescan"))
             out.push_back({'c', 0});
@@ -265,6 +269,23 @@ xb::List LibraryScreen::crossbar_list() const
                       tr("{size} free", {{"size", format_bytes(free)}});
             break;
         }
+        case 'U':
+            row.key = "updates";
+            row.icon = icons::Icon::update;
+            row.title = state.game_update_status.checking ? tr("Checking\xE2\x80\xA6")
+                        : state.game_updates > 0           ? std::string(tr("Updates")) + " (" + std::to_string(state.game_updates) + ")"
+                                                           : tr("Check for updates");
+            row.sub = tr("Installed games with a patch on Sony\xE2\x80\x99s servers");
+            row.folder = state.game_updates > 0;
+            row.off = state.game_update_status.checking;
+            break;
+        case 'P':
+            row.key = "dlc";
+            row.icon = icons::Icon::box;
+            row.title = std::string(tr("DLC")) + " (" + std::to_string(state.game_dlc) + ")";
+            row.sub = tr("DLC on your NAS that your installed games do not have yet");
+            row.folder = true;
+            break;
         case 'c':
             row.key = "scan";
             row.icon = icons::Icon::scan;
@@ -651,6 +672,29 @@ Intent LibraryScreen::update_crossbar(const InputFrame &input, float dt, Feedbac
                 format_.clear();
                 refilter();
                 feedback.play(hui::audio::Cue::toggle);
+            }
+            else if (key == "updates")
+            {
+                if (state.game_updates > 0)
+                {
+                    intent.kind = Intent::Kind::open_updates;
+                    intent.tab = 1;
+                    feedback.play(hui::audio::Cue::open);
+                }
+                else if (!state.game_update_status.checking && !ctx_.store.setting_result().busy)
+                {
+                    ctx_.store.check_game_updates();
+                    intent.toast = tr("Checking\xE2\x80\xA6");
+                    feedback.play(hui::audio::Cue::select);
+                }
+                else
+                    refuse(feedback, input);
+            }
+            else if (key == "dlc")
+            {
+                intent.kind = Intent::Kind::open_updates;
+                intent.tab = 2;
+                feedback.play(hui::audio::Cue::open);
             }
             else if (key == "files")
             {
@@ -1252,6 +1296,11 @@ pano::AppBar LibraryScreen::panorama_bar(const pano::Page &page) const
         for (const auto &a : panorama_actions(*g))
             add(a.first, a.second);
     }
+    add('U', state.game_updates > 0 ? std::string(tr("Updates")) + " (" + std::to_string(state.game_updates) + ")"
+                                    : std::string(tr("Check for updates")),
+        state.game_update_status.checking);
+    if (state.game_dlc > 0)
+        add('P', std::string(tr("DLC")) + " (" + std::to_string(state.game_dlc) + ")");
     add('S', tr("Search your library"), false, query_.empty() ? std::string() : "\xE2\x80\x9C" + query_ + "\xE2\x80\x9D");
     if (library.can("rescan"))
         add('c', tr("Scan for games"), library.working());
@@ -1363,7 +1412,30 @@ Intent LibraryScreen::update_panorama(const InputFrame &input, float dt, Feedbac
         if (chosen >= 0)
         {
             const char kind = static_cast<char>(bar.items[static_cast<std::size_t>(chosen)].tag);
-            panorama_run(kind, game, feedback, input);
+            if (kind == 'U' && state.game_updates > 0)
+            {
+                intent.kind = Intent::Kind::open_updates;
+                intent.tab = 1;
+                feedback.play(hui::audio::Cue::open);
+            }
+            else if (kind == 'U')
+            {
+                if (!state.game_update_status.checking && !ctx_.store.setting_result().busy)
+                {
+                    ctx_.store.check_game_updates();
+                    intent.toast = tr("Checking\xE2\x80\xA6");
+                }
+                else
+                    refuse(feedback, input);
+            }
+            else if (kind == 'P')
+            {
+                intent.kind = Intent::Kind::open_updates;
+                intent.tab = 2;
+                feedback.play(hui::audio::Cue::open);
+            }
+            else
+                panorama_run(kind, game, feedback, input);
         }
     }
     else if (focused)

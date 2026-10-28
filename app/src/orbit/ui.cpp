@@ -685,7 +685,7 @@ void hints(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &i
     // Right-aligned at the gutter, 1.6 rem apart, 0.85 rem labels. Glyphs
     // are drawn at the footer's size, then scaled and moved to the style's.
     const float scale = style.glyph / kHintGlyph;
-    float x = 1920.0f - kGutter;
+    float x = 1920.0f - kGutter - style.inset;
     for (auto it = items.rbegin(); it != items.rend(); ++it)
     {
         const float label = type.regular.measure(it->label, style.label);
@@ -707,6 +707,29 @@ void hints(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &i
                         style.label, style.ink);
         x -= width + 32.0f;
     }
+}
+
+void hints_pill(DrawList &list, const Type &type, const std::vector<hui::ui::Hint> &items, std::uint32_t glass_texture)
+{
+    if (items.empty())
+        return;
+    constexpr float kPad = 28.0f;
+    constexpr float kPillHeight = 56.0f;
+    HintStyle style;
+    style.inset = kPad;
+    const float scale = style.glyph / kHintGlyph;
+    // The same widths hints() lays out: glyphs, a gap, the label, 32 px between items.
+    float total = 2.0f * kPad + 32.0f * static_cast<float>(items.size() - 1);
+    for (const hui::ui::Hint &h : items)
+    {
+        float glyphs = glyph_width(type, h.button);
+        if (h.second != hui::ui::Button::none)
+            glyphs += glyph_width(type, h.second) + 6.0f;
+        total += glyphs * scale + style.gap + type.regular.measure(h.label, style.label);
+    }
+    const Rect pill{1920.0f - kGutter - total, kHintY - kPillHeight * 0.5f, total, kPillHeight};
+    glass_modal(list, pill, glass_texture, kPillHeight * 0.5f);
+    hints(list, type, items, style);
 }
 
 float hint_at(DrawList &list, const Type &type, const hui::ui::Hint &item, float x, const HintStyle &style)

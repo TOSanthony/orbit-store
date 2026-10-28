@@ -93,6 +93,9 @@ std::vector<SettingsScreen::XbEntry> SettingsScreen::section_entries() const
     case Section::sources:
         for (int i = 0; i < static_cast<int>(state.sources.options.size()); ++i)
             out.push_back({'o', i});
+        // My NAS: the address of its index.json, typed with the on-screen keyboard.
+        if (contains(draft_, "nas"))
+            out.push_back({'M', 0});
         out.push_back({'a', 0});
         out.push_back({'v', 0});
         if (state.browser.viking_account_available) { out.push_back({'K', 0}); out.push_back({'J', 0}); }
@@ -152,6 +155,9 @@ std::vector<SettingsScreen::XbEntry> SettingsScreen::section_entries() const
         if (look::is(look::Interface::cinema) || look::is(look::Interface::panorama))
             out.push_back({'A', 0});
         out.push_back({'L', 0});
+        out.push_back({'Y', 0});
+        out.push_back({'S', 0});
+        out.push_back({'Q', 0});
         break;
     default:
         if (ctx_.open_browser)
@@ -719,6 +725,41 @@ xb::List SettingsScreen::rows_of(const std::vector<XbEntry> &entries) const
             row.value = language_options()[static_cast<std::size_t>(language_index())];
             row.text = tr("Choose the language Orbit uses on this device.");
             break;
+        case 'M':
+        {
+            row.icon = icons::Icon::link;
+            row.title = tr("My NAS index address");
+            row.value = !nas_url_.empty()          ? nas_url_
+                        : state.sources.nas_configured ? std::string(tr("Saved address kept. Select to change it."))
+                                                       : std::string("https://nas.example.com/orbit-secret/index.json");
+            if (state.sources.nas_configured)
+                row.sub = !state.sources.nas_error.empty()
+                              ? state.sources.nas_host + ": " + nas_message(state.sources.nas_error)
+                              : tr("{host}: {count} games found.",
+                                   {{"host", state.sources.nas_host}, {"count", std::to_string(state.sources.nas_count)}});
+            else
+                row.sub = tr("Enter the https address of the index.json on your NAS.");
+            row.off = result.busy && result.setting == Setting::sources;
+            break;
+        }
+        case 'Y':
+            row.icon = icons::Icon::list;
+            row.title = tr("Keyboard");
+            row.value = ctx_.keyboard_choice == "qwerty" ? "QWERTY" : ctx_.keyboard_choice == "azerty" ? "AZERTY" : std::string(tr("Automatic"));
+            row.text = tr("The on-screen keyboard\xE2\x80\x99s letters. Automatic uses AZERTY when the app is in French.");
+            break;
+        case 'S':
+            row.icon = icons::Icon::play;
+            row.title = tr("Sounds");
+            row.toggle = ctx_.sounds_on ? 1 : 0;
+            row.text = ctx_.sounds_on ? tr("Menu sounds are on: you hear a sound when you move and select.")
+                                      : tr("Menu sounds are off. The app is silent.");
+            break;
+        case 'Q':
+            row.icon = icons::Icon::up;
+            row.title = tr("Volume");
+            row.value = std::to_string(ctx_.sound_volume) + " %";
+            break;
         case 'V':
             row.icon = icons::Icon::info;
             row.title = tr("View diagnostics");
@@ -915,6 +956,19 @@ std::vector<xb::MenuItem> SettingsScreen::crossbar_menu(xb::MenuFoot *foot) cons
             items.push_back(xb::choice(options[static_cast<std::size_t>(i)], i == chosen));
         break;
     }
+    case 16:
+    {
+        const int chosen = ctx_.keyboard_choice == "qwerty" ? 1 : ctx_.keyboard_choice == "azerty" ? 2 : 0;
+        items.push_back(xb::choice(tr("Automatic"), chosen == 0));
+        items.push_back(xb::choice("QWERTY", chosen == 1));
+        items.push_back(xb::choice("AZERTY", chosen == 2));
+        note.note = tr("The on-screen keyboard\xE2\x80\x99s letters. Automatic uses AZERTY when the app is in French.");
+        break;
+    }
+    case 17:
+        for (int value = 0; value <= 100; value += 10)
+            items.push_back(xb::choice(std::to_string(value), value == (ctx_.sound_volume + 5) / 10 * 10));
+        break;
     case 14:
         for (int value : connection_choices(state.system.download_connections))
             items.push_back(xb::choice(std::to_string(value), value == state.system.download_connections, {}, !result.busy));
@@ -956,6 +1010,10 @@ std::string SettingsScreen::crossbar_menu_title() const
         return tr("Connections per download");
     if (xb_menu_kind_ == 15)
         return tr("Language");
+    if (xb_menu_kind_ == 16)
+        return tr("Keyboard");
+    if (xb_menu_kind_ == 17)
+        return tr("Volume");
     if (xb_menu_kind_ == 8)
         return look::is(look::Interface::cinema) ? tr("Art behind menus") : tr("Art behind pages");
     if (xb_menu_kind_ == 9)
@@ -1095,6 +1153,17 @@ void SettingsScreen::menu_choose(int chosen, Intent &intent, Feedback &feedback)
         break;
     case 15:
         act(Kind::language, chosen, intent, feedback);
+        break;
+    case 16:
+        act(Kind::keyboard, chosen, intent, feedback);
+        break;
+    case 17:
+        if (chosen >= 0 && chosen <= 10 && chosen * 10 != ctx_.sound_volume)
+        {
+            ctx_.sound_volume = chosen * 10;
+            ctx_.store.set_sound_volume(ctx_.sound_volume);
+            feedback.play(hui::audio::Cue::slider); // the new level, heard at once
+        }
         break;
     case 14:
     {
@@ -1236,6 +1305,18 @@ void SettingsScreen::press(const std::string &key, bool off, const InputFrame &i
         break;
     case 'L':
         menu(15);
+        break;
+    case 'Y':
+        menu(16);
+        break;
+    case 'Q':
+        menu(17);
+        break;
+    case 'S':
+        act(Kind::sounds_toggle, 0, intent, feedback);
+        break;
+    case 'M':
+        act(Kind::nas_url, 0, intent, feedback);
         break;
     case 'w':
         act(Kind::open_browser, 0, intent, feedback);
@@ -1439,7 +1520,7 @@ std::vector<hui::ui::Hint> SettingsScreen::crossbar_hints() const
     const char kind = row.key.empty() ? ' ' : row.key[0];
     if (row.toggle >= 0)
         hints.push_back({hui::ui::Button::cross, row.toggle > 0 ? tr("Turn off") : tr("Turn on")});
-    else if (kind == 'd' || kind == 'l' || kind == 'C' || kind == 'i' || kind == 'b' || kind == 'm' || kind == 'L')
+    else if (kind == 'd' || kind == 'l' || kind == 'C' || kind == 'i' || kind == 'b' || kind == 'm' || kind == 'L' || kind == 'Y' || kind == 'Q' || kind == 'M')
         hints.push_back({hui::ui::Button::cross, tr("Change")});
     else if (kind == 't' || kind == 'r' || kind == 'w' || kind == 'N' || kind == 'V')
         hints.push_back({hui::ui::Button::cross, tr("Open")});
@@ -1765,7 +1846,7 @@ std::vector<hui::ui::Hint> SettingsScreen::cinema_hints() const
     const char kind = row.key.empty() ? ' ' : row.key[0];
     if (row.toggle >= 0)
         hints.push_back({hui::ui::Button::cross, row.toggle > 0 ? tr("Turn off") : tr("Turn on")});
-    else if (kind == 'd' || kind == 'l' || kind == 'C' || kind == 'i' || kind == 'b' || kind == 'm' || kind == 'L')
+    else if (kind == 'd' || kind == 'l' || kind == 'C' || kind == 'i' || kind == 'b' || kind == 'm' || kind == 'L' || kind == 'Y' || kind == 'Q' || kind == 'M')
         hints.push_back({hui::ui::Button::cross, tr("Change")});
     else if (kind == 't' || kind == 'r' || kind == 'w' || kind == 'N' || kind == 'V')
         hints.push_back({hui::ui::Button::cross, tr("Open")});
@@ -2094,7 +2175,7 @@ std::vector<hui::ui::Hint> SettingsScreen::panorama_hints() const
     if (row.toggle >= 0 && !row.off)
         hints.push_back({hui::ui::Button::cross, row.toggle > 0 ? tr("Turn off") : tr("Turn on")});
     else if (kind == 'd' || kind == 'l' || kind == 'C' || kind == 'i' || kind == 'b' || kind == 'm' || kind == 'g' || kind == 'A' ||
-             kind == 'L')
+             kind == 'L' || kind == 'Y' || kind == 'Q' || kind == 'M')
         hints.push_back({hui::ui::Button::cross, tr("Change")});
     else if (kind == 't' || kind == 'r' || kind == 'w' || kind == 'N' || kind == 'V')
         hints.push_back({hui::ui::Button::cross, tr("Open")});
