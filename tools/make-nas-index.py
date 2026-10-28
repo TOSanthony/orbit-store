@@ -1534,8 +1534,10 @@ def main() -> int:
             from_param += 1
             if param["version"]:
                 row["version"] = param["version"]
-        if suffix in (".exfat", ".ffpfsc"):
-            bracket = BRACKET_VERSION.search(path.name)       # the version the file name gives wins for disk images
+        if suffix in (".exfat", ".ffpfsc") or row.get("format") in ("exFAT", "FFPFSC"):
+            # The version the file name gives wins for disk images, also when the image sits alone in a .zip
+            # ("PPSA01289 Sackboy A Big Adventure (01.024.000).zip" holds one .exfat).
+            bracket = BRACKET_VERSION.search(path.name)
             if bracket:
                 row["version"] = bracket.group(1)
         if args.prospero:
