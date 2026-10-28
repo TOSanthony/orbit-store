@@ -152,6 +152,20 @@ static size_t urls_for(const char *game_id, bool hero, char out[2][2048]) {
     pthread_mutex_lock(&orbit.mutex);
     const cJSON *entry;
     const cJSON *lists[3] = {orbit.catalog, orbit.addons, orbit.nas_catalog};
+    /* "base-<title ID>": a game known only by its DLC on the NAS, shown with the game's own image
+     * (then a DLC's). */
+    if (!strncmp(game_id, "base-", 5) && !hero)
+        cJSON_ArrayForEach(entry, orbit.nas_catalog) {
+            const char *base = json_text(entry, "baseCover"), *own = json_text(entry, "cover");
+            if (strcmp(json_text(entry, "titleId"), game_id + 5) || !*base ||
+                !source_enabled_locked(release_find(json_text(entry, "id"))))
+                continue;
+            if (!strncmp(base, "https://", 8) && strlen(base) < 2048 && nas_url_allowed(base))
+                copy_text(out[count++], 2048, base);
+            if (!strncmp(own, "https://", 8) && strlen(own) < 2048 && nas_url_allowed(own))
+                copy_text(out[count++], 2048, own);
+            break;
+        }
     for (size_t l = 0; l < 3 && !count; l++)
     cJSON_ArrayForEach(entry, lists[l]) {
         if (strcmp(json_text(entry, "gameId"), game_id) ||

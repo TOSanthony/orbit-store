@@ -279,7 +279,7 @@ export default function App() {
         const ids = [addon.releases[0]?.titleId, ...(addon.releases[0]?.requirements?.titleIds || [])].filter(Boolean);
         const owner = orbit.games.find((g) => g.id === base) ||
           orbit.games.find((g) => g.releases.some((r) => ids.includes(r.titleId)));
-        groups.push({ ...addon, id: base, title: addon.baseGameTitle || addon.title, addonId: undefined, addonType: undefined,
+        groups.push({ ...addon, id: base, title: owner?.title || addon.baseGameTitle || addon.title, addonId: undefined, addonType: undefined,
           cover: owner?.cover ?? addon.cover, coverFallback: owner?.coverFallback ?? addon.coverFallback });
       }
       groupCounts.set(base, (groupCounts.get(base) || 0) + 1);

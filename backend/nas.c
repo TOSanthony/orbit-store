@@ -173,6 +173,32 @@ static bool clean(const char *s, size_t max) {
     return true;
 }
 
+/* The game's name from the folder an index row sits in ("PPSA07642 - The Last of Us Part I"): the
+ * second-to-last part of the path, percent-decoded, without its leading title ID. */
+static void folder_title(const char *reference, const char *title_id, char *out, size_t cap) {
+    out[0] = 0;
+    const char *end = reference + strlen(reference), *file = end;
+    while (file > reference && file[-1] != '/') file--;
+    if (file == reference) return;
+    const char *folder_end = file - 1, *folder = folder_end;
+    while (folder > reference && folder[-1] != '/') folder--;
+    size_t n = 0;
+    for (const char *p = folder; p < folder_end && n + 1 < cap; p++) {
+        if (p[0] == '%' && p + 2 < folder_end + 1 && isxdigit((unsigned char)p[1]) && isxdigit((unsigned char)p[2])) {
+            char hex[3] = {p[1], p[2], 0};
+            out[n++] = (char)strtol(hex, NULL, 16);
+            p += 2;
+        } else out[n++] = *p;
+    }
+    out[n] = 0;
+    size_t id = strlen(title_id);
+    if (id && !strncmp(out, title_id, id)) {
+        const char *rest = out + id;
+        while (*rest == ' ' || *rest == '-' || *rest == '_') rest++;
+        memmove(out, rest, strlen(rest) + 1);
+    }
+}
+
 /* An index row becomes a catalogue-shaped row. release_parse applies the same identity,
  * size, format and title-ID rules as the signed catalogue and, through
  * provider_url_supported, requires the file to be on the configured origin. */
@@ -214,6 +240,7 @@ static bool entry(const char *index_url, const cJSON *x, Release *r, cJSON **vie
                 snprintf(game, sizeof game, "%s-%s", json_text(e, "gameId"), json_text(e, "id"));
                 copy_text(base_name, sizeof base_name, json_text(e, "baseGameTitle"));
                 if (!*base_name) copy_text(base_name, sizeof base_name, json_text(e, "gameName"));
+                if (!*base_name) folder_title(reference, title_id, base_name, sizeof base_name);
                 if (!*base_name) copy_text(base_name, sizeof base_name, json_text(e, "title"));
                 cJSON_DeleteItemFromObjectCaseSensitive(add, "gameId");
                 cJSON_AddStringToObject(add, "gameId", game);
@@ -271,7 +298,14 @@ static bool entry(const char *index_url, const cJSON *x, Release *r, cJSON **vie
                 if (k == 1) has_hero = usable;
                 /* The default image (assets/ next to the index), tried when the first one fails. */
                 ref = json_text(e, spares[k]);
-                if (*ref && resolve(index_url, ref, artwork, sizeof artwork) && nas_url_allowed(artwork))
+                /* A DLC without its own image shows its game's (covers/<title ID>_icon0.webp next to the index). */
+                char game_cover[160];
+                snprintf(game_cover, sizeof game_cover, "covers/%s_icon0.webp", json_text(e, "titleId"));
+                const bool dlc = k == 0 && !strcmp(json_text(e, "tagline"), "DLC") && strlen(json_text(e, "titleId")) == 9;
+                if (dlc && resolve(index_url, game_cover, artwork, sizeof artwork) && nas_url_allowed(artwork)) {
+                    cJSON_AddStringToObject(v, spares[k], artwork);
+                    cJSON_AddStringToObject(v, "baseCover", artwork);
+                } else if (*ref && resolve(index_url, ref, artwork, sizeof artwork) && nas_url_allowed(artwork))
                     cJSON_AddStringToObject(v, spares[k], artwork);
                 else
                     cJSON_AddNullToObject(v, spares[k]);

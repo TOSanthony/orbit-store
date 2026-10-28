@@ -112,8 +112,9 @@ void BrowseScreen::refilter()
                     });
                 };
                 const auto owner = std::find_if(state.games.begin(), state.games.end(), owns);
-                group.id = owner != state.games.end() ? owner->id : addon.id;
-                group.title = addon.base_title.empty() ? addon.title : addon.base_title;
+                // Not in the catalogue: the NAS's own copy of the game's image ("base-<title ID>").
+                group.id = owner != state.games.end() ? owner->id : "base-" + addon.releases.front().title_id;
+                group.title = owner != state.games.end() ? owner->title : addon.base_title.empty() ? addon.title : addon.base_title;
                 group.addon_type.clear();
                 groups_.push_back(std::move(group));
                 counts.push_back(0);
