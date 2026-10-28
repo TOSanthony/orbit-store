@@ -238,8 +238,12 @@ static bool entry(const char *index_url, const cJSON *x, Release *r, cJSON **vie
                 cJSON_Delete(add);
             }
         }
-        if (!ok || !r->addon_id[0])
+        if (!ok || !r->addon_id[0]) {
+            /* The index writes a contentId on every .pkg row. Only an add-on may carry one, so a plain
+             * game, update or app row keeps its place by leaving it out. */
+            if (!*json_text(e, "addonId")) cJSON_DeleteItemFromObjectCaseSensitive(e, "contentId");
             ok = !release_parse(e, r, false);
+        }
     }
     if (ok) {
         cJSON *v = release_json(r);
