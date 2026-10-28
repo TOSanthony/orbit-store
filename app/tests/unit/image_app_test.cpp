@@ -1017,6 +1017,8 @@ TEST(App, UpdatesInstallTheTvAppAndRestartTheServiceAfterConfirming)
     h.settle(3);
     EXPECT_TRUE(h.store.state().service.restart_required);
     // Restart needs a second, explicit choice; Circle backs out of it.
+    // The Game updates card sits below, so the focus can land there once the install button is gone.
+    h.frame(Direction::up);
     h.frame(Direction::right); // Restart download service
     h.press(Action::confirm);
     EXPECT_FALSE(h.store.setting_result().busy);
