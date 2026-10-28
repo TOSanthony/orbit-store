@@ -537,11 +537,14 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
         cJSON *a = cJSON_CreateArray(), *x;
         pthread_mutex_lock(&orbit.mutex);
         /* The signed catalogue (or add-ons) first, then the person's own NAS files. */
-        const cJSON *lists[2] = {!strcmp(url, "/api/v1/addons") ? orbit.addons : orbit.catalog,
-                                 !strcmp(url, "/api/v1/addons") ? NULL : orbit.nas_catalog};
+        const bool addons = !strcmp(url, "/api/v1/addons");
+        const cJSON *lists[2] = {addons ? orbit.addons : orbit.catalog, orbit.nas_catalog};
         for (size_t list = 0; list < 2; list++)
         cJSON_ArrayForEach(x, lists[list]) {
             if (!source_enabled_locked(release_find(json_text(x, "id"))))
+                continue;
+            /* The person's own DLC rows are add-ons: listed under Add-ons, not among the games. */
+            if (list == 1 && (*json_text(x, "addonId") != 0) != addons)
                 continue;
             cJSON *entry = cJSON_Duplicate(x, true);
             cJSON_DeleteItemFromObjectCaseSensitive(entry, "url");

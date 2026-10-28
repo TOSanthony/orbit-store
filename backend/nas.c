@@ -204,7 +204,42 @@ static bool entry(const char *index_url, const cJSON *x, Release *r, cJSON **vie
             game[9] = 0;
             cJSON_AddStringToObject(e, "gameId", game);
         }
-        ok = !release_parse(e, r, false);
+        /* A DLC row of the index also shows in Add-ons: it gets an add-on identity (its own id, the
+         * game's title as the base) when that validates, and stays a plain row when it does not. */
+        const char *tagline = json_text(e, "tagline");
+        if (!strcmp(tagline, "DLC") && !*json_text(e, "addonId") && strlen(title_id) == 9) {
+            cJSON *add = cJSON_Duplicate(e, true);
+            if (add) {
+                char game[48], base_name[256];
+                snprintf(game, sizeof game, "%s-%s", json_text(e, "gameId"), json_text(e, "id"));
+                copy_text(base_name, sizeof base_name, json_text(e, "baseGameTitle"));
+                if (!*base_name) copy_text(base_name, sizeof base_name, json_text(e, "gameName"));
+                if (!*base_name) copy_text(base_name, sizeof base_name, json_text(e, "title"));
+                cJSON_DeleteItemFromObjectCaseSensitive(add, "gameId");
+                cJSON_AddStringToObject(add, "gameId", game);
+                cJSON_AddStringToObject(add, "addonId", game);
+                cJSON_AddStringToObject(add, "baseGameId", json_text(e, "gameId"));
+                cJSON_AddStringToObject(add, "baseGameTitle", base_name);
+                cJSON_AddStringToObject(add, "addonType", "content-pack");
+                cJSON *requirements = cJSON_AddObjectToObject(add, "requirements");
+                cJSON *ids = requirements ? cJSON_AddArrayToObject(requirements, "titleIds") : NULL;
+                if (ids) {
+                    cJSON_AddItemToArray(ids, cJSON_CreateString(json_text(e, "titleId")));
+                    cJSON_AddStringToObject(requirements, "edition", "");
+                    cJSON_AddStringToObject(requirements, "minimumVersion", "");
+                    cJSON_AddStringToObject(requirements, "notes", "");
+                    if (!release_parse(add, r, false)) {
+                        cJSON_Delete(e);
+                        e = add;
+                        add = NULL;
+                        ok = true;
+                    }
+                }
+                cJSON_Delete(add);
+            }
+        }
+        if (!ok || !r->addon_id[0])
+            ok = !release_parse(e, r, false);
     }
     if (ok) {
         cJSON *v = release_json(r);

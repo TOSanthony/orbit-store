@@ -21,6 +21,10 @@ const char *section_title(int section)
         return /* i18n */ "Library";
     case section::downloads:
         return /* i18n */ "Downloads";
+    case section::updates:
+        return /* i18n */ "Updates";
+    case section::dlc:
+        return /* i18n */ "DLC";
     case section::settings:
         return /* i18n */ "Settings";
     default:

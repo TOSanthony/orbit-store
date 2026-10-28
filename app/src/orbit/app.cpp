@@ -241,13 +241,6 @@ void App::handle_intent(const Intent &intent, Feedback &feedback)
         provider_seen_ = ctx_.store.state().browser.id;
         break;
     case Intent::Kind::top_bar:
-        // Crossbar and Panorama have no top bar: Updates and DLC give the controller back to the Library.
-        if ((tab_ == tab::dlc || tab_ == tab::updates) && !look::is(look::Interface::store) &&
-            !look::is(look::Interface::cinema))
-        {
-            show_tab(tab::library);
-            break;
-        }
         if (!look::is(look::Interface::store) && !look::is(look::Interface::cinema))
             break;
         area_ = Area::top;
@@ -313,8 +306,8 @@ int App::section() const
         return section::settings;
     if (search_open_)
         return section::search;
-    // Updates and DLC are beside the Library in the other looks.
-    return tab_ == tab::dlc || tab_ == tab::updates ? section::library : tab_ == tab::apps ? section::browse : tab_ + 1;
+    // Updates and DLC are sections of their own in the looks without the Store top bar.
+    return tab_ == tab::dlc ? section::dlc : tab_ == tab::updates ? section::updates : tab_ == tab::apps ? section::browse : tab_ + 1;
 }
 
 void App::show_section(int next)
@@ -341,7 +334,7 @@ void App::show_section(int next)
         browse_.open_search_section();
         return;
     }
-    tab_ = std::clamp(next - 1, 0, tab::core - 1);
+    tab_ = next == section::updates ? tab::updates : next == section::dlc ? tab::dlc : std::clamp(next - 1, 0, tab::core - 1);
     screen().focus();
 }
 
@@ -775,7 +768,8 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
     }
 
     // Updates or DLC finished while they were open: back to the Library they belong beside.
-    if ((tab_ == tab::apps ? ctx_.store.state().have_catalog : ctx_.store.state().have_game_updates) &&
+    if (look::is(look::Interface::store) &&
+        (tab_ == tab::apps ? ctx_.store.state().have_catalog : ctx_.store.state().have_game_updates) &&
         tab_hidden(ctx_.store.state(), tab_))
     {
         show_tab(tab::library);

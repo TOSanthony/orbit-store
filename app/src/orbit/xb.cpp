@@ -485,7 +485,8 @@ std::vector<BarItem> sections(Context &ctx, bool update_dot)
         if (!job_inactive(job) && job.status != "error")
             ++active;
     static const icons::Icon kIcons[section::count] = {icons::Icon::search, icons::Icon::spark, icons::Icon::grid,
-                                                       icons::Icon::layers, icons::Icon::books,  icons::Icon::down,  icons::Icon::gear};
+                                                       icons::Icon::layers, icons::Icon::books,  icons::Icon::down,  icons::Icon::update,
+                                                       icons::Icon::box,    icons::Icon::gear};
     std::vector<BarItem> items;
     for (int s = 0; s < section::count; ++s)
     {
@@ -494,6 +495,10 @@ std::vector<BarItem> sections(Context &ctx, bool update_dot)
         item.label = tr(section_title(s));
         if (s == section::downloads)
             item.badge = active;
+        if (s == section::updates)
+            item.badge = state.game_updates;
+        if (s == section::dlc)
+            item.badge = state.game_dlc;
         if (s == section::settings)
             item.dot = update_dot;
         items.push_back(std::move(item));

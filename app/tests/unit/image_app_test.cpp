@@ -312,7 +312,7 @@ TEST(App, CinemaDpadReachesEveryChapterWithoutCyclingCollectionsOrSearch)
     EXPECT_EQ(h.app.current_section(), section::settings);
     h.pad(hui::pad_bits::kRight);
     EXPECT_EQ(h.app.current_section(), section::discover);
-    for (int next : {section::browse, section::addons, section::library, section::downloads, section::settings, section::discover})
+    for (int next : {section::browse, section::addons, section::library, section::downloads, section::updates, section::dlc, section::settings, section::discover})
     {
         h.pad(hui::pad_bits::kRight);
         EXPECT_EQ(h.app.current_section(), next);
@@ -355,7 +355,7 @@ TEST(App, CrossbarDpadSwitchesCategoriesButLeavesDialogsInControl)
     EXPECT_EQ(h.app.current_section(), section::browse);
     EXPECT_TRUE(h.app.browse().modal());
     h.pad(hui::pad_bits::kCircle);
-    for (int next : {section::addons, section::library, section::downloads, section::settings, section::search, section::discover})
+    for (int next : {section::addons, section::library, section::downloads, section::updates, section::dlc, section::settings, section::search, section::discover})
     {
         h.pad(hui::pad_bits::kRight);
         EXPECT_EQ(h.app.current_section(), next);
@@ -1232,21 +1232,25 @@ TEST(App, AppearanceLanguageSwitchesAtOnceAndIsKept)
     EXPECT_EQ(i18n::language(), "en");
 }
 
-TEST(App, GameUpdatesLeadBackToTheLibraryInTheLooksWithoutATopBar)
+TEST(App, GameUpdatesAndDlcAreSectionsOfTheLooksWithoutATopBar)
 {
-    for (auto layout : {look::Interface::crossbar, look::Interface::panorama})
+    for (auto layout : {look::Interface::crossbar, look::Interface::panorama, look::Interface::cinema})
     {
         NativeLook appearance(layout);
         AppHarness h(host::FixtureMode::dlc);
         h.store.poll_once();
         h.settle();
-        h.app.open_game_updates(2);
+        h.app.show_section(section::updates);
+        h.settle();
+        EXPECT_EQ(h.app.current_tab(), orbit::tab::updates);
+        EXPECT_EQ(h.app.current_section(), section::updates);
+        h.app.show_section(section::dlc);
         h.settle();
         EXPECT_EQ(h.app.current_tab(), orbit::tab::dlc);
-        for (int i = 0; i < 4; ++i)
-            h.frame(Direction::up);
-        h.settle();
-        EXPECT_EQ(h.app.current_tab(), orbit::tab::library);
+        EXPECT_EQ(h.app.current_section(), section::dlc);
+        // Cross on a row asks the console; the section stays.
+        h.frame(Direction::down);
+        EXPECT_EQ(h.app.current_section(), section::dlc);
     }
 }
 

@@ -97,8 +97,10 @@ constexpr int browse = 2;
 constexpr int addons = 3;
 constexpr int library = 4;
 constexpr int downloads = 5;
-constexpr int settings = 6;
-constexpr int count = 7;
+constexpr int updates = 6; // game updates and NAS DLC: sections of the looks without the Store top bar
+constexpr int dlc = 7;
+constexpr int settings = 8;
+constexpr int count = 9;
 } // namespace section
 const char *section_title(int section); // untranslated, for tr()
 
@@ -925,6 +927,19 @@ class GameUpdatesScreen final : public Screen
     std::vector<hui::ui::Hint> hints() const override;
 
   private:
+    // What a row says, whatever look draws it.
+    struct RowText
+    {
+        std::string title, sub, state, size, action, cover, key;
+        bool header = false, expanded = false, child = false, bad = false, ok = false;
+        float bar = -1.0f;
+        int count = 0;
+    };
+    std::vector<RowText> row_texts() const;
+    std::string page_note() const; // the counts line under the title
+    void draw_crossbar(Frame &frame, bool focused) const;
+    void draw_panorama(Frame &frame, bool focused) const;
+    xb::View xb_;
     bool dlc_mode_ = false;
     const GameUpdateJob &job_of(const GameUpdateStatus &status) const
     {

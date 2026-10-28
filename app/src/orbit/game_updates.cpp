@@ -6,11 +6,15 @@
 // runs cancels. The console does the work and keeps going if this app is closed.
 
 #include "orbit/i18n.hpp"
+#include "orbit/look.hpp"
+#include "orbit/pano.hpp"
+#include "orbit/xb.hpp"
 #include "orbit/screens.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <memory>
 
 namespace orbit
 {
@@ -113,9 +117,11 @@ void GameUpdatesScreen::focus()
     button_ = 0;
 }
 
-Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedback, bool focused)
+Intent GameUpdatesScreen::update(const InputFrame &input, float dt, Feedback &feedback, bool focused)
 {
     Intent intent;
+    xb_.index = row_;
+    xb_.animate(dt);
     if (!focused)
         return intent;
     const GameUpdateStatus &status = ctx_.store.state().game_update_status;
@@ -148,7 +154,8 @@ Intent GameUpdatesScreen::update(const InputFrame &input, float, Feedback &feedb
     row_ = std::clamp(row_, 0, std::max(0, count - 1));
     header = dlc_mode_ && count > 0 && item_at(row_) == nullptr ? rows[static_cast<std::size_t>(row_)].group : nullptr;
     // The three buttons above the list: Check, Update all and (with a queue) Clear queue.
-    const int buttons = count > 0 ? (status.queue.empty() ? 2 : 3) : 0;
+    // The other looks have no button row: Triangle, Square and R2 do the same.
+    const int buttons = count > 0 && (look::is(look::Interface::store) || look::is(look::Interface::cinema)) ? (status.queue.empty() ? 2 : 3) : 0;
     bar_ = buttons > 0 ? std::min(bar_, buttons - 1) : -1;
     const auto do_check = [&]
     {
@@ -404,8 +411,178 @@ std::vector<hui::ui::Hint> GameUpdatesScreen::hints() const
     return items;
 }
 
+std::string GameUpdatesScreen::page_note() const
+{
+    const Snapshot &state = ctx_.store.state();
+    return dlc_mode_ ? tr("DLC found: {count}", {{"count", std::to_string(state.game_dlc)}})
+                     : tr("Updates found: {count}", {{"count", std::to_string(state.game_updates)}});
+}
+
+std::vector<GameUpdatesScreen::RowText> GameUpdatesScreen::row_texts() const
+{
+    std::vector<RowText> out;
+    const GameUpdateStatus &status = ctx_.store.state().game_update_status;
+    const std::vector<GameUpdateItem> games = pending_game_items(status, dlc_mode_, true);
+    const std::vector<DlcGroup> groups = dlc_mode_ ? dlc_groups(games, open_) : std::vector<DlcGroup>();
+    const std::vector<DlcRow> rows = dlc_mode_ ? dlc_rows(groups, games) : std::vector<DlcRow>();
+    const int count = dlc_mode_ ? static_cast<int>(rows.size()) : static_cast<int>(games.size());
+    const GameUpdateJob &job = job_of(status);
+    for (int i = 0; i < count; ++i)
+    {
+        RowText row;
+        const DlcRow *dlc_row = dlc_mode_ ? &rows[static_cast<std::size_t>(i)] : nullptr;
+        if (dlc_row != nullptr && dlc_row->item == nullptr)
+        {
+            const DlcGroup &group = *dlc_row->group;
+            row.header = true;
+            row.expanded = group.expanded;
+            row.key = "g:" + group.base_id;
+            row.cover = "local-" + group.base_id;
+            row.title = group.game_name.empty() ? group.base_id : group.game_name;
+            row.count = group.count;
+            row.sub = tr("{count} DLC", {{"count", std::to_string(group.count)}}) +
+                      (group.size > 0.0 ? " \xC2\xB7 " + format_bytes(group.size) : std::string());
+            row.state = group.base_id;
+            row.action = group.expanded ? tr("Collapse") : tr("Expand");
+            out.push_back(std::move(row));
+            continue;
+        }
+        const GameUpdateItem &game = dlc_row != nullptr ? *dlc_row->item : games[static_cast<std::size_t>(i)];
+        row.child = dlc_row != nullptr;
+        row.key = "u:" + game.title_id;
+        row.cover = "local-" + (game.base_id.empty() ? game.title_id
+                                : game.label.empty() ? game.base_id : "dlc-" + game.base_id + "-" + game.label);
+        row.title = game.name.empty() ? game.title_id : game.name;
+        const bool this_job = job.present && job.title_id == game.title_id && !job.phase.empty() && job.phase != "cancelled";
+        const int place = queue_place(status, game.title_id);
+        const bool paused = this_job && job.phase == "paused";
+        const bool running = this_job && job.active && job.phase != "installing";
+        const bool installing = this_job && job.phase == "installing";
+        std::string state = place > 0 ? std::string(tr("Waiting")) + " \xC2\xB7 #" + std::to_string(place)
+                                      : std::string(dlc_mode_ ? tr("DLC available") : game.blocked ? tr("Newer firmware needed") : tr("Update available"));
+        if (this_job)
+        {
+            if (job.phase == "preparing") state = tr("Preparing the download\xE2\x80\xA6");
+            else if (job.phase == "downloading") state = tr("Downloading");
+            else if (job.phase == "verifying") state = tr("Checking the downloaded files\xE2\x80\xA6");
+            else if (job.phase == "installing") state = tr("Installing");
+            else if (job.phase == "installed") state = tr("Installed");
+            else if (job.phase == "paused") state = tr("Paused");
+            else if (job.phase == "downloaded") state = tr("Downloaded");
+            else state = tr("Update failed");
+            row.bad = job.phase == "failed";
+            row.ok = job.phase == "installed";
+            if (job.total > 0.0 && (job.phase == "downloading" || job.phase == "paused"))
+                row.bar = static_cast<float>(std::clamp(job.done / job.total, 0.0, 1.0));
+        }
+        row.state = state;
+        row.sub = dlc_mode_ ? game.base_id
+                            : game.title_id + " \xC2\xB7 " + tr("Installed {version}", {{"version", game.installed.empty() ? std::string("?") : game.installed}}) +
+                                  "  \xE2\x86\x92  " +
+                                  (game.blocked ? tr("Needs firmware {version}", {{"version", game.firmware}})
+                                                : tr("Available {version}", {{"version", game.picked ? tr("your selection") : game.version}}));
+        const double bytes = this_job && job.total > 0.0 ? job.total : game.size;
+        if (this_job && (job.phase == "failed" || (job.phase == "downloaded" && !job.error.empty())))
+            row.size = explained(job);
+        else if (bytes > 0.0)
+            row.size = format_bytes(bytes);
+        row.action = paused ? tr("Resume") : running ? tr("Pause") : place > 0 ? tr("Remove from queue")
+                     : game.blocked ? tr("Choose update") : installing ? std::string()
+                     : job.active || job.phase == "paused" ? tr("Add to queue") : tr("Download");
+        out.push_back(std::move(row));
+    }
+    return out;
+}
+
+void GameUpdatesScreen::draw_crossbar(Frame &frame, bool focused) const
+{
+    hui::gfx::DrawList &list = frame.scene;
+    xb::draw_bar(ctx_, list, xb::sections(ctx_, false), dlc_mode_ ? section::dlc : section::updates);
+    const std::vector<RowText> texts = row_texts();
+    const GameUpdateStatus &status = ctx_.store.state().game_update_status;
+    auto covers = std::make_shared<std::vector<Game>>();
+    for (const RowText &t : texts)
+    {
+        Game g;
+        g.id = t.cover;
+        g.title = t.title;
+        covers->push_back(std::move(g));
+    }
+    xb::List rows;
+    const bool empty = texts.empty();
+    // Nothing listed: one row says so and checks again.
+    rows.size = empty ? 1 : static_cast<int>(texts.size());
+    rows.fill = [this, texts, covers, empty, &status](int i, xb::Row &row)
+    {
+        if (empty)
+        {
+            row.key = "empty";
+            row.has_icon = true;
+            row.icon = dlc_mode_ ? icons::Icon::box : icons::Icon::update;
+            row.title = dlc_mode_ ? tr("No DLC") : tr("No game updates");
+            row.sub = status.checking ? tr("Checking\xE2\x80\xA6")
+                      : dlc_mode_     ? tr("DLC on your NAS that your installed games do not have yet appear here.")
+                                      : tr("Installed games with a newer patch on Sony\xE2\x80\x99s servers appear here.");
+            row.hint = dlc_mode_ ? tr("Check for DLC") : tr("Check for updates");
+            return;
+        }
+        const RowText &t = texts[static_cast<std::size_t>(i)];
+        row.key = t.key;
+        row.game = &(*covers)[static_cast<std::size_t>(i)];
+        row.title = t.title;
+        row.sub = t.sub;
+        row.value = t.state;
+        row.bar = t.bar;
+        row.warn = t.bad;
+        row.folder = t.header;
+        row.text = t.size;
+        row.hint = t.action;
+    };
+    xb_.draw(ctx_, list, rows);
+    (void)focused;
+}
+
+void GameUpdatesScreen::draw_panorama(Frame &frame, bool focused) const
+{
+    hui::gfx::DrawList &list = frame.scene;
+    pano::draw_header(ctx_, list, pano::lower(tr(dlc_mode_ ? "DLC" : "Updates")), 0.0f);
+    const std::vector<RowText> texts = row_texts();
+    const GameUpdateStatus &status = ctx_.store.state().game_update_status;
+    if (texts.empty())
+    {
+        pano::draw_empty(ctx_, list, status.checking ? tr("Checking\xE2\x80\xA6") : page_note(),
+                         dlc_mode_ ? tr("No DLC") : tr("No game updates"),
+                         dlc_mode_ ? tr("DLC on your NAS that your installed games do not have yet appear here.")
+                                   : tr("Installed games with a newer patch on Sony\xE2\x80\x99s servers appear here."),
+                         {pano::button(tr("Check for updates"), focused)});
+        return;
+    }
+    pano::draw_caps(ctx_, &list, pano::kLeft, 300.0f, page_note());
+    std::vector<pano::Item> items;
+    for (const RowText &t : texts)
+    {
+        pano::Item item;
+        item.title = (t.child ? "   " : "") + t.title;
+        item.value = t.state;
+        item.sub = t.sub + (t.size.empty() || t.header ? std::string() : " \xC2\xB7 " + t.size);
+        item.button = t.action;
+        item.warn = t.bad;
+        item.bar = t.bar;
+        items.push_back(std::move(item));
+    }
+    // A window of rows around the focus.
+    const int per = 5;
+    const int first = std::clamp(row_ - per / 2, 0, std::max(0, static_cast<int>(items.size()) - per));
+    std::vector<pano::Item> shown(items.begin() + first, items.begin() + std::min<int>(first + per, static_cast<int>(items.size())));
+    pano::draw_list(ctx_, &list, pano::kLeft, 350.0f, 1500.0f, shown, focused ? row_ - first : -1, 32.0f);
+}
+
 void GameUpdatesScreen::draw(Frame &frame, bool focused) const
 {
+    if (look::is(look::Interface::crossbar))
+        return draw_crossbar(frame, focused);
+    if (look::is(look::Interface::panorama))
+        return draw_panorama(frame, focused);
     hui::gfx::DrawList &list = frame.scene;
     const Snapshot &state = ctx_.store.state();
     const ui::Type &type = ctx_.type;
