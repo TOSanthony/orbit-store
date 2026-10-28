@@ -1386,6 +1386,9 @@ void App::draw(Frame &frame) const
     }
     else
     {
+    // The background chosen in Settings > Appearance; the default keeps Store's navy gradient.
+    if (ctx_.appearance != 0)
+        frame.backdrop = appearance::backdrop(ctx_.appearance, ctx_.clock);
     // ---- art behind everything, crossfading between games ----
     const bool discover_art = !game_open_ && tab_ == tab::discover;
     const float art_height = discover_art ? 800.0f : 1080.0f;
