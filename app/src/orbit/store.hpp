@@ -159,6 +159,8 @@ enum class Setting : std::uint8_t
     sound_volume,
     ps4,
     own_dns,
+    appearance,
+    keyboard,
     game_updates,
     game_update_job,
     download_connections,
@@ -298,6 +300,8 @@ class Store
     void set_sounds_off(bool off) { send_setting(Setting::sounds, {}, {}, off); }
     void set_sound_volume(int percent) { send_setting(Setting::sound_volume, std::to_string(percent)); }
     void set_ps4_hidden(bool hidden) { send_setting(Setting::ps4, {}, {}, hidden); }
+    void set_appearance(const std::string &id) { send_setting(Setting::appearance, id); }
+    void set_keyboard(const std::string &layout) { send_setting(Setting::keyboard, layout); }
     void set_own_dns(bool enabled) { send_setting(Setting::own_dns, {}, {}, enabled); }
     void set_download_connections(int connections) { send_setting(Setting::download_connections, std::to_string(connections)); }
     void set_delete_archives(bool enabled) { send_setting(Setting::archives, {}, {}, enabled); }

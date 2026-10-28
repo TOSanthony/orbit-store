@@ -1228,6 +1228,34 @@ TEST(App, AppearanceLanguageSwitchesAtOnceAndIsKept)
     EXPECT_EQ(i18n::language(), "en");
 }
 
+TEST(App, AppearanceKeepsTheKeyboardLettersAndTheBackground)
+{
+    AppHarness h;
+    h.store.poll_once();
+    h.app.open_settings(SettingsScreen::Section::appearance, true);
+    h.settle();
+    // Interface, Motion, Language, the sound volume and switch, then Keyboard.
+    for (int i = 0; i < 6; ++i)
+        h.frame(Direction::down);
+    h.frame(Direction::right);
+    h.frame(Direction::right); // AZERTY
+    h.press(Action::confirm);
+    ASSERT_TRUE(h.store.setting_result().busy);
+    h.store.run_next_action();
+    h.settle(3);
+    EXPECT_EQ(h.store.state().system.keyboard, "azerty");
+    h.settle(3);
+    EXPECT_TRUE(h.context.azerty);
+    // Then the backgrounds, one below the other; the second is Midnight blue.
+    h.frame(Direction::down);
+    h.frame(Direction::down);
+    h.press(Action::confirm);
+    ASSERT_TRUE(h.store.setting_result().busy);
+    h.store.run_next_action();
+    h.settle(3);
+    EXPECT_EQ(h.store.state().system.appearance, "midnight");
+}
+
 TEST(App, MoreSettingsShowsDiagnosticsOnScreen)
 {
     AppHarness h;

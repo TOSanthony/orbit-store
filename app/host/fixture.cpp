@@ -647,6 +647,7 @@ http::Response Fixture::send(const http::Request &request)
             "\"preferredStorage\":" +
             json::quote(preferred_) + ",\"ps4Hidden\":" + (ps4_hidden_ ? "true" : "false") +
             ",\"ownDns\":" + (own_dns_ ? "true" : "false") +
+            ",\"keyboard\":" + json::quote(keyboard_) + ",\"appearance\":" + json::quote(appearance_) +
             ",\"httpPort\":34177,\"downloadNotifications\":" +
             (notifications_ ? "true" : "false") + ",\"notificationEvents\":" + events_json() +
             ",\"deletePackages\":" + (delete_packages_ ? "true" : "false") +
@@ -853,6 +854,18 @@ http::Response Fixture::send(const http::Request &request)
     {
         own_dns_ = input.flag("ownDns", true);
         response.body = std::string("{\"ownDns\":") + (own_dns_ ? "true" : "false") + "}";
+        return response;
+    }
+    if (!get && path == "/api/v1/settings/keyboard")
+    {
+        keyboard_ = input.text("keyboard");
+        response.body = "{\"keyboard\":" + json::quote(keyboard_) + "}";
+        return response;
+    }
+    if (!get && path == "/api/v1/settings/appearance")
+    {
+        appearance_ = input.text("appearance");
+        response.body = "{\"appearance\":" + json::quote(appearance_) + "}";
         return response;
     }
     if (!get && path == "/api/v1/settings/ps4")

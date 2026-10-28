@@ -92,6 +92,8 @@ class Fixture final : public http::Transport
     std::vector<std::string> enabled_;
     bool ps4_hidden_ = false; // the PS4 switch in the catalogue settings
     bool own_dns_ = true;       // Orbit Store's own DNS switch
+    std::string keyboard_ = "auto";
+    std::string appearance_ = "black";
     bool nas_saved_ = false; // a My NAS address was sent
     std::vector<std::string> game_queue_; // title IDs waiting behind the game update job
     std::string game_job_;   // the game update job phase: "", downloading or paused

@@ -1315,6 +1315,10 @@ class SettingsScreen final : public Screen
         own_dns_toggle, // turns Orbit Store's own DNS for Sony's servers on or off
         sounds_toggle,
         ps4_toggle,
+        nas_url, // the My NAS index address field
+        sound_volume, // the volume bar; left and right change it
+        appearance, // index of a background preset
+        keyboard,   // 0 automatic, 1 QWERTY, 2 AZERTY
     };
     struct Control
     {
@@ -1410,11 +1414,18 @@ class SettingsScreen final : public Screen
     {
         // A setting's values, a question or the sign-in keep L1 and R1 for themselves.
         return xb_menu_.open || crossbar_band_open() || archive_sign_in_.active() || ntfy_form_.active() ||
-               diagnostics_view_.active();
+               diagnostics_view_.active() || nas_edit_;
     }
     bool page(int step) override;
 
   private:
+
+    // My NAS address being typed (empty: keep the saved one) and its keyboard.
+    std::string nas_url_;
+    bool nas_edit_ = false;
+    hui::ui::Keyboard nas_keyboard_;
+    ui::Ease nas_keyboard_in_;
+    void close_nas_editor();
 
     Section section_ = Section::sources;
     bool in_content_ = false;
@@ -1454,6 +1465,8 @@ class App
     void draw(Frame &frame) const;
     // Preview and tests: jump straight to a place.
     void show_tab(int tab);
+    // Preview and tests: the game updates (1) or the DLC (2) over the Library.
+    void open_game_updates(int view);
     // Crossbar, Cinema and Panorama: a section (section:: indices) by itself.
     void show_section(int section);
     void open_game(const std::string &game_id);
@@ -1560,6 +1573,8 @@ class App
     ui::Ease controls_in_;
     float notice_time_ = 0.0f; // Store's one-time notice about Appearance
     std::uint64_t language_ = 0; // i18n::revision() the screens' text is in
+    bool keyboard_synced_ = false;   // the service's saved keyboard was read once
+    bool appearance_synced_ = false; // the service's saved background was read once
 };
 
 } // namespace orbit

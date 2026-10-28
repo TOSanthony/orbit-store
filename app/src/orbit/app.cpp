@@ -1,6 +1,7 @@
 // Orbit Store TV app - The app: top bar, tabs, the game page, status and dialogs.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "orbit/appearance.hpp"
 #include "orbit/mark.hpp"
 #include "orbit/screens.hpp"
 #include "orbit/i18n.hpp"
@@ -77,6 +78,7 @@ App::App(Context &context)
     : ctx_(context), discover_(context), browse_(context), addons_(context, true), dlc_(context, true), updates_(context), library_(context), downloads_(context),
       game_(context), settings_(context)
 {
+    ctx_.appearance = appearance::load();
     top_focus_.resize(kTopItems);
     backdrop_in_.snap(1.0f);
 }
@@ -115,6 +117,13 @@ bool App::content_blocked() const
         return false;
     const Snapshot &state = ctx_.store.state();
     return state.setup_needed() || (state.have_catalog && state.games.empty());
+}
+
+void App::open_game_updates(int view)
+{
+    show_tab(tab::library);
+    updates_view_ = view;
+    screen().focus();
 }
 
 void App::show_tab(int tab)
@@ -400,6 +409,24 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
     controls_in_.update(dt, 16.0f);
     notice_time_ = std::max(0.0f, notice_time_ - dt);
     ctx_.store.tick();
+    {
+        // The choices the download service keeps for this console (the app cannot keep files itself).
+        const Snapshot &saved = ctx_.store.state();
+        if (!keyboard_synced_ && saved.have_system)
+        {
+            keyboard_synced_ = true;
+            if (!saved.system.keyboard.empty())
+                ctx_.keyboard_choice = saved.system.keyboard;
+        }
+        if (!appearance_synced_ && saved.have_system)
+        {
+            appearance_synced_ = true;
+            if (!saved.system.appearance.empty())
+                ctx_.appearance = appearance::find(saved.system.appearance);
+        }
+        ctx_.azerty = ctx_.keyboard_choice == "azerty" ||
+                      (ctx_.keyboard_choice != "qwerty" && i18n::language() == "fr");
+    }
     ctx_.sounds_on = !ctx_.store.state().system.sounds_off;
     ctx_.sound_volume = ctx_.store.state().system.sound_volume;
     if (language_ != i18n::revision())
@@ -1108,8 +1135,8 @@ void App::draw_backdrop_look(Frame &frame) const
         frame.backdrop.colors[1] = ui::Color::rgb(0x000000);
         break;
     default:
-        frame.backdrop.colors[0] = ui::color::night1;
-        frame.backdrop.colors[1] = ui::color::night0;
+        // The background chosen in Settings > Appearance (black by default).
+        frame.backdrop = appearance::backdrop(ctx_.appearance, ctx_.clock);
         break;
     }
 }

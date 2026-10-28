@@ -8,6 +8,7 @@
 // list, also draws it, so what the focus moves between is what is drawn.
 
 #include "orbit/screens.hpp"
+#include "orbit/appearance.hpp"
 #include "orbit/i18n.hpp"
 #include "orbit/look.hpp"
 
@@ -34,6 +35,7 @@ constexpr float kContentWidth = 940.0f;
 constexpr float kViewTop = 230.0f;    // content scrolls under the title
 constexpr float kViewBottom = 990.0f; // and stops above the hints
 constexpr float kCardRadius = 14.0f;
+constexpr float kNasKeyboardTop = 560.0f;
 constexpr int kSectionCount = static_cast<int>(SettingsScreen::Section::count);
 constexpr const char *kSections[] = {/* i18n */ "Download sources", /* i18n */ "Storage", /* i18n */ "Notifications",
                                      /* i18n */ "Pair a device",
@@ -187,6 +189,29 @@ struct SettingsScreen::Pane
         card_tops.pop_back();
         y += 24.0f;
     }
+    // A volume bar: label and percentage on top, a track below. Left and right change it.
+    void volume_row(std::string_view label, int percent)
+    {
+        const ui::Rect r{x, y + 6.0f, width, 84.0f};
+        if (list != nullptr)
+        {
+            const float f = amount();
+            ui::state_fill(*list, r, 16.0f, f, false);
+            const ui::Color ink = ui::state_ink(f, false);
+            ui::text(*list, type.medium, label, r.x + 28.0f, r.y + 36.0f, 21.0f, ink);
+            ui::text(*list, type.medium, std::to_string(percent) + " %", r.x + r.w - 28.0f,
+                     r.y + 36.0f, 21.0f, ink, ui::Align::right);
+            const ui::Rect track{r.x + 28.0f, r.y + 54.0f, r.w - 56.0f, 8.0f};
+            list->rounded_rect(track, 4.0f, ui::Color::rgb(f > 0.5f ? 0x080808 : 0xffffff, 0.22f));
+            const float fill = track.w * static_cast<float>(percent) / 100.0f;
+            if (fill > 0.0f)
+                list->rounded_rect({track.x, track.y, fill, track.h}, 4.0f, ink);
+            list->circle(track.x + fill, track.cy(), 11.0f, ink);
+        }
+        add(Kind::sound_volume, 0, r, true);
+        ++row;
+        y += r.h + 18.0f;
+    }
     void error(std::string_view text)
     {
         if (text.empty())
@@ -232,9 +257,29 @@ struct SettingsScreen::Pane
 
 // ---- the screen ----
 
+namespace
+{
+// The service words the NAS notices in English; a skipped-entries count is part of the sentence.
+std::string nas_message(const std::string &error)
+{
+    unsigned long count = 0;
+    if (std::sscanf(error.c_str(), "%lu entr", &count) == 1 &&
+        error.find(" skipped: invalid, duplicated or not on your NAS address.") != std::string::npos)
+        return trn(static_cast<long>(count),
+                   "{count} entry was skipped: invalid, duplicated or not on your NAS address.",
+                   "{count} entries were skipped: invalid, duplicated or not on your NAS address.");
+    return std::string(tr(std::string_view(error)));
+}
+} // namespace
+
 SettingsScreen::SettingsScreen(Context &context)
     : Screen(context), archive_sign_in_(context), ntfy_form_(context), diagnostics_view_(context)
 {
+    nas_keyboard_.style.theme = keyboard_theme();
+    nas_keyboard_.style.bindings = hui::ui::KeyboardBindings::standard();
+    nas_keyboard_.style.max_length = 1000;
+    nas_keyboard_.style.done_label = tr("Done");
+    nas_keyboard_.set_bounds({ui::kGutter + 220.0f, kNasKeyboardTop + 40.0f, 1280.0f, 400.0f});
 }
 
 void SettingsScreen::open(Section section, bool content)
@@ -285,6 +330,13 @@ void SettingsScreen::load_draft()
     draft_ = state.sources.enabled;
     draft_acknowledged_ = state.sources.acknowledged;
     first_setup_ = !state.sources.acknowledged;
+    nas_url_.clear();
+    nas_edit_ = false;
+}
+
+void SettingsScreen::close_nas_editor()
+{
+    nas_edit_ = false;
 }
 
 bool SettingsScreen::update_available() const
@@ -442,6 +494,44 @@ void SettingsScreen::build_sources(Pane &pane) const
             pane.fine(tr("Complete verification on AkiraBox, then wait for Orbit to check the download link."));
         if (contains(draft_, "datanodes"))
             pane.fine(tr("Scroll to the bottom, select Continue to Download, then Free Download. Wait for the countdown and select Start Download."));
+    }
+
+    // My NAS: the address of the index.json, typed with the on-screen keyboard.
+    if (contains(draft_, "nas"))
+    {
+        pane.subheading(tr("My NAS index address"));
+        const ui::Rect field{pane.x, pane.y, pane.width, 64.0f};
+        if (pane.list != nullptr)
+        {
+            ui::DrawList &list = *pane.list;
+            ui::focus_ring(list, field, 18.0f, pane.amount());
+            list.rounded_rect(field, 18.0f, ui::Color::rgb(0xffffff, 0.08f));
+            const bool typed = !nas_url_.empty();
+            const std::string shown =
+                typed ? nas_url_
+                      : state.sources.nas_configured
+                            ? std::string(tr("Saved address kept. Select to change it."))
+                            : std::string("https://nas.example.com/orbit-secret/index.json");
+            ui::text_fit(list, type.regular, shown, field.x + 24.0f, field.cy() + 7.0f, 20.0f,
+                         field.w - 48.0f, typed ? ui::color::text : ui::color::text3);
+        }
+        pane.add(Kind::nas_url, 0, field, !saving);
+        ++pane.row;
+        pane.y = field.y + field.h + 10.0f;
+        if (state.sources.nas_configured)
+        {
+            if (!state.sources.nas_error.empty())
+                pane.fine(state.sources.nas_host + ": " + nas_message(state.sources.nas_error));
+            else
+                pane.fine(tr("{host}: {count} games found.",
+                             {{"host", state.sources.nas_host},
+                              {"count", std::to_string(state.sources.nas_count)}}));
+        }
+        else
+        {
+            pane.fine(tr("Enter the https address of the index.json on your NAS."));
+        }
+        pane.gap(6.0f);
     }
 
     // .source-notice, then .source-acknowledgement.
@@ -1287,6 +1377,72 @@ void SettingsScreen::build_appearance(Pane &pane) const
     pane.subheading(tr("Language"));
     pane.body(tr("Choose the language Orbit uses on this device."));
     pills(Kind::language, language_options(), language_index());
+
+    // Menu sounds and their volume.
+    pane.gap(10.0f);
+    pane.subheading(tr("Sounds"));
+    pane.body(ctx_.sounds_on ? tr("Menu sounds are on: you hear a sound when you move and select.")
+                             : tr("Menu sounds are off. The app is silent."));
+    pane.volume_row(tr("Volume"), ctx_.sound_volume);
+    pane.buttons({{Kind::sounds_toggle, ctx_.sounds_on ? tr("Turn off sounds") : tr("Turn on sounds"),
+                   ui::ButtonKind::secondary}});
+
+    // The keyboard letters: Automatic uses AZERTY when the app is in French.
+    pane.gap(10.0f);
+    pane.subheading(tr("Keyboard"));
+    pane.body(tr("The on-screen keyboard\xE2\x80\x99s letters. Automatic uses AZERTY when the app is in French."));
+    {
+        const std::string &kb = ctx_.keyboard_choice;
+        const int chosen = kb == "qwerty" ? 1 : kb == "azerty" ? 2 : 0;
+        pills(Kind::keyboard, {tr("Automatic"), "QWERTY", "AZERTY"}, chosen);
+    }
+
+    // The page behind everything, in the Store look (the other looks draw their own).
+    if (prefs.interface == look::Interface::store)
+    {
+        pane.gap(10.0f);
+        pane.subheading(tr("Background"));
+        pane.body(tr("Choose the background of the app. Game artwork still shows over it."));
+        pane.gap(10.0f);
+        for (std::size_t i = 0; i < appearance::count(); ++i)
+        {
+            const appearance::Preset &preset = appearance::preset(i);
+            const bool chosen = i == ctx_.appearance;
+            const ui::Rect r{pane.x, pane.y, pane.width, 92.0f};
+            if (pane.list != nullptr)
+            {
+                ui::DrawList &list = *pane.list;
+                const float f = pane.amount();
+                ui::state_fill(list, r, kCardRadius, f, chosen);
+                const float mx = r.x + 24.0f + 14.0f;
+                if (chosen)
+                {
+                    list.circle(mx, r.cy(), 14.0f, f > 0.5f ? ui::color::night1 : ui::color::action);
+                    ui::icon_check(list, mx, r.cy(), 16.0f, f > 0.5f ? ui::color::text : ui::color::night1, 2.4f);
+                }
+                else
+                    list.ring(mx, r.cy(), 13.5f, 1.0f,
+                              f > 0.5f ? ui::Color::rgb(0x080808, 0.6f) : ui::color::text3);
+                const float tx = mx + 14.0f + 20.0f;
+                const float rx = r.x + r.w - 24.0f;
+                ui::text_fit(list, type.medium, tr(preset.name), tx, r.cy() - 6.0f, 21.0f, 470.0f,
+                             ui::state_ink(f, chosen));
+                ui::text_fit(list, type.regular, tr(preset.about), tx, r.cy() + 22.0f, 16.0f, 470.0f,
+                             ui::state_ink_dim(f));
+                if (preset.animated)
+                    ui::text(list, type.medium, tr("Animated"), rx, r.cy() + 7.0f, 19.0f,
+                             ui::state_ink_dim(f), ui::Align::right);
+            }
+            pane.add(Kind::appearance, static_cast<int>(i), r, true);
+            ++pane.row;
+            pane.y += r.h + 12.0f;
+        }
+        pane.fine(tr("Saved on this console. Animated backgrounds use a little more graphics power."));
+    }
+    if (ctx_.store.setting_result().setting == Setting::appearance ||
+        ctx_.store.setting_result().setting == Setting::sounds ||
+        ctx_.store.setting_result().setting == Setting::keyboard)
+        pane.error(ctx_.store.setting_result().error);
 }
 
 std::vector<std::string> SettingsScreen::language_options() const
@@ -1361,10 +1517,7 @@ void SettingsScreen::build_more(Pane &pane) const
         const SettingResult &prefs_result = ctx_.store.setting_result();
         pane.gap(12.0f);
         pane.rule();
-        pane.buttons({{Kind::sounds_toggle,
-                       state.system.sounds_off ? tr("Turn menu sounds on") : tr("Turn menu sounds off"),
-                       ui::ButtonKind::secondary, !(prefs_result.busy && prefs_result.setting == Setting::sounds)},
-                      {Kind::ps4_toggle,
+        pane.buttons({{Kind::ps4_toggle,
                        state.system.ps4_hidden ? tr("Show PS4 games") : tr("Hide PS4 games"),
                        ui::ButtonKind::secondary, !(prefs_result.busy && prefs_result.setting == Setting::ps4)}});
     }
@@ -1433,6 +1586,24 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
     case Kind::language:
         choose_language(control.index);
         break;
+    case Kind::keyboard:
+    {
+        static const char *const layouts[] = {"auto", "qwerty", "azerty"};
+        if (control.index >= 0 && control.index < 3)
+        {
+            ctx_.keyboard_choice = layouts[control.index];
+            ctx_.store.set_keyboard(layouts[control.index]);
+        }
+        break;
+    }
+    case Kind::appearance:
+        if (control.index >= 0 && static_cast<std::size_t>(control.index) < appearance::count())
+        {
+            ctx_.appearance = static_cast<std::size_t>(control.index);
+            appearance::save(ctx_.appearance);
+            ctx_.store.set_appearance(appearance::preset(ctx_.appearance).id);
+        }
+        break;
     case Kind::zero_toggle:
         error_.clear();ctx_.store.set_zero(!state.system.zero_enabled);break;
     case Kind::download_recovery_less:
@@ -1482,6 +1653,8 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
         error_.clear();
         ctx_.store.check_game_updates();
         break;
+    case Kind::sound_volume:
+        break; // left and right change it
     case Kind::sounds_toggle:
         error_.clear();
         ctx_.store.set_sounds_off(!state.system.sounds_off);
@@ -1531,10 +1704,27 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
     case Kind::acknowledge:
         draft_acknowledged_ = !draft_acknowledged_;
         break;
-    case Kind::save_sources:
-        error_.clear();
-        ctx_.store.save_sources(draft_, state.sources.notice_version);
+    case Kind::nas_url:
+        nas_edit_ = true;
+        if (nas_url_.empty())
+            nas_url_ = "https://";
+        nas_keyboard_.enter();
+        nas_keyboard_.set_length(static_cast<int>(nas_url_.size()));
+        feedback.play(hui::audio::Cue::modal_open);
         break;
+    case Kind::save_sources:
+    {
+        error_.clear();
+        // Only a typed address is sent; "https://" alone is the untouched prefix.
+        std::string address = nas_url_;
+        while (!address.empty() && address.back() == ' ')
+            address.pop_back();
+        std::optional<std::string> nas;
+        if (!address.empty() && address != "https://")
+            nas = address;
+        ctx_.store.save_sources(draft_, state.sources.notice_version, nas);
+        break;
+    }
     case Kind::drive:
     {
         const std::string id =
@@ -1676,6 +1866,35 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
             diagnostics_view_.update(input, dt, feedback);
         return intent;
     }
+    // The My NAS address: the keyboard takes every button while it is open.
+    nas_keyboard_.set_azerty(ctx_.azerty);
+    nas_keyboard_.style.space_label = tr("Space");
+    nas_keyboard_.style.done_label = tr("Done");
+    nas_keyboard_.set_active(nas_edit_);
+    nas_keyboard_.update(dt);
+    nas_keyboard_in_.target = nas_edit_ ? 1.0f : 0.0f;
+    nas_keyboard_in_.update(dt, 14.0f);
+    if (focused && nas_edit_)
+    {
+        const hui::ui::Event event = nas_keyboard_.handle(input, feedback);
+        for (int i = 0; i < nas_keyboard_.erased() && !nas_url_.empty(); ++i)
+        {
+            std::size_t pos = nas_url_.size() - 1;
+            while (pos > 0 && (static_cast<unsigned char>(nas_url_[pos]) & 0xc0) == 0x80)
+                --pos;
+            nas_url_.resize(pos);
+        }
+        if (nas_url_.size() + nas_keyboard_.typed().size() <= 1000)
+            nas_url_ += nas_keyboard_.typed();
+        nas_keyboard_.set_length(static_cast<int>(nas_url_.size()));
+        if (event == hui::ui::Event::activated || event == hui::ui::Event::cancelled)
+        {
+            close_nas_editor();
+            feedback.play(hui::audio::Cue::modal_close);
+        }
+        return intent;
+    }
+
     if (!look::is(look::Interface::store))
     {
         // A saved setting's toast (above) and what the rows ask for both count.
@@ -1787,6 +2006,21 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
                     in_content_ = false;
                 }
                 feedback.play(hui::audio::Cue::back);
+                return intent;
+            }
+            if (here.kind == Kind::sound_volume &&
+                (input.nav == Direction::left || input.nav == Direction::right))
+            {
+                const int step = input.nav == Direction::right ? 10 : -10;
+                const int volume = std::clamp(ctx_.sound_volume + step, 0, 100);
+                if (volume == ctx_.sound_volume)
+                    refuse(feedback, input);
+                else
+                {
+                    ctx_.sound_volume = volume;
+                    ctx_.store.set_sound_volume(volume);
+                    feedback.play(hui::audio::Cue::slider); // the new level, heard at once
+                }
                 return intent;
             }
             if (input.nav == Direction::left || input.nav == Direction::right)
@@ -1901,6 +2135,30 @@ void SettingsScreen::draw(Frame &frame, bool focused) const
     archive_sign_in_.draw(frame);
     ntfy_form_.draw(frame);
     diagnostics_view_.draw(frame);
+    const ui::Type &type = ctx_.type;
+    // ---- the My NAS address keyboard ----
+    if (nas_keyboard_in_.value > 0.01f)
+    {
+        hui::gfx::DrawList &overlay = frame.overlay;
+        frame.glass = true;
+        const float shown = nas_keyboard_in_.value;
+        overlay.push_opacity(shown);
+        overlay.push_transform(1.0f, 0.0f, 0.0f, 0.0f, 60.0f * (1.0f - shown));
+        const ui::Rect panel{0.0f, kNasKeyboardTop - 120.0f, 1920.0f, 1080.0f - kNasKeyboardTop + 120.0f};
+        overlay.glass(frame.glass_texture, panel, 0.0f, ui::Color::rgb(0xffffff));
+        overlay.rounded_rect(panel, 0.0f, ui::color::night1.with_alpha(0.78f));
+        overlay.rounded_rect({0.0f, panel.y, 1920.0f, 1.5f}, 0.0f, ui::color::line);
+        ui::text(overlay, type.regular, tr("My NAS index address"), ui::kGutter + 220.0f,
+                 panel.y + 50.0f, 20.0f, ui::color::text2);
+        const ui::Rect field{ui::kGutter + 220.0f, panel.y + 66.0f, 1280.0f, 56.0f};
+        overlay.rounded_rect(field, 16.0f, ui::Color::rgb(0xffffff, 0.1f));
+        ui::text_fit(overlay, type.regular, nas_url_, field.x + 20.0f, field.cy() + 7.0f, 20.0f,
+                     field.w - 40.0f, ui::color::text);
+        hui::ui::Canvas canvas{overlay, ctx_.fonts, frame.glass_texture, ctx_.clock};
+        nas_keyboard_.draw(canvas);
+        overlay.pop_transform();
+        overlay.pop_opacity();
+    }
 }
 
 void SettingsScreen::draw_look(Frame &frame, bool focused) const
@@ -1976,6 +2234,10 @@ std::vector<hui::ui::Hint> SettingsScreen::hints() const
         return ntfy_form_.hints();
     if (diagnostics_view_.active())
         return diagnostics_view_.hints();
+    if (nas_edit_)
+        return {{hui::ui::Button::square, tr("Delete")},
+                {hui::ui::Button::triangle, tr("Space")},
+                {hui::ui::Button::circle, tr("Close")}};
     if (look::is(look::Interface::crossbar))
         return crossbar_hints();
     if (look::is(look::Interface::cinema))
