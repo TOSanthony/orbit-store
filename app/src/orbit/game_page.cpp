@@ -4,6 +4,7 @@
 #include "orbit/i18n.hpp"
 #include "orbit/look.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -15,6 +16,157 @@ namespace
 constexpr float kBodyTop = 430.0f;
 constexpr float kBodyBottom = 978.0f;
 constexpr float kLeft = 70.0f;
+// ---- the badges of "About this game" ----
+enum class FactIcon { platform, platform4, genre, calendar, publisher, download, disk, globe, version, format, source, title_id };
+
+void fact_icon(hui::gfx::DrawList &list, const ui::Type &type, FactIcon icon, float cx, float cy,
+               float size, ui::Color ink)
+{
+    (void)type;
+    const float k = size / 40.0f;
+    const float t = 2.4f * k;
+    const auto line = [&](float x1, float y1, float x2, float y2, float w = 0.0f)
+    { list.line(cx + x1 * k, cy + y1 * k, cx + x2 * k, cy + y2 * k, w > 0 ? w * k : t, ink); };
+    const auto box = [&](float x, float y, float w, float h, float radius)
+    {
+        list.bordered_rect({cx + x * k, cy + y * k, w * k, h * k}, radius * k, ui::Color{0, 0, 0, 0}, t, ink);
+    };
+    const auto dot = [&](float x, float y, float r) { list.circle(cx + x * k, cy + y * k, r * k, ink); };
+    // An elliptical arc as a polyline, angles in radians from the right, clockwise.
+    const auto arc = [&](float x, float y, float rx, float ry, float from, float to)
+    {
+        constexpr int kSteps = 20;
+        float px = x + rx * std::cos(from), py = y + ry * std::sin(from);
+        for (int i = 1; i <= kSteps; ++i)
+        {
+            const float a = from + (to - from) * static_cast<float>(i) / kSteps;
+            const float nx = x + rx * std::cos(a), ny = y + ry * std::sin(a);
+            line(px, py, nx, ny);
+            px = nx;
+            py = ny;
+        }
+    };
+    constexpr float kPi = 3.14159265f;
+    switch (icon)
+    {
+    case FactIcon::platform:
+    case FactIcon::platform4:
+        // The four PlayStation shapes: triangle, circle, square and cross.
+        line(-9, -15, -3, -5);
+        line(-3, -5, -15, -5);
+        line(-15, -5, -9, -15);
+        list.ring(cx + 8 * k, cy - 10 * k, 5.5f * k, t, ink);
+        box(-14.5f, 3, 11, 11, 2.5f);
+        line(3, 3, 14, 14);
+        line(14, 3, 3, 14);
+        break;
+    case FactIcon::genre:
+    {
+        // A game controller, outlined; the d-pad and four buttons inside.
+        static const float kBody[] = {
+            18.0f,5.0f, 17.7f,2.4f, 17.3f,-0.2f, 16.8f,-2.6f, 16.0f,-5.1f, 14.9f,-7.7f, 13.6f,-9.8f, 11.7f,-11.9f, 9.6f,-13.3f, 6.9f,-13.8f, 4.3f,-13.4f, 2.0f,-12.0f, 0.0f,-11.0f, -2.7f,-12.5f, -4.9f,-13.6f, -7.7f,-13.8f, -10.2f,-13.0f, -12.2f,-11.4f, -13.8f,-9.5f, -15.1f,-7.2f, -16.1f,-4.7f, -16.9f,-2.0f, -17.4f,0.5f, -17.8f,3.2f, -18.0f,5.8f, -17.8f,8.5f, -16.6f,10.8f, -14.5f,12.3f, -11.9f,12.6f, -9.6f,11.7f, -7.4f,9.9f, -5.7f,7.9f, -4.1f,5.8f, -2.2f,4.0f, 0.4f,3.3f, 2.6f,4.3f, 4.5f,6.2f, 6.2f,8.5f, 8.0f,10.4f, 10.1f,11.9f, 12.5f,12.7f, 15.0f,12.1f, 16.9f,10.4f, 17.9f,8.0f};
+        constexpr int kCount = static_cast<int>(sizeof(kBody) / sizeof(kBody[0])) / 2;
+        for (int i = 0; i < kCount; ++i)
+        {
+            const int j = (i + 1) % kCount;
+            line(kBody[i * 2], kBody[i * 2 + 1], kBody[j * 2], kBody[j * 2 + 1]);
+        }
+        line(-12.2f, -2.3f, -4.6f, -2.3f, 2.6f);
+        line(-8.4f, -6.1f, -8.4f, 1.5f, 2.6f);
+        dot(8.3f, -5.6f, 1.4f);
+        dot(8.3f, 1.7f, 1.4f);
+        dot(11.9f, -2.0f, 1.4f);
+        dot(4.6f, -2.0f, 1.4f);
+        break;
+    }
+    case FactIcon::calendar:
+        box(-14, -12, 28, 26, 5);
+        line(-14, -4, 14, -4, 2.2f);
+        line(-7, -16, -7, -9);
+        line(7, -16, 7, -9);
+        for (int i = 0; i < 3; ++i) dot(-7.0f + 7.0f * static_cast<float>(i), 5, 1.4f);
+        break;
+    case FactIcon::publisher:
+    {
+        dot(0, -6, 6);
+        float xy[34];
+        for (int i = 0; i < 17; ++i)
+        {
+            const float a = kPi + kPi * static_cast<float>(i) / 16.0f;
+            xy[i * 2] = cx + 13.0f * k * std::cos(a);
+            xy[i * 2 + 1] = cy + 14.0f * k + 13.0f * k * std::sin(a);
+        }
+        list.polygon(xy, 17, ink);
+        break;
+    }
+    case FactIcon::download:
+        line(0, -14, 0, 4, 2.6f);
+        line(-7, -3, 0, 4, 2.6f);
+        line(7, -3, 0, 4, 2.6f);
+        line(-14, 4, -14, 13, 2.6f);
+        line(-14, 13, 14, 13, 2.6f);
+        line(14, 13, 14, 4, 2.6f);
+        break;
+    case FactIcon::disk:
+        ui::icon_storage(list, cx, cy, size, ink);
+        break;
+    case FactIcon::globe:
+        // The globe of the Language setting: the rim, two meridians that stop short of the
+        // poles and two parallels, with finer inner strokes.
+        list.ring(cx, cy, 15 * k, t, ink);
+        arc(0, 0, 5.4f, 15, -0.5f * kPi + 0.45f, 0.5f * kPi - 0.45f);
+        arc(0, 0, 5.4f, 15, 0.5f * kPi + 0.45f, 1.5f * kPi - 0.45f);
+        line(-13.6f, -4.5f, 13.6f, -4.5f, 2.0f);
+        line(-13.6f, 4.5f, 13.6f, 4.5f, 2.0f);
+        break;
+    case FactIcon::version:
+        line(-14, -3, -3, -14);
+        line(-3, -14, 14, -14);
+        line(14, -14, 14, 3);
+        line(14, 3, 3, 14);
+        line(3, 14, -14, -3);
+        dot(7, -7, 2);
+        break;
+    case FactIcon::format:
+        line(0, -14, 14, -7);
+        line(14, -7, 14, 7);
+        line(14, 7, 0, 14);
+        line(0, 14, -14, 7);
+        line(-14, 7, -14, -7);
+        line(-14, -7, 0, -14);
+        line(-14, -7, 0, 0, 2.2f);
+        line(0, 0, 14, -7, 2.2f);
+        line(0, 0, 0, 14, 2.2f);
+        break;
+    case FactIcon::source:
+        // A server: two stacked units with a light and a slot each.
+        box(-16, -16, 32, 14, 5);
+        box(-16, 2, 32, 14, 5);
+        dot(-9, -9, 1.8f);
+        dot(-9, 9, 1.8f);
+        line(-2, -9, 9, -9, 2.0f);
+        line(-2, 9, 9, 9, 2.0f);
+        break;
+    case FactIcon::title_id:
+        box(-16, -11, 32, 22, 5);
+        list.ring(cx - 8 * k, cy - 1 * k, 3.4f * k, 2.0f * k, ink);
+        line(-13, 7, -3, 7, 2.0f);
+        line(1, -4, 11, -4, 2.0f);
+        line(1, 2, 9, 2, 2.0f);
+        break;
+    }
+}
+
+// Disk images (exFAT, FFPKG) land on the disk as they are; ZIP and PKG are downloads.
+FactIcon size_icon(const Release &release)
+{
+    std::string upper = release.format;
+    for (char &c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    const bool disk_image = release.compression.empty() &&
+        (upper == "EXFAT" || upper == "FFPKG" || upper == "FFPFSC");
+    return disk_image ? FactIcon::disk : FactIcon::download;
+}
+
 std::string primary_label(const Release &release, bool again, bool waiting,
                          const CollectionState &collection, const Snapshot &state, bool torbox)
 {
@@ -279,10 +431,35 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
         if (!game->tagline.empty()) y += 15;
         paragraph(game->description, kLeft, y, std::min(width, type.regular.measure("0", 22) * 54), 22);
         y += 24;
-        std::string meta = release.provider + " \xC2\xB7 " + format_label(release) + " \xC2\xB7 " +
-                           format_bytes(release.size_bytes) + " \xC2\xB7 " + (release.platform == "ps4" ? "PS4" : "PS5");
-        if (!game->genre.empty()) meta += " \xC2\xB7 " + i18n::genre(game->genre);
-        if (!game->release_date.empty()) meta += " \xC2\xB7 " + game->release_date.substr(0, 4);
+        // Server, format, size and platform as pills, each with its badge.
+        {
+            const struct { FactIcon icon; std::string text; } pills[] = {
+                {FactIcon::source, release.provider},
+                {FactIcon::format, format_label(release)},
+                {size_icon(release), format_bytes(release.size_bytes)},
+                {release.platform == "ps4" ? FactIcon::platform4 : FactIcon::platform, release.platform == "ps4" ? "PS4" : "PS5"}};
+            float px = kLeft, py = y + 6;
+            for (const auto &pill : pills)
+            {
+                if (pill.text.empty()) continue;
+                const float text_w = type.medium.measure(pill.text, 23);
+                const float w = 22 + 32 + 12 + text_w + 28;
+                if (px > kLeft && px + w > kLeft + 1000) { px = kLeft; py += 76; }
+                if (list)
+                {
+                    const ui::Rect r{px, py, w, 64};
+                    list->rounded_rect(r, 32, ui::Color::rgb(0xffffff, 0.157f));
+                    list->bordered_rect(r, 32, ui::Color{0, 0, 0, 0}, 1, ui::color::text.with_alpha(0.35f));
+                    fact_icon(*list, type, pill.icon, px + 22 + 16, r.cy(), 36, ui::color::text);
+                    ui::text(*list, type.medium, pill.text, px + 22 + 32 + 12, r.cy() + 8, 23, ui::color::text);
+                }
+                px += w + 12;
+            }
+            y = py + 64 + 18;
+        }
+        std::string meta;
+        if (!game->genre.empty()) meta = i18n::genre(game->genre);
+        if (!game->release_date.empty()) meta += (meta.empty() ? "" : " \xC2\xB7 ") + game->release_date.substr(0, 4);
         paragraph(meta, kLeft, y, width, 22);
         y = std::max(830.0f, y + 60);
         const std::string label = primary_label(release, download_again_, waiting_, now.collection, state, torbox_);
@@ -317,7 +494,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
     if (sheet == Sheet::downloads)
     {
         const float width = 554;
-        const auto setting = [&](Slot slot,float x,const std::string &label,const std::string &value,const std::string &note)
+        const auto setting = [&](Slot slot,FactIcon icon,float x,const std::string &label,const std::string &value,const std::string &note)
         {
             const ui::Rect r{x,0,width,128};
             const float f = focused && static_cast<int>(out.controls.size()) == focus_ ? 1 : 0;
@@ -325,21 +502,24 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             if (list)
             {
                 ui::focus_ring(*list,r,20,f);ui::surface(*list,r,20,ui::color::field);
-                ui::text(*list,type.regular,label,x+26,36,21,ui::color::text2);
-                ui::text_fit(*list,type.medium,value,x+26,76,26,width-65,ui::color::text);
-                ui::text_fit(*list,type.regular,note,x+26,108,20,width-85,ui::color::text2);
+                // The badge of the setting, as on the download options before.
+                list->circle(x+50,64,24,ui::Color::rgb(0xffffff,0.14f));
+                fact_icon(*list,type,icon,x+50,64,30,ui::color::text);
+                ui::text(*list,type.regular,label,x+92,36,21,ui::color::text2);
+                ui::text_fit(*list,type.medium,value,x+92,76,26,width-131,ui::color::text);
+                ui::text_fit(*list,type.regular,note,x+92,108,20,width-151,ui::color::text2);
                 const float cx = x + width - 30;
                 list->line(cx-4,57,cx+3,64,2,ui::color::text2);
                 list->line(cx+3,64,cx-4,71,2,ui::color::text2);
             }
         };
-        setting(Slot::source,116,tr("Source"),release.provider + " \xC2\xB7 " + format_label(release),
+        setting(Slot::source,FactIcon::source,116,tr("Source"),release.provider + " \xC2\xB7 " + format_label(release),
                 release.title_id + (release.version.empty()?"":" \xC2\xB7 v"+release.version) + " \xC2\xB7 " + format_bytes(release.size_bytes));
         if (now.show_download)
         {
-            setting(Slot::delivery,684,tr("Download using"),state.system.zero_enabled ? "Orbit Zero" : torbox_ ? "TorBox" : tr("{provider} directly",{{"provider",release.provider}}),
+            setting(Slot::delivery,FactIcon::download,684,tr("Download using"),state.system.zero_enabled ? "Orbit Zero" : torbox_ ? "TorBox" : tr("{provider} directly",{{"provider",release.provider}}),
                     state.system.zero_enabled ? "Uses your computer preference" : state.debrid.supports(release) && !torbox_ ? tr("TorBox available") : "");
-            setting(Slot::drive,1252,tr("Save to"),now.drive ? i18n::place(now.drive->label) : tr("Select storage"),
+            setting(Slot::drive,FactIcon::disk,1252,tr("Save to"),now.drive ? i18n::place(now.drive->label) : tr("Select storage"),
                     now.drive ? tr("{size} free",{{"size",format_bytes(now.drive->free_bytes)}}) : "");
         }
         y=162;
@@ -439,17 +619,18 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
     else if (sheet == Sheet::about)
     {
         paragraph(game->description,116,y,1650,25);y+=30;
-        std::vector<std::pair<std::string,std::string>> facts;
-        if(!game->publisher.empty())facts.emplace_back(tr("Publisher"),game->publisher);
-        if(!game->release_date.empty())facts.emplace_back(tr("Release date"),format_date(game->release_date));
-        if(!game->genre.empty())facts.emplace_back(tr("Genre"),i18n::genre(game->genre));
-        facts.emplace_back(tr("Format"),format_label(release));
-        facts.emplace_back(tr("Title ID"),release.title_id);
-        facts.emplace_back(tr("Source"),release.provider);
-        if(!release.version.empty())facts.emplace_back(tr("Version"),release.version);
-        if(!release.region.empty())facts.emplace_back(tr("Region"),release.region);
-        facts.emplace_back(release.compression.empty()?tr("Download size"):tr("Compressed size"),format_bytes(release.size_bytes));
-        if(!release.compression.empty() && release.extracted_bytes > 0)facts.emplace_back(tr("Size after extracting"),format_bytes(release.extracted_bytes));
+        struct Fact { FactIcon icon; std::string label; std::string value; };
+        std::vector<Fact> facts;
+        if(!game->publisher.empty())facts.push_back({FactIcon::publisher,tr("Publisher"),game->publisher});
+        if(!game->release_date.empty())facts.push_back({FactIcon::calendar,tr("Release date"),format_date(game->release_date)});
+        if(!game->genre.empty())facts.push_back({FactIcon::genre,tr("Genre"),i18n::genre(game->genre)});
+        facts.push_back({FactIcon::format,tr("Format"),format_label(release)});
+        facts.push_back({FactIcon::title_id,tr("Title ID"),release.title_id});
+        facts.push_back({FactIcon::source,tr("Source"),release.provider});
+        if(!release.version.empty())facts.push_back({FactIcon::version,tr("Version"),release.version});
+        if(!release.region.empty())facts.push_back({FactIcon::globe,tr("Region"),release.region});
+        facts.push_back({release.compression.empty()?FactIcon::disk:FactIcon::download,release.compression.empty()?tr("Download size"):tr("Compressed"),format_bytes(release.size_bytes)});
+        if(!release.compression.empty() && release.extracted_bytes > 0)facts.push_back({FactIcon::disk,tr("Installed"),format_bytes(release.extracted_bytes)});
         for(std::size_t first=0;first<facts.size();first+=3)
         {
             float bottom=y;
@@ -457,9 +638,14 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
             {
                 const float x=116+static_cast<float>(i-first)*568;
                 float fy=y;
-                paragraph(facts[i].first,x,fy,520,19,ui::color::text3);fy+=10;
-                paragraph(facts[i].second,x,fy,520,24,ui::color::text);
-                bottom=std::max(bottom,fy);
+                if(list)
+                {
+                    list->circle(x+26,fy+22,24,ui::Color::rgb(0xffffff,0.14f));
+                    fact_icon(*list,type,facts[i].icon,x+26,fy+22,30,ui::color::text);
+                }
+                paragraph(facts[i].label,x+68,fy,452,19,ui::color::text3);fy+=10;
+                paragraph(facts[i].value,x+68,fy,452,24,ui::color::text);
+                bottom=std::max(bottom,fy+12);
             }
             y=bottom+35;
         }
@@ -1160,9 +1346,9 @@ void GamePage::draw_crossbar(Frame &frame) const
         facts.emplace_back(tr("Source"), release.provider);
         if (!release.region.empty()) facts.emplace_back(tr("Region"), release.region);
         if (!release.version.empty()) facts.emplace_back(tr("Version"), release.version);
-        facts.emplace_back(release.compression.empty() ? tr("Download size") : tr("Compressed size"), format_bytes(release.size_bytes));
+        facts.emplace_back(release.compression.empty() ? tr("Download size") : tr("Compressed"), format_bytes(release.size_bytes));
         if (!release.compression.empty() && release.extracted_bytes > 0)
-            facts.emplace_back(tr("Size after extracting"), format_bytes(release.extracted_bytes));
+            facts.emplace_back(tr("Installed"), format_bytes(release.extracted_bytes));
         // The facts and the note stay in view; only the description scrolls, in the room they leave.
         float description_room = 0.0f;
         xb::draw_panel(list, 400.0f, 0.0f, 0.0f, [&](hui::gfx::DrawList &out, float x, float y, float w)
@@ -1780,9 +1966,9 @@ void GamePage::draw_cinema(Frame &frame) const
         facts.emplace_back(tr("Source"), release.provider);
         if (!release.region.empty()) facts.emplace_back(tr("Region"), release.region);
         if (!release.version.empty()) facts.emplace_back(tr("Version"), release.version);
-        facts.emplace_back(release.compression.empty() ? tr("Download size") : tr("Compressed size"), format_bytes(release.size_bytes));
+        facts.emplace_back(release.compression.empty() ? tr("Download size") : tr("Compressed"), format_bytes(release.size_bytes));
         if (!release.compression.empty() && release.extracted_bytes > 0)
-            facts.emplace_back(tr("Size after extracting"), format_bytes(release.extracted_bytes));
+            facts.emplace_back(tr("Installed"), format_bytes(release.extracted_bytes));
         cn::kick(ctx_, list, right, top, tr("About this game"));
         const float end = kv(list, right, top + 25.6f + 16.0f, right_w, facts);
         ui::text_fit(list, type.regular, tr("Saves a file to your console. Installation and launching are separate."), right,
@@ -2194,9 +2380,9 @@ pano::Page GamePage::panorama_page() const
             facts.emplace_back(tr("Region"), release.region);
         if (!release.version.empty())
             facts.emplace_back(tr("Version"), release.version);
-        facts.emplace_back(release.compression.empty() ? tr("Download size") : tr("Compressed size"), format_bytes(release.size_bytes));
+        facts.emplace_back(release.compression.empty() ? tr("Download size") : tr("Compressed"), format_bytes(release.size_bytes));
         if (!release.compression.empty() && release.extracted_bytes > 0)
-            facts.emplace_back(tr("Size after extracting"), format_bytes(release.extracted_bytes));
+            facts.emplace_back(tr("Installed"), format_bytes(release.extracted_bytes));
         page.groups.push_back(text_group(pano::lower(tr("About this game")), 4,
                                          scrolled([this, facts](hui::gfx::DrawList *list, float x, float top, float width)
                                                   {

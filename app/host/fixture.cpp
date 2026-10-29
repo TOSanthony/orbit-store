@@ -741,6 +741,10 @@ http::Response Fixture::send(const http::Request &request)
                            ",\"releaseDate\":" + (game.date[0] ? json::quote(game.date) : "null") +
                            // One tagged game, so Browse offers its Tags filter.
                            (std::strcmp(game.id, "tidewater") == 0 ? ",\"tags\":[\"exclusive\"]" : "") +
+                           // One archive, so About shows both sizes and the lists the unpacked one.
+                           (std::strcmp(game.id, "ember-hollow") == 0
+                                ? ",\"compression\":\"zip\",\"extractedBytes\":" + std::to_string(static_cast<long long>(option.gigabytes * 1.9e9))
+                                : std::string()) +
                            ",\"consoleVerified\":false}";
                 }
             }

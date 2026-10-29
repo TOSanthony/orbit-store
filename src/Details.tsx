@@ -474,12 +474,12 @@ export function Details({
           </div>
         )}
         <div>
-          <dt>{release.compression ? t("Compressed size") : t("Download size")}</dt>
+          <dt>{release.compression ? t("Compressed") : t("Download size")}</dt>
           <dd>{bytes(release.sizeBytes)}</dd>
         </div>
         {release.compression && !!release.extractedBytes && (
           <div>
-            <dt>{t("Size after extracting")}</dt>
+            <dt>{t("Installed")}</dt>
             <dd>{bytes(release.extractedBytes || 0)}</dd>
           </div>
         )}

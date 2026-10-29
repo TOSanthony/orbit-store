@@ -239,6 +239,10 @@ std::vector<Scenario> scenarios()
          pause(0.8f, "game-delivery"), tap(Action::back), tap(Action::back),
          move(Direction::right), move(Direction::right), tap(Action::confirm), pause(0.8f, "game-about"),
          tap(Action::back), pause(0.8f, "game-about-closed")}});
+    // About this game in the Store: a badge on each fact; an archive shows Compressed and Installed.
+    list.push_back({"game-facts", Mode::normal, false,
+        {run(1.5f, [](orbit::App &app) { app.open_game("ember-hollow"); }),
+         move(Direction::right), move(Direction::right), tap(Action::confirm), pause(1.0f, "game-facts")}});
     list.push_back({"game-browser", Mode::normal, false,
         {run(1.5f, [](orbit::App &app) { app.open_game("ironclad-skies"); }),
          pause(1.0f, "game-browser-hub"), tap(Action::confirm), pause(1.0f, "game-browser"),
