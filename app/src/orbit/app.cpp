@@ -885,8 +885,8 @@ void App::draw_top_bar(hui::gfx::DrawList &list) const
     for (const auto &icon : icons)
     {
         const float focus = top_focus_[static_cast<std::size_t>(icon.index)].value;
-        ui::focus_ring(list, {icon.x - kIcon * 0.5f, kTopY - kIcon * 0.5f, kIcon, kIcon},
-                       kIcon * 0.5f, focus);
+        ui::focus_ring_spin(list, {icon.x - kIcon * 0.5f, kTopY - kIcon * 0.5f, kIcon, kIcon},
+                            kIcon * 0.5f, focus, ctx_.clock);
         list.circle(icon.x, kTopY, kIcon * 0.5f, ui::Color::rgb(0xffffff, 0.08f));
         if (icon.index == kSearchItem)
         {

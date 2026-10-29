@@ -310,6 +310,16 @@ std::vector<Scenario> scenarios()
           move(Direction::left), move(Direction::left), tap(Action::confirm),
           pause(0.8f, "browse-filters"), move(Direction::down), tap(Action::confirm),
           move(Direction::down), move(Direction::right), pause(1.0f, "browse-results")}});
+    // The Store's focus ring: light spots turning around a tile, then the Search icon.
+    list.push_back({"focus-spin", Mode::normal, false,
+        {run(1.5f, [](orbit::App &app) { app.show_tab(orbit::tab::browse); }),
+         move(Direction::down), move(Direction::down), move(Direction::down), move(Direction::down),
+         pause(1.0f, "focus-spin-tile"), pause(0.7f, "focus-spin-tile-b"), move(Direction::up),
+         move(Direction::up), move(Direction::up), move(Direction::up), move(Direction::up),
+         move(Direction::right), move(Direction::right), move(Direction::right), move(Direction::right),
+         move(Direction::right), move(Direction::right), move(Direction::right), move(Direction::right),
+         move(Direction::right), move(Direction::right), move(Direction::right), move(Direction::right),
+         pause(1.0f, "focus-spin-icon")}});
     // Saved filters in each look (ORBIT_INTERFACE): the list with a search set to save,
     // one focused, applied, then Save these filters naming them on the keyboard.
 #define ORBIT_SAVED_SCENARIO(P)                                                                                       \

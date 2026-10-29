@@ -46,7 +46,10 @@ void draw_tile(Context &ctx, hui::gfx::DrawList &list, const Game &game, const u
     const float scale = 1.0f;
     list.push_transform(scale, r.cx(), r.cy(), 0.0f, 0.0f);
     // The ring first: its glow belongs behind the art, as a box-shadow is.
-    ui::focus_ring(list, r, ui::kArtRadius, focus * opacity);
+    if (look::is(look::Interface::store))
+        ui::focus_ring_spin(list, r, ui::kArtRadius, focus * opacity, ctx.clock);
+    else
+        ui::focus_ring(list, r, ui::kArtRadius, focus * opacity);
     draw_cover(ctx, list, game, r, ui::kArtRadius, opacity);
     if (game.platform == "ps4") {
         const ui::Rect badge{r.x + 10, r.y + 10, 58, 29};

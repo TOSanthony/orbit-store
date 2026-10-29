@@ -106,6 +106,8 @@ float paragraph(DrawList &list, const hui::ui::FontRef &font, std::string_view v
 // amount (0..1) fades it in and out. Draw it before the shape it surrounds,
 // so the glow sits behind it like a box-shadow.
 void focus_ring(DrawList &list, const Rect &r, float radius, float amount);
+// The Store's focus: a thin band whose two light spots turn around the shape (clock is in seconds).
+void focus_ring_spin(DrawList &list, const Rect &r, float radius, float amount, float clock);
 
 enum class ButtonKind : std::uint8_t
 {

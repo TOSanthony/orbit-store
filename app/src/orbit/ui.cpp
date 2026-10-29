@@ -97,6 +97,48 @@ void focus_ring(DrawList &list, const Rect &r, float radius, float amount)
                        Color::rgb(0xffffff, amount));
 }
 
+void focus_ring_spin(DrawList &list, const Rect &r, float radius, float amount, float clock)
+{
+    if (amount <= 0.01f)
+        return;
+    constexpr float kPi = 3.14159265f;
+    constexpr float kBand = 4.0f;
+    // A soft light behind, then the band: a conic gradient of two light spots (grey to
+    // black and back, twice) turning 0.8 degrees a frame, about 48 degrees a second.
+    list.glow(r.inset(-4.0f), radius + 4.0f, 13.0f, Color::rgb(0xffffff, 0.16f * amount));
+    const Rect m = r.inset(-kBand * 0.5f); // the band's centre line
+    const float rad = std::min(radius + kBand * 0.5f, std::min(m.w, m.h) * 0.5f);
+    const float turn = std::fmod(clock * 0.84f, 2.0f * kPi);
+    // The outline as points: four straight edges joined by quarter arcs.
+    constexpr int kArc = 8;
+    float xs[4 * (kArc + 1)], ys[4 * (kArc + 1)];
+    const float cx[4] = {m.x + m.w - rad, m.x + m.w - rad, m.x + rad, m.x + rad};
+    const float cy[4] = {m.y + rad, m.y + m.h - rad, m.y + m.h - rad, m.y + rad};
+    int count = 0;
+    for (int c = 0; c < 4; ++c)
+        for (int i = 0; i <= kArc; ++i)
+        {
+            const float a = (static_cast<float>(c) + static_cast<float>(i) / kArc) * 0.5f * kPi;
+            xs[count] = cx[c] + std::sin(a) * rad;
+            ys[count] = cy[c] - std::cos(a) * rad;
+            ++count;
+        }
+    const Color dark = Color::rgb(0x2a2a2a), light = Color::rgb(0xffffff);
+    for (int i = 0; i < count; ++i)
+    {
+        const int j = (i + 1) % count;
+        const float mx = (xs[i] + xs[j]) * 0.5f - r.cx(), my = (ys[i] + ys[j]) * 0.5f - r.cy();
+        float a = std::atan2(mx, -my) - turn; // clockwise from 12 o'clock
+        a = std::fmod(a, kPi);
+        if (a < 0.0f)
+            a += kPi;
+        const float t = 1.0f - std::abs(a / kPi * 2.0f - 1.0f); // 0..1..0 every half turn
+        const Color c{dark.r + (light.r - dark.r) * t, dark.g + (light.g - dark.g) * t,
+                      dark.b + (light.b - dark.b) * t, amount};
+        list.line(xs[i], ys[i], xs[j], ys[j], kBand + 0.6f, c);
+    }
+}
+
 namespace
 {
 // Room a button's icon takes left of its label: the icon and a gap.
