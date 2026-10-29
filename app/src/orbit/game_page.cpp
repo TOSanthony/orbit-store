@@ -1163,25 +1163,47 @@ void GamePage::draw_crossbar(Frame &frame) const
         facts.emplace_back(release.compression.empty() ? tr("Download size") : tr("Compressed size"), format_bytes(release.size_bytes));
         if (!release.compression.empty() && release.extracted_bytes > 0)
             facts.emplace_back(tr("Size after extracting"), format_bytes(release.extracted_bytes));
-        xb_scroll_end_ = xb::draw_panel(list, 400.0f, 0.0f, xb_scroll_shown_, [&](hui::gfx::DrawList &out, float x, float y, float w)
+        // The facts and the note stay in view; only the description scrolls, in the room they leave.
+        float description_room = 0.0f;
+        xb::draw_panel(list, 400.0f, 0.0f, 0.0f, [&](hui::gfx::DrawList &out, float x, float y, float w)
         {
             y = xb::draw_label(ctx_, out, x, y, tr("About this game"));
+            const std::string note = tr("Saves a file to your console. Installation and launching are separate.");
+            const int note_lines = std::min(3, static_cast<int>(type.sora.font->wrap(note, 16.0f, w).size()));
+            hui::gfx::DrawList scratch;
+            const float facts_h = xb::draw_facts(ctx_, scratch, 0.0f, 0.0f, w, facts);
+            const float note_h = 26.0f + 25.6f * static_cast<float>(note_lines);
             if (!game->description.empty())
             {
-                // All of it: what does not fit scrolls with Options, the facts after it.
-                const int n = static_cast<int>(type.sora.font->wrap(game->description, 22.0f, w).size());
-                ui::paragraph(out, type.sora, game->description, x, y + 14.0f + 17.05f + 7.26f, 22.0f, w, 34.1f,
-                              ui::Color::rgb(0xeceef4), 400);
-                y += 14.0f + 34.1f * static_cast<float>(n) + 26.0f;
+                const int n = static_cast<int>(type.sora.font->wrap(game->description, 22.0f, w - 14.0f).size());
+                const float full = 14.0f + 34.1f * static_cast<float>(n);
+                // The panel is at most 600 px tall, 32 px of padding top and bottom, the label above.
+                const float room = 600.0f - 64.0f - 24.0f - 8.0f - 26.0f - facts_h - note_h;
+                const float shown = std::min(full, std::max(room, 34.1f * 3.0f));
+                description_room = std::max(0.0f, full - shown);
+                const float offset = std::clamp(xb_scroll_shown_, 0.0f, description_room);
+                y += 8.0f; // a little air under the label before the text slides under it
+                out.push_clip({x - 4.0f, y, w + 8.0f, shown});
+                ui::paragraph(out, type.sora, game->description, x, y - offset + 14.0f + 17.05f + 7.26f, 22.0f, w - 14.0f,
+                              34.1f, ui::Color::rgb(0xeceef4), 400);
+                out.pop_clip();
+                if (description_room > 0.0f)
+                {
+                    // A thin bar beside the text shows how far along the description is.
+                    const float bar = std::max(36.0f, shown * shown / full);
+                    out.rounded_rect({x + w - 4.0f, y, 4.0f, shown}, 2.0f, ui::Color::rgb(0xffffff, 0.12f));
+                    out.rounded_rect({x + w - 4.0f, y + (shown - bar) * offset / description_room, 4.0f, bar}, 2.0f,
+                                     ui::Color::rgb(0xffffff, 0.7f));
+                }
+                y += shown + 26.0f;
             }
             else
                 y += 20.0f;
             y = xb::draw_facts(ctx_, out, x, y, w, facts);
-            const std::string note = tr("Saves a file to your console. Installation and launching are separate.");
-            const int n = static_cast<int>(type.sora.font->wrap(note, 16.0f, w).size());
             ui::paragraph(out, type.sora, note, x, y + 26.0f + 12.8f + 5.3f, 16.0f, w, 25.6f, ui::Color::rgb(0xffffff, 0.55f), 3);
-            return y + 26.0f + 25.6f * static_cast<float>(std::min(n, 3));
+            return y + note_h;
         });
+        xb_scroll_end_ = description_room;
     }
     else if (panel == Slot::reading)
     {
