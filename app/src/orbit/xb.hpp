@@ -62,6 +62,7 @@ struct Row
     Tag tag_kind = Tag::plain;
     bool favourite = false; // a heart after the title
     std::string sub;        // the line under the title
+    std::string size;       // a size after the sub line, behind the storage badge
     std::string meta;       // replaces sub while focused (where a download comes from and goes)
     std::string value;      // right-aligned at rest, under the title while focused
     int toggle = -1;        // a switch with On or Off (1 on, 0 off)

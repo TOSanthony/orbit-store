@@ -282,7 +282,7 @@ void xb_game_row(const Snapshot &state, const Game &game, xb::Row &row, bool dat
             sub += " \xC2\xB7 " + std::string(tr("via TorBox"));
     }
     else if (!game.releases.empty() && listed_size(game.releases.front()) > 0.0)
-        sub += " \xC2\xB7 " + format_bytes(listed_size(game.releases.front()));
+        row.size = format_bytes(listed_size(game.releases.front()));
     row.sub = std::move(sub);
 }
 

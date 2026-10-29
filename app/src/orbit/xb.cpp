@@ -75,6 +75,21 @@ struct Block
     float text = 0.0f;
     float room = 0.0f;
 };
+// The size at the end of a row's sub line: the storage badge, then the figure.
+float size_tail_width(const ui::Type &type, const Row &row, float size)
+{
+    return row.size.empty() ? 0.0f : 28.0f + size * 1.3f + regular(type, row.size).measure(row.size, size);
+}
+void draw_size_tail(const ui::Type &type, hui::gfx::DrawList &out, const Row &row, float x, float base, float size, Color ink)
+{
+    if (row.size.empty())
+        return;
+    const float icon = size * 1.05f;
+    ui::text(out, regular(type, row.size), "\xC2\xB7", x + 8.0f, base, size, ink);
+    ui::icon_storage(out, x + 28.0f + icon * 0.5f, base - size * 0.33f, icon, ink);
+    ui::text(out, regular(type, row.size), row.size, x + 28.0f + size * 1.3f, base, size, ink);
+}
+
 Block focused_block(const ui::Type &type, const Row &row)
 {
     const float size = pic_size(row, true);
@@ -396,10 +411,21 @@ void View::draw(Context &ctx, hui::gfx::DrawList &out, const List &list) const
             if (!sub.empty())
             {
                 top += 6.0f;
-                const int n = lines(regular(type, sub), sub, 22.0f, width, 2);
-                ui::paragraph(out, regular(type, sub), sub, tx, baseline(top, 22.0f), 22.0f, width, 22.0f * 1.6f,
-                              row.meta.empty() ? sub_ink : Color::rgb(0xffffff, 0.68f), 2);
-                top += 22.0f * 1.6f * static_cast<float>(n);
+                if (!row.size.empty() && row.meta.empty())
+                {
+                    // One line: the text, then the storage badge and the size.
+                    const float used = ui::text_fit(out, regular(type, sub), sub, tx, baseline(top, 22.0f), 22.0f,
+                                                    width - size_tail_width(type, row, 22.0f), sub_ink);
+                    draw_size_tail(type, out, row, tx + used, baseline(top, 22.0f), 22.0f, sub_ink);
+                    top += 22.0f * 1.6f;
+                }
+                else
+                {
+                    const int n = lines(regular(type, sub), sub, 22.0f, width, 2);
+                    ui::paragraph(out, regular(type, sub), sub, tx, baseline(top, 22.0f), 22.0f, width, 22.0f * 1.6f,
+                                  row.meta.empty() ? sub_ink : Color::rgb(0xffffff, 0.68f), 2);
+                    top += 22.0f * 1.6f * static_cast<float>(n);
+                }
             }
             if (row.bar >= 0.0f)
             {
@@ -465,7 +491,9 @@ void View::draw(Context &ctx, hui::gfx::DrawList &out, const List &list) const
             if (!row.sub.empty())
             {
                 top += 4.0f;
-                ui::text_fit(out, regular(type, row.sub), row.sub, tx, baseline(top, 19.0f), 19.0f, room, sub_ink);
+                const float used = ui::text_fit(out, regular(type, row.sub), row.sub, tx, baseline(top, 19.0f), 19.0f,
+                                                room - size_tail_width(type, row, 19.0f), sub_ink);
+                draw_size_tail(type, out, row, tx + used, baseline(top, 19.0f), 19.0f, sub_ink);
                 top += 19.0f * 1.6f;
             }
             if (row.bar > 0.0f)
@@ -617,11 +645,16 @@ void draw_preview(Context &ctx, hui::gfx::DrawList &out, const Game &game, float
     float cx = x;
     for (const std::string &chip : chips)
     {
-        const float w = regular(type, chip).measure(chip, 17.0f) + 32.0f;
+        // The size, last, leads with the storage badge.
+        const bool sized = &chip == &chips.back() && !game.releases.empty() && chip == format_bytes(listed_size(game.releases.front()));
+        const float lead = sized ? 28.0f : 0.0f;
+        const float w = regular(type, chip).measure(chip, 17.0f) + 32.0f + lead;
         if (cx + w > x + kPreviewW)
             break;
         out.rounded_rect({cx, top, w, 43.2f}, 21.6f, Color::rgb(0xffffff, 0.12f));
-        ui::text(out, regular(type, chip), chip, cx + 16.0f, top + 21.6f + 17.0f * 0.33f, 17.0f, Color::rgb(0xffffff));
+        if (sized)
+            ui::icon_storage(out, cx + 16.0f + 9.0f, top + 21.6f, 18.0f, Color::rgb(0xffffff));
+        ui::text(out, regular(type, chip), chip, cx + 16.0f + lead, top + 21.6f + 17.0f * 0.33f, 17.0f, Color::rgb(0xffffff));
         cx += w + 12.0f;
     }
 }
