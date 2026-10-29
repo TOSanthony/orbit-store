@@ -803,18 +803,21 @@ void draw_empty(Context &ctx, hui::gfx::DrawList &list, std::string_view kicker,
 }
 
 float draw_pairs(Context &ctx, hui::gfx::DrawList *list, float x, float top, float width,
-                 const std::vector<std::pair<std::string, std::string>> &pairs, int columns)
+                 const std::vector<std::pair<std::string, std::string>> &pairs, int columns, const PairBadge &badge)
 {
     // A grid, 30 px between columns and 20 px between rows: a 13 px caps key, a 25 px light value.
     columns = std::max(1, columns);
-    const float cw = (width - 30.0f * static_cast<float>(columns - 1)) / static_cast<float>(columns);
+    const float inset = badge ? 56.0f : 0.0f;
+    const float cw = (width - 30.0f * static_cast<float>(columns - 1)) / static_cast<float>(columns) - inset;
     float y = top + 16.0f;
     for (std::size_t first = 0; first < pairs.size(); first += static_cast<std::size_t>(columns))
     {
         float row_h = 0.0f;
         for (std::size_t i = first; i < std::min(pairs.size(), first + static_cast<std::size_t>(columns)); ++i)
         {
-            const float cx = x + static_cast<float>(i - first) * (cw + 30.0f);
+            const float cx = x + inset + static_cast<float>(i - first) * (cw + inset + 30.0f);
+            if (badge && list != nullptr)
+                badge(*list, i, cx - inset + 22.0f, y + 30.0f, 42.0f);
             float h = draw_caps(ctx, list, cx, y, pairs[i].first, 13.0f, Color::rgb(0xffffff, 0.55f)) + 6.0f;
             h += draw_text(ctx, list, cx, y + h, cw, pairs[i].second, 25.0f, kInk, Face::light, 1.6f, 3);
             row_h = std::max(row_h, h);

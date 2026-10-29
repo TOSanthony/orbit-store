@@ -661,13 +661,15 @@ float draw_label(Context &ctx, hui::gfx::DrawList &out, float x, float y, std::s
 }
 
 float draw_facts(Context &ctx, hui::gfx::DrawList &out, float x, float y, float width,
-                 const std::vector<std::pair<std::string, std::string>> &facts, int columns)
+                 const std::vector<std::pair<std::string, std::string>> &facts, int columns, const FactBadge &badge)
 {
     // The design's grid: 26 px between columns, 20 between rows; a 16 px
     // label over a 19 px value.
     // A value wraps to two lines; its row is as tall as its tallest value.
     const ui::Type &type = ctx.type;
-    const float column = (width - 26.0f * static_cast<float>(columns - 1)) / static_cast<float>(columns);
+    // With badges each cell gives 50 px to the icon on its left.
+    const float inset = badge ? 50.0f : 0.0f;
+    const float column = (width - 26.0f * static_cast<float>(columns - 1)) / static_cast<float>(columns) - inset;
     const std::size_t step = static_cast<std::size_t>(columns);
     float top = y;
     for (std::size_t first = 0; first < facts.size(); first += step)
@@ -677,7 +679,9 @@ float draw_facts(Context &ctx, hui::gfx::DrawList &out, float x, float y, float 
             tallest = std::max(tallest, lines(regular(type, facts[i].second), facts[i].second, 19.0f, column, 2));
         for (std::size_t i = first; i < std::min(facts.size(), first + step); ++i)
         {
-            const float cx = x + static_cast<float>(i - first) * (column + 26.0f);
+            const float cx = x + inset + static_cast<float>(i - first) * (column + inset + 26.0f);
+            if (badge)
+                badge(out, i, cx - inset + 20.0f, top + 30.0f, 40.0f);
             ui::text_fit(out, regular(type, facts[i].first), facts[i].first, cx, baseline(top, 16.0f), 16.0f, column,
                          Color::rgb(0xffffff, 0.62f));
             ui::paragraph(out, regular(type, facts[i].second), facts[i].second, cx, baseline(top + 29.6f, 19.0f), 19.0f, column,

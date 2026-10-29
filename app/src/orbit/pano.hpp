@@ -354,8 +354,10 @@ void draw_empty(Context &ctx, hui::gfx::DrawList &list, std::string_view kicker,
                 const std::vector<Button> &buttons, bool busy = false);
 
 // Key and value pairs in columns from top; returns the height.
+// badge(i, cx, cy, size), when given, draws pair i's icon, centred there, with the text to its right.
+using PairBadge = std::function<void(hui::gfx::DrawList &, std::size_t, float, float, float)>;
 float draw_pairs(Context &ctx, hui::gfx::DrawList *list, float x, float top, float width,
-                 const std::vector<std::pair<std::string, std::string>> &pairs, int columns = 3);
+                 const std::vector<std::pair<std::string, std::string>> &pairs, int columns = 3, const PairBadge &badge = {});
 // Numbered steps (a leading "1. " in a step's text is dropped); returns the height.
 float draw_steps(Context &ctx, hui::gfx::DrawList *list, float x, float top, float width, const std::vector<std::string> &steps);
 

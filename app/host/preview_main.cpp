@@ -330,6 +330,12 @@ std::vector<Scenario> scenarios()
     ORBIT_SAVED_SCENARIO("pn-");
 #undef ORBIT_SAVED_SCENARIO
     // Crossbar (ORBIT_INTERFACE=crossbar): the list, its Actions menu, folders and search.
+    // The lists show the size once unpacked (Ember Hollow is a zip): Discover and Browse rows.
+    list.push_back({"xb-lists", Mode::normal, false,
+        {run(1.5f, [](orbit::App &app) { app.show_tab(orbit::tab::discover); }),
+         move(Direction::down), move(Direction::down), move(Direction::down), pause(0.8f, "xb-lists-discover"),
+         run(0.8f, [](orbit::App &app) { app.show_tab(orbit::tab::browse); }),
+         move(Direction::down), move(Direction::down), move(Direction::down), move(Direction::down), pause(0.8f, "xb-lists-browse")}});
     list.push_back({"xb-discover", Mode::normal, false,
         {run(1.5f, [](orbit::App &app) { app.show_tab(orbit::tab::discover); }),
          pause(1.0f, "xb-discover"), tap(Action::menu), pause(0.6f, "xb-discover-actions"), tap(Action::back),

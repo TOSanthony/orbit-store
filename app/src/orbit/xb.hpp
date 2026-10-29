@@ -126,8 +126,10 @@ float draw_panel(hui::gfx::DrawList &out, float top, float height, float scroll,
                  const std::function<float(hui::gfx::DrawList &, float, float, float)> &body);
 // What panels hold; each takes its top and returns its bottom.
 float draw_label(Context &ctx, hui::gfx::DrawList &out, float x, float y, std::string_view text);
+// badge(i, cx, cy, size) draws fact i's badge, centred at (cx, cy); the text then starts to its right.
+using FactBadge = std::function<void(hui::gfx::DrawList &, std::size_t, float, float, float)>;
 float draw_facts(Context &ctx, hui::gfx::DrawList &out, float x, float y, float width,
-                 const std::vector<std::pair<std::string, std::string>> &facts, int columns = 3);
+                 const std::vector<std::pair<std::string, std::string>> &facts, int columns = 3, const FactBadge &badge = {});
 // Numbered steps; a leading "1. " in a step's text becomes its number.
 float draw_steps(Context &ctx, hui::gfx::DrawList &out, float x, float y, float width,
                  const std::vector<std::string> &steps);

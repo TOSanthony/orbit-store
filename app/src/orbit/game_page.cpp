@@ -167,6 +167,27 @@ FactIcon size_icon(const Release &release)
     return disk_image ? FactIcon::disk : FactIcon::download;
 }
 
+struct Fact { FactIcon icon; std::string label; std::string value; };
+
+// The facts of About this game, in every look, each with its badge.
+std::vector<Fact> about_facts(const Game &game, const Release &release)
+{
+    std::vector<Fact> facts;
+    if (!game.publisher.empty()) facts.push_back({FactIcon::publisher, tr("Publisher"), game.publisher});
+    if (!game.release_date.empty()) facts.push_back({FactIcon::calendar, tr("Release date"), format_date(game.release_date)});
+    if (!game.genre.empty()) facts.push_back({FactIcon::genre, tr("Genre"), i18n::genre(game.genre)});
+    facts.push_back({FactIcon::format, tr("Format"), format_label(release)});
+    facts.push_back({FactIcon::title_id, tr("Title ID"), release.title_id});
+    facts.push_back({FactIcon::source, tr("Source"), release.provider});
+    if (!release.version.empty()) facts.push_back({FactIcon::version, tr("Version"), release.version});
+    if (!release.region.empty()) facts.push_back({FactIcon::globe, tr("Region"), release.region});
+    facts.push_back({release.compression.empty() ? FactIcon::disk : FactIcon::download,
+                     release.compression.empty() ? tr("Download size") : tr("Compressed"), format_bytes(release.size_bytes)});
+    if (!release.compression.empty() && release.extracted_bytes > 0)
+        facts.push_back({FactIcon::disk, tr("Installed"), format_bytes(release.extracted_bytes)});
+    return facts;
+}
+
 std::string primary_label(const Release &release, bool again, bool waiting,
                          const CollectionState &collection, const Snapshot &state, bool torbox)
 {
@@ -619,18 +640,7 @@ GamePage::Layout GamePage::compose(hui::gfx::DrawList *list, Sheet sheet, bool f
     else if (sheet == Sheet::about)
     {
         paragraph(game->description,116,y,1650,25);y+=30;
-        struct Fact { FactIcon icon; std::string label; std::string value; };
-        std::vector<Fact> facts;
-        if(!game->publisher.empty())facts.push_back({FactIcon::publisher,tr("Publisher"),game->publisher});
-        if(!game->release_date.empty())facts.push_back({FactIcon::calendar,tr("Release date"),format_date(game->release_date)});
-        if(!game->genre.empty())facts.push_back({FactIcon::genre,tr("Genre"),i18n::genre(game->genre)});
-        facts.push_back({FactIcon::format,tr("Format"),format_label(release)});
-        facts.push_back({FactIcon::title_id,tr("Title ID"),release.title_id});
-        facts.push_back({FactIcon::source,tr("Source"),release.provider});
-        if(!release.version.empty())facts.push_back({FactIcon::version,tr("Version"),release.version});
-        if(!release.region.empty())facts.push_back({FactIcon::globe,tr("Region"),release.region});
-        facts.push_back({release.compression.empty()?FactIcon::disk:FactIcon::download,release.compression.empty()?tr("Download size"):tr("Compressed"),format_bytes(release.size_bytes)});
-        if(!release.compression.empty() && release.extracted_bytes > 0)facts.push_back({FactIcon::disk,tr("Installed"),format_bytes(release.extracted_bytes)});
+        const std::vector<Fact> facts=about_facts(*game,release);
         for(std::size_t first=0;first<facts.size();first+=3)
         {
             float bottom=y;
@@ -1337,18 +1347,14 @@ void GamePage::draw_crossbar(Frame &frame) const
     const Slot panel = crossbar_panel();
     if (panel == Slot::about)
     {
+        const std::vector<Fact> fact_list = about_facts(*game, release);
         std::vector<std::pair<std::string, std::string>> facts;
-        if (!game->publisher.empty()) facts.emplace_back(tr("Publisher"), game->publisher);
-        if (!game->release_date.empty()) facts.emplace_back(tr("Release date"), format_date(game->release_date));
-        if (!game->genre.empty()) facts.emplace_back(tr("Genre"), i18n::genre(game->genre));
-        facts.emplace_back(tr("Format"), format_label(release));
-        facts.emplace_back(tr("Title ID"), release.title_id);
-        facts.emplace_back(tr("Source"), release.provider);
-        if (!release.region.empty()) facts.emplace_back(tr("Region"), release.region);
-        if (!release.version.empty()) facts.emplace_back(tr("Version"), release.version);
-        facts.emplace_back(release.compression.empty() ? tr("Download size") : tr("Compressed"), format_bytes(release.size_bytes));
-        if (!release.compression.empty() && release.extracted_bytes > 0)
-            facts.emplace_back(tr("Installed"), format_bytes(release.extracted_bytes));
+        for (const Fact &f : fact_list) facts.emplace_back(f.label, f.value);
+        const auto badge = [&](hui::gfx::DrawList &out, std::size_t i, float bx, float by, float bs)
+        {
+            out.circle(bx, by, bs * 0.5f, ui::Color::rgb(0xffffff, 0.14f));
+            fact_icon(out, ctx_.type, fact_list[i].icon, bx, by, bs * 0.75f, ui::color::text);
+        };
         // The facts and the note stay in view; only the description scrolls, in the room they leave.
         float description_room = 0.0f;
         xb::draw_panel(list, 400.0f, 0.0f, 0.0f, [&](hui::gfx::DrawList &out, float x, float y, float w)
@@ -1357,7 +1363,7 @@ void GamePage::draw_crossbar(Frame &frame) const
             const std::string note = tr("Saves a file to your console. Installation and launching are separate.");
             const int note_lines = std::min(3, static_cast<int>(type.sora.font->wrap(note, 16.0f, w).size()));
             hui::gfx::DrawList scratch;
-            const float facts_h = xb::draw_facts(ctx_, scratch, 0.0f, 0.0f, w, facts);
+            const float facts_h = xb::draw_facts(ctx_, scratch, 0.0f, 0.0f, w, facts, 3, badge);
             const float note_h = 26.0f + 25.6f * static_cast<float>(note_lines);
             if (!game->description.empty())
             {
@@ -1385,7 +1391,7 @@ void GamePage::draw_crossbar(Frame &frame) const
             }
             else
                 y += 20.0f;
-            y = xb::draw_facts(ctx_, out, x, y, w, facts);
+            y = xb::draw_facts(ctx_, out, x, y, w, facts, 3, badge);
             ui::paragraph(out, type.sora, note, x, y + 26.0f + 12.8f + 5.3f, 16.0f, w, 25.6f, ui::Color::rgb(0xffffff, 0.55f), 3);
             return y + note_h;
         });
@@ -1796,14 +1802,18 @@ void GamePage::draw_cinema(Frame &frame) const
     const float top = cn::draw_sheet(list, 690.0f) + 56.0f;
     const float left = 100.0f, left_w = 560.0f;
     const float right = left + left_w + 70.0f, right_w = 1820.0f - right;
-    const auto kv = [&](hui::gfx::DrawList &out, float x, float y, float width, const std::vector<std::pair<std::string, std::string>> &pairs)
+    const auto kv = [&](hui::gfx::DrawList &out, float x, float y, float width, const std::vector<std::pair<std::string, std::string>> &pairs,
+                        const std::function<void(hui::gfx::DrawList &, std::size_t, float, float, float)> &badge)
     {
-        // Gold labels over values, three to a row.
-        const float column = (width - 60.0f) / 3.0f;
+        // Gold labels over values, three to a row; a badge at the left of each when given.
+        const float inset = badge ? 54.0f : 0.0f;
+        const float column = (width - 60.0f) / 3.0f - inset;
         for (std::size_t i = 0; i < pairs.size(); ++i)
         {
-            const float cx = x + static_cast<float>(i % 3) * (column + 30.0f);
+            const float cx = x + inset + static_cast<float>(i % 3) * (column + inset + 30.0f);
             const float cy = y + static_cast<float>(i / 3) * (20.8f + 6.0f + 33.6f + 18.0f);
+            if (badge)
+                badge(out, i, cx - inset + 22.0f, cy + 28.0f, 44.0f);
             cn::kick(ctx_, out, cx, cy, pairs[i].first, 13.0f);
             ui::text_fit(out, type.regular, pairs[i].second, cx, cy + 20.8f + 6.0f + 21.0f * 0.8f + 4.0f, 21.0f, column, cn::kInk);
         }
@@ -1919,7 +1929,8 @@ void GamePage::draw_cinema(Frame &frame) const
                    {{tr("Free now"), format_bytes(now.drive->free_bytes)},
                     {tr("Unfinished downloads"), format_bytes(now.drive->pending_bytes)},
                     {now.plan.planned ? tr("After your queue") : tr("After queue + this download"),
-                     now.plan.after < 0 ? tr("{size} short", {{"size", format_bytes(-now.plan.after)}}) : format_bytes(now.plan.after)}});
+                     now.plan.after < 0 ? tr("{size} short", {{"size", format_bytes(-now.plan.after)}}) : format_bytes(now.plan.after)}},
+                   {});
         ui::text(list, type.regular, tr("Estimates include paused and failed downloads. Other apps can change free space."), left,
                  y + 20.0f + 17.0f, 17.0f, cn::kFaint);
         return;
@@ -1957,20 +1968,16 @@ void GamePage::draw_cinema(Frame &frame) const
     // delivery), the delivery and the drives, as cards.
     if (cn_view_ == CnView::about)
     {
+        const std::vector<Fact> fact_list = about_facts(*game, release);
         std::vector<std::pair<std::string, std::string>> facts;
-        if (!game->publisher.empty()) facts.emplace_back(tr("Publisher"), game->publisher);
-        if (!game->release_date.empty()) facts.emplace_back(tr("Release date"), format_date(game->release_date));
-        if (!game->genre.empty()) facts.emplace_back(tr("Genre"), i18n::genre(game->genre));
-        facts.emplace_back(tr("Format"), format_label(release));
-        facts.emplace_back(tr("Title ID"), release.title_id);
-        facts.emplace_back(tr("Source"), release.provider);
-        if (!release.region.empty()) facts.emplace_back(tr("Region"), release.region);
-        if (!release.version.empty()) facts.emplace_back(tr("Version"), release.version);
-        facts.emplace_back(release.compression.empty() ? tr("Download size") : tr("Compressed"), format_bytes(release.size_bytes));
-        if (!release.compression.empty() && release.extracted_bytes > 0)
-            facts.emplace_back(tr("Installed"), format_bytes(release.extracted_bytes));
+        for (const Fact &f : fact_list) facts.emplace_back(f.label, f.value);
+        const auto badge = [&](hui::gfx::DrawList &out, std::size_t i, float bx, float by, float bs)
+        {
+            out.circle(bx, by, bs * 0.5f, ui::Color::rgb(0xffffff, 0.14f));
+            fact_icon(out, ctx_.type, fact_list[i].icon, bx, by, bs * 0.75f, ui::color::text);
+        };
         cn::kick(ctx_, list, right, top, tr("About this game"));
-        const float end = kv(list, right, top + 25.6f + 16.0f, right_w, facts);
+        const float end = kv(list, right, top + 25.6f + 16.0f, right_w, facts, badge);
         ui::text_fit(list, type.regular, tr("Saves a file to your console. Installation and launching are separate."), right,
                      end + 24.0f + 17.0f, 17.0f, right_w, cn::kFaint);
         cn_scroll_end_ = 0.0f;
@@ -2366,27 +2373,18 @@ pano::Page GamePage::panorama_page() const
     }
     if (pn_view_ == PnView::about)
     {
+        const std::vector<Fact> fact_list = about_facts(*game, release);
         std::vector<std::pair<std::string, std::string>> facts;
-        if (!game->publisher.empty())
-            facts.emplace_back(tr("Publisher"), game->publisher);
-        if (!game->release_date.empty())
-            facts.emplace_back(tr("Release date"), format_date(game->release_date));
-        if (!game->genre.empty())
-            facts.emplace_back(tr("Genre"), i18n::genre(game->genre));
-        facts.emplace_back(tr("Format"), format_label(release));
-        facts.emplace_back(tr("Title ID"), release.title_id);
-        facts.emplace_back(tr("Source"), release.provider);
-        if (!release.region.empty())
-            facts.emplace_back(tr("Region"), release.region);
-        if (!release.version.empty())
-            facts.emplace_back(tr("Version"), release.version);
-        facts.emplace_back(release.compression.empty() ? tr("Download size") : tr("Compressed"), format_bytes(release.size_bytes));
-        if (!release.compression.empty() && release.extracted_bytes > 0)
-            facts.emplace_back(tr("Installed"), format_bytes(release.extracted_bytes));
+        for (const Fact &f : fact_list) facts.emplace_back(f.label, f.value);
         page.groups.push_back(text_group(pano::lower(tr("About this game")), 4,
-                                         scrolled([this, facts](hui::gfx::DrawList *list, float x, float top, float width)
+                                         scrolled([this, facts, fact_list](hui::gfx::DrawList *list, float x, float top, float width)
                                                   {
-                                                      const float h = pano::draw_pairs(ctx_, list, x, top - 16.0f, width, facts, 3);
+                                                      const auto badge = [this, &fact_list](hui::gfx::DrawList &out, std::size_t i, float bx, float by, float bs)
+                                                      {
+                                                          out.circle(bx, by, bs * 0.5f, ui::Color::rgb(0xffffff, 0.14f));
+                                                          fact_icon(out, ctx_.type, fact_list[i].icon, bx, by, bs * 0.75f, ui::color::text);
+                                                      };
+                                                      const float h = pano::draw_pairs(ctx_, list, x, top - 16.0f, width, facts, 3, badge);
                                                       return h - 16.0f + 24.0f +
                                                              pano::draw_text(ctx_, list, x, top - 16.0f + h + 24.0f, width,
                                                                              tr("Saves a file to your console. Installation and launching are separate."),
