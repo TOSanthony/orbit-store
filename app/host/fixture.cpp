@@ -173,7 +173,13 @@ const std::vector<FixtureGame> &games()
          "Echo Valley",
          "Horror",
          "Something answers when you call.",
-         "Explore a valley where every sound comes back changed.",
+         "Explore a valley where every sound comes back changed. Follow the echoes through caves, "
+         "ruined chapels and drowned orchards, and learn what each answer costs you. Every call you "
+         "make is repeated a little later, a little different, and the valley remembers the ones you "
+         "ignored. Trade whispers with the keepers of the old bell towers, record the voices that "
+         "linger in the stone, and decide which of them deserve to be set free. A story of grief, "
+         "patience and listening, told over twenty hours with no two playthroughs the same. Bring "
+         "headphones, a lamp and a steady nerve: the quiet here is never empty.",
          "Hollow Tone",
          "",
          false,

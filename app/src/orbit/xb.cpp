@@ -641,6 +641,15 @@ float draw_panel(hui::gfx::DrawList &out, float top, float height, float scroll,
     out.push_clip(r);
     body(out, x + pad, top + pad - std::clamp(scroll, 0.0f, room), w - 2.0f * pad);
     out.pop_clip();
+    if (room > 0.0f)
+    {
+        // A thin bar along the right edge shows how much more there is.
+        const float track = h - 2.0f * 28.0f;
+        const float bar = std::max(40.0f, track * h / (h + room));
+        const float at = (track - bar) * std::clamp(scroll / room, 0.0f, 1.0f);
+        out.rounded_rect({x + w - 14.0f, top + 28.0f, 4.0f, track}, 2.0f, Color::rgb(0xffffff, 0.12f));
+        out.rounded_rect({x + w - 14.0f, top + 28.0f + at, 4.0f, bar}, 2.0f, Color::rgb(0xffffff, 0.7f));
+    }
     return room;
 }
 

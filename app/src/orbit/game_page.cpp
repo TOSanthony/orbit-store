@@ -75,6 +75,7 @@ void GamePage::open(const std::string &game_id)
     xb_.snap();
     xb_menu_.open = false;
     xb_scroll_ = 0.0f;
+    xb_scroll_shown_ = 0.0f;
     cn_zone_ = CnZone::buttons;
     cn_view_ = CnView::main;
     cn_sheet_ = false;
@@ -1027,7 +1028,7 @@ Intent GamePage::update_crossbar(const InputFrame &input, float dt, Feedback &fe
         if (input.nav == Direction::up || input.nav == Direction::down)
         {
             if (xb_.move(list, input, feedback))
-                xb_scroll_ = 0.0f;
+                xb_scroll_ = xb_scroll_shown_ = 0.0f;
         }
         else if (input.is_pressed(Action::back))
         {
@@ -1038,7 +1039,7 @@ Intent GamePage::update_crossbar(const InputFrame &input, float dt, Feedback &fe
         else if (input.is_pressed(Action::menu) && crossbar_panel() != Slot::back)
         {
             // Options scrolls the panel a page at a time, then back to the top.
-            xb_scroll_ = xb_scroll_ >= xb_scroll_end_ ? 0.0f : std::min(xb_scroll_ + 300.0f, xb_scroll_end_);
+            xb_scroll_ = xb_scroll_ >= xb_scroll_end_ ? 0.0f : std::min(xb_scroll_ + 340.0f, xb_scroll_end_);
             feedback.play(hui::audio::Cue::focus);
         }
         else if (input.is_pressed(Action::north) && !waiting_)
@@ -1077,6 +1078,10 @@ Intent GamePage::update_crossbar(const InputFrame &input, float dt, Feedback &fe
     }
     xb_.animate(dt);
     xb_menu_.animate(dt);
+    // The panel's text glides to where Options sent it.
+    xb_scroll_shown_ += (xb_scroll_ - xb_scroll_shown_) * std::min(1.0f, dt * 14.0f);
+    if (std::abs(xb_scroll_ - xb_scroll_shown_) < 0.5f)
+        xb_scroll_shown_ = xb_scroll_;
     return intent;
 }
 
@@ -1135,15 +1140,16 @@ void GamePage::draw_crossbar(Frame &frame) const
         facts.emplace_back(release.compression.empty() ? tr("Download size") : tr("Compressed size"), format_bytes(release.size_bytes));
         if (!release.compression.empty() && release.extracted_bytes > 0)
             facts.emplace_back(tr("Size after extracting"), format_bytes(release.extracted_bytes));
-        xb_scroll_end_ = xb::draw_panel(list, 400.0f, 0.0f, xb_scroll_, [&](hui::gfx::DrawList &out, float x, float y, float w)
+        xb_scroll_end_ = xb::draw_panel(list, 400.0f, 0.0f, xb_scroll_shown_, [&](hui::gfx::DrawList &out, float x, float y, float w)
         {
             y = xb::draw_label(ctx_, out, x, y, tr("About this game"));
             if (!game->description.empty())
             {
+                // All of it: what does not fit scrolls with Options, the facts after it.
                 const int n = static_cast<int>(type.sora.font->wrap(game->description, 22.0f, w).size());
                 ui::paragraph(out, type.sora, game->description, x, y + 14.0f + 17.05f + 7.26f, 22.0f, w, 34.1f,
-                              ui::Color::rgb(0xeceef4), 12);
-                y += 14.0f + 34.1f * static_cast<float>(std::min(n, 12)) + 26.0f;
+                              ui::Color::rgb(0xeceef4), 400);
+                y += 14.0f + 34.1f * static_cast<float>(n) + 26.0f;
             }
             else
                 y += 20.0f;
@@ -1157,7 +1163,7 @@ void GamePage::draw_crossbar(Frame &frame) const
     else if (panel == Slot::reading)
     {
         const bool steps = now.show_download && release.browser_available && !torbox_;
-        xb_scroll_end_ = xb::draw_panel(list, 400.0f, 560.0f, xb_scroll_, [&](hui::gfx::DrawList &out, float x, float y, float w)
+        xb_scroll_end_ = xb::draw_panel(list, 400.0f, 560.0f, xb_scroll_shown_, [&](hui::gfx::DrawList &out, float x, float y, float w)
         {
             if (steps)
             {

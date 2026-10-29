@@ -430,6 +430,11 @@ std::vector<Scenario> scenarios()
          pause(1.0f, "xb-game"), move(Direction::down), tap(Action::confirm), pause(0.6f, "xb-game-version"),
          tap(Action::back), move(Direction::down), move(Direction::down), tap(Action::confirm), pause(0.6f, "xb-game-saveto"),
          tap(Action::back), move(Direction::down), move(Direction::down), tap(Action::confirm), pause(0.6f, "xb-game-about")}});
+    // About this game with a long description: all of it, scrolled by Options.
+    list.push_back({"xb-game-long", Mode::normal, false,
+        {run(1.5f, [](orbit::App &app) { app.show_tab(orbit::tab::discover); app.open_game("echo-valley"); }),
+         move(Direction::down), move(Direction::down), move(Direction::down), move(Direction::down), move(Direction::down), pause(0.8f, "xb-game-long"),
+         tap(Action::menu), pause(0.8f, "xb-game-long-2"), tap(Action::menu), pause(0.8f, "xb-game-long-3")}});
     // A pad in a choice menu: Down past its end, Left and Right, then Circle
     // closes the menu (the page stays), and Circle again leaves the page.
     list.push_back({"xb-game-pad", Mode::normal, false,

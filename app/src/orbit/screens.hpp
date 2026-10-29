@@ -1105,6 +1105,7 @@ class GamePage final : public Screen
     float cn_scroll_ = 0.0f;             // About or the notes, scrolled by Options
     mutable float cn_scroll_end_ = 0.0f; // how far they can scroll, as last drawn
     Slot xb_choosing_ = Slot::source;
+    float xb_scroll_shown_ = 0.0f;       // where the text is now, gliding to xb_scroll_
     float xb_scroll_ = 0.0f;             // the About or notes panel, scrolled by Options
     mutable float xb_scroll_end_ = 0.0f; // how far it can scroll, as last drawn
 
