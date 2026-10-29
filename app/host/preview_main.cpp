@@ -873,6 +873,12 @@ std::vector<Scenario> scenarios()
          run(0.6f, [](orbit::App &app) { app.settings().open_archive_sign_in("player@example.com", "orbit"); }),
          move(Direction::down), move(Direction::down), tap(Action::confirm), pause(1.2f, "archive-signed-in"),
          tap(Action::confirm), pause(0.8f, "archive-sign-out")}});
+    // My NAS address: the same popup as the Archive.org email.
+    list.push_back({"nas-popup", Mode::normal, false,
+        {run(1.5f, [](orbit::App &app)
+             { app.open_settings(orbit::SettingsScreen::Section::sources, true); }),
+         run(1.0f, [](orbit::App &app) { app.settings().open_nas_address("https://nas.example.com/index.json"); }),
+         pause(1.0f, "nas-popup")}});
     // App settings → Appearance → Language: the choices, then German at once. One
     // scenario per look, as each lists Appearance's rows in its own order.
     // Pictures are named by literals: a step keeps only the pointer.

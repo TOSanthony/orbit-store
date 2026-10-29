@@ -1299,6 +1299,14 @@ class SettingsScreen final : public Screen
         archive_sign_in_.open();
         archive_sign_in_.fill(std::move(email), std::move(password));
     }
+    // The My NAS address popup, for the previews.
+    void open_nas_address(std::string address)
+    {
+        nas_url_ = std::move(address);
+        nas_edit_ = true;
+        nas_keyboard_.enter();
+        nas_keyboard_.set_length(static_cast<int>(nas_url_.size()));
+    }
     void open_diagnostics()
     {
         diagnostics_view_.open();

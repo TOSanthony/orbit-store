@@ -1937,6 +1937,26 @@ Intent SettingsScreen::update(const InputFrame &input, float dt, Feedback &feedb
         return intent;
     }
     // The My NAS address: the keyboard takes every button while it is open.
+    // The keyboard of the look, as in the Archive.org sign-in form.
+    if (look::is(look::Interface::cinema))
+    {
+        cn::keyboard_look(nas_keyboard_.style);
+        nas_keyboard_.set_bounds(cn::keyboard_keys());
+    }
+    else if (look::is(look::Interface::panorama))
+    {
+        pano::keyboard_look(nas_keyboard_.style);
+        nas_keyboard_.set_bounds(pano::keyboard_keys());
+    }
+    else
+    {
+        const bool crossbar = look::is(look::Interface::crossbar);
+        xb::keyboard_look(nas_keyboard_.style, crossbar);
+        nas_keyboard_.set_bounds(crossbar ? xb::keyboard_keys()
+                                          : ui::Rect{320.0f, 590.0f, 1280.0f, 400.0f});
+    }
+    nas_keyboard_.style.bindings = hui::ui::KeyboardBindings::standard();
+    nas_keyboard_.style.max_length = 1000;
     nas_keyboard_.set_azerty(ctx_.azerty);
     nas_keyboard_.style.space_label = tr("Space");
     nas_keyboard_.style.done_label = tr("Done");
@@ -2211,22 +2231,14 @@ void SettingsScreen::draw(Frame &frame, bool focused) const
     {
         hui::gfx::DrawList &overlay = frame.overlay;
         frame.glass = true;
-        const float shown = nas_keyboard_in_.value;
-        overlay.push_opacity(shown);
-        overlay.push_transform(1.0f, 0.0f, 0.0f, 0.0f, 60.0f * (1.0f - shown));
-        const ui::Rect panel{0.0f, kNasKeyboardTop - 120.0f, 1920.0f, 1080.0f - kNasKeyboardTop + 120.0f};
-        overlay.glass(frame.glass_texture, panel, 0.0f, ui::Color::rgb(0xffffff));
-        overlay.rounded_rect(panel, 0.0f, ui::color::night1.with_alpha(0.78f));
-        overlay.rounded_rect({0.0f, panel.y, 1920.0f, 1.5f}, 0.0f, ui::color::line);
-        ui::text(overlay, type.regular, tr("My NAS index address"), ui::kGutter + 220.0f,
-                 panel.y + 50.0f, 20.0f, ui::color::text2);
-        const ui::Rect field{ui::kGutter + 220.0f, panel.y + 66.0f, 1280.0f, 56.0f};
-        overlay.rounded_rect(field, 16.0f, ui::Color::rgb(0xffffff, 0.1f));
-        ui::text_fit(overlay, type.regular, nas_url_, field.x + 20.0f, field.cy() + 7.0f, 20.0f,
-                     field.w - 40.0f, ui::color::text);
+        overlay.push_opacity(nas_keyboard_in_.value);
+        overlay.rounded_rect({0.0f, 0.0f, 1920.0f, 1080.0f}, 0.0f, ui::color::night0.with_alpha(0.92f));
+        ui::text_fit(overlay, type.light, tr("My NAS index address"), 320.0f, 395.0f, 46.0f, 1280.0f,
+                     ui::color::text);
+        ui::text_fit(overlay, type.regular, nas_url_.empty() ? std::string("\xE2\x80\x94") : nas_url_, 320.0f,
+                     520.0f, 30.0f, 1280.0f, nas_url_.empty() ? ui::color::text3 : ui::color::text);
         hui::ui::Canvas canvas{overlay, ctx_.fonts, frame.glass_texture, ctx_.clock};
         nas_keyboard_.draw(canvas);
-        overlay.pop_transform();
         overlay.pop_opacity();
     }
 }
