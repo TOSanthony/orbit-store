@@ -76,6 +76,7 @@ void GamePage::open(const std::string &game_id)
     xb_menu_.open = false;
     xb_scroll_ = 0.0f;
     xb_scroll_shown_ = 0.0f;
+    xb_idle_ = xb_end_hold_ = 0.0f;
     cn_zone_ = CnZone::buttons;
     cn_view_ = CnView::main;
     cn_sheet_ = false;
@@ -1028,7 +1029,7 @@ Intent GamePage::update_crossbar(const InputFrame &input, float dt, Feedback &fe
         if (input.nav == Direction::up || input.nav == Direction::down)
         {
             if (xb_.move(list, input, feedback))
-                xb_scroll_ = xb_scroll_shown_ = 0.0f;
+                xb_scroll_ = xb_scroll_shown_ = xb_idle_ = xb_end_hold_ = 0.0f;
         }
         else if (input.is_pressed(Action::back))
         {
@@ -1040,6 +1041,8 @@ Intent GamePage::update_crossbar(const InputFrame &input, float dt, Feedback &fe
         {
             // Options scrolls the panel a page at a time, then back to the top.
             xb_scroll_ = xb_scroll_ >= xb_scroll_end_ ? 0.0f : std::min(xb_scroll_ + 340.0f, xb_scroll_end_);
+            xb_idle_ = -3.0f; // the reader has taken over for a while
+            xb_end_hold_ = 0.0f;
             feedback.play(hui::audio::Cue::focus);
         }
         else if (input.is_pressed(Action::north) && !waiting_)
@@ -1078,6 +1081,26 @@ Intent GamePage::update_crossbar(const InputFrame &input, float dt, Feedback &fe
     }
     xb_.animate(dt);
     xb_menu_.animate(dt);
+    // A long text scrolls by itself: a pause at the top, a slow read down, a pause at the end,
+    // then back to the top. Options takes over for a few seconds.
+    if (!xb_menu_.open && crossbar_panel() != Slot::back && xb_scroll_end_ > 0.0f)
+    {
+        constexpr float kStart = 2.5f, kSpeed = 45.0f, kRest = 2.5f;
+        xb_idle_ += dt;
+        if (xb_idle_ > kStart)
+        {
+            if (xb_scroll_ < xb_scroll_end_ - 0.5f)
+            {
+                xb_scroll_ = std::min(xb_scroll_end_, xb_scroll_ + kSpeed * dt);
+                xb_scroll_shown_ = xb_scroll_;
+            }
+            else if ((xb_end_hold_ += dt) > kRest)
+            {
+                xb_scroll_ = 0.0f;
+                xb_idle_ = xb_end_hold_ = 0.0f;
+            }
+        }
+    }
     // The panel's text glides to where Options sent it.
     xb_scroll_shown_ += (xb_scroll_ - xb_scroll_shown_) * std::min(1.0f, dt * 14.0f);
     if (std::abs(xb_scroll_ - xb_scroll_shown_) < 0.5f)

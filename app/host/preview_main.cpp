@@ -435,6 +435,12 @@ std::vector<Scenario> scenarios()
         {run(1.5f, [](orbit::App &app) { app.show_tab(orbit::tab::discover); app.open_game("echo-valley"); }),
          move(Direction::down), move(Direction::down), move(Direction::down), move(Direction::down), move(Direction::down), pause(0.8f, "xb-game-long"),
          tap(Action::menu), pause(0.8f, "xb-game-long-2"), tap(Action::menu), pause(0.8f, "xb-game-long-3")}});
+    // The same text reads itself: still at first, then sliding down, then resting at the end.
+    list.push_back({"xb-game-auto", Mode::normal, false,
+        {run(1.5f, [](orbit::App &app) { app.show_tab(orbit::tab::discover); app.open_game("echo-valley"); }),
+         move(Direction::down), move(Direction::down), move(Direction::down), move(Direction::down), move(Direction::down),
+         pause(1.0f, "xb-game-auto-0"), pause(6.0f, "xb-game-auto-1"), pause(5.0f, "xb-game-auto-2"),
+         pause(4.0f, "xb-game-auto-3")}});
     // A pad in a choice menu: Down past its end, Left and Right, then Circle
     // closes the menu (the page stays), and Circle again leaves the page.
     list.push_back({"xb-game-pad", Mode::normal, false,
