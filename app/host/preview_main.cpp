@@ -422,7 +422,7 @@ std::vector<Scenario> scenarios()
          pause(0.6f, "xb-downloads-failed-actions"), tap(Action::back), tap(Action::back),
          move(Direction::down), tap(Action::confirm), pause(0.8f, "xb-downloads-finished"), tap(Action::confirm),
          pause(0.6f, "xb-downloads-finished-actions"), tap(Action::back), move(Direction::down),
-         pause(0.6f, "xb-downloads-clear-row"), tap(Action::confirm), pause(0.6f, "xb-downloads-clear"), tap(Action::back),
+         pause(0.6f, "xb-downloads-clear-row"), tap(Action::confirm), pause(0.6f, "xb-downloads-clear"), move(Direction::right), pause(0.6f, "xb-downloads-clear-keep"), tap(Action::back),
          tap(Action::back), move(Direction::down),
          tap(Action::confirm), tap(Action::confirm), pause(0.8f, "xb-downloads-cancelled")}});
     list.push_back({"xb-game", Mode::normal, false,

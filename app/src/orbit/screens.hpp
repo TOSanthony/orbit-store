@@ -823,7 +823,7 @@ class DownloadsScreen final : public Screen
     std::vector<hui::ui::Hint> hints() const override;
     bool modal() const override
     {
-        return install_open_ || dialog_open_ || password_open_ || xb_menu_.open || pn_bar_open_;
+        return install_open_ || dialog_open_ || password_open_ || xb_menu_.open || pn_bar_open_ || clear_open_;
     }
     // Shows one job: switches to its view and moves the focus to it.
     void show_job(const std::string &job_id);
