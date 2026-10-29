@@ -103,15 +103,15 @@ void focus_ring_spin(DrawList &list, const Rect &r, float radius, float amount, 
         return;
     constexpr float kPi = 3.14159265f;
     constexpr float kBand = 4.0f;
-    // A soft light behind, then the band: a conic gradient of two light spots (grey to
-    // black and back, twice) turning 0.8 degrees a frame, about 48 degrees a second.
-    list.glow(r.inset(-4.0f), radius + 4.0f, 13.0f, Color::rgb(0xffffff, 0.16f * amount));
+    // As on the PS5: a thin white outline, and one bright comet running round it, its tail
+    // fading behind, a turn every 1.7 seconds.
+    list.glow(r.inset(-4.0f), radius + 4.0f, 13.0f, Color::rgb(0xffffff, 0.18f * amount));
     const Rect m = r.inset(-kBand * 0.5f); // the band's centre line
     const float rad = std::min(radius + kBand * 0.5f, std::min(m.w, m.h) * 0.5f);
-    const float turn = std::fmod(clock * 0.84f, 2.0f * kPi);
-    // The outline as points: four straight edges joined by quarter arcs.
+    const float head = std::fmod(clock * (2.0f * kPi / 1.7f), 2.0f * kPi);
     constexpr int kArc = 8;
-    float xs[4 * (kArc + 1)], ys[4 * (kArc + 1)];
+    constexpr int kSteps = 4 * (kArc + 1);
+    float xs[kSteps], ys[kSteps];
     const float cx[4] = {m.x + m.w - rad, m.x + m.w - rad, m.x + rad, m.x + rad};
     const float cy[4] = {m.y + rad, m.y + m.h - rad, m.y + m.h - rad, m.y + rad};
     int count = 0;
@@ -123,20 +123,31 @@ void focus_ring_spin(DrawList &list, const Rect &r, float radius, float amount, 
             ys[count] = cy[c] - std::cos(a) * rad;
             ++count;
         }
-    const Color dark = Color::rgb(0x2a2a2a), light = Color::rgb(0xffffff);
+    constexpr float kTail = 2.2f; // radians of tail behind the head
+    float bright_x = r.cx(), bright_y = r.cy(), best = 0.0f;
     for (int i = 0; i < count; ++i)
     {
         const int j = (i + 1) % count;
         const float mx = (xs[i] + xs[j]) * 0.5f - r.cx(), my = (ys[i] + ys[j]) * 0.5f - r.cy();
-        float a = std::atan2(mx, -my) - turn; // clockwise from 12 o'clock
-        a = std::fmod(a, kPi);
-        if (a < 0.0f)
-            a += kPi;
-        const float t = 1.0f - std::abs(a / kPi * 2.0f - 1.0f); // 0..1..0 every half turn
-        const Color c{dark.r + (light.r - dark.r) * t, dark.g + (light.g - dark.g) * t,
-                      dark.b + (light.b - dark.b) * t, amount};
-        list.line(xs[i], ys[i], xs[j], ys[j], kBand + 0.6f, c);
+        float behind = head - std::atan2(mx, -my); // how far the head has passed this spot
+        behind = std::fmod(behind, 2.0f * kPi);
+        if (behind < 0.0f)
+            behind += 2.0f * kPi;
+        const float t = behind < kTail ? std::pow(1.0f - behind / kTail, 1.6f) : 0.0f;
+        if (t > best)
+        {
+            best = t;
+            bright_x = xs[i];
+            bright_y = ys[i];
+        }
+        const float level = 0.32f + 0.68f * t; // the outline never goes out
+        list.line(xs[i], ys[i], xs[j], ys[j], kBand * 0.6f + kBand * 0.5f * t + 0.6f,
+                  Color{1.0f, 1.0f, 1.0f, level * amount});
     }
+    // The comet's head throws a little light of its own.
+    if (best > 0.0f)
+        list.glow({bright_x - 3.0f, bright_y - 3.0f, 6.0f, 6.0f}, 3.0f, 14.0f,
+                  Color::rgb(0xffffff, 0.55f * amount));
 }
 
 namespace
