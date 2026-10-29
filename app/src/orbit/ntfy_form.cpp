@@ -117,17 +117,20 @@ void NtfyForm::update(const InputFrame &input, float dt, Feedback &feedback)
     if (look::is(look::Interface::cinema))
     {
         cn::keyboard_look(keyboard_.style);
+        keyboard_.set_azerty(ctx_.azerty);
         keyboard_.set_bounds(cn::keyboard_keys());
     }
     else if (look::is(look::Interface::panorama))
     {
         pano::keyboard_look(keyboard_.style);
+        keyboard_.set_azerty(ctx_.azerty);
         keyboard_.set_bounds(pano::keyboard_keys());
     }
     else
     {
         const bool crossbar = look::is(look::Interface::crossbar);
         xb::keyboard_look(keyboard_.style, crossbar);
+        keyboard_.set_azerty(ctx_.azerty);
         keyboard_.set_bounds(crossbar ? xb::keyboard_keys() : ui::Rect{320.0f, 590.0f, 1280.0f, 400.0f});
     }
     const std::size_t max = limit(static_cast<int>(typing_row_));

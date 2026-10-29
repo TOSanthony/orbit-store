@@ -108,6 +108,7 @@ float location_height(const std::vector<std::string> &lines)
 DownloadsScreen::DownloadsScreen(Context &context) : Screen(context)
 {
     xb::keyboard_look(password_keyboard_.style, false);
+    password_keyboard_.set_azerty(ctx_.azerty);
     password_keyboard_.style.bindings = hui::ui::KeyboardBindings::standard();
     password_keyboard_.style.max_length = 128;
     password_keyboard_.style.done_label = tr("Retry extraction");
@@ -199,6 +200,7 @@ Intent DownloadsScreen::update(const InputFrame &input, float dt, Feedback &feed
     // The password's keys: Crossbar's panel on the right, or the Store's under the question.
     const bool crossbar = look::is(look::Interface::crossbar);
     xb::keyboard_look(password_keyboard_.style, crossbar);
+    password_keyboard_.set_azerty(ctx_.azerty);
     password_keyboard_.style.max_length = 128;
     password_keyboard_.style.done_label = tr("Retry extraction");
     password_keyboard_.set_bounds(crossbar ? xb::keyboard_keys() : ui::Rect{320.0f, 590.0f, 1280.0f, 400.0f});
@@ -207,6 +209,7 @@ Intent DownloadsScreen::update(const InputFrame &input, float dt, Feedback &feed
     if (look::is(look::Interface::panorama))
     {
         pano::keyboard_look(password_keyboard_.style);
+        password_keyboard_.set_azerty(ctx_.azerty);
         password_keyboard_.style.max_length = 128;
         password_keyboard_.style.done_label = tr("Retry extraction");
         password_keyboard_.set_bounds(pano::keyboard_keys());

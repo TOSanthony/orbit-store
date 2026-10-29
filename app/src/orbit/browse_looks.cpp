@@ -565,6 +565,7 @@ Intent BrowseScreen::update_cinema(const InputFrame &input, float dt, Feedback &
     Intent intent;
     const Snapshot &state = ctx_.store.state();
     cn::keyboard_look(keyboard_.style);
+    keyboard_.set_azerty(ctx_.azerty);
     keyboard_.set_bounds(cn::keyboard_keys());
     const int count = static_cast<int>(results_.size());
     cn_at_ = std::clamp(cn_at_, 0, std::max(0, count - 1));
@@ -1070,6 +1071,7 @@ Intent BrowseScreen::update_panorama(const InputFrame &input, float dt, Feedback
     Intent intent;
     const Snapshot &state = ctx_.store.state();
     pano::keyboard_look(keyboard_.style);
+    keyboard_.set_azerty(ctx_.azerty);
     keyboard_.set_bounds(pano::keyboard_keys());
     // Favourites are a group of their own here, not a collection.
     if (filters_.favourites && !search_mode_)

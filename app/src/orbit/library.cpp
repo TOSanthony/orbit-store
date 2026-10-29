@@ -208,6 +208,7 @@ std::string file_name(const std::string &path)
 LibraryScreen::LibraryScreen(Context &context) : Screen(context)
 {
     xb::keyboard_look(keyboard_.style, false);
+    keyboard_.set_azerty(ctx_.azerty);
     keyboard_.style.bindings = hui::ui::KeyboardBindings::standard();
     keyboard_.style.max_length = 40;
     keyboard_.style.done_label = tr("Done");
@@ -594,6 +595,7 @@ Intent LibraryScreen::update(const InputFrame &input, float dt, Feedback &feedba
     { run_library(action, confirmed, game, destination, job, feedback); };
     update_files();
     xb::keyboard_look(keyboard_.style, look::is(look::Interface::crossbar));
+    keyboard_.set_azerty(ctx_.azerty);
     if (look::is(look::Interface::crossbar))
         return update_crossbar(input, dt, feedback, focused);
     if (look::is(look::Interface::panorama))

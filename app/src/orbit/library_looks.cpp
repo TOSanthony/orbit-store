@@ -1320,6 +1320,7 @@ Intent LibraryScreen::update_panorama(const InputFrame &input, float dt, Feedbac
     const Snapshot &state = ctx_.store.state();
     const LibrarySnapshot &library = state.library;
     pano::keyboard_look(keyboard_.style);
+    keyboard_.set_azerty(ctx_.azerty);
     keyboard_.set_bounds(pano::keyboard_keys());
     // The page shows Files' drives and the operation too: keep them coming while it's here.
     ctx_.store.want_library_storage(true);

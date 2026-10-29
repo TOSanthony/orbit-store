@@ -66,6 +66,7 @@ float chip_width(const ui::Type &type, int chip)
 BrowseScreen::BrowseScreen(Context &context, bool addons, bool apps) : Screen(context), addons_(addons), apps_(apps)
 {
     xb::keyboard_look(keyboard_.style, false);
+    keyboard_.set_azerty(ctx_.azerty);
     keyboard_.style.bindings = hui::ui::KeyboardBindings::standard();
     keyboard_.style.max_length = 40;
     keyboard_.style.done_label = tr("Done");
@@ -645,6 +646,7 @@ Intent BrowseScreen::update(const InputFrame &input, float dt, Feedback &feedbac
         return intent;
     }
     xb::keyboard_look(keyboard_.style, look::is(look::Interface::crossbar));
+    keyboard_.set_azerty(ctx_.azerty);
     keep_filters_in_range();
     if (look::is(look::Interface::crossbar))
         return update_crossbar(input, dt, feedback, focused);
