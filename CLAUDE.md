@@ -14,6 +14,6 @@ Orbit Store : boutique homebrew PS5/PS4. Service C (payload), app TV native C++ 
 - Textes d'interface : l'anglais est la clé ; après un changement, mettre à jour `i18n/*.json` (`node tools/i18n.mjs extract|check`).
 - Sécurité : aucun secret/jeton/identifiant en clair ; pas de contenu de jeux ni d'artwork dans le dépôt.
 - Version, état de publication ou résultat de test : le vérifier dans les sources de vérité (`package.json`, `app/sce_sys/param.json`, `release-status.json` s'il existe, tags/dépôt de release) avant de l'affirmer. Jamais présenter une version locale/bêta comme publiée sans preuve.
-- Interdit sans autorisation explicite du propriétaire : publier, déployer, pousser, créer une release, modifier un flux public, toute action destructive (suppression, `reset --hard`, `push --force`). Ni commit ni push sans demande.
+- Interdit sans autorisation explicite du propriétaire : publier, déployer, pousser, créer une release, modifier un flux public, toute action destructive (suppression, `reset --hard`, `push --force`). Ni commit ni push sans demande ; commits sans trailers d'attribution (`AGENTS.md`).
 - Tests : toujours dire lequel a eu lieu — automatisé (gtest/node/CI), local (preview hôte, build) ou sur vraie PS5. Ne jamais déclarer « validé sur console » sans test réel.
 - Pas de nouveaux fichiers de doc/skill sans demande. Réponses courtes, sans redites.

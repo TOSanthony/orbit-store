@@ -1,6 +1,6 @@
 # Orbit Store for TV (native app)
 
-The native TV app **1.9.1** is included with the **Orbit Store 1.5.0 service**.
+The native TV app **1.9.1** is included with the **Orbit Store 1.5.0 service**. (Historical; the current tree is TV app 1.11.0 with service 1.7.0, see `BUILDING.md`.)
 
 A full-screen PS5 app for Orbit's storefront, drawn by the GPU instead of
 the console browser. It is a client of the Orbit backend payload. Downloads,

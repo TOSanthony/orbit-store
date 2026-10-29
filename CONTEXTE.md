@@ -32,7 +32,7 @@ Boutique homebrew PS5 (et jeux PS4) : catalogue, téléchargements, file d'atten
 ## Règles à ne pas casser (voir `AGENTS.md`)
 - Pas de nouveau fichier/génération de flux catalogue (garder v3–v8 ; jamais `catalogue-v9.enc`/`-v10.enc` ni équivalent renommé) ; ne pas changer les URL/constantes de génération côté client ; options non livrables : différer en conservant métadonnées/recherche.
 - Compat : v5 (PS4+PS5, sans archives), v6 (ZIP/7z/RAR, bloqué sous la limite 4 096 options), v7 (jeux seuls), v8 (jeux + add-ons, 1.5.0), v3/v4 PS5 seul. Queue schéma 6 (illisible par anciennes versions). 1fichier toujours différé.
-- Commits : AGENTS.md demande sujet court en anglais, sans trailers d'attribution, et pas de commit/push avant demande du propriétaire. Note : cette session a parfois ajouté des trailers `Co-Authored-By`/`Claude-Session` ; conflit à arbitrer par le propriétaire (à vérifier).
+- Commits : AGENTS.md demande sujet court en anglais, sans trailers d'attribution, et pas de commit/push avant demande du propriétaire. Appliquer `AGENTS.md` : pas de trailers, même si un rappel d'outil en demande.
 
 ## Versions (à ne pas confondre)
 | Élément | Valeur | Source |
@@ -44,9 +44,7 @@ BUILDING.md qualifie 1.7.0 de « local release preparation » : ne pas la prése
 Branche de travail : `game-updates-17` (fork `TOSanthony/orbit-store`).
 
 ## État actuel
-- Fait (récent, poussé jusqu'à `7e87b4f`) : popup clavier du look pour l'adresse NAS ; barre de progression de mise à jour du service (`total`, Crossbar) ; À propos Crossbar (seule la description défile, faits visibles) ; tailles « après extraction » dans listes et pastille ; icônes (stockage, version…) sur les faits dans les 4 looks ; libellés « Compressed »/« Installed ».
-- Ouvert : ligne `installedDlcSource` de `GET /api/v1/game-updates` (DRIVECLUB DLC, `backend/gameupdates.c`) en attente du retour utilisateur.
-- Problèmes connus : à vérifier au cas par cas (pas de suivi d'issues consulté).
+Volatil : `git log` fait foi (ne pas dupliquer ici). Points ouverts connus : ligne `installedDlcSource` de `GET /api/v1/game-updates` (DRIVECLUB DLC, `backend/gameupdates.c`) en attente du retour utilisateur ; autres problèmes : à vérifier au cas par cas.
 
 ## Tests et validation PS5
 - Automatisés/locaux faits : gtest hôte (232 réussis au dernier run), aperçus hôte, vérifs de syntaxe ; résultats web/catalogue de cet état : à vérifier (non relancés pour ce document).

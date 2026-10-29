@@ -1,6 +1,6 @@
 # Orbit Store source and licence bundle
 
-The native **1.9.1** hotfix is supplied in `orbit-native-1.9.1-source.tar.gz`. The original `orbit-store-1.5.0-source.tar.gz` is retained for the unchanged published **1.5.0 ELF**. For the hotfix, build the native app from the former and bundle the published ELF (or rebuild it from the latter). `SOURCES.json` records the two source snapshots separately.
+(Historical release notes; the current tree is service 1.7.0 and TV app 1.11.0, see `BUILDING.md`.) The native **1.9.1** hotfix is supplied in `orbit-native-1.9.1-source.tar.gz`. The original `orbit-store-1.5.0-source.tar.gz` is retained for the unchanged published **1.5.0 ELF**. For the hotfix, build the native app from the former and bundle the published ELF (or rebuild it from the latter). `SOURCES.json` records the two source snapshots separately.
 
 This bundle supplies the application source for both `orbit_store.elf` and `PPSA99177.ffpkg`, plus the corresponding sources and notices for their copyleft components and other linked libraries. `SOURCES.json` records the exact application source tree and its parent or release commit and every upstream archive's URL and SHA-256. `SOURCE-SHA256SUMS` covers every source-bundle input.
 
