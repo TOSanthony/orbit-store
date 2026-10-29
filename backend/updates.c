@@ -39,7 +39,7 @@ static struct {
     char action[16], phase[24], error[256];
     char version[64], url[512], checksum[65];
     time_t checked, retry_at, check_after, automatic_check_after, background_after;
-    size_t received;
+    size_t received, total;
     bool saved;
     /* update-all: what the owner was shown, and how far it got. */
     bool all, all_service, tv_updated;
@@ -106,10 +106,15 @@ static size_t headers(char *data, size_t a, size_t b, void *context) {
 }
 static int progress(void *ctx, curl_off_t a, curl_off_t b, curl_off_t c, curl_off_t d) {
     (void)ctx;
-    (void)a;
-    (void)b;
     (void)c;
     (void)d;
+    /* The size of the release being downloaded, for the progress bar. */
+    if (a > 0 && b > 0) {
+        pthread_mutex_lock(&update.mutex);
+        if (!strcmp(update.phase, "downloading"))
+            update.total = (size_t)a;
+        pthread_mutex_unlock(&update.mutex);
+    }
     return interrupted();
 }
 static bool test_url(const char *url) {
@@ -490,6 +495,7 @@ static bool background_check_locked(void) {
     update.busy = true;
     update.error[0] = 0;
     update.received = 0;
+    update.total = 0;
     update.checked = 0;
     update.version[0] = 0;
     update.checksum[0] = 0;
@@ -594,6 +600,7 @@ cJSON *updates_status(void) {
     cJSON_AddBoolToObject(o, "restartRequired",
                           update.saved || (*saved && strcmp(saved, ORBIT_VERSION)));
     cJSON_AddNumberToObject(o, "received", (double)update.received);
+    cJSON_AddNumberToObject(o, "total", (double)update.total);
     cJSON_AddNumberToObject(o, "retryAt", (double)update.retry_at);
     cJSON_AddNumberToObject(o, "checkedAt", (double)update.checked);
     cJSON_AddNumberToObject(o, "checkAfter", (double)update.check_after);
@@ -675,6 +682,7 @@ int updates_action(const cJSON *input, char *error, size_t cap) {
         update.busy = true;
         update.error[0] = 0;
         update.received = 0;
+        update.total = 0;
         if (checking) {
             update.checked = 0;
             update.version[0] = 0;

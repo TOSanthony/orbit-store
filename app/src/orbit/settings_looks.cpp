@@ -624,7 +624,11 @@ xb::List SettingsScreen::rows_of(const std::vector<XbEntry> &entries) const
                 row.sub = tr("Updates work with Orbit running on your PS5.");
             // During Update Orbit, its own row shows the progress.
             else if (service.phase == "downloading" && !service.update_all)
+            {
                 row.sub = tr("Downloading Orbit: {size}", {{"size", format_bytes(service.received)}});
+                if (service.total > 0.0)
+                    row.bar = static_cast<float>(std::clamp(service.received / service.total, 0.0, 1.0));
+            }
             else if (service.phase == "saving" && !service.update_all)
                 row.sub = tr("Saving the verified release\xE2\x80\xA6");
             else if (wait > 0 && !service.busy)

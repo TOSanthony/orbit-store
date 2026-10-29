@@ -816,6 +816,7 @@ ServiceUpdate parse_service_update(const json::Value &value)
     update.phase = value.text("phase");
     update.error = value.text("error");
     update.received = value.number("received");
+    update.total = value.number("total");
     update.retry_at = value.number("retryAt");
     update.checked_at = value.number("checkedAt");
     update.check_after = value.number("checkAfter");

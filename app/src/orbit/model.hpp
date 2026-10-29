@@ -522,6 +522,7 @@ struct ServiceUpdate
     std::string phase; // idle checking checked downloading saving saved error stopping
     std::string error;
     double received = 0.0;
+    double total = 0.0; // the release's size, 0 when unknown
     double retry_at = 0.0; // Unix seconds
     double checked_at = 0.0;
     double check_after = 0.0;
