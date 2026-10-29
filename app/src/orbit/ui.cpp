@@ -97,59 +97,6 @@ void focus_ring(DrawList &list, const Rect &r, float radius, float amount)
                        Color::rgb(0xffffff, amount));
 }
 
-void focus_ring_spin(DrawList &list, const Rect &r, float radius, float amount, float clock)
-{
-    if (amount <= 0.01f)
-        return;
-    constexpr float kPi = 3.14159265f;
-    constexpr float kBand = 4.0f;
-    // As on the PS5: a thin white outline, and one bright comet running round it, its tail
-    // fading behind, a turn every 1.7 seconds.
-    list.glow(r.inset(-4.0f), radius + 4.0f, 13.0f, Color::rgb(0xffffff, 0.18f * amount));
-    const Rect m = r.inset(-kBand * 0.5f); // the band's centre line
-    const float rad = std::min(radius + kBand * 0.5f, std::min(m.w, m.h) * 0.5f);
-    const float head = std::fmod(clock * (2.0f * kPi / 1.7f), 2.0f * kPi);
-    constexpr int kArc = 8;
-    constexpr int kSteps = 4 * (kArc + 1);
-    float xs[kSteps], ys[kSteps];
-    const float cx[4] = {m.x + m.w - rad, m.x + m.w - rad, m.x + rad, m.x + rad};
-    const float cy[4] = {m.y + rad, m.y + m.h - rad, m.y + m.h - rad, m.y + rad};
-    int count = 0;
-    for (int c = 0; c < 4; ++c)
-        for (int i = 0; i <= kArc; ++i)
-        {
-            const float a = (static_cast<float>(c) + static_cast<float>(i) / kArc) * 0.5f * kPi;
-            xs[count] = cx[c] + std::sin(a) * rad;
-            ys[count] = cy[c] - std::cos(a) * rad;
-            ++count;
-        }
-    constexpr float kTail = 2.2f; // radians of tail behind the head
-    float bright_x = r.cx(), bright_y = r.cy(), best = 0.0f;
-    for (int i = 0; i < count; ++i)
-    {
-        const int j = (i + 1) % count;
-        const float mx = (xs[i] + xs[j]) * 0.5f - r.cx(), my = (ys[i] + ys[j]) * 0.5f - r.cy();
-        float behind = head - std::atan2(mx, -my); // how far the head has passed this spot
-        behind = std::fmod(behind, 2.0f * kPi);
-        if (behind < 0.0f)
-            behind += 2.0f * kPi;
-        const float t = behind < kTail ? std::pow(1.0f - behind / kTail, 1.6f) : 0.0f;
-        if (t > best)
-        {
-            best = t;
-            bright_x = xs[i];
-            bright_y = ys[i];
-        }
-        const float level = 0.32f + 0.68f * t; // the outline never goes out
-        list.line(xs[i], ys[i], xs[j], ys[j], kBand * 0.6f + kBand * 0.5f * t + 0.6f,
-                  Color{1.0f, 1.0f, 1.0f, level * amount});
-    }
-    // The comet's head throws a little light of its own.
-    if (best > 0.0f)
-        list.glow({bright_x - 3.0f, bright_y - 3.0f, 6.0f, 6.0f}, 3.0f, 14.0f,
-                  Color::rgb(0xffffff, 0.55f * amount));
-}
-
 namespace
 {
 // Room a button's icon takes left of its label: the icon and a gap.
