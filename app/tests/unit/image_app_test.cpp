@@ -1168,6 +1168,24 @@ TEST(App, DeletePackagesToggleFromStorage)
     EXPECT_TRUE(h.store.state().system.delete_packages); // the service keeps it
 }
 
+TEST(App, AutoInstallPackagesIsOffByDefaultAndKeptByTheService)
+{
+    AppHarness h;
+    h.store.poll_once();
+    h.settle();
+    ASSERT_TRUE(h.store.state().system.has_auto_install_packages);
+    EXPECT_FALSE(h.store.state().system.auto_install_packages);
+    h.store.set_auto_install_packages(true);
+    h.store.run_next_action();
+    h.settle();
+    EXPECT_TRUE(h.store.state().system.auto_install_packages);
+    EXPECT_FALSE(h.store.state().system.delete_packages); // the other setting is untouched
+    EXPECT_EQ(h.transport.count("/api/v1/settings/installation"), 1);
+    h.store.poll_once();
+    h.settle();
+    EXPECT_TRUE(h.store.state().system.auto_install_packages);
+}
+
 TEST(App, ConnectionsPerDownloadStepThroughPresets)
 {
     AppHarness h;

@@ -111,6 +111,8 @@ std::vector<SettingsScreen::XbEntry> SettingsScreen::section_entries() const
             out.push_back({'C', 0});
         for (int i = 0; i < 4; ++i) out.push_back({'R', i});
         out.push_back({'k', 0});
+        if (state.system.has_auto_install_packages)
+            out.push_back({'I', 0});
         if (state.system.has_delete_packages)
             out.push_back({'P', 0});
         break;
@@ -447,6 +449,15 @@ xb::List SettingsScreen::rows_of(const std::vector<XbEntry> &entries) const
                 row.sub = ntfy_address(state.ntfy);
             row.text = tr("Get a push notification on your phone or computer for the events you choose. "
                           "Subscribe to the same topic in the ntfy app.");
+            break;
+        case 'I':
+            row.icon = icons::Icon::info;
+            row.title = tr("Install after downloading");
+            row.toggle = state.system.auto_install_packages ? 1 : 0;
+            row.sub = tr("Orbit can install a downloaded PKG on your PS5 as soon as it has been checked. Game images are not installed this way.");
+            row.off = result.busy && result.setting == Setting::auto_install_packages;
+            if (result.setting == Setting::auto_install_packages && !result.error.empty())
+                row.detail = tr(std::string_view(result.error));
             break;
         case 'P':
             row.icon = icons::Icon::info;
@@ -1294,6 +1305,9 @@ void SettingsScreen::press(const std::string &key, bool off, const InputFrame &i
         break;
     case 'e':
         act(Kind::notification_event, index, intent, feedback);
+        break;
+    case 'I':
+        act(Kind::auto_install_toggle, 0, intent, feedback);
         break;
     case 'P':
         act(Kind::packages_toggle, 0, intent, feedback);

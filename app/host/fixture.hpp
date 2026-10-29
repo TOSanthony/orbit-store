@@ -113,6 +113,7 @@ class Fixture final : public http::Transport
     std::string tv_updated_;   // the TV app version it installed
     bool notifications_ = true; // notifications on the console
     std::array<bool, 5> events_{true, true, true, true, true}; // kNotificationEvents chosen
+    bool auto_install_packages_ = false; // install a package once it is downloaded and checked
     bool delete_packages_ = false; // delete a package once it is installed
     int connections_ = 8;          // connections per download
 };

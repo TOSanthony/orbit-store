@@ -233,6 +233,7 @@ int state_save_locked(void) {
         if (orbit.notify_events & (1u << i)) cJSON_AddItemToArray(events, cJSON_CreateString(notify_event_name(i)));
     cJSON_AddStringToObject(o, "notifiedUpdate", orbit.notified_update);
     cJSON_AddBoolToObject(o, "deletePackages", orbit.delete_packages);
+    cJSON_AddBoolToObject(o, "autoInstallPackages", orbit.auto_install_packages);
     cJSON_AddNumberToObject(o, "concurrentDownloads", orbit.concurrent_downloads);
     cJSON_AddNumberToObject(o, "downloadConnections", orbit.download_connections);
     download_policy_json(o, &orbit.download_policy);
@@ -375,6 +376,8 @@ int state_load(void) {
     if (strlen(notified) < sizeof orbit.notified_update) copy_text(orbit.notified_update, sizeof orbit.notified_update, notified);
     const cJSON *delete_packages = cJSON_GetObjectItemCaseSensitive(o, "deletePackages");
     if (cJSON_IsBool(delete_packages)) orbit.delete_packages = cJSON_IsTrue(delete_packages);
+    const cJSON *auto_install = cJSON_GetObjectItemCaseSensitive(o, "autoInstallPackages");
+    if (cJSON_IsBool(auto_install)) orbit.auto_install_packages = cJSON_IsTrue(auto_install);
     download_policy_load(o, &orbit.download_policy);
     const cJSON *limit = cJSON_GetObjectItemCaseSensitive(o, "concurrentDownloads");
     if (cJSON_IsNumber(limit) && limit->valuedouble >= 1 &&

@@ -165,6 +165,7 @@ enum class Setting : std::uint8_t
     game_update_job,
     download_connections,
     download_recovery,
+    auto_install_packages,
     archive_sign_in,
     archive_sign_out,
 };
@@ -309,6 +310,7 @@ class Store
     void set_notification_event(int index, bool on) { send_setting(Setting::notification_event, std::to_string(index), {}, on); }
     void load_diagnostics() { send_setting(Setting::diagnostics_report); }
     void set_delete_packages(bool enabled) { send_setting(Setting::packages, {}, {}, enabled); }
+    void set_auto_install_packages(bool enabled) { send_setting(Setting::auto_install_packages, {}, {}, enabled); }
     void save_ntfy(std::string body) { send_setting(Setting::ntfy_save, std::move(body)); }
     void test_ntfy() { send_setting(Setting::ntfy_test); }
     // Both parts in one press: checks again what was found a while ago, then installs it all.

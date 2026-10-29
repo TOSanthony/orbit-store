@@ -785,6 +785,19 @@ Result<std::string> Client::save_diagnostics(const std::string &version, const s
     return result;
 }
 
+Result<bool> Client::set_auto_install_packages(bool enabled)
+{
+    Result<bool> result;
+    const http::Response response = send("POST", "/api/v1/settings/installation",
+                                         enabled ? "{\"autoInstallPackages\":true}" : "{\"autoInstallPackages\":false}");
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    if (json::parse(response.body, &value))
+        result.value = value.flag("autoInstallPackages", enabled);
+    return result;
+}
+
 Result<bool> Client::set_delete_packages(bool enabled)
 {
     Result<bool> result;

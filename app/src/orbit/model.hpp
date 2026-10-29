@@ -67,6 +67,9 @@ struct System
     // Delete a downloaded package once the PS5 reports it installed; unset on an older service.
     bool delete_packages = false;
     bool has_delete_packages = false;
+    // Install a downloaded package as soon as it is checked; unset on an older service.
+    bool auto_install_packages = false;
+    bool has_auto_install_packages = false;
     bool ntfy_enabled = false; // ntfy push notifications are on
     std::string firmware; // "13.60", or empty when the service can't tell
     bool zero_enabled = false;

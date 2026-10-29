@@ -805,6 +805,20 @@ void SettingsScreen::build_storage(Pane &pane) const
                    ui::ButtonKind::secondary, !archives_saving}});
     if (result.setting == Setting::archives && !result.error.empty())
         pane.error(result.error);
+    if (state.system.has_auto_install_packages)
+    {
+        pane.gap(12.0f);
+        pane.rule();
+        pane.heading(tr("Install after downloading"));
+        pane.body(tr("Orbit can install a downloaded PKG on your PS5 as soon as it has been checked. Game images are not installed this way."));
+        const bool install_saving = result.busy && result.setting == Setting::auto_install_packages;
+        pane.buttons({{Kind::auto_install_toggle,
+                       state.system.auto_install_packages ? tr("Don't install packages after downloading")
+                                                          : tr("Install packages after downloading"),
+                       ui::ButtonKind::secondary, !install_saving}});
+        if (result.setting == Setting::auto_install_packages && !result.error.empty())
+            pane.error(result.error);
+    }
     if (state.system.has_delete_packages)
     {
         pane.gap(12.0f);
@@ -1746,6 +1760,10 @@ void SettingsScreen::activate(const Control &control, Intent &intent, Feedback &
         if (control.index >= 0 && control.index < static_cast<int>(state.system.notification_events.size()))
             ctx_.store.set_notification_event(
                 control.index, !state.system.notification_events[static_cast<std::size_t>(control.index)]);
+        break;
+    case Kind::auto_install_toggle:
+        error_.clear();
+        ctx_.store.set_auto_install_packages(!state.system.auto_install_packages);
         break;
     case Kind::packages_toggle:
         error_.clear();

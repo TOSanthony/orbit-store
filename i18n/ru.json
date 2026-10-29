@@ -2014,5 +2014,9 @@
   "{host}: {count} games found.": "{host}: найдено игр — {count}.",
   "{name} is installed": "{name} установлена",
   "シミュレーター": "Симулятор",
-  "ストラテジー": "Стратегия"
+  "ストラテジー": "Стратегия",
+  "Install after downloading": "Установка после загрузки",
+  "Orbit can install a downloaded PKG on your PS5 as soon as it has been checked. Game images are not installed this way.": "Orbit может установить загруженный PKG на вашу PS5 сразу после проверки. Образы игр таким способом не устанавливаются.",
+  "Install packages after downloading": "Устанавливать пакеты после загрузки",
+  "Don't install packages after downloading": "Не устанавливать пакеты после загрузки"
 }

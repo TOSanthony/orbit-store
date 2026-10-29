@@ -189,6 +189,7 @@ class Client
     // Chooses one of kNotificationEvents; the reply holds all of them.
     Result<std::array<bool, 5>> set_notification_event(int index, bool on);
     Result<bool> set_delete_packages(bool enabled);
+    Result<bool> set_auto_install_packages(bool enabled);
     Result<NtfySettings> ntfy();
     // The body is the whole settings object, password included; it is wiped after sending.
     Result<NtfySettings> save_ntfy(std::string body);

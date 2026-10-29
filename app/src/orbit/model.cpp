@@ -184,6 +184,8 @@ System parse_system(const json::Value &value)
     }
     system.has_delete_packages = value["deletePackages"].is_bool();
     system.delete_packages = value.flag("deletePackages", false);
+    system.has_auto_install_packages = value["autoInstallPackages"].is_bool();
+    system.auto_install_packages = value.flag("autoInstallPackages", false);
     system.ntfy_enabled = value.flag("ntfyEnabled", false);
     {
         const auto connections = value["downloadConnections"].as_int();

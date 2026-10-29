@@ -833,6 +833,7 @@ export default function App() {
           {typeof orbit.system?.deletePackages === "boolean" && (
             <PackageSetting
               enabled={orbit.system.deletePackages}
+              autoInstall={orbit.system.autoInstallPackages}
               refresh={() => orbit.refresh()}
             />
           )}

@@ -6,6 +6,9 @@ void packages_init(void);
 int packages_start(void);
 void packages_stop(void);
 void packages_completed(const Job *pin, const char *origin, const char *output, bool scan);
+/* A finished download: as packages_completed, and with "Install packages after downloading" on, the
+ * checked packages are queued at once. Called with orbit.mutex held. */
+void packages_downloaded(const Job *pin, const char *origin, const char *output);
 cJSON *packages_for_download(const char *origin);
 cJSON *packages_status(void);
 int packages_stream(const cJSON *input, const char *peer, char *error, size_t cap);

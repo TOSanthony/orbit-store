@@ -852,6 +852,16 @@ std::vector<Scenario> scenarios()
             steps.push_back(s);
         list.push_back({"pn-files", Mode::normal, false, steps});
     }
+    // Storage, scrolled to its last settings, then one up: install after downloading, turned on.
+    {
+        std::vector<Step> steps{run(1.5f, [](orbit::App &app) { app.open_settings(orbit::SettingsScreen::Section::storage, true); })};
+        for (int i = 0; i < 24; ++i) steps.push_back(move(Direction::down));
+        steps.push_back(move(Direction::up));
+        steps.push_back(pause(0.8f, "settings-install-off"));
+        steps.push_back(tap(Action::confirm));
+        steps.push_back(pause(1.0f, "settings-install-on"));
+        list.push_back({"settings-install", Mode::normal, false, steps});
+    }
     list.push_back({"settings",
                     Mode::normal,
                     true,

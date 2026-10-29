@@ -1401,7 +1401,7 @@ finish:
         copy_text(j->error, sizeof j->error, t.error[0] ? t.error : "Transfer interrupted.");
     }
     state_save_locked();
-    if (done) packages_completed(j, j->id, j->output[0] ? j->output : j->filename, true);
+    if (done) packages_downloaded(j, j->id, j->output[0] ? j->output : j->filename);
     diagnostics_event_locked("transfer-end", j, t.status, (int)rc);
     char notice[512] = ""; /* a DLC title is "base · title · DLC", as in packages.c */
     if ((done || !strcmp(j->status, "error")) &&

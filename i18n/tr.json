@@ -1972,5 +1972,9 @@
   "{host}: {count} games found.": "{host}: {count} oyun bulundu.",
   "{name} is installed": "{name} yüklendi",
   "シミュレーター": "Simülatör",
-  "ストラテジー": "Strateji"
+  "ストラテジー": "Strateji",
+  "Install after downloading": "İndirdikten sonra yükle",
+  "Orbit can install a downloaded PKG on your PS5 as soon as it has been checked. Game images are not installed this way.": "Orbit, indirilen bir PKG'yi kontrol edilir edilmez PS5'inize yükleyebilir. Oyun imajları bu şekilde yüklenmez.",
+  "Install packages after downloading": "Paketleri indirdikten sonra yükle",
+  "Don't install packages after downloading": "Paketleri indirdikten sonra yükleme"
 }

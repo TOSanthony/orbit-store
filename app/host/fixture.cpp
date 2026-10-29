@@ -657,6 +657,7 @@ http::Response Fixture::send(const http::Request &request)
             ",\"httpPort\":34177,\"downloadNotifications\":" +
             (notifications_ ? "true" : "false") + ",\"notificationEvents\":" + events_json() +
             ",\"deletePackages\":" + (delete_packages_ ? "true" : "false") +
+            ",\"autoInstallPackages\":" + (auto_install_packages_ ? "true" : "false") +
             ",\"downloadConnections\":" + std::to_string(connections_) + "}";
         return response;
     }
@@ -1061,8 +1062,12 @@ http::Response Fixture::send(const http::Request &request)
     if (path == "/api/v1/settings/installation")
     {
         if (!get)
+        {
             delete_packages_ = input.flag("deletePackages", delete_packages_);
-        response.body = std::string("{\"deletePackages\":") + (delete_packages_ ? "true" : "false") + "}";
+            auto_install_packages_ = input.flag("autoInstallPackages", auto_install_packages_);
+        }
+        response.body = std::string("{\"deletePackages\":") + (delete_packages_ ? "true" : "false") +
+            ",\"autoInstallPackages\":" + (auto_install_packages_ ? "true" : "false") + "}";
         return response;
     }
     if (path == "/api/v1/settings/notifications")

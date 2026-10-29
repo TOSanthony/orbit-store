@@ -320,6 +320,7 @@ export interface System {
   downloadNotifications?: boolean;
   notificationEvents?: Record<NotificationEvent, boolean>;
   deletePackages?: boolean;
+  autoInstallPackages?: boolean;
   ntfyEnabled?: boolean;
   concurrentDownloads?: number;
   downloadConnections?: number;

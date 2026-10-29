@@ -1972,5 +1972,9 @@
   "{host}: {count} games found.": "{host}: {count} Spiele gefunden.",
   "{name} is installed": "{name} ist installiert",
   "シミュレーター": "Simulator",
-  "ストラテジー": "Strategie"
+  "ストラテジー": "Strategie",
+  "Install after downloading": "Nach dem Download installieren",
+  "Orbit can install a downloaded PKG on your PS5 as soon as it has been checked. Game images are not installed this way.": "Orbit kann ein heruntergeladenes PKG auf Ihrer PS5 installieren, sobald es geprüft wurde. Spielabbilder werden so nicht installiert.",
+  "Install packages after downloading": "Pakete nach dem Download installieren",
+  "Don't install packages after downloading": "Pakete nach dem Download nicht installieren"
 }

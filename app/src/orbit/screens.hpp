@@ -1346,6 +1346,7 @@ class SettingsScreen final : public Screen
         notifications_toggle,
         notification_event, // index: one of kNotificationEvents
         packages_toggle,
+        auto_install_toggle,
         ntfy_open,
         save_diagnostics,
         view_diagnostics,

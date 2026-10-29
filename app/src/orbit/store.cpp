@@ -1330,6 +1330,19 @@ void Store::run_setting(Command &command)
                 });
         break;
     }
+    case Setting::auto_install_packages:
+    {
+        api::Result<bool> result = client_.set_auto_install_packages(command.flag);
+        error = result.status == 404 ? tr("Update the download service to change this here.") : result.error;
+        if (result.ok())
+            inbox_.post(
+                [this, enabled = result.value]()
+                {
+                    state_.system.auto_install_packages = enabled;
+                    ++state_.serial;
+                });
+        break;
+    }
     case Setting::diagnostics_report:
     {
         api::Result<DiagnosticsReport> result = client_.diagnostics();

@@ -222,6 +222,16 @@ void packages_completed(const Job *pin, const char *origin, const char *output, 
     cJSON_AddItemToArray(receipts, r); dirty = true;
     pthread_cond_signal(&changed); pthread_mutex_unlock(&lock);
 }
+void packages_downloaded(const Job *pin, const char *origin, const char *output) {
+    packages_completed(pin, origin, output, true);
+    if (!orbit.auto_install_packages) return; /* the caller holds orbit.mutex, as for packages_completed */
+    pthread_mutex_lock(&lock);
+    cJSON *r = receipts ? find_origin(origin) : NULL;
+    if (r && !strcmp(json_text(r, "state"), "checking") && !yes(r, "autoInstall")) {
+        cJSON_AddBoolToObject(r, "autoInstall", true); dirty = true;
+    }
+    pthread_mutex_unlock(&lock);
+}
 static bool extension(const char *name, const char *suffix) {
     size_t a = strlen(name), b = strlen(suffix); return a > b && !strcasecmp(name + a - b, suffix);
 }

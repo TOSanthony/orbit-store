@@ -519,6 +519,7 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
         for (unsigned i = 0; notify_event_name(i); i++)
             cJSON_AddBoolToObject(events, notify_event_name(i), orbit.notify_events & (1u << i));
         cJSON_AddBoolToObject(o, "deletePackages", orbit.delete_packages);
+        cJSON_AddBoolToObject(o, "autoInstallPackages", orbit.auto_install_packages);
         cJSON_AddBoolToObject(o, "ntfyEnabled", ntfy_enabled());
         cJSON_AddNumberToObject(o, "concurrentDownloads", orbit.concurrent_downloads);
         cJSON_AddNumberToObject(o, "downloadConnections", orbit.download_connections);
@@ -789,17 +790,20 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
         }
         if ((get || post) && !strcmp(url, "/api/v1/settings/installation")) {
             const cJSON *value = cJSON_GetObjectItemCaseSensitive(input, "deletePackages");
-            if (post && !cJSON_IsBool(value)) {
+            const cJSON *install = cJSON_GetObjectItemCaseSensitive(input, "autoInstallPackages");
+            if (post && ((value && !cJSON_IsBool(value)) || (install && !cJSON_IsBool(install)) || (!value && !install))) {
                 cJSON_Delete(input);
-                return error(c, 400, "Expected deletePackages.");
+                return error(c, 400, "Expected deletePackages or autoInstallPackages.");
             }
             pthread_mutex_lock(&orbit.mutex);
-            bool previous = orbit.delete_packages;
-            if (post) orbit.delete_packages = cJSON_IsTrue(value);
+            bool previous = orbit.delete_packages, previous_install = orbit.auto_install_packages;
+            if (post && value) orbit.delete_packages = cJSON_IsTrue(value);
+            if (post && install) orbit.auto_install_packages = cJSON_IsTrue(install);
             int rc = post ? state_save_locked() : 0;
-            if (rc) orbit.delete_packages = previous;
+            if (rc) { orbit.delete_packages = previous; orbit.auto_install_packages = previous_install; }
             cJSON *o = cJSON_CreateObject();
             cJSON_AddBoolToObject(o, "deletePackages", orbit.delete_packages);
+            cJSON_AddBoolToObject(o, "autoInstallPackages", orbit.auto_install_packages);
             pthread_mutex_unlock(&orbit.mutex);
             cJSON_Delete(input);
             if (rc) {
