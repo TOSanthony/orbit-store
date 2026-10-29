@@ -32,8 +32,8 @@ std::string game_note(const Snapshot &state, const Game &game, bool big, char gr
         more = game.release_date.empty() ? std::string() : format_date(game.release_date);
     else if (group == 'a')
         more = !game.releases.empty() && game.releases.front().platform == "ps4" ? "PS4" : "PS5";
-    else if (!game.releases.empty() && game.releases.front().size_bytes > 0.0)
-        more = format_bytes(game.releases.front().size_bytes);
+    else if (!game.releases.empty() && listed_size(game.releases.front()) > 0.0)
+        more = format_bytes(listed_size(game.releases.front()));
     if (!more.empty())
         note += (note.empty() ? "" : " \xC2\xB7 ") + more;
     return note;
@@ -281,8 +281,8 @@ void xb_game_row(const Snapshot &state, const Game &game, xb::Row &row, bool dat
         if (now.job != nullptr && now.job->delivery == "torbox")
             sub += " \xC2\xB7 " + std::string(tr("via TorBox"));
     }
-    else if (!game.releases.empty() && game.releases.front().size_bytes > 0.0)
-        sub += " \xC2\xB7 " + format_bytes(game.releases.front().size_bytes);
+    else if (!game.releases.empty() && listed_size(game.releases.front()) > 0.0)
+        sub += " \xC2\xB7 " + format_bytes(listed_size(game.releases.front()));
     row.sub = std::move(sub);
 }
 

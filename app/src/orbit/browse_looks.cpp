@@ -977,7 +977,7 @@ pano::Page BrowseScreen::panorama_page() const
                 const bool ps4 = !game.releases.empty() && game.releases.front().platform == "ps4";
                 std::string more = ps4 ? "PS4" : "PS5";
                 if (search)
-                    more = !game.releases.empty() && game.releases.front().size_bytes > 0.0 ? format_bytes(game.releases.front().size_bytes)
+                    more = !game.releases.empty() && listed_size(game.releases.front()) > 0.0 ? format_bytes(listed_size(game.releases.front()))
                                                                                             : std::string();
                 if (gs.label != nullptr && gs.label[0] != '\0')
                     tile.sub = pano::lower(gs.label);

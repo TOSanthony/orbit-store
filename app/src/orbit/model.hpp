@@ -788,6 +788,9 @@ std::string app_release_version(std::string_view content_version);
 bool check_fresh(double checked_at, double now);
 
 // ---- formatting ----
+// The size a game takes once installed: unpacked when the download is an archive and the catalogue
+// knows it, else the download itself. Lists and tiles show this; the Download button shows the download.
+double listed_size(const Release &release);
 std::string format_bytes(double bytes);        // "12.4 GB", "512.0 MB" (as the web app)
 std::string format_date(std::string_view iso); // "Feb 15, 2022"
 // How long ago, relative ("just now", "12 min ago", "3 h ago", "2 days ago",

@@ -1587,6 +1587,11 @@ const char *job_view_label(JobView view)
     }
 }
 
+double listed_size(const Release &release)
+{
+    return !release.compression.empty() && release.extracted_bytes > 0.0 ? release.extracted_bytes : release.size_bytes;
+}
+
 std::string format_bytes(double bytes)
 {
     // 49.4 GB in English, 49,4 GB in German, 49,4 ГБ in Russian.

@@ -610,8 +610,8 @@ void draw_preview(Context &ctx, hui::gfx::DrawList &out, const Game &game, float
     if (!game.releases.empty())
     {
         chips.push_back(game.releases.front().platform == "ps4" ? "PS4" : "PS5");
-        if (game.releases.front().size_bytes > 0.0)
-            chips.push_back(format_bytes(game.releases.front().size_bytes));
+        if (listed_size(game.releases.front()) > 0.0)
+            chips.push_back(format_bytes(listed_size(game.releases.front())));
     }
     top += 18.0f;
     float cx = x;
