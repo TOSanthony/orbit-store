@@ -13,6 +13,24 @@ namespace orbit
 namespace
 {
 
+TEST(Model, ListedSizeIsTheSizeAfterExtractingForArchives)
+{
+    Release zip;
+    zip.size_bytes = 33.8e9;
+    zip.compression = "zip";
+    zip.extracted_bytes = 61.5e9;
+    EXPECT_DOUBLE_EQ(listed_size(zip), 61.5e9);
+
+    Release unknown = zip; // the extracted size is not known: fall back to the download
+    unknown.extracted_bytes = 0.0;
+    EXPECT_DOUBLE_EQ(listed_size(unknown), 33.8e9);
+
+    Release plain; // not an archive: the extracted size, if any, is ignored
+    plain.size_bytes = 12.0e9;
+    plain.extracted_bytes = 50.0e9;
+    EXPECT_DOUBLE_EQ(listed_size(plain), 12.0e9);
+}
+
 TEST(Downloads, ArchiveTransferUsesExtractedSizeAndNeverNegativeETA)
 {
     Job job;
