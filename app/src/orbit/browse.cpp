@@ -10,9 +10,12 @@
 #include "orbit/json.hpp"
 #include "orbit/look.hpp"
 
+#include "core/save_file.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstring>
 
 namespace orbit
 {
@@ -73,6 +76,77 @@ BrowseScreen::BrowseScreen(Context &context, bool addons, bool apps) : Screen(co
     keyboard_.set_bounds({ui::kGutter + 220.0f, kKeyboardTop + 40.0f, 1280.0f, 400.0f});
 }
 
+namespace
+{
+std::string &prefs_path()
+{
+    static std::string path;
+    return path;
+}
+} // namespace
+
+void BrowseScreen::set_prefs_path(const std::string &path)
+{
+    prefs_path() = path;
+}
+
+// One file, one entry per page: "games" (Browse), "apps" and "addons".
+void BrowseScreen::load_prefs()
+{
+    if (prefs_loaded_)
+        return;
+    prefs_loaded_ = true;
+    std::string text;
+    if (prefs_path().empty() || !hui::save::read_file(prefs_path(), &text, 64u << 10))
+        return;
+    json::Value doc;
+    if (!json::parse(text, &doc) || !doc.is_object())
+        return;
+    browse_filters_apply(doc[apps_ ? "apps" : addons_ ? "addons" : "games"], &filters_);
+    prefs_saved_ = browse_filters_json(filters_);
+}
+
+void BrowseScreen::save_prefs()
+{
+    // A game's add-ons open with fresh filters; the ones kept stay as they were.
+    if (prefs_path().empty() || !filters_.addon_base.empty())
+        return;
+    const std::string mine = browse_filters_json(filters_);
+    if (mine == prefs_saved_)
+        return;
+    const char *const keys[] = {"games", "apps", "addons"};
+    const char *const own = apps_ ? "apps" : addons_ ? "addons" : "games";
+    std::string text, out = "{";
+    json::Value doc;
+    const bool have = hui::save::read_file(prefs_path(), &text, 64u << 10) && json::parse(text, &doc) && doc.is_object();
+    for (const char *key : keys)
+    {
+        std::string entry;
+        if (!std::strcmp(key, own))
+            entry = mine;
+        else if (have && doc[key].is_object())
+        {
+            BrowseFilters other;
+            browse_filters_apply(doc[key], &other);
+            entry = browse_filters_json(other);
+        }
+        if (entry.empty())
+            continue;
+        if (out.size() > 1)
+            out += ",";
+        out += "\"" + std::string(key) + "\":" + entry;
+    }
+    out += "}\n";
+    const std::size_t slash = prefs_path().rfind('/');
+    if (slash != std::string::npos && slash > 0)
+        (void)hui::save::ensure_directory(prefs_path().substr(0, slash));
+    const std::string error = hui::save::write_atomic(prefs_path(), out);
+    if (!error.empty())
+        std::fprintf(stderr, "[ORBIT] browse filters save failed: %s\n", error.c_str());
+    else
+        prefs_saved_ = mine;
+}
+
 void BrowseScreen::retranslate()
 {
     keyboard_.style.done_label = tr("Done");
@@ -80,6 +154,12 @@ void BrowseScreen::retranslate()
 
 void BrowseScreen::refilter()
 {
+    load_prefs();
+    struct Keep // whichever way refiltering ends, what the player chose is kept
+    {
+        BrowseScreen *screen;
+        ~Keep() { screen->save_prefs(); }
+    } keep{this};
     const Snapshot &state = ctx_.store.state();
     catalog_serial_ = state.catalog_serial;
     favourites_serial_ = state.serial;
@@ -495,7 +575,9 @@ void BrowseScreen::choose(int filter, int option)
 void BrowseScreen::focus()
 {
     search_mode_ = false;
-    if (catalog_serial_ != ctx_.store.state().catalog_serial)
+    const bool first = !prefs_loaded_;
+    load_prefs();
+    if (first || catalog_serial_ != ctx_.store.state().catalog_serial)
         refilter();
 }
 
@@ -640,7 +722,7 @@ Intent BrowseScreen::update(const InputFrame &input, float dt, Feedback &feedbac
     if (focused && addons_ && !grouped() && input.is_pressed(Action::back) && !modal() && filters_.query.empty())
     {
         feedback.play(hui::audio::Cue::modal_close);
-        filters_.addon_base.clear();
+        leave_base();
         index_ = 0;
         refilter();
         return intent;
@@ -748,7 +830,7 @@ Intent BrowseScreen::update(const InputFrame &input, float dt, Feedback &feedbac
                 if (area_ == Area::collection)
                 {
                     const bool favourites = !addons_ && column_ == 1;
-                    if (addons_) filters_.addon_base.clear();
+                    if (addons_) leave_base();
                     if (favourites && !state.paired)
                     {
                         refuse(feedback, input);

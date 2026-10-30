@@ -170,6 +170,8 @@ int main()
                                           { sys::log("[ORBIT] %s", line.c_str()); });
     // The interface and language chosen in App settings → Appearance, kept on this console.
     orbit::look::load(orbit::look::kPrefsPath);
+    // The filters and sort of Browse, Apps and Add-ons, kept next to it.
+    orbit::BrowseScreen::set_prefs_path(orbit::look::kBrowsePrefsPath);
     sys::log("[ORBIT] appearance=%s path=%s", orbit::look::title(orbit::look::current()), orbit::look::kPrefsPath);
     // The language, before anything shows or reports text: the one chosen, else the
     // console's own. SCE_SYSTEM_SERVICE_PARAM_ID_LANG is 1; English when Orbit has no catalogue.

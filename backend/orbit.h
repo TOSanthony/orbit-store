@@ -146,7 +146,7 @@ typedef struct {
     unsigned notify_events; /* NOTIFY_* events that reach the PS5 and ntfy. */
     char notified_update[64]; /* The Orbit release last announced as available. */
     bool delete_packages; /* Remove a downloaded PKG once the PS5 reports it installed. */
-    bool auto_install_packages; /* Install a downloaded PKG as soon as it is checked ("autoInstallPackages"); off by default. */
+    bool auto_install_packages; /* Install a downloaded PKG as soon as it is checked ("autoInstallPackages"); on by default. */
     unsigned download_connections; /* Ranges a new download is split into, 1–ORBIT_MAX_RANGES. */
     bool queue_backup_created;
     atomic_bool stop;

@@ -525,6 +525,38 @@ std::string saved_filter_body(std::string_view name, bool addons, const BrowseFi
            ",\"sort\":\"" + sort + "\",\"addonType\":" + json::quote(f.addon_type) + "}}";
 }
 
+std::string browse_filters_json(const BrowseFilters &f)
+{
+    return "{\"source\":" + string_list(f.sources) + ",\"format\":" + string_list(f.formats) +
+           ",\"tags\":" + string_list(f.tags) + ",\"region\":" + json::quote(f.region) +
+           ",\"platform\":" + json::quote(f.platform) + ",\"size\":\"" + kSizeIds[static_cast<int>(f.size)] +
+           "\",\"collection\":\"" + (f.favourites ? "favorites" : "all") + "\",\"hideInstalled\":" +
+           (f.hide_installed ? "true" : "false") + ",\"sort\":\"" + kSortIds[static_cast<int>(f.sort)] +
+           "\",\"addonType\":" + json::quote(f.addon_type) + "}";
+}
+
+void browse_filters_apply(const json::Value &v, BrowseFilters *f)
+{
+    if (!v.is_object())
+        return;
+    f->sources = strings(v["source"]);
+    f->formats = strings(v["format"]);
+    f->tags = strings(v["tags"]);
+    f->region = v.text("region");
+    f->platform = v.text("platform");
+    f->addon_type = v.text("addonType");
+    f->favourites = v.text("collection") == "favorites";
+    f->hide_installed = v.flag("hideInstalled");
+    f->size = SizeFilter::any;
+    for (int i = 0; i < static_cast<int>(SizeFilter::count); ++i)
+        if (v.text("size") == kSizeIds[i])
+            f->size = static_cast<SizeFilter>(i);
+    f->sort = Sort::release;
+    for (int i = 0; i < static_cast<int>(Sort::count); ++i)
+        if (v.text("sort") == kSortIds[i])
+            f->sort = static_cast<Sort>(i);
+}
+
 std::vector<std::string> parse_favourites(const json::Value &value)
 {
     std::vector<std::string> ids;

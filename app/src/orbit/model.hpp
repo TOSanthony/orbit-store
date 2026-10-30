@@ -695,6 +695,10 @@ struct SavedFilter
 std::vector<SavedFilter> parse_saved_filters(const json::Value &value);
 // The request that saves filters under a name, replacing the page's filter of that name.
 std::string saved_filter_body(std::string_view name, bool addons, const BrowseFilters &filters);
+// What Browse, Apps and Add-ons keep between launches: the filters and the sort, not the search,
+// the game whose add-ons are open, or the page itself.
+std::string browse_filters_json(const BrowseFilters &filters);
+void browse_filters_apply(const json::Value &value, BrowseFilters *filters);
 // Indices of the games with an option matching every filter, in order. Size
 // sorting uses the smallest option that matches.
 std::vector<int> browse(const std::vector<Game> &games, const BrowseFilters &filters,

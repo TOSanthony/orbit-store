@@ -26,6 +26,7 @@ Orbit orbit = {.releases = releases,
                .port = ORBIT_HTTP_PORT,
                .state_fd = -1,
                .delete_archives = true,
+               .auto_install_packages = true, /* PKGs install once downloaded and checked, unless turned off in Settings */
                .own_dns = true, /* Sony's hosts resolved through Orbit's own DNS (changeable in Settings) */
                .sound_volume = 50,
                .download_notifications = true,

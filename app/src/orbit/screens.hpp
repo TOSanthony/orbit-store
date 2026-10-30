@@ -386,7 +386,27 @@ class BrowseScreen final : public Screen
   public:
     // apps: the NAS apps (tagline APPS) instead of the games; Browse itself leaves apps, DLC and update packs out.
     explicit BrowseScreen(Context &context, bool addons = false, bool apps = false);
-    void for_base(const std::string &base) { filters_ = BrowseFilters{}; filters_.addon_base = base; index_ = 0; refilter(); }
+    // Where the filters of Browse, Apps and Add-ons are kept between launches; empty keeps them in memory.
+    static void set_prefs_path(const std::string &path);
+    // One game's add-ons open with fresh filters; leaving them brings back the ones the player had.
+    void for_base(const std::string &base)
+    {
+        if (filters_.addon_base.empty())
+            before_base_ = filters_;
+        filters_ = BrowseFilters{};
+        filters_.addon_base = base;
+        index_ = 0;
+        refilter();
+    }
+    void leave_base()
+    {
+        if (filters_.addon_base.empty())
+            return;
+        const std::string query = filters_.query;
+        filters_ = before_base_;
+        filters_.query = query;
+        filters_.addon_base.clear();
+    }
     // The Add-ons tab first lists the games that have add-ons, one tile each; a game's tile opens its add-ons.
     bool grouped() const { return addons_ && filters_.addon_base.empty(); }
     bool open_group(const std::string &id)
@@ -404,6 +424,11 @@ class BrowseScreen final : public Screen
     int result_count() const { return static_cast<int>(results_.size()); }
     bool addons_ = false;
     bool apps_ = false;
+    void load_prefs();
+    void save_prefs();
+    bool prefs_loaded_ = false;
+    BrowseFilters before_base_;
+    std::string prefs_saved_;
     std::vector<Game> groups_; // the games that have add-ons (see grouped())
     void focus() override;
     void retranslate() override;

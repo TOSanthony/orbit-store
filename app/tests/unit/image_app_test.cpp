@@ -5,6 +5,7 @@
 #include "orbit/download_settings.hpp"
 #include "orbit/i18n.hpp"
 #include "orbit/image.hpp"
+#include "orbit/json.hpp"
 #include "orbit/mark.hpp"
 #include "orbit/screens.hpp"
 #include "support.hpp"
@@ -16,6 +17,8 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <fstream>
+#include <unistd.h>
 #include <random>
 
 namespace orbit
@@ -653,6 +656,96 @@ TEST(App, AFavouriteFromAGamePageShowsUnderBrowseFavourites)
     EXPECT_EQ(h.app.browse().filters().query, "");
 }
 
+namespace
+{
+// Points Browse's saved filters at a scratch file for one test, then back at memory.
+struct BrowsePrefsFile
+{
+    std::string path;
+    BrowsePrefsFile(const std::string &content)
+    {
+        char name[] = "/tmp/orbit-browse-test-XXXXXX";
+        const int fd = mkstemp(name);
+        if (fd >= 0)
+            close(fd);
+        path = name;
+        write(content);
+        BrowseScreen::set_prefs_path(path);
+    }
+    ~BrowsePrefsFile()
+    {
+        BrowseScreen::set_prefs_path("");
+        std::remove(path.c_str());
+    }
+    void write(const std::string &content) const
+    {
+        std::ofstream(path, std::ios::trunc) << content;
+    }
+    std::string read() const
+    {
+        std::ifstream in(path);
+        return {std::istreambuf_iterator<char>(in), {}};
+    }
+};
+} // namespace
+
+TEST(App, BrowseFiltersRoundTripWithoutTheSearch)
+{
+    BrowseFilters kept;
+    kept.query = "not kept";
+    kept.addon_base = "not kept either";
+    kept.sort = Sort::title_desc;
+    kept.size = SizeFilter::large;
+    kept.formats = {"exfat"};
+    kept.sources = {"nas"};
+    kept.region = "EUR";
+    kept.hide_installed = true;
+    json::Value doc;
+    ASSERT_TRUE(json::parse(browse_filters_json(kept), &doc));
+    BrowseFilters back;
+    browse_filters_apply(doc, &back);
+    EXPECT_EQ(back.sort, Sort::title_desc);
+    EXPECT_EQ(back.size, SizeFilter::large);
+    EXPECT_EQ(back.formats, kept.formats);
+    EXPECT_EQ(back.sources, kept.sources);
+    EXPECT_EQ(back.region, "EUR");
+    EXPECT_TRUE(back.hide_installed);
+    EXPECT_TRUE(back.query.empty());
+    EXPECT_TRUE(back.addon_base.empty());
+}
+
+TEST(App, BrowseKeepsItsFiltersBetweenLaunchesPerPage)
+{
+    AppHarness h;
+    BrowsePrefsFile file(R"({"games":{"sort":"title","format":["exfat"]},"addons":{"sort":"size-desc"}})");
+    const std::string original = file.read();
+    BrowseScreen games(h.context), addons(h.context, true), apps(h.context, false, true);
+    games.focus();
+    addons.focus();
+    apps.focus();
+    EXPECT_EQ(games.filters().sort, Sort::title);
+    EXPECT_EQ(games.filters().formats, std::vector<std::string>{"exfat"});
+    EXPECT_EQ(addons.filters().sort, Sort::size_desc);
+    EXPECT_EQ(apps.filters().sort, Sort::release); // nothing kept for Apps yet
+    // Nothing changed, so nothing was written.
+    EXPECT_EQ(file.read(), original);
+}
+
+TEST(App, AddonsOfOneGameDoNotReplaceTheKeptFilters)
+{
+    AppHarness h;
+    BrowsePrefsFile file(R"({"addons":{"sort":"title"}})");
+    BrowseScreen addons(h.context, true);
+    addons.focus();
+    ASSERT_EQ(addons.filters().sort, Sort::title);
+    addons.for_base("some-game"); // fresh filters while a game's add-ons are open
+    EXPECT_EQ(addons.filters().sort, Sort::release);
+    EXPECT_NE(file.read().find("\"sort\":\"title\""), std::string::npos);
+    addons.leave_base();
+    EXPECT_EQ(addons.filters().sort, Sort::title);
+    EXPECT_TRUE(addons.filters().addon_base.empty());
+}
+
 TEST(App, BrowseRegionPickerReturnsToMatchingGrid)
 {
     AppHarness h;
@@ -674,6 +767,34 @@ TEST(App, BrowseRegionPickerReturnsToMatchingGrid)
     EXPECT_EQ(screen.filters().region, "EUR");
     input(Direction::down); // leave closed dropdown for matching grid
     EXPECT_EQ(input(Direction::none, true).id, "ember-hollow");
+}
+
+TEST(App, BrowseSavesAFilterAsSoonAsItIsChosen)
+{
+    AppHarness h;
+    BrowsePrefsFile file("{}");
+    {
+        BrowseScreen screen(h.context);
+        screen.focus();
+        const auto input = [&](Direction direction, bool confirm = false)
+        {
+            InputFrame frame;
+            frame.connected = true;
+            frame.nav = direction;
+            if (confirm)
+                frame.pressed = hui::action_bit(Action::confirm);
+            return screen.update(frame, 1.0f / 60.0f, h.feedback, true);
+        };
+        input(Direction::down); // Region
+        input(Direction::none, true);
+        input(Direction::down); // EUR
+        input(Direction::none, true);
+        ASSERT_EQ(screen.filters().region, "EUR");
+    }
+    EXPECT_NE(file.read().find("\"region\":\"EUR\""), std::string::npos);
+    BrowseScreen again(h.context); // the next launch
+    again.focus();
+    EXPECT_EQ(again.filters().region, "EUR");
 }
 
 TEST(App, DiscoverFavouriteTogglesFromTheHeroWithoutOpeningAGame)
@@ -1168,22 +1289,22 @@ TEST(App, DeletePackagesToggleFromStorage)
     EXPECT_TRUE(h.store.state().system.delete_packages); // the service keeps it
 }
 
-TEST(App, AutoInstallPackagesIsOffByDefaultAndKeptByTheService)
+TEST(App, AutoInstallPackagesIsOnByDefaultAndKeptByTheService)
 {
     AppHarness h;
     h.store.poll_once();
     h.settle();
     ASSERT_TRUE(h.store.state().system.has_auto_install_packages);
-    EXPECT_FALSE(h.store.state().system.auto_install_packages);
-    h.store.set_auto_install_packages(true);
+    EXPECT_TRUE(h.store.state().system.auto_install_packages);
+    h.store.set_auto_install_packages(false);
     h.store.run_next_action();
     h.settle();
-    EXPECT_TRUE(h.store.state().system.auto_install_packages);
+    EXPECT_FALSE(h.store.state().system.auto_install_packages);
     EXPECT_FALSE(h.store.state().system.delete_packages); // the other setting is untouched
     EXPECT_EQ(h.transport.count("/api/v1/settings/installation"), 1);
     h.store.poll_once();
     h.settle();
-    EXPECT_TRUE(h.store.state().system.auto_install_packages);
+    EXPECT_FALSE(h.store.state().system.auto_install_packages);
 }
 
 TEST(App, ConnectionsPerDownloadStepThroughPresets)

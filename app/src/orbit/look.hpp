@@ -17,6 +17,7 @@ namespace orbit::look
 // Native titles cannot write the service's /data directory. /download0 is
 // the title's persistent writable mount, also used by its runtime logs.
 inline constexpr const char *kPrefsPath = "/download0/orbit-store/appearance.json";
+inline constexpr const char *kBrowsePrefsPath = "/download0/orbit-store/browse-filters.json";
 
 enum class Interface : std::uint8_t
 {
