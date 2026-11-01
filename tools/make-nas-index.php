@@ -50,12 +50,13 @@ $ALLOW_LINKS   = true;                                  // Réglages : choisir u
 $LINK_ROOTS    = ['/volume*'];                          // où le sélecteur de dossier a le droit de naviguer (volumes du Synology)
 $FETCH_SCRIPT  = __DIR__ . '/fetch-patch.py';           // téléchargeur de patchs PS5 (serveurs Sony)
 $PATCH_TIMEOUT = 21600;                                 // secondes max pour un téléchargement de patch (6 h)
+$STATE_DIR     = '';                                    // où garder les petits fichiers d'état (blocage de connexion, actualisation en cours...) ; vide = dossier temporaire de PHP
 $CONSOLE_FW    = '';                                    // firmware de ta PS5 (ex. '10.20') : sert à repérer les patchs compatibles
 // ---------------------------------------------------------------------------
 
 // Réglages personnels : config.php (à côté de ce fichier) puis, pour compatibilité, nas-admin.config.php.
 // Remplacer make-nas-index.php / make-nas-index.py ne touche jamais à ces fichiers.
-const CONFIG_KEYS = ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_PROVIDER','AI_BASE','AI_API_KEYS','AI_MODEL','DESC_URLS','IGDB_CLIENT_ID','IGDB_CLIENT_SECRET','IGDB_ACCESS_TOKEN','AI_MAX','AI_LANG','UPDATE_REPO','UPDATE_BRANCH','ALLOW_LINKS','LINK_ROOTS','FETCH_SCRIPT','PATCH_TIMEOUT','CONSOLE_FW'];
+const CONFIG_KEYS = ['SITE_NAME','PASSWORD_HASH','GAMES_DIR','SCRIPT','PYTHON','TIMEOUT','SESSION_MIN','MAX_FAILS','LOCK_MIN','GEMINI_KEYS','GEMINI_MODEL','AI_PROVIDER','AI_BASE','AI_API_KEYS','AI_MODEL','DESC_URLS','IGDB_CLIENT_ID','IGDB_CLIENT_SECRET','IGDB_ACCESS_TOKEN','AI_MAX','AI_LANG','UPDATE_REPO','UPDATE_BRANCH','ALLOW_LINKS','LINK_ROOTS','FETCH_SCRIPT','PATCH_TIMEOUT','CONSOLE_FW','STATE_DIR'];
 foreach ([__DIR__ . '/nas-admin.config.php', __DIR__ . '/config.php'] as $extra) {
     if (!is_file($extra)) continue;
     $cfg = require $extra;
@@ -166,10 +167,22 @@ function run_refresh(bool $sha256, bool $refreshCovers, bool $param = true, bool
 // ---- Actualisation en arrière-plan (web) --------------------------------------
 // La page répond tout de suite ; Python tourne détaché et la page suit son avancement.
 // Cela évite le « Gateway Timeout » du reverse proxy sur les longues actualisations.
+/** Dossier des fichiers d'état : $STATE_DIR (créé au besoin, fermé au web sous Apache) ou, à défaut, le dossier temporaire de PHP. */
+function state_dir(): string
+{
+    global $STATE_DIR;
+    $dir = rtrim(trim((string)$STATE_DIR), '/');
+    if ($dir === '') return sys_get_temp_dir();
+    if (!is_dir($dir)) @mkdir($dir, 0700, true);
+    if (!is_dir($dir) || !is_writable($dir)) return sys_get_temp_dir();
+    if (!is_file("$dir/.htaccess")) @file_put_contents("$dir/.htaccess", "Require all denied\n");   // Apache ; Nginx l'ignore : préfère alors un dossier hors du site
+    return $dir;
+}
+
 function job_base(): string
 {
     global $GAMES_DIR;
-    return sys_get_temp_dir() . '/orbit-nas-job-' . sha1((string)$GAMES_DIR);
+    return state_dir() . '/orbit-nas-job-' . sha1((string)$GAMES_DIR);
 }
 
 /** @return array{state:string,elapsed:int,ok:bool,log:string,at:int} idle | running | done */
@@ -266,7 +279,7 @@ function patch_list(string $id, string $consoleFw): array
 {
     $out = ['error' => '', 'patches' => []];
     if (!preg_match('/^PPSA\d{5}$/', $id)) { $out['error'] = 'Identifiant invalide.'; return $out; }
-    $cache = sys_get_temp_dir() . '/orbit-nas-patches-' . $id . '.json';
+    $cache = state_dir() . '/orbit-nas-patches-' . $id . '.json';
     $raw = null;
     if (is_file($cache) && time() - (int)@filemtime($cache) < 600) $raw = (string)@file_get_contents($cache);
     if ($raw === null || $raw === '') {
@@ -579,7 +592,7 @@ function csrf_ok(string $csrf): bool
 
 // ---- Connexion (avec frein anti force brute) ---------------------------------
 $loginError = '';
-$throttle = sys_get_temp_dir() . '/orbit-nas-login-' . sha1((string)($_SERVER['REMOTE_ADDR'] ?? '?')) . '.json';
+$throttle = state_dir() . '/orbit-nas-login-' . sha1((string)($_SERVER['REMOTE_ADDR'] ?? '?')) . '.json';
 if (!$logged && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'login') {
     $state = is_file($throttle) ? (json_decode((string)file_get_contents($throttle), true) ?: []) : [];
     if (($state['until'] ?? 0) > $now) {
@@ -708,7 +721,7 @@ function github_versions(string $repo, string $branch, bool $force): array
         $out['error'] = 'Dépôt ou branche invalide (UPDATE_REPO / UPDATE_BRANCH).';
         return $out;
     }
-    $cache = sys_get_temp_dir() . '/orbit-nas-versions-' . md5($repo . '|' . $branch) . '.json';
+    $cache = state_dir() . '/orbit-nas-versions-' . md5($repo . '|' . $branch) . '.json';
     if (!$force && is_file($cache) && time() - (int)filemtime($cache) < 600) {
         $saved = json_decode((string)@file_get_contents($cache), true);
         if (is_array($saved) && ($saved['repo'] ?? '') === $repo) return $saved + $out;

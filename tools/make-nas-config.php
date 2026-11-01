@@ -34,5 +34,6 @@ return [
     // 'LINK_ROOTS' => ['/volume*'],   // où le sélecteur de dossier a le droit de naviguer (volumes du Synology)
     // 'FETCH_SCRIPT' => __DIR__ . '/fetch-patch.py',   // téléchargeur de patchs PS5 (serveurs Sony)
     // 'PATCH_TIMEOUT' => 21600,   // secondes max pour un téléchargement de patch (6 h)
+    // 'STATE_DIR' => __DIR__ . '/.orbit-state',   // petits fichiers d'état (blocage de connexion, actualisation) : ici, à côté du site, au lieu du dossier temporaire de PHP
     // 'CONSOLE_FW' => '',   // firmware de ta PS5 (ex. '10.20') : sert à repérer les patchs compatibles
 ];
