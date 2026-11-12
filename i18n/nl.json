@@ -1976,5 +1976,6 @@
   "Install after downloading": "Installeren na het downloaden",
   "Orbit can install a downloaded PKG on your PS5 as soon as it has been checked. Game images are not installed this way.": "Orbit kan een gedownload PKG op je PS5 installeren zodra het is gecontroleerd. Spelimages worden zo niet geïnstalleerd.",
   "Install packages after downloading": "Pakketten installeren na het downloaden",
-  "Don't install packages after downloading": "Pakketten niet installeren na het downloaden"
+  "Don't install packages after downloading": "Pakketten niet installeren na het downloaden",
+  "Uninstall it and remove its files from the drive.": "Verwijdert het en wist de bestanden van de schijf."
 }

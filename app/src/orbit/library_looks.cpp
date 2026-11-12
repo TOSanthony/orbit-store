@@ -82,7 +82,7 @@ std::vector<LibraryScreen::XbEntry> LibraryScreen::crossbar_entries() const
     std::vector<XbEntry> out;
     if (!selected_.empty())
     {
-        // A game: mount or unmount, copy, move; or details only.
+        // A game: mount or unmount, copy, move, delete; or details only.
         const LibraryGame *game = selected_game();
         if (game == nullptr)
             return {{'x', 0}};
@@ -93,6 +93,8 @@ std::vector<LibraryScreen::XbEntry> LibraryScreen::crossbar_entries() const
             out.push_back({'C', 0});
         if (transfer && library.can("move_game_source") && library.can("storage_job_status"))
             out.push_back({'V', 0});
+        if (transfer)
+            out.push_back({'X', 0}); // delete the game: uninstall it and remove its image or dump
         if (out.empty())
             out.push_back({'D', 0});
         return out;
@@ -332,6 +334,15 @@ xb::List LibraryScreen::crossbar_list() const
                               (game->on_drive ? tr("Available on drive") : tr("Unavailable; the drive or source may be missing"));
                 row.off = blocked;
             }
+            else if (entry.kind == 'X')
+            {
+                row.key = "delete";
+                row.icon = icons::Icon::trash;
+                row.title = tr("Delete game");
+                row.off = blocked || (game != nullptr && game->mounted);
+                row.sub = game != nullptr && game->mounted ? tr("Unmount this game before deleting it.")
+                                                           : tr("Uninstall it and remove its files from the drive.");
+            }
             else
             {
                 row.key = entry.kind == 'C' ? "copy" : "move";
@@ -368,6 +379,12 @@ xb::Band LibraryScreen::crossbar_band() const
             band.title = tr("Unmount this game?");
             band.body = tr("Close the game on your PS5 before unmounting its source.");
         }
+        else if (mode_ == 4)
+        {
+            band.title = tr("Delete {title}?", {{"title", game->title}});
+            band.body = tr("This uninstalls the game from the console and removes its source files from the drive. This cannot be undone.");
+            band.note = tr("From {path}", {{"path", game->path}});
+        }
         else
         {
             band.kicker = mode_ == 2 ? tr("Copy {title}", {{"title", game->title}}) : tr("Move {title}", {{"title", game->title}});
@@ -402,6 +419,7 @@ xb::Band LibraryScreen::crossbar_band() const
         }
         const char *confirm = ctx_.store.library_action().busy ? tr("Starting\xE2\x80\xA6")
                               : mode_ == 1                     ? tr("Confirm unmount")
+                              : mode_ == 4                     ? tr("Confirm deletion")
                               : mode_ == 2                     ? tr("Start copy")
                                                                : tr("Confirm move");
         band.buttons = {confirm, tr("Back")};
@@ -538,11 +556,11 @@ void LibraryScreen::update_band(const InputFrame &input, Feedback &feedback)
             else
                 run_library("scan", true, nullptr, {}, 0, feedback);
         }
-        else if (game == nullptr || blocked || library.stale || !game->on_drive || (mode_ >= 2 && destination_id_.empty()))
+        else if (game == nullptr || blocked || library.stale || !game->on_drive || ((mode_ == 2 || mode_ == 3) && destination_id_.empty()))
             refuse(feedback, input);
         else
-            run_library(mode_ == 1 ? "unmount" : mode_ == 2 ? "copy" : "move", true, game,
-                        mode_ >= 2 ? destination_id_ : std::string(), 0, feedback);
+            run_library(mode_ == 1 ? "unmount" : mode_ == 2 ? "copy" : mode_ == 4 ? "delete" : "move", true, game,
+                        (mode_ == 2 || mode_ == 3) ? destination_id_ : std::string(), 0, feedback);
     }
 }
 
@@ -728,6 +746,12 @@ Intent LibraryScreen::update_crossbar(const InputFrame &input, float dt, Feedbac
                     xb_band_ = 0;
                     feedback.play(hui::audio::Cue::modal_open);
                 }
+            }
+            else if (key == "delete" && game != nullptr && !game->mounted)
+            {
+                mode_ = 4;
+                xb_band_ = 1; // on "Back": a deletion is never one press from the row
+                feedback.play(hui::audio::Cue::modal_open);
             }
             else if ((key == "copy" || key == "move") && game != nullptr)
             {
@@ -975,6 +999,8 @@ std::vector<std::pair<char, std::string>> LibraryScreen::panorama_actions(const 
         out.emplace_back('C', tr("Copy to drive"));
     if (transfer && library.can("move_game_source") && library.can("storage_job_status"))
         out.emplace_back('V', tr("Move to drive"));
+    if (transfer)
+        out.emplace_back('X', tr("Delete game"));
     out.emplace_back('D', tr("Details"));
     return out;
 }
@@ -1110,6 +1136,7 @@ pano::Page LibraryScreen::panorama_page() const
             tile.icon = kind == 'M'   ? (mounted ? icons::Icon::eject : icons::Icon::play)
                         : kind == 'C' ? icons::Icon::copy
                         : kind == 'V' ? icons::Icon::move
+                        : kind == 'X' ? icons::Icon::trash
                                       : icons::Icon::info;
             if (i == 0)
             {
@@ -1120,7 +1147,7 @@ pano::Page LibraryScreen::panorama_page() const
                 tile.has_bg = !stale;
                 tile.bg = look::accent_color();
             }
-            tile.off = (kind == 'M' && (blocked || !on_drive)) || ((kind == 'C' || kind == 'V') && (blocked || mounted));
+            tile.off = (kind == 'M' && (blocked || !on_drive)) || ((kind == 'C' || kind == 'V' || kind == 'X') && (blocked || mounted));
         };
         if (!managed)
         {
@@ -1217,6 +1244,17 @@ void LibraryScreen::panorama_run(char action, const LibraryGame *game, Feedback 
             destination_id_.clear();
             xb_band_ = 0;
             ctx_.store.want_library_storage(true, true);
+            feedback.play(hui::audio::Cue::modal_open);
+        }
+        break;
+    case 'X':
+        if (game == nullptr || blocked || game->mounted)
+            refuse(feedback, input);
+        else
+        {
+            show_game(game->title_id, game->source_key);
+            mode_ = 4;
+            xb_band_ = 1;
             feedback.play(hui::audio::Cue::modal_open);
         }
         break;

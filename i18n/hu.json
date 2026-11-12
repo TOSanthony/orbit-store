@@ -1976,5 +1976,6 @@
   "Install after downloading": "Telepítés letöltés után",
   "Orbit can install a downloaded PKG on your PS5 as soon as it has been checked. Game images are not installed this way.": "Az Orbit a letöltött PKG-t az ellenőrzés után azonnal telepítheti a PS5-ön. A játékképeket ez nem telepíti.",
   "Install packages after downloading": "Csomagok telepítése letöltés után",
-  "Don't install packages after downloading": "Csomagok ne települjenek letöltés után"
+  "Don't install packages after downloading": "Csomagok ne települjenek letöltés után",
+  "Uninstall it and remove its files from the drive.": "Eltávolítja, és törli a fájljait a meghajtóról."
 }

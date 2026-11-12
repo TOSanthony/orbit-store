@@ -1997,5 +1997,6 @@
   "Install after downloading": "Instalar após o download",
   "Orbit can install a downloaded PKG on your PS5 as soon as it has been checked. Game images are not installed this way.": "O Orbit pode instalar no seu PS5 um PKG baixado assim que ele for verificado. Imagens de jogo não são instaladas dessa forma.",
   "Install packages after downloading": "Instalar pacotes após o download",
-  "Don't install packages after downloading": "Não instalar pacotes após o download"
+  "Don't install packages after downloading": "Não instalar pacotes após o download",
+  "Uninstall it and remove its files from the drive.": "Desinstala o jogo e remove seus arquivos da unidade."
 }

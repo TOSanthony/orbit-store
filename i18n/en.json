@@ -1973,5 +1973,6 @@
   "Install after downloading": "Install after downloading",
   "Orbit can install a downloaded PKG on your PS5 as soon as it has been checked. Game images are not installed this way.": "Orbit can install a downloaded PKG on your PS5 as soon as it has been checked. Game images are not installed this way.",
   "Install packages after downloading": "Install packages after downloading",
-  "Don't install packages after downloading": "Don't install packages after downloading"
+  "Don't install packages after downloading": "Don't install packages after downloading",
+  "Uninstall it and remove its files from the drive.": "Uninstall it and remove its files from the drive."
 }

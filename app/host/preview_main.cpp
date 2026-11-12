@@ -464,6 +464,12 @@ std::vector<Scenario> scenarios()
         {run(1.5f, [](orbit::App &app) { app.show_tab(orbit::tab::discover); app.open_game("ironclad-skies"); }),
          pause(1.0f, "xb-game-viking"), move(Direction::down), move(Direction::down), move(Direction::down),
          move(Direction::down), move(Direction::down), pause(0.8f, "xb-game-notes")}});
+    list.push_back({"xb-library-delete", Mode::normal, false,
+        {run(1.5f, [](orbit::App &app) { app.show_tab(orbit::tab::library); }),
+         pause(1.2f, "xb-library"), move(Direction::down), move(Direction::down), move(Direction::down),
+         move(Direction::down), move(Direction::down), tap(Action::confirm), pause(0.8f, "xb-library-game"),
+         move(Direction::down), move(Direction::down), move(Direction::down), pause(0.8f, "xb-library-delete-row"),
+         tap(Action::confirm), pause(1.0f, "xb-library-delete-confirm")}});
     list.push_back({"xb-library", Mode::normal, false,
         {run(1.5f, [](orbit::App &app) { app.show_tab(orbit::tab::library); }),
          pause(1.2f, "xb-library"), move(Direction::down), move(Direction::down), move(Direction::down),
@@ -605,11 +611,17 @@ std::vector<Scenario> scenarios()
          move(Direction::down), pause(0.6f, "pn-downloads-clear-tile"), tap(Action::confirm), pause(0.6f, "pn-downloads-clear"),
          tap(Action::back), tap(Action::page_next), pause(0.8f, "pn-downloads-cancelled"), move(Direction::right), move(Direction::down),
          tap(Action::confirm), pause(0.6f, "pn-downloads-delete")}});
+    list.push_back({"pn-library-delete", Mode::normal, false,
+        {run(1.5f, [](orbit::App &app) { app.show_tab(orbit::tab::library); }),
+         pause(1.2f, "pn-library"), move(Direction::right), move(Direction::right), move(Direction::left),
+         move(Direction::left), move(Direction::left), move(Direction::left), tap(Action::menu),
+         pause(0.8f, "pn-library-delete-row"), move(Direction::down), move(Direction::down), move(Direction::down),
+         tap(Action::confirm), pause(0.8f, "pn-library-delete-confirm")}});
     list.push_back({"pn-library", Mode::normal, false,
         {run(1.5f, [](orbit::App &app) { app.show_tab(orbit::tab::library); }),
          pause(1.2f, "pn-library"), tap(Action::west), pause(0.6f, "pn-library-search"), tap(Action::back),
          tap(Action::menu), pause(0.6f, "pn-library-actions"), tap(Action::back), move(Direction::right), move(Direction::right),
-         pause(0.8f, "pn-library-game"), move(Direction::down), move(Direction::down), tap(Action::confirm),
+         pause(0.8f, "pn-library-game"), move(Direction::down), move(Direction::down), move(Direction::right), tap(Action::confirm),
          pause(0.8f, "pn-library-details"), tap(Action::back), move(Direction::left), move(Direction::left),
          move(Direction::left), move(Direction::left), tap(Action::menu), move(Direction::down), tap(Action::confirm),
          pause(1.0f, "pn-library-copy"), tap(Action::back),

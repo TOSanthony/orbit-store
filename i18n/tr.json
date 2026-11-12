@@ -1976,5 +1976,6 @@
   "Install after downloading": "İndirdikten sonra yükle",
   "Orbit can install a downloaded PKG on your PS5 as soon as it has been checked. Game images are not installed this way.": "Orbit, indirilen bir PKG'yi kontrol edilir edilmez PS5'inize yükleyebilir. Oyun imajları bu şekilde yüklenmez.",
   "Install packages after downloading": "Paketleri indirdikten sonra yükle",
-  "Don't install packages after downloading": "Paketleri indirdikten sonra yükleme"
+  "Don't install packages after downloading": "Paketleri indirdikten sonra yükleme",
+  "Uninstall it and remove its files from the drive.": "Oyunu kaldırır ve dosyalarını sürücüden siler."
 }
