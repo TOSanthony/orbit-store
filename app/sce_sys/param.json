@@ -7,7 +7,7 @@
     "pagetableMemorySizeInMib": 256,
     "vaRangeInGib": 512
   },
-  "applicationCategoryType": 67108864,
+  "applicationCategoryType": 0,
   "displayLocation": 146,
   "applicationDrmType": "free",
   "attribute": 0,
