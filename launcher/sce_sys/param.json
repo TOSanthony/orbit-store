@@ -1,5 +1,6 @@
 {
-  "applicationCategoryType": 65536,
+  "applicationCategoryType": 67108864,
+  "displayLocation": 146,
   "titleId": "ORBT00001",
   "localizedParameters": {
     "defaultLanguage": "en-US",
