@@ -479,6 +479,13 @@ void App::update(const InputFrame &input, float dt, Feedback &feedback)
         }
         ctx_.azerty = ctx_.keyboard_choice == "azerty" ||
                       (ctx_.keyboard_choice != "qwerty" && i18n::language() == "fr");
+        // A widget or companion app asked to open a game (the Welcome Hub widget,
+        // for instance): act on it once, the same way a direct open_game() call does.
+        if (!saved.pending_open_game.empty() && saved.pending_open_game != open_request_seen_)
+        {
+            open_request_seen_ = saved.pending_open_game;
+            open_game(open_request_seen_);
+        }
     }
     ctx_.sounds_on = !ctx_.store.state().system.sounds_off;
     ctx_.sound_volume = ctx_.store.state().system.sound_volume;

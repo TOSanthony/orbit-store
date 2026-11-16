@@ -259,6 +259,20 @@ Result<std::vector<Drive>> Client::storage()
     return result;
 }
 
+Result<std::string> Client::open_request()
+{
+    Result<std::string> result;
+    const http::Response response = send("GET", "/api/v1/open-request");
+    if (fail(response, &result))
+        return result;
+    json::Value value;
+    if (!json::parse(response.body, &value) || !value.is_object())
+        result.error = tr("Orbit sent an unreadable open request.");
+    else
+        result.value = value.text("gameId");
+    return result;
+}
+
 Result<std::vector<std::string>> Client::favourites()
 {
     Result<std::vector<std::string>> result;

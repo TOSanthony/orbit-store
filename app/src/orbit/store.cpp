@@ -972,6 +972,7 @@ void Store::poll_once()
 
     // Favourites and the Library (cheap reads: the backend answers from its
     // cache and limits ShadowMount reads itself).
+    api::Result<std::string> open_request = client_.open_request();
     api::Result<std::vector<std::string>> favourites = client_.favourites();
     api::Result<std::vector<SavedFilter>> saved_filters = client_.saved_filters();
     api::Result<LibrarySnapshot> library = client_.library(false);
@@ -984,9 +985,12 @@ void Store::poll_once()
     if (want_files)
         operation = client_.files_status();
     inbox_.post(
-        [this, favourites = std::move(favourites), saved_filters = std::move(saved_filters), library = std::move(library),
+        [this, open_request = std::move(open_request), favourites = std::move(favourites),
+         saved_filters = std::move(saved_filters), library = std::move(library),
          storage = std::move(storage), want_storage, operation = std::move(operation), want_files]() mutable
         {
+            if (open_request.ok() && !open_request.value.empty())
+                state_.pending_open_game = std::move(open_request.value);
             if (want_files && operation.ok())
             {
                 state_.have_file_operation = !operation.value.id.empty();

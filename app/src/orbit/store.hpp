@@ -89,6 +89,9 @@ struct Snapshot
     bool have_game_updates = false;
     GameUpdateStatus game_update_status;
 
+    // A game a widget or companion app asked to open. Empty once App has acted
+    // on it; the backend itself only ever hands out a given request once.
+    std::string pending_open_game;
     bool have_favourites = false;
     std::vector<std::string> favourites; // game IDs, shared with paired clients
     bool have_saved_filters = false;

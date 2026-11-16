@@ -1666,6 +1666,7 @@ class App
     std::uint64_t language_ = 0; // i18n::revision() the screens' text is in
     bool keyboard_synced_ = false;   // the service's saved keyboard was read once
     bool appearance_synced_ = false; // the service's saved background was read once
+    std::string open_request_seen_; // the last widget/companion open-game request acted on
 };
 
 } // namespace orbit

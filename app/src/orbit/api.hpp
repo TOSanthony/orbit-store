@@ -94,6 +94,9 @@ class Client
     Result<std::vector<Job>> clear_history(std::string_view status);
     // Catalogue artwork through the backend (GET /api/v1/art/<gameId>/<kind>).
     Result<Art> art(std::string_view game_id, ArtKind kind);
+    // A game a widget or companion app asked to open; cleared by the backend
+    // once read, so each request is acted on only once.
+    Result<std::string> open_request();
     // Favourites: the saved game IDs, shared with every paired client.
     Result<std::vector<std::string>> favourites();
     Result<std::vector<std::string>> set_favourite(std::string_view game_id, bool favourite);

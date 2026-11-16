@@ -122,6 +122,8 @@ typedef struct {
     char state_dir[512], desktop_storage[512], pair_code[7], tokens[16][65];
     char instance_id[33]; /* New per process; lets clients verify a service restart. */
     char preferred_storage[24];
+    char open_request_game_id[64]; /* Game a widget/companion asked the TV app to open; consumed
+                                     * once via GET /api/v1/open-request. Runtime only, never saved. */
     bool sounds_off; /* TV app sounds muted (default false = on). */
     int sound_volume; /* TV app sound volume, 0-100 percent (default 50). */
     bool ps4_hidden; /* TV app hides PS4 titles (default false = shown). */

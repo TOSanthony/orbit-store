@@ -596,6 +596,38 @@ static enum MHD_Result route(struct MHD_Connection *c, const char *url, const ch
             return error(c, 400, "Expected a JSON object.");
         }
     }
+    if ((get || post) && !strcmp(url, "/api/v1/open-request")) {
+        /* A widget or companion app on this console asks the TV app to navigate to a game, the
+         * same way a loopback-only session is granted (/api/v1/session): no pairing needed, only
+         * a local caller. GET consumes the pending id (clears it), so it is acted on only once. */
+        if (!local_peer(c)) {
+            cJSON_Delete(input);
+            return error(c, 403, "Only this console can request a game to open.");
+        }
+        if (post) {
+            const char *id = json_text(input, "gameId");
+            if (!*id) {
+                cJSON_Delete(input);
+                return error(c, 400, "Expected gameId.");
+            }
+            pthread_mutex_lock(&orbit.mutex);
+            copy_text(orbit.open_request_game_id, sizeof orbit.open_request_game_id, id);
+            pthread_mutex_unlock(&orbit.mutex);
+            cJSON_Delete(input);
+            cJSON *o = cJSON_CreateObject();
+            cJSON_AddBoolToObject(o, "ok", true);
+            return json_response(c, 200, o);
+        }
+        cJSON_Delete(input);
+        pthread_mutex_lock(&orbit.mutex);
+        char id[sizeof orbit.open_request_game_id];
+        copy_text(id, sizeof id, orbit.open_request_game_id);
+        orbit.open_request_game_id[0] = '\0';
+        pthread_mutex_unlock(&orbit.mutex);
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddStringToObject(o, "gameId", id);
+        return json_response(c, 200, o);
+    }
     if (post && !strcmp(url, "/api/v1/pair/show")) {
         cJSON_Delete(input);
         struct timespec clock;
